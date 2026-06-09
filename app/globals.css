@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ============ THEME TOKENS ============ */
+:root, [data-theme="paper"] {
+  --paper: #F4EFE6; --paper-2: #EEE8DA; --card: #FBF8F1;
+  --ink: #22201C; --ink-soft: #5A554C; --ink-faint: #9A9387;
+  --line: #DDD5C5; --line-soft: #E7E0D2;
+  --accent: #B23A2E; --accent-deep: #8E2C22; --jade: #5C7355; --gold: #A9803C;
+  --accent-soft: rgba(178,58,46,.10); --jade-soft: rgba(92,115,85,.13); --gold-soft: rgba(169,128,60,.12);
+  --pop-bg: #22201C; --pop-fg: #F4EFE6; --pop-pin: #F0C0B8; --pop-mute: #8d877c; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+}
+[data-theme="ink"] {
+  --paper: #FAFAF8; --paper-2: #F1F0EC; --card: #FFFFFF;
+  --ink: #0F1115; --ink-soft: #4A4D55; --ink-faint: #9CA0A8;
+  --line: #DDDCD6; --line-soft: #EBE9E2;
+  --accent: #0F1115; --accent-deep: #000; --jade: #2E7D4F; --gold: #8A6A1F;
+  --accent-soft: rgba(15,17,21,.08); --jade-soft: rgba(46,125,79,.12); --gold-soft: rgba(138,106,31,.12);
+  --pop-bg: #0F1115; --pop-fg: #FAFAF8; --pop-pin: #CFCEC8; --pop-mute: #7F8087; --pop-warn: #D8A6A0; --pop-warn-strong: #F4C9C2;
+}
+[data-theme="tea"] {
+  --paper: #EEF2EA; --paper-2: #E4EADF; --card: #F7F9F4;
+  --ink: #1B2A22; --ink-soft: #475247; --ink-faint: #8A9486;
+  --line: #CCD6C3; --line-soft: #DCE3D3;
+  --accent: #2F6B4C; --accent-deep: #1F4E37; --jade: #2F6B4C; --gold: #9E7C2A;
+  --accent-soft: rgba(47,107,76,.12); --jade-soft: rgba(47,107,76,.14); --gold-soft: rgba(158,124,42,.12);
+  --pop-bg: #1B2A22; --pop-fg: #EEF2EA; --pop-pin: #B8DCC4; --pop-mute: #869185; --pop-warn: #C9D9C6; --pop-warn-strong: #E2EEDF;
+}
+[data-theme="slate"] {
+  --paper: #ECEEF2; --paper-2: #E0E3EA; --card: #F6F7FA;
+  --ink: #1A1F2B; --ink-soft: #4C5462; --ink-faint: #8B92A1;
+  --line: #CBD0DC; --line-soft: #DCE0E8;
+  --accent: #2D5BA9; --accent-deep: #1F4082; --jade: #3F7A5B; --gold: #A57A2A;
+  --accent-soft: rgba(45,91,169,.10); --jade-soft: rgba(63,122,91,.13); --gold-soft: rgba(165,122,42,.12);
+  --pop-bg: #1A1F2B; --pop-fg: #ECEEF2; --pop-pin: #B8C7E6; --pop-mute: #7F87A0; --pop-warn: #E6BDB4; --pop-warn-strong: #F4D7D0;
+}
+[data-theme="bone"] {
+  --paper: #F2E7DA; --paper-2: #EADAC6; --card: #FAF3E6;
+  --ink: #2A1C12; --ink-soft: #5F4B3A; --ink-faint: #A39078;
+  --line: #DCC9AE; --line-soft: #E6D7BD;
+  --accent: #C44A20; --accent-deep: #963716; --jade: #6B7A33; --gold: #B2792A;
+  --accent-soft: rgba(196,74,32,.10); --jade-soft: rgba(107,122,51,.13); --gold-soft: rgba(178,121,42,.12);
+  --pop-bg: #2A1C12; --pop-fg: #F2E7DA; --pop-pin: #F0BFA8; --pop-mute: #988774; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+}
+[data-theme="dusk"] {
+  --paper: #1B1A22; --paper-2: #23222C; --card: #2A2934;
+  --ink: #F0EDE4; --ink-soft: #B4AFA1; --ink-faint: #7E7A6F;
+  --line: #3A3845; --line-soft: #322F3B;
+  --accent: #D77A5B; --accent-deep: #A95934; --jade: #86A57E; --gold: #D6B26A;
+  --accent-soft: rgba(215,122,91,.14); --jade-soft: rgba(134,165,126,.14); --gold-soft: rgba(214,178,106,.14);
+  --pop-bg: #0E0D14; --pop-fg: #F0EDE4; --pop-pin: #F0BFA8; --pop-mute: #7E7A6F; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+}
+
+/* ============ FONT TOKENS ============ */
+:root, [data-font="editorial-warm"] {
+  --f-display: 'Fraunces', serif;
+  --f-ui: 'Hanken Grotesk', sans-serif;
+  --f-han: 'Noto Serif SC', serif;
+  --f-mono: 'Spline Sans Mono', monospace;
+  --han-weight: 500;
+}
+[data-font="quiet-serif"] {
+  --f-display: 'Newsreader', serif; --f-ui: 'Inter', sans-serif;
+  --f-han: 'Noto Serif SC', serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+[data-font="technical"] {
+  --f-display: 'IBM Plex Serif', serif; --f-ui: 'IBM Plex Sans', sans-serif;
+  --f-han: 'Noto Sans SC', sans-serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+[data-font="classic"] {
+  --f-display: 'Lora', serif; --f-ui: 'Source Sans 3', sans-serif;
+  --f-han: 'Noto Serif SC', serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+[data-font="sans-modern"] {
+  --f-display: 'Inter', sans-serif; --f-ui: 'Inter', sans-serif;
+  --f-han: 'Noto Sans SC', sans-serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+
+/* ============ TAILWIND THEME OVERRIDES ============ */
+@theme inline {
+  --color-paper:    var(--paper);
+  --color-paper-2:  var(--paper-2);
+  --color-card:     var(--card);
+  --color-ink:      var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint:var(--ink-faint);
+  --color-line:     var(--line);
+  --color-line-soft:var(--line-soft);
+  --color-accent:   var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-jade:     var(--jade);
+  --color-gold:     var(--gold);
+  --color-accent-soft: var(--accent-soft);
+  --color-jade-soft:   var(--jade-soft);
+  --color-gold-soft:   var(--gold-soft);
+  --color-pop-bg:   var(--pop-bg);
+  --color-pop-fg:   var(--pop-fg);
+  --color-pop-pin:  var(--pop-pin);
+  --color-pop-mute: var(--pop-mute);
+  --color-pop-warn: var(--pop-warn);
+  --color-pop-warn-strong: var(--pop-warn-strong);
+
+  --font-display: var(--f-display);
+  --font-ui:      var(--f-ui);
+  --font-han:     var(--f-han);
+  --font-mono:    var(--f-mono);
+}
+
+/* ============ BASE ============
+   Wrapped in @layer base so Tailwind utility classes (in @layer utilities)
+   retain cascade priority over these element/universal selectors. */
+@layer base {
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--f-ui);
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 30%),
+      radial-gradient(circle at 88% 82%, color-mix(in srgb, var(--jade) 6%, transparent), transparent 35%);
+    transition: background-color .3s, color .3s;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 0; opacity: .4;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+    mix-blend-mode: multiply;
+  }
+  [data-theme="dusk"] body::before { mix-blend-mode: screen; opacity: .18; }
+
+  /* ============ RUBY / PINYIN ============ */
+  ruby { ruby-position: over; }
+  rt {
+    display: none;
+    font-family: var(--f-mono);
+    font-size: .5em;
+    color: var(--accent);
+    font-weight: 400;
+    user-select: none;
+    letter-spacing: 0;
+    line-height: 1.1;
+  }
+  .show-pinyin rt { display: revert; }
+}
+
+/* ============ ANIMATIONS ============ */
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%       { box-shadow: 0 0 0 5px transparent; }
+}
+.playing-pulse { animation: pulse-ring 1s infinite; }
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(.4); }
+  50%       { transform: scaleY(1.4); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-rise { animation: rise .45s cubic-bezier(.2,.7,.3,1); }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: .25; }
+  30% { opacity: 1; }
+}
+
+/* ============ SCROLLBAR ============ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
