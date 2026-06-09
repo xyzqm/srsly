@@ -10,7 +10,7 @@ export default function Header({ onOpenTheme }: Props) {
 
   return (
     <header
-      className="flex items-center justify-between px-7 py-6 max-w-[880px] mx-auto w-full relative z-[2] gap-3 flex-wrap"
+      className="flex items-center justify-between px-7 py-6 max-w-[1200px] mx-auto w-full relative z-[2] gap-3 flex-wrap"
       style={{ borderBottom: '1px solid var(--line)' }}
     >
       <div className="flex items-baseline gap-3">

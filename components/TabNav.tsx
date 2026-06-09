@@ -12,7 +12,7 @@ interface Props { active: TabId; onChange: (id: TabId) => void; }
 
 export default function TabNav({ active, onChange }: Props) {
   return (
-    <nav className="max-w-[880px] mx-auto px-7 relative z-[1]">
+    <nav className="max-w-[1200px] mx-auto px-7 relative z-[1]">
       <div className="flex gap-1 pt-3.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         {TABS.map(t => (
           <button

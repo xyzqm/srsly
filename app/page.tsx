@@ -20,7 +20,7 @@ export default function Home() {
       <div className="relative z-[1]">
         <Header onOpenTheme={() => setSheetOpen(true)} />
         <TabNav active={tab} onChange={setTab} />
-        <main className="max-w-[880px] mx-auto px-7 pb-16">
+        <main className="max-w-[1200px] mx-auto px-7 pb-16">
           {tab === 'read' && (
             <ReadTab
               onScore={recordScore}
