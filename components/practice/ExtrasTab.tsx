@@ -20,8 +20,9 @@ export default function ExtrasTab({ onScore }: Props) {
   const { deck, addWord, updateWordReview } = useVocabDeck();
   const [mode, setMode] = useState<PracticeMode>('flash');
 
-  // HSK level (needed to key daily content per level)
-  const [hskLevel, setHskLevel] = useState(4);
+  // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
+  // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
+  const [hskLevel, setHskLevel] = useState(0);
   useEffect(() => {
     storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
   }, []);

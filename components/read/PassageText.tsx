@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -73,8 +73,18 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
 
 export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, onAddToDeck }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
-  // Session-local claimed tracking: maps word → 'vocab' | 'tomorrow'
+  // Claimed tracking: maps word → 'vocab' | 'tomorrow'
   const [claimType, setClaimType] = useState<Map<string, 'vocab' | 'tomorrow'>>(new Map());
+
+  // Seed claimType from storage so words added in previous sessions still look claimed
+  useEffect(() => {
+    storage.getClaimedWords().then(claimed => {
+      const map = new Map<string, 'vocab' | 'tomorrow'>();
+      claimed.vocab.forEach(w => map.set(w, 'vocab'));
+      claimed.tomorrow.forEach(w => map.set(w, 'tomorrow'));
+      if (map.size > 0) setClaimType(map);
+    });
+  }, []);
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken) => {
     e.stopPropagation();
@@ -103,22 +113,20 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
   }, [claimType, onPeek, deckWords]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
-    // Persist to claimed words storage
-    const c = await storage.getClaimedWords();
-    const updated = { ...c, vocab: [...new Set([...c.vocab, word])] };
-    await storage.saveClaimedWords(updated);
-    // Mark locally as vocab-claimed
+    // Optimistic update first — word turns green immediately, no flash
     setClaimType(prev => new Map([...prev, [word, 'vocab']]));
-    // Add to user's vocab deck
     onAddToDeck({ h: word, p: pinyin, m: meaning });
+    // Persist in background
+    const c = await storage.getClaimedWords();
+    await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
   }, [onAddToDeck]);
 
   const handleLearnTomorrow = useCallback(async (word: string) => {
-    const c = await storage.getClaimedWords();
-    const updated = { ...c, tomorrow: [...new Set([...c.tomorrow, word])] };
-    await storage.saveClaimedWords(updated);
-    // Mark locally as tomorrow-claimed
+    // Optimistic update first
     setClaimType(prev => new Map([...prev, [word, 'tomorrow']]));
+    // Persist in background
+    const c = await storage.getClaimedWords();
+    await storage.saveClaimedWords({ ...c, tomorrow: [...new Set([...c.tomorrow, word])] });
   }, []);
 
   return (
