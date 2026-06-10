@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import type { PassageToken } from '@/lib/types';
+import type { PassageToken, DeckWord } from '@/lib/types';
 import { FILL_ITEMS } from '@/lib/data/fill';
 import { speak } from '@/lib/speech';
 
@@ -11,10 +11,22 @@ function renderTokens(tokens: PassageToken[], showPinyin: boolean) {
   });
 }
 
-interface Props { onDone: () => void; showPinyin: boolean; }
+interface Props { onDone: () => void; showPinyin: boolean; deck: DeckWord[]; }
 
-export default function FillInBlank({ onDone, showPinyin }: Props) {
+export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
   const [answers, setAnswers] = useState<Record<number, { correct: boolean; chosen: string } | null>>({});
+
+  if (deck.length === 0) {
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        </p>
+      </div>
+    );
+  }
 
   const allDone = FILL_ITEMS.every((_, i) => answers[i] != null);
 
@@ -124,9 +136,6 @@ export default function FillInBlank({ onDone, showPinyin }: Props) {
         </div>
       )}
 
-      <div className="text-center mt-6 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        Same eight words — now in context
-      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import ReadTab from '@/components/read/ReadTab';
 import ExtrasTab from '@/components/practice/ExtrasTab';
 import StatsTab from '@/components/stats/StatsTab';
 import VocabTab from '@/components/vocab/VocabTab';
+import SettingsTab from '@/components/settings/SettingsTab';
 import { useSRS } from '@/hooks/useSRS';
 
 export default function Home() {
@@ -36,9 +37,12 @@ export default function Home() {
           {tab === 'vocab' && (
             <VocabTab />
           )}
+          {tab === 'settings' && (
+            <SettingsTab />
+          )}
         </main>
         <footer className="text-center pb-10 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-          srsly. · one interval at a time
+          srsly.
         </footer>
       </div>
 

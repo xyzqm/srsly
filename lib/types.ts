@@ -7,6 +7,7 @@ export interface DeckWord {
   m: string;   // meaning (comma-separated if multiple)
   cn?: string; // example sentence (HTML)
   en?: string; // example translation
+  reviews?: number; // correct review count for mastery tracking
 }
 
 export interface PassageToken {
@@ -51,11 +52,13 @@ export interface SRSState {
   lastVisit: string;   // YYYY-MM-DD
   todayScore: number;  // -1 = not set
   todayScoreDate: string;
+  sessions?: number;
 }
 
 export interface UserPrefs {
   theme: Theme;
   font: Font;
+  hskLevel?: number;
 }
 
 export interface ClaimedWords {
@@ -64,7 +67,7 @@ export interface ClaimedWords {
 }
 
 export type ResponseMode = 'fr' | 'mc';
-export type TabId = 'read' | 'practice' | 'dash' | 'vocab';
+export type TabId = 'read' | 'practice' | 'dash' | 'vocab' | 'settings';
 export type PracticeMode = 'flash' | 'fill' | 'convo';
 
 export interface FRResponse {

@@ -1,9 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { DEFAULT_DECK } from '@/lib/data/deck';
+import type { DeckWord } from '@/lib/types';
 import { speak } from '@/lib/speech';
 
-interface Props { onDone: () => void; }
+interface Props { deck: DeckWord[]; onDone: () => void; onGrade?: (hanzi: string, delta: number) => void; }
 
 function sdm(m: string) {
   return m.split(', ').map((part, i, arr) => (
@@ -11,17 +11,29 @@ function sdm(m: string) {
   ));
 }
 
-export default function Flashcards({ onDone }: Props) {
+export default function Flashcards({ deck, onDone, onGrade }: Props) {
   const [idx, setIdx] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(false);
+
+  if (deck.length === 0) {
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        </p>
+      </div>
+    );
+  }
 
   if (done) {
     return (
       <div className="text-center py-10">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 60, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>完</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 8 }}>Queue cleared.</h3>
-        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 20px' }}>Eight words scheduled. Now reinforce them with a drill or a chat.</p>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 20px' }}>{deck.length} word{deck.length === 1 ? '' : 's'} scheduled. Now reinforce them with a drill or a chat.</p>
         <button
           onClick={onDone}
           className="cursor-pointer transition-all duration-150"
@@ -37,20 +49,21 @@ export default function Flashcards({ onDone }: Props) {
     );
   }
 
-  const card = DEFAULT_DECK[idx];
-  const progress = (idx / DEFAULT_DECK.length) * 100;
+  const card = deck[idx];
+  const progress = (idx / deck.length) * 100;
 
-  const grade = () => {
-    if (idx + 1 >= DEFAULT_DECK.length) { setDone(true); return; }
+  const grade = (delta: number) => {
+    onGrade?.(card.h, delta);
+    if (idx + 1 >= deck.length) { setDone(true); return; }
     setIdx(i => i + 1);
     setRevealed(false);
   };
 
   const grades = [
-    { label: 'Again', interval: '< 1 day', color: 'var(--accent)' },
-    { label: 'Hard',  interval: '1 day',   color: 'var(--gold)' },
-    { label: 'Good',  interval: '3 days',  color: 'var(--jade)' },
-    { label: 'Easy',  interval: '7 days',  color: 'var(--ink-soft)' },
+    { label: 'Again', interval: '< 1 day', color: 'var(--accent)',   delta: 0  },
+    { label: 'Hard',  interval: '1 day',   color: 'var(--gold)',     delta: 0  },
+    { label: 'Good',  interval: '3 days',  color: 'var(--jade)',     delta: 1  },
+    { label: 'Easy',  interval: '7 days',  color: 'var(--ink-soft)', delta: 2  },
   ];
 
   return (
@@ -58,7 +71,7 @@ export default function Flashcards({ onDone }: Props) {
       <div className="flex justify-between items-end mb-6">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Vocabulary review</div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>Card {idx + 1} of {DEFAULT_DECK.length}</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>Card {idx + 1} of {deck.length}</div>
         </div>
         <div style={{ height: 5, background: 'var(--line-soft)', borderRadius: 4, overflow: 'hidden', flex: 1, maxWidth: 240 }}>
           <div style={{ height: '100%', background: 'var(--accent)', width: `${progress}%`, transition: 'width .4s cubic-bezier(.2,.7,.3,1)', borderRadius: 4 }} />
@@ -84,7 +97,6 @@ export default function Flashcards({ onDone }: Props) {
           {revealed ? 'How well did you remember?' : 'What does this mean?'}
         </div>
 
-        {/* Revealed answer */}
         <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 300 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--accent)', letterSpacing: '.04em' }}>{card.p}</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 6 }}>{sdm(card.m)}</div>
@@ -112,7 +124,7 @@ export default function Flashcards({ onDone }: Props) {
             {grades.map(g => (
               <button
                 key={g.label}
-                onClick={grade}
+                onClick={() => grade(g.delta)}
                 className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
                 style={{
                   background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`,
@@ -127,9 +139,6 @@ export default function Flashcards({ onDone }: Props) {
         )}
       </div>
 
-      <div className="text-center mt-6 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        Rate honestly — the schedule adapts to you
-      </div>
     </div>
   );
 }

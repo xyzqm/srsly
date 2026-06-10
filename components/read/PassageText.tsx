@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import type { PassageToken, Sentence } from '@/lib/types';
+import { useState, useCallback } from 'react';
+import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
 import { storage } from '@/lib/storage';
@@ -12,85 +12,102 @@ interface Props {
   audioOnly: boolean;
   peeked: Set<string>;
   onPeek: (word: string) => void;
+  deckWords: Set<string>;
+  onAddToDeck: (word: DeckWord) => void;
 }
 
-function TokenEl({ token, peeked, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, isClaimed, onClick }: {
   token: PassageToken;
   peeked: boolean;
+  isReviewWord: boolean;
+  isClaimed: boolean;
   onClick: (e: React.MouseEvent, token: PassageToken) => void;
 }) {
-  const isVocab = token.type === 'vocab';
+  const [hovered, setHovered] = useState(false);
   const isFree = token.type === 'free';
-  const isPunct = !isVocab && !isFree;
+  const isPunct = token.type === 'punct' || (!token.type);
 
-  if (isPunct) {
-    return <span>{token.text}</span>;
-  }
+  if (isPunct) return <span>{token.text}</span>;
+
+  const isInteractive = !isClaimed && !isReviewWord;
 
   return (
     <ruby
       onClick={e => onClick(e, token)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className="cursor-pointer transition-all duration-150 relative"
       style={{
-        borderBottom: isVocab
+        borderBottom: isReviewWord
           ? peeked
             ? '2px solid var(--accent)'
             : '1.5px dotted var(--accent)'
-          : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
-        color: peeked ? 'var(--accent-deep)' : undefined,
+          : isClaimed
+            ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
+            : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
+        color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
         paddingBottom: 1,
+        background: hovered && isInteractive
+          ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+          : 'transparent',
+        borderRadius: 3,
+        cursor: isClaimed ? 'default' : 'pointer',
       }}
     >
       {token.text}
-      {peeked && isVocab && (
+      {peeked && isReviewWord && (
         <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--accent)', marginLeft: 1, fontWeight: 600 }}>↺</span>
       )}
+      {isClaimed && (
+        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--jade)', marginLeft: 1, fontWeight: 600 }}>+</span>
+      )}
+      {/* suppress unused var warning */ isFree && false && null}
       <rt>{token.pinyin}</rt>
     </ruby>
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, onAddToDeck }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
+  // Session-local claimed tracking (words added/learned this session)
   const [claimed, setClaimed] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    storage.getClaimedWords().then(c => setClaimed(new Set([...c.vocab, ...c.tomorrow])));
-  }, []);
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken) => {
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
     if (!token.type || token.type === 'punct') return;
-    if (token.type === 'free' && claimed.has(token.text)) return;
+
+    const isReviewWord = token.type === 'vocab' && deckWords.has(token.text);
+
+    // Claimed this session: no action
+    if (claimed.has(token.text) && !isReviewWord) return;
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 
-    if (token.type === 'vocab') {
+    if (isReviewWord) {
       onPeek(token.text);
+      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'vocab', anchorRect: rect });
+    } else {
+      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'free', anchorRect: rect });
     }
+  }, [claimed, onPeek, deckWords]);
 
-    setPopup({
-      word: token.text,
-      pinyin: token.pinyin || '',
-      meaning: token.meaning || '',
-      type: token.type,
-      anchorRect: rect,
-    });
-  }, [claimed, onPeek]);
-
-  const handleAddVocab = useCallback(async (word: string) => {
+  const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
+    // Persist to claimed words storage
     const c = await storage.getClaimedWords();
     const updated = { ...c, vocab: [...new Set([...c.vocab, word])] };
     await storage.saveClaimedWords(updated);
-    setClaimed(new Set([...updated.vocab, ...updated.tomorrow]));
-  }, []);
+    // Mark locally
+    setClaimed(prev => new Set([...prev, word]));
+    // Add to user's vocab deck
+    onAddToDeck({ h: word, p: pinyin, m: meaning });
+  }, [onAddToDeck]);
 
   const handleLearnTomorrow = useCallback(async (word: string) => {
     const c = await storage.getClaimedWords();
     const updated = { ...c, tomorrow: [...new Set([...c.tomorrow, word])] };
     await storage.saveClaimedWords(updated);
-    setClaimed(new Set([...updated.vocab, ...updated.tomorrow]));
+    setClaimed(prev => new Set([...prev, word]));
   }, []);
 
   return (
@@ -149,14 +166,20 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                   : {}
               }
             >
-              {sent.tokens.map((token, ti) => (
-                <TokenEl
-                  key={ti}
-                  token={token}
-                  peeked={peeked.has(token.text) && token.type === 'vocab'}
-                  onClick={handleTokenClick}
-                />
-              ))}
+              {sent.tokens.map((token, ti) => {
+                const isReviewWord = token.type === 'vocab' && deckWords.has(token.text);
+                const isClaimed = !isReviewWord && claimed.has(token.text);
+                return (
+                  <TokenEl
+                    key={ti}
+                    token={token}
+                    peeked={peeked.has(token.text) && isReviewWord}
+                    isReviewWord={isReviewWord}
+                    isClaimed={isClaimed}
+                    onClick={handleTokenClick}
+                  />
+                );
+              })}
             </span>
           ))}
         </div>

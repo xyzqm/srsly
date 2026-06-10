@@ -1,13 +1,10 @@
 'use client';
-import { useState, useRef, useCallback, useEffect } from 'react';
-import type { PassageToken } from '@/lib/types';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import type { PassageToken, DeckWord } from '@/lib/types';
 import { CONVO } from '@/lib/data/conversation';
-import { DEFAULT_DECK } from '@/lib/data/deck';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
 import ConvoReport from './ConvoReport';
-
-const TARGET_WORDS = DEFAULT_DECK.map(d => d.h);
 
 function renderTokens(tokens: PassageToken[], showPinyin: boolean) {
   return tokens.map((t, i) => {
@@ -22,9 +19,11 @@ interface Response { text: string; turnIdx: number; }
 interface Props {
   showPinyin: boolean;
   onScore: (score: number) => void;
+  deck: DeckWord[];
 }
 
-export default function Conversation({ showPinyin, onScore }: Props) {
+export default function Conversation({ showPinyin, onScore, deck }: Props) {
+  const TARGET_WORDS = useMemo(() => deck.map(d => d.h), [deck]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turnIdx, setTurnIdx] = useState(0);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -159,6 +158,18 @@ export default function Conversation({ showPinyin, onScore }: Props) {
     responses.forEach(r => TARGET_WORDS.forEach(w => { if (r.text.includes(w)) s.add(w); }));
     return s;
   })();
+
+  if (TARGET_WORDS.length === 0) {
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        </p>
+      </div>
+    );
+  }
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -322,9 +333,6 @@ export default function Conversation({ showPinyin, onScore }: Props) {
         </button>
       </div>
 
-      <div className="text-center mt-4 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        End the session whenever you&apos;re ready — the report grades only what you&apos;ve said so far
-      </div>
     </div>
   );
 }

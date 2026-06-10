@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import type { PracticeMode } from '@/lib/types';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -14,6 +15,7 @@ const MODES: { id: PracticeMode; label: string }[] = [
 interface Props { onScore: (score: number) => void; }
 
 export default function ExtrasTab({ onScore }: Props) {
+  const { deck, updateWordReview } = useVocabDeck();
   const [mode, setMode] = useState<PracticeMode>('flash');
   const [showPinyin, setShowPinyin] = useState(false);
 
@@ -52,9 +54,9 @@ export default function ExtrasTab({ onScore }: Props) {
         )}
       </div>
 
-      {mode === 'flash' && <Flashcards onDone={() => setMode('fill')} />}
-      {mode === 'fill'  && <FillInBlank onDone={() => setMode('convo')} showPinyin={showPinyin} />}
-      {mode === 'convo' && <Conversation showPinyin={showPinyin} onScore={onScore} />}
+      {mode === 'flash' && <Flashcards deck={deck} onDone={() => setMode('fill')} onGrade={updateWordReview} />}
+      {mode === 'fill'  && <FillInBlank onDone={() => setMode('convo')} showPinyin={showPinyin} deck={deck} />}
+      {mode === 'convo' && <Conversation showPinyin={showPinyin} onScore={onScore} deck={deck} />}
     </div>
   );
 }

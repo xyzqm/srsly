@@ -6,6 +6,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'practice', label: 'Extras' },
   { id: 'dash',     label: 'Stats' },
   { id: 'vocab',    label: 'Vocab' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 interface Props { active: TabId; onChange: (id: TabId) => void; }

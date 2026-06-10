@@ -1,19 +1,19 @@
 'use client';
-import { useState, useCallback } from 'react';
-import type { ResponseMode, FRResponse } from '@/lib/types';
+import { useState, useCallback, useMemo } from 'react';
+import type { ResponseMode, FRResponse, DeckWord } from '@/lib/types';
 import { SENTENCES } from '@/lib/data/passage';
 import { QUESTIONS } from '@/lib/data/questions';
-import { DEFAULT_DECK } from '@/lib/data/deck';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
 
-const TARGET_WORDS = DEFAULT_DECK.map(d => d.h);
-const TOTAL_VOCAB_IN_PASSAGE = new Set(
+// All vocab-type token texts in the passage (static)
+const PASSAGE_VOCAB_SET = new Set(
   SENTENCES.flatMap(s => s.tokens.filter(t => t.type === 'vocab').map(t => t.text))
-).size;
+);
 
 interface Props {
   onScore: (score: number) => void;
@@ -21,6 +21,15 @@ interface Props {
 }
 
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
+  const { deck, addWord } = useVocabDeck();
+  const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
+  // Words that are both in the user's deck and appear as vocab tokens in the passage
+  const targetWords = useMemo(
+    () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
+    [deck]
+  );
+  const reviewWordCount = targetWords.length;
+
   const [activeSentence, setActiveSentence] = useState(0);
   const [showPinyin, setShowPinyin] = useState(false);
   const [audioOnly, setAudioOnly] = useState(false);
@@ -31,30 +40,33 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const [mcAnswered, _setMcAnswered] = useState<Record<number, 'right' | 'wrong'>>({});
   const [showResults, setShowResults] = useState(false);
   const [resultsBuilt, setResultsBuilt] = useState(false);
-  const [vocabResults, setVocabResults] = useState<{ word: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [claimedCount, _setClaimedCount] = useState(0);
+  const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
 
   const handlePeek = useCallback((word: string) => {
     setPeeked(prev => new Set([...prev, word]));
   }, []);
+
+  const handleAddToDeck = useCallback((word: DeckWord) => {
+    addWord(word);
+  }, [addWord]);
 
   const toggleResults = useCallback(() => {
     if (!resultsBuilt) {
       setResultsBuilt(true);
       const usedWords = new Set<string>();
       Object.values(frResponses).forEach(r => {
-        TARGET_WORDS.forEach(w => { if (r.text.includes(w)) usedWords.add(w); });
+        targetWords.forEach(w => { if (r.text.includes(w)) usedWords.add(w); });
       });
       Object.entries(mcAnswered).forEach(([i, ok]) => {
         if (ok === 'right') {
-          QUESTIONS[+i].key.forEach(k => { if (TARGET_WORDS.includes(k)) usedWords.add(k); });
+          QUESTIONS[+i].key.forEach(k => { if (targetWords.includes(k)) usedWords.add(k); });
         }
       });
-      const rows = TARGET_WORDS.map(w => {
-        if (peeked.has(w)) return { word: w, status: 'down' as const, msg: 'Peeked — back to tomorrow' };
-        if (usedWords.has(w)) return { word: w, status: 'up' as const, msg: 'Recalled in your answer · +3 days' };
-        return { word: w, status: 'stable' as const, msg: 'Not used this session · holds' };
+      const rows = targetWords.map(w => {
+        const deckWord = deck.find(d => d.h === w);
+        if (peeked.has(w)) return { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: 'Peeked — back to tomorrow' };
+        if (usedWords.has(w)) return { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: 'Recalled in your answer · +3 days' };
+        return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: 'Not used this session · holds' };
       });
       setVocabResults(rows);
 
@@ -66,7 +78,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore]);
+  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -86,7 +98,9 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Today&apos;s passage · built from 8 review words
+            {reviewWordCount > 0
+              ? `Today's passage · ${reviewWordCount} review word${reviewWordCount === 1 ? '' : 's'}`
+              : "Today's passage · add words to your deck to track them here"}
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
             城市里的<span style={{ fontFamily: 'var(--f-han)' }}>环境</span>
@@ -118,13 +132,15 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         audioOnly={audioOnly}
         peeked={peeked}
         onPeek={handlePeek}
+        deckWords={deckWords}
+        onAddToDeck={handleAddToDeck}
       />
 
       {/* Lookup summary */}
       <LookupSummary
         peekedCount={peeked.size}
-        totalVocab={TOTAL_VOCAB_IN_PASSAGE}
-        claimedCount={claimedCount}
+        totalVocab={reviewWordCount}
+        claimedCount={0}
       />
 
       <div className="h-px my-8" style={{ background: 'var(--line)' }} />
@@ -183,10 +199,6 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
 
       {/* Vocab results */}
       {showResults && <VocabResults results={vocabResults} />}
-
-      <div className="text-center mt-6 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        Recall first · tap only when stuck — every lookup resets that word
-      </div>
     </div>
   );
 }

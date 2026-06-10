@@ -1,9 +1,14 @@
 'use client';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { useSRS } from '@/hooks/useSRS';
 import PieChart from './PieChart';
 
 interface Props { onNavigateRead: () => void; }
 
 export default function StatsTab({ onNavigateRead }: Props) {
+  const { deck } = useVocabDeck();
+  const { streak, sessions } = useSRS();
+
   return (
     <div
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
@@ -13,27 +18,24 @@ export default function StatsTab({ onNavigateRead }: Props) {
         All-time · vocabulary bank
       </div>
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '8px 0 4px', lineHeight: 1.15 }}>
-        <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>560</em> words learned.
+        <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{deck.length}</em> word{deck.length === 1 ? '' : 's'} in your deck.
       </div>
       <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '46ch', lineHeight: 1.55 }}>
-        Your complete vocabulary across all sessions, broken down by SRS mastery phase.
+        {deck.length === 0
+          ? 'Your deck is empty. Read a passage and click underlined words to start building it.'
+          : 'Your complete vocabulary broken down by SRS mastery phase.'}
       </p>
 
-      <PieChart />
+      <PieChart deck={deck} />
 
-      {/* Stat row */}
       <div
         className="grid mt-8 overflow-hidden rounded-[11px]"
         style={{ gridTemplateColumns: '1.6fr 1fr 1fr', gap: 1, background: 'var(--line-soft)', border: '1px solid var(--line)' }}
       >
-        {/* Lead stat */}
-        <div
-          className="px-5 py-5"
-          style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 50%, white), var(--card))' }}
-        >
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Today&apos;s queue</div>
+        <div className="px-5 py-5" style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 50%, white), var(--card))' }}>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Words in deck</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
-            8 <small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>ready</small>
+            {deck.length} <small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>total</small>
           </div>
           <button
             onClick={onNavigateRead}
@@ -44,25 +46,21 @@ export default function StatsTab({ onNavigateRead }: Props) {
               padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex',
             }}
           >
-            Open today&apos;s passage →
+            Open today&apos;s passage
           </button>
         </div>
         <div className="px-5 py-5" style={{ background: 'var(--card)' }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Day streak</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
-            14<small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>d</small>
+            {streak}<small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>d</small>
           </div>
         </div>
         <div className="px-5 py-5" style={{ background: 'var(--card)' }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Total sessions</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
-            42
+            {sessions}
           </div>
         </div>
-      </div>
-
-      <div className="text-center mt-6 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        srsly. · one interval at a time
       </div>
     </div>
   );

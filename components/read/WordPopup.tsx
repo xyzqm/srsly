@@ -12,7 +12,7 @@ export interface PopupData {
 interface Props {
   data: PopupData | null;
   onClose: () => void;
-  onAddVocab: (word: string) => void;
+  onAddVocab: (word: string, pinyin: string, meaning: string) => void;
   onLearnTomorrow: (word: string) => void;
 }
 
@@ -105,7 +105,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
               style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}
             >
               <button
-                onClick={() => { onAddVocab(data.word); onClose(); }}
+                onClick={() => { onAddVocab(data.word, data.pinyin, data.meaning); onClose(); }}
                 className="w-full text-left rounded-lg py-2 px-3 cursor-pointer transition-all duration-150 text-white font-semibold"
                 style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.05em', background: 'var(--jade)', border: 'none', lineHeight: 1.3 }}
               >

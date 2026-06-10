@@ -7,17 +7,56 @@ import type { PassageToken, Sentence } from '@/lib/types';
 type RawToken = [string] | [string, string] | [string, string, string];
 
 const RAW: RawToken[] = [
+  // Sentence 1
   ['我','wǒ'],['住','zhù'],['在','zài'],['一个','yí gè'],['很','hěn'],['大','dà'],['的','de'],
   ['城市','chéngshì','city; town'],['。'],
+  // Sentence 2
   ['这里','zhèlǐ'],['每天','měitiān'],['都会','dōu huì'],['产生','chǎnshēng'],['很多','hěn duō'],
   ['垃圾','lājī','garbage; trash; rubbish'],['。'],
+  // Sentence 3
   ['为了','wèile'],['保护','bǎohù','to protect; to safeguard'],['环境','huánjìng','environment; surroundings'],['，'],
   ['我们','wǒmen'],['应该','yīnggāi'],['减少','jiǎnshǎo','to reduce; to decrease'],['浪费','làngfèi'],['，'],
   ['把','bǎ'],['垃圾','lājī','garbage; trash; rubbish'],['分类','fēnlèi','to sort; to classify'],['，'],
   ['并且','bìngqiě'],['回收','huíshōu','to recycle; to reclaim'],['能','néng'],['再','zài'],['用','yòng'],['的','de'],['东西','dōngxi'],['。'],
+  // Sentence 4
   ['如果','rúguǒ'],['每个','měi gè'],['人','rén'],['都','dōu'],['养成','yǎngchéng'],['这样','zhèyàng'],['的','de'],['好','hǎo'],
   ['习惯','xíguàn','habit; custom'],['，'],
   ['城市','chéngshì','city; town'],['就','jiù'],['会','huì'],['越来越','yuèláiyuè'],['干净','gānjìng'],['。'],
+  // Sentence 5
+  ['最近','zuìjìn'],['，'],
+  ['政府','zhèngfǔ','government; administration'],
+  ['开始','kāishǐ'],['推行','tuīxíng','to implement; to promote'],
+  ['新','xīn'],['的','de'],
+  ['垃圾','lājī','garbage; trash; rubbish'],
+  ['分类','fēnlèi','to sort; to classify'],
+  ['制度','zhìdù','system; institution'],['。'],
+  // Sentence 6
+  ['居民','jūmín','residents; inhabitants'],
+  ['要','yào'],['把','bǎ'],
+  ['生活','shēnghuó','daily life; to live'],
+  ['垃圾','lājī','garbage; trash; rubbish'],
+  ['分成','fēn chéng'],['可','kě'],
+  ['回收','huíshōu','to recycle; to reclaim'],
+  ['、'],
+  ['有害','yǒuhài','harmful; hazardous'],
+  ['和','hé'],['其他','qítā'],['几','jǐ'],['类','lèi'],['。'],
+  // Sentence 7
+  ['很多','hěn duō'],['人','rén'],['觉得','juéde'],
+  ['麻烦','máfan','troublesome; a bother'],
+  ['，'],['但','dàn'],['慢慢地','mànmànde'],['明白','míngbai'],
+  ['了','le'],['分类','fēnlèi','to sort; to classify'],['的','de'],
+  ['重要性','zhòngyàoxìng','importance; significance'],['。'],
+  // Sentence 8
+  ['我','wǒ'],
+  ['相信','xiāngxìn','to believe; to trust'],
+  ['，'],['只要','zhǐyào'],['大家','dàjiā'],
+  ['共同','gòngtóng','jointly; together'],
+  ['努力','nǔlì','to work hard; effort'],
+  ['，'],
+  ['城市','chéngshì','city; town'],
+  ['一定','yīdìng'],['会','huì'],
+  ['变得','biàndé'],['更加','gèngjiā'],
+  ['美丽','měilì','beautiful; beauty'],['。'],
 ];
 
 export const FREE_DICT: Record<string, string> = {
@@ -37,6 +76,27 @@ export const FREE_DICT: Record<string, string> = {
   '越来越': 'more and more · increasingly', '干净': 'clean · neat · tidy',
   '应该': 'should · ought to', '为了': 'in order to · for the purpose of',
   '我们': 'we · us · our',
+  // New entries for sentences 5–8
+  '最近': 'recently · lately',
+  '开始': 'to start · to begin',
+  '新': 'new · fresh',
+  '要': 'to want · to need',
+  '分成': 'to divide into',
+  '可': 'can · may',
+  '和': 'and · with',
+  '其他': 'other · the rest',
+  '几': 'several · a few',
+  '类': 'category · type',
+  '觉得': 'to feel · to think',
+  '但': 'but · however',
+  '慢慢地': 'gradually · slowly',
+  '明白': 'to understand · to realize',
+  '了': '(completion particle)',
+  '只要': 'as long as · provided that',
+  '大家': 'everyone · all of us',
+  '一定': 'definitely · certainly',
+  '变得': 'to become',
+  '更加': 'even more · further',
 };
 
 function rawToToken(raw: RawToken): PassageToken {

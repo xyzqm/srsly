@@ -89,9 +89,6 @@ export default function VocabTab() {
         ))}
       </div>
 
-      <div className="text-center mt-6 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
-        srsly. · one interval at a time
-      </div>
     </div>
   );
 }

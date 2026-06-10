@@ -11,6 +11,7 @@ export function useVocabDeck() {
   }, []);
 
   const addWord = useCallback(async (word: DeckWord) => {
+    if (deck.some(d => d.h === word.h)) return;
     const next = [...deck, word];
     setDeck(next);
     await storage.saveVocabDeck(next);
@@ -22,5 +23,13 @@ export function useVocabDeck() {
     await storage.saveVocabDeck(next);
   }, [deck]);
 
-  return { deck, addWord, removeWord };
+  const updateWordReview = useCallback(async (hanzi: string, delta: number) => {
+    const next = deck.map(d =>
+      d.h === hanzi ? { ...d, reviews: Math.max(0, (d.reviews ?? 0) + delta) } : d
+    );
+    setDeck(next);
+    await storage.saveVocabDeck(next);
+  }, [deck]);
+
+  return { deck, addWord, removeWord, updateWordReview };
 }

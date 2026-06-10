@@ -1,6 +1,5 @@
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords } from '@/lib/types';
-import { DEFAULT_DECK } from '@/lib/data/deck';
 
 const KEYS = {
   vocab: 'srsly-vocab-deck',
@@ -26,7 +25,7 @@ function set(key: string, value: unknown): void {
 
 export class LocalStorage implements DataService {
   async getVocabDeck(): Promise<DeckWord[]> {
-    return get<DeckWord[]>(KEYS.vocab, DEFAULT_DECK.map(d => ({ ...d })));
+    return get<DeckWord[]>(KEYS.vocab, []);
   }
   async saveVocabDeck(deck: DeckWord[]): Promise<void> {
     set(KEYS.vocab, deck);
@@ -34,10 +33,11 @@ export class LocalStorage implements DataService {
 
   async getSRSState(): Promise<SRSState> {
     return get<SRSState>(KEYS.srs, {
-      streak: 14,
+      streak: 0,
       lastVisit: '',
       todayScore: -1,
       todayScoreDate: '',
+      sessions: 0,
     });
   }
   async saveSRSState(state: SRSState): Promise<void> {
@@ -45,7 +45,7 @@ export class LocalStorage implements DataService {
   }
 
   async getPrefs(): Promise<UserPrefs> {
-    return get<UserPrefs>(KEYS.prefs, { theme: 'paper', font: 'editorial-warm' });
+    return get<UserPrefs>(KEYS.prefs, { theme: 'paper', font: 'editorial-warm', hskLevel: 3 });
   }
   async savePrefs(prefs: UserPrefs): Promise<void> {
     set(KEYS.prefs, prefs);
