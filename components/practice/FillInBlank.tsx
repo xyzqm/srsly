@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { DeckWord } from '@/lib/types';
 import type { FillItem } from '@/lib/types';
 import { FILL_ITEMS } from '@/lib/data/fill';
-import { speak } from '@/lib/speech';
+import { speak, speakWithBlank } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -54,14 +54,16 @@ export default function FillInBlank({ onDone, deck, onAddVocab, items }: Props) 
       <div key={itemsKey}>
         {activeItems.map((item, idx) => {
           const ans = answers[idx];
-          const fullText = item.before.map(t => t.text).join('') + item.answer[0] + item.after.map(t => t.text).join('');
+          const beforeText = item.before.map(t => t.text).join('');
+          const afterText  = item.after.map(t => t.text).join('');
+          const fullText   = beforeText + item.answer[0] + afterText;
 
           return (
             <div key={idx} className="rounded-xl px-5 py-5 mb-4" style={{ border: '1px solid var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, white), var(--card))' }}>
               {/* Sentence with blank */}
               <div className="flex items-start gap-3 mb-4">
                 <button
-                  onClick={() => speak(fullText)}
+                  onClick={() => ans ? speak(fullText) : speakWithBlank(beforeText, afterText)}
                   className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer mt-1"
                   style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
                 >

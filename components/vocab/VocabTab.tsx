@@ -7,6 +7,12 @@ import AddWordForm from './AddWordForm';
 
 const UNDO_DURATION_MS = 5000;
 
+// ─── Pending-undo union type ──────────────────────────────────────────────────
+
+type PendingUndo =
+  | { kind: 'single'; word: DeckWord }
+  | { kind: 'clear';  count: number };
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function sdm(m: string) {
@@ -108,31 +114,29 @@ function EditRow({ word, onSave, onCancel }: EditRowProps) {
   );
 }
 
-// ─── Undo toast ───────────────────────────────────────────────────────────────
+// ─── Inline undo bar ──────────────────────────────────────────────────────────
 
-interface UndoToastProps {
-  word: DeckWord;
+interface UndoBarProps {
+  pending: PendingUndo;
   onUndo: () => void;
   /** 0–1, drives the progress bar */
   progress: number;
 }
 
-function UndoToast({ word, onUndo, progress }: UndoToastProps) {
+function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
+  const label = pending.kind === 'clear'
+    ? `${pending.count} word${pending.count === 1 ? '' : 's'} cleared`
+    : `${pending.word.h} removed`;
+
   return (
     <div
-      className="flex items-center gap-3 rounded-xl px-4 py-3"
+      className="flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
       style={{
-        position: 'fixed',
-        bottom: 28,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: 'min(480px, calc(100vw - 32px))',
         background: 'var(--ink)',
         color: 'var(--paper)',
-        boxShadow: '0 8px 32px rgba(0,0,0,.28)',
-        animation: 'rise .2s cubic-bezier(.2,.8,.3,1)',
-        zIndex: 9000,
+        position: 'relative',
         overflow: 'hidden',
+        animation: 'rise .18s cubic-bezier(.2,.8,.3,1)',
       }}
     >
       {/* Progress bar draining across the bottom */}
@@ -146,12 +150,17 @@ function UndoToast({ word, onUndo, progress }: UndoToastProps) {
           borderRadius: 1,
         }}
       />
-
-      <span style={{ fontFamily: 'var(--f-han)', fontSize: 20, fontWeight: 'var(--han-weight)' as 'bold', opacity: 0.9 }}>
-        {word.h}
+      <span style={{
+        fontFamily: pending.kind === 'clear' ? 'var(--f-mono)' : 'var(--f-han)',
+        fontSize: pending.kind === 'clear' ? 13 : 20,
+        fontWeight: pending.kind === 'clear' ? 500 : ('var(--han-weight)' as 'bold'),
+        opacity: 0.9,
+        letterSpacing: pending.kind === 'clear' ? '.02em' : undefined,
+      }}>
+        {label}
       </span>
-      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, opacity: 0.55, flex: 1 }}>
-        removed from deck
+      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, opacity: 0.45, flex: 1 }}>
+        — undo?
       </span>
       <button
         onClick={onUndo}
@@ -173,24 +182,26 @@ function UndoToast({ word, onUndo, progress }: UndoToastProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VocabTab() {
-  const { deck, addWord, removeWord, updateWord } = useVocabDeck();
+  const { deck, addWord, removeWord, updateWord, clearDeck } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
-  // ── Undo state ──────────────────────────────────────────────────────────────
-  // `pendingRemoval`: the word soft-deleted from the UI but not yet removed from storage.
-  const [pendingRemoval, setPendingRemoval] = useState<DeckWord | null>(null);
+  // ── Unified undo state ──────────────────────────────────────────────────────
+  const [pendingUndo, setPendingUndo] = useState<PendingUndo | null>(null);
   const [undoProgress, setUndoProgress] = useState(1); // 1 = full, 0 = expired
-  const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rafRef      = useRef<number | null>(null);
+  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef       = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
-  // Always-fresh reference to removeWord so the timeout closure doesn't go stale
-  const removeWordRef = useRef(removeWord);
-  useEffect(() => { removeWordRef.current = removeWord; }, [removeWord]);
 
-  // Drain the progress bar each animation frame while a removal is pending
+  // Keep fresh refs so timer closures never go stale
+  const removeWordRef = useRef(removeWord);
+  const clearDeckRef  = useRef(clearDeck);
+  useEffect(() => { removeWordRef.current = removeWord; }, [removeWord]);
+  useEffect(() => { clearDeckRef.current  = clearDeck;  }, [clearDeck]);
+
+  // Drain the progress bar each animation frame while an undo is pending
   useEffect(() => {
-    if (!pendingRemoval) { setUndoProgress(1); return; }
+    if (!pendingUndo) { setUndoProgress(1); return; }
     startTimeRef.current = performance.now();
     setUndoProgress(1);
 
@@ -202,54 +213,63 @@ export default function VocabTab() {
     }
     rafRef.current = requestAnimationFrame(tick);
     return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
-  }, [pendingRemoval]);
+  }, [pendingUndo]);
 
-  /** Actually commit the pending deletion to storage. */
-  const commitRemoval = useCallback((word: DeckWord) => {
-    // Find by hanzi — works even if deck shifted (words added/removed elsewhere)
-    const idx = (deck).findIndex(w => w.h === word.h);
-    if (idx !== -1) removeWordRef.current(idx);
+  /** Commit whatever is pending to storage, then clear pending state. */
+  const commitPending = useCallback((pending: PendingUndo) => {
+    if (pending.kind === 'single') {
+      const idx = deck.findIndex(w => w.h === pending.word.h);
+      if (idx !== -1) removeWordRef.current(idx);
+    } else {
+      clearDeckRef.current();
+    }
   }, [deck]);
 
-  const handleRemove = useCallback((word: DeckWord) => {
-    // If there's already a pending removal, commit it immediately before starting a new one
+  /** Start a new undo window, committing any previous pending action first. */
+  const startUndo = useCallback((next: PendingUndo) => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
-      if (pendingRemoval) commitRemoval(pendingRemoval);
+      if (pendingUndo) commitPending(pendingUndo);
     }
-
-    setPendingRemoval(word);
-    // Cancel any in-progress edit
+    setPendingUndo(next);
     setEditingIdx(null);
-
     timerRef.current = setTimeout(() => {
-      commitRemoval(word);
-      setPendingRemoval(null);
+      commitPending(next);
+      setPendingUndo(null);
       timerRef.current = null;
     }, UNDO_DURATION_MS);
-  }, [pendingRemoval, commitRemoval]);
+  }, [pendingUndo, commitPending]);
 
   const handleUndo = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    setPendingRemoval(null);
+    setPendingUndo(null);
   }, []);
+
+  const handleRemove  = useCallback((word: DeckWord) => startUndo({ kind: 'single', word }), [startUndo]);
+  const handleClearAll = useCallback(() => {
+    const count = deck.length;
+    if (count === 0) return;
+    if (!window.confirm(`Remove all ${count} words from your deck? You'll have 5 seconds to undo.`)) return;
+    startUndo({ kind: 'clear', count });
+  }, [deck.length, startUndo]);
 
   // Clean up timer on unmount
   useEffect(() => () => {
     if (timerRef.current !== null) clearTimeout(timerRef.current);
   }, []);
 
-  // ── Display deck (hide the pending removal) ────────────────────────────────
-  const displayDeck = useMemo(
-    () => pendingRemoval ? deck.filter(w => w.h !== pendingRemoval.h) : deck,
-    [deck, pendingRemoval],
-  );
+  // ── Display deck ────────────────────────────────────────────────────────────
+  const displayDeck = useMemo(() => {
+    if (!pendingUndo) return deck;
+    if (pendingUndo.kind === 'single') return deck.filter(w => w.h !== pendingUndo.word.h);
+    return []; // pending clear — show empty
+  }, [deck, pendingUndo]);
 
-  // ── Other handlers ─────────────────────────────────────────────────────────
+  // ── Other handlers ──────────────────────────────────────────────────────────
   function handleAdd(word: DeckWord) {
     addWord(word);
     setShowAdd(false);
@@ -266,6 +286,9 @@ export default function VocabTab() {
     borderRadius: 7, padding: '5px 11px', cursor: 'pointer',
   };
 
+  // Show clear button only when there are words and no full-deck clear is pending
+  const showClearBtn = !showAdd && deck.length > 0 && pendingUndo?.kind !== 'clear';
+
   return (
     <div
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
@@ -281,19 +304,36 @@ export default function VocabTab() {
             {displayDeck.length} word{displayDeck.length === 1 ? '' : 's'} in your deck
           </p>
         </div>
-        {!showAdd && (
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 cursor-pointer transition-all duration-150"
-            style={{
-              fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-              background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-              padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
-            }}
-          >
-            + Add word
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {showClearBtn && (
+            <button
+              onClick={handleClearAll}
+              className="cursor-pointer transition-all duration-150"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
+                background: 'none', color: 'var(--ink-faint)', border: '1px solid var(--line)', borderRadius: 8,
+                padding: '11px 16px',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-faint)'; }}
+            >
+              Clear all
+            </button>
+          )}
+          {!showAdd && (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-2 cursor-pointer transition-all duration-150"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+              }}
+            >
+              + Add word
+            </button>
+          )}
+        </div>
       </div>
 
       {showAdd && (
@@ -301,7 +341,16 @@ export default function VocabTab() {
       )}
 
       <div style={{ borderTop: '1px solid var(--line-soft)' }}>
-        {displayDeck.map((w, i) => {
+        {/* Inline undo bar — appears at the top of the list, never covers other rows */}
+        {pendingUndo && (
+          <UndoBar
+            pending={pendingUndo}
+            onUndo={handleUndo}
+            progress={undoProgress}
+          />
+        )}
+
+        {displayDeck.map((w) => {
           // Map display index back to real deck index for editing/saving
           const realIdx = deck.findIndex(d => d.h === w.h);
           return (
@@ -352,21 +401,12 @@ export default function VocabTab() {
           );
         })}
 
-        {displayDeck.length === 0 && !pendingRemoval && (
+        {displayDeck.length === 0 && !pendingUndo && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
             Your deck is empty. Add words from the Read tab or above.
           </p>
         )}
       </div>
-
-      {/* Undo toast */}
-      {pendingRemoval && (
-        <UndoToast
-          word={pendingRemoval}
-          onUndo={handleUndo}
-          progress={undoProgress}
-        />
-      )}
     </div>
   );
 }

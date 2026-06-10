@@ -32,7 +32,7 @@ export default function StatsTab({ onNavigateRead }: Props) {
         className="grid mt-8 overflow-hidden rounded-[11px]"
         style={{ gridTemplateColumns: '1.6fr 1fr 1fr', gap: 1, background: 'var(--line-soft)', border: '1px solid var(--line)' }}
       >
-        <div className="px-5 py-5" style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 50%, white), var(--card))' }}>
+        <div className="px-5 py-5" style={{ background: 'var(--paper-2)' }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Words in deck</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
             {deck.length} <small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>total</small>

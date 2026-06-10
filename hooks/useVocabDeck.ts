@@ -38,5 +38,10 @@ export function useVocabDeck() {
     await storage.saveVocabDeck(next);
   }, [deck]);
 
-  return { deck, addWord, removeWord, updateWordReview, updateWord };
+  const clearDeck = useCallback(async () => {
+    setDeck([]);
+    await storage.saveVocabDeck([]);
+  }, []);
+
+  return { deck, addWord, removeWord, updateWordReview, updateWord, clearDeck };
 }
