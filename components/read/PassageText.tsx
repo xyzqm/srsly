@@ -8,7 +8,7 @@ import { storage } from '@/lib/storage';
 interface Props {
   sentences: Sentence[];
   activeSentenceIdx: number;
-  showPinyin: boolean;
+  showPinyin?: boolean;
   audioOnly: boolean;
   peeked: Set<string>;
   onPeek: (word: string) => void;
@@ -16,20 +16,18 @@ interface Props {
   onAddToDeck: (word: DeckWord) => void;
 }
 
-function TokenEl({ token, peeked, isReviewWord, isClaimed, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
-  isClaimed: boolean;
+  claimKind: 'vocab' | 'tomorrow' | null;
   onClick: (e: React.MouseEvent, token: PassageToken) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const isFree = token.type === 'free';
-  const isPunct = token.type === 'punct' || (!token.type);
+  // Non-interactive only when there's no pinyin to show (true punctuation / no data)
+  if (!token.pinyin) return <span>{token.text}</span>;
 
-  if (isPunct) return <span>{token.text}</span>;
-
-  const isInteractive = !isClaimed && !isReviewWord;
+  const isClaimed = claimKind !== null;
 
   return (
     <ruby
@@ -42,26 +40,31 @@ function TokenEl({ token, peeked, isReviewWord, isClaimed, onClick }: {
           ? peeked
             ? '2px solid var(--accent)'
             : '1.5px dotted var(--accent)'
-          : isClaimed
+          : claimKind === 'vocab'
             ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-            : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
+            : claimKind === 'tomorrow'
+              ? '1.5px solid color-mix(in srgb, var(--gold) 80%, transparent)'
+              : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
         color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
         paddingBottom: 1,
-        background: hovered && isInteractive
+        background: hovered
           ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
           : 'transparent',
         borderRadius: 3,
-        cursor: isClaimed ? 'default' : 'pointer',
+        cursor: 'pointer',
       }}
     >
       {token.text}
       {peeked && isReviewWord && (
         <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--accent)', marginLeft: 1, fontWeight: 600 }}>↺</span>
       )}
-      {isClaimed && (
+      {claimKind === 'vocab' && (
         <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--jade)', marginLeft: 1, fontWeight: 600 }}>+</span>
       )}
-      {/* suppress unused var warning */ isFree && false && null}
+      {claimKind === 'tomorrow' && (
+        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--gold)', marginLeft: 1, fontWeight: 600 }}>▸</span>
+      )}
+      {/* suppress unused var warning */ isClaimed && false && null}
       <rt>{token.pinyin}</rt>
     </ruby>
   );
@@ -69,36 +72,41 @@ function TokenEl({ token, peeked, isReviewWord, isClaimed, onClick }: {
 
 export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, onAddToDeck }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
-  // Session-local claimed tracking (words added/learned this session)
-  const [claimed, setClaimed] = useState<Set<string>>(new Set());
+  // Session-local claimed tracking: maps word → 'vocab' | 'tomorrow'
+  const [claimType, setClaimType] = useState<Map<string, 'vocab' | 'tomorrow'>>(new Map());
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken) => {
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
-    if (!token.type || token.type === 'punct') return;
+    // Skip true punctuation and words with no pinyin data
+    if (!token.pinyin || token.type === 'punct') return;
 
-    const isReviewWord = token.type === 'vocab' && deckWords.has(token.text);
+    const isClaimed = claimType.has(token.text);
+    // Priority: claimed this session > SRS review word
+    const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
 
-    // Claimed this session: no action
-    if (claimed.has(token.text) && !isReviewWord) return;
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const el = e.currentTarget as HTMLElement;
+    const rects = el.getClientRects();
+    const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     if (isReviewWord) {
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'vocab', anchorRect: rect });
+    } else if (isClaimed) {
+      const kind = claimType.get(token.text);
+      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else {
       setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'free', anchorRect: rect });
     }
-  }, [claimed, onPeek, deckWords]);
+  }, [claimType, onPeek, deckWords]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     // Persist to claimed words storage
     const c = await storage.getClaimedWords();
     const updated = { ...c, vocab: [...new Set([...c.vocab, word])] };
     await storage.saveClaimedWords(updated);
-    // Mark locally
-    setClaimed(prev => new Set([...prev, word]));
+    // Mark locally as vocab-claimed
+    setClaimType(prev => new Map([...prev, [word, 'vocab']]));
     // Add to user's vocab deck
     onAddToDeck({ h: word, p: pinyin, m: meaning });
   }, [onAddToDeck]);
@@ -107,7 +115,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const c = await storage.getClaimedWords();
     const updated = { ...c, tomorrow: [...new Set([...c.tomorrow, word])] };
     await storage.saveClaimedWords(updated);
-    setClaimed(prev => new Set([...prev, word]));
+    // Mark locally as tomorrow-claimed
+    setClaimType(prev => new Map([...prev, [word, 'tomorrow']]));
   }, []);
 
   return (
@@ -121,17 +130,26 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
             Listening mode
           </div>
-          <div className="flex items-end gap-1.5" style={{ height: 60 }}>
-            {[18, 60, 90, 45, 75, 30, 60].map((h, i) => (
+          <div className="flex items-end gap-1.5" style={{ height: 56 }}>
+            {([
+              { h: 30, dur: '0.85s', delay: '0s'    },
+              { h: 70, dur: '1.3s',  delay: '0.18s' },
+              { h: 95, dur: '0.72s', delay: '0.07s' },
+              { h: 50, dur: '1.1s',  delay: '0.34s' },
+              { h: 80, dur: '0.92s', delay: '0.12s' },
+              { h: 40, dur: '1.45s', delay: '0.28s' },
+              { h: 62, dur: '0.78s', delay: '0.22s' },
+            ] as const).map(({ h, dur, delay }, i) => (
               <span
                 key={i}
                 className="block w-[5px] rounded-[3px]"
                 style={{
                   height: `${h}%`,
                   background: 'var(--accent)',
-                  opacity: .55,
-                  animation: `wave 1.1s ease-in-out infinite`,
-                  animationDelay: `${i * 0.1}s`,
+                  opacity: 0.6,
+                  transformOrigin: 'center bottom',
+                  animation: `wave ${dur} ease-in-out infinite`,
+                  animationDelay: delay,
                 }}
               />
             ))}
@@ -167,15 +185,17 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                const isReviewWord = token.type === 'vocab' && deckWords.has(token.text);
-                const isClaimed = !isReviewWord && claimed.has(token.text);
+                const isClaimed = claimType.has(token.text);
+                // Claimed this session takes priority over SRS review
+                const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
+                const claimKind = claimType.get(token.text) ?? null;
                 return (
                   <TokenEl
                     key={ti}
                     token={token}
                     peeked={peeked.has(token.text) && isReviewWord}
                     isReviewWord={isReviewWord}
-                    isClaimed={isClaimed}
+                    claimKind={claimKind}
                     onClick={handleTokenClick}
                   />
                 );

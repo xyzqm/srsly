@@ -1,7 +1,9 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { PracticeMode } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { useDailyContent } from '@/hooks/useDailyContent';
+import { storage } from '@/lib/storage';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -15,9 +17,26 @@ const MODES: { id: PracticeMode; label: string }[] = [
 interface Props { onScore: (score: number) => void; }
 
 export default function ExtrasTab({ onScore }: Props) {
-  const { deck, updateWordReview } = useVocabDeck();
+  const { deck, addWord, updateWordReview } = useVocabDeck();
   const [mode, setMode] = useState<PracticeMode>('flash');
-  const [showPinyin, setShowPinyin] = useState(false);
+
+  // HSK level (needed to key daily content per level)
+  const [hskLevel, setHskLevel] = useState(4);
+  useEffect(() => {
+    storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
+  }, []);
+
+  // Daily AI-generated content
+  const { dailyContent } = useDailyContent(hskLevel, deck);
+
+  const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
+    addWord({ h: word, p: pinyin, m: meaning });
+  }, [addWord]);
+
+  // Stable key for the Conversation so it remounts when turns change
+  const convoKey = dailyContent
+    ? `ai-${dailyContent.date}-${hskLevel}`
+    : `static-${hskLevel}`;
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -38,25 +57,26 @@ export default function ExtrasTab({ onScore }: Props) {
         {MODES.map(m => (
           <button key={m.id} onClick={() => setMode(m.id)} style={toggleStyle(mode === m.id)}>{m.label}</button>
         ))}
-        {mode !== 'convo' && (
-          <button
-            onClick={() => setShowPinyin(v => !v)}
-            style={{
-              ...toggleStyle(showPinyin),
-              marginLeft: 4,
-              background: showPinyin ? 'var(--ink)' : 'none',
-              color: showPinyin ? 'var(--paper)' : 'var(--ink-soft)',
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-            }}
-          >
-            <span style={{ fontFamily: 'var(--f-han)', fontSize: 13 }}>拼</span> Pinyin
-          </button>
-        )}
       </div>
 
       {mode === 'flash' && <Flashcards deck={deck} onDone={() => setMode('fill')} onGrade={updateWordReview} />}
-      {mode === 'fill'  && <FillInBlank onDone={() => setMode('convo')} showPinyin={showPinyin} deck={deck} />}
-      {mode === 'convo' && <Conversation showPinyin={showPinyin} onScore={onScore} deck={deck} />}
+      {mode === 'fill'  && (
+        <FillInBlank
+          onDone={() => setMode('convo')}
+          deck={deck}
+          onAddVocab={handleAddVocab}
+          items={dailyContent?.fillItems}
+        />
+      )}
+      {mode === 'convo' && (
+        <Conversation
+          key={convoKey}
+          onScore={onScore}
+          deck={deck}
+          onAddVocab={handleAddVocab}
+          turns={dailyContent?.conversation}
+        />
+      )}
     </div>
   );
 }

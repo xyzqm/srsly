@@ -1,35 +1,29 @@
 'use client';
 import { useState } from 'react';
-import type { Question as Q, FRResponse, ResponseMode, PassageToken } from '@/lib/types';
+import type { Question as Q, FRResponse, ResponseMode } from '@/lib/types';
 import { speak } from '@/lib/speech';
-
-function renderTokens(tokens: PassageToken[], showPinyin: boolean) {
-  return tokens.map((t, i) => {
-    if (!t.pinyin) return <span key={i}>{t.text}</span>;
-    return (
-      <ruby key={i}>
-        {t.text}
-        {showPinyin && <rt>{t.pinyin}</rt>}
-      </ruby>
-    );
-  });
-}
+import ClickableWord from '@/components/shared/ClickableWord';
+import WordPopup from './WordPopup';
+import { useWordPopup } from '@/hooks/useWordPopup';
 
 interface Props {
   question: Q;
   index: number;
   mode: ResponseMode;
-  showPinyin: boolean;
   savedResponse?: FRResponse;
   onSave: (r: FRResponse) => void;
+  onAddVocab: (word: string, pinyin: string, meaning: string) => void;
 }
 
-export default function QuestionComponent({ question, index, mode, showPinyin, savedResponse, onSave }: Props) {
+export default function QuestionComponent({ question, index, mode, savedResponse, onSave, onAddVocab }: Props) {
   const [mcDone, setMcDone] = useState(false);
   const [mcRight, setMcRight] = useState<boolean | null>(null);
+  const [selectedOi, setSelectedOi] = useState<number | null>(null);
   const [frText, setFrText] = useState(savedResponse?.text || '');
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
   const [loading, setLoading] = useState(false);
+
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
 
   const questionText = question.q.map(t => t.text).join('');
 
@@ -84,7 +78,9 @@ export default function QuestionComponent({ question, index, mode, showPinyin, s
           <span style={{ fontFamily: 'var(--f-mono)', color: 'var(--accent)', marginRight: 8, fontSize: 14, fontWeight: 500 }}>
             {index + 1}.
           </span>
-          {renderTokens(question.q, showPinyin)}
+          {question.q.map((t, i) => (
+            <ClickableWord key={i} token={t} onOpen={openPopup} />
+          ))}
         </div>
       </div>
 
@@ -92,34 +88,55 @@ export default function QuestionComponent({ question, index, mode, showPinyin, s
       {mode === 'mc' && (
         <div className="flex flex-col gap-2 pl-10">
           {question.options.map((opt, oi) => {
-            const isSelected = mcDone;
-            const showCorrect = isSelected && opt.correct;
-            const showWrong = isSelected && !opt.correct && mcRight === false;
+            const showCorrect = mcDone && opt.correct;
+            const isWrongSelected = mcDone && !opt.correct && selectedOi === oi;
+
             return (
-              <div key={oi} className="flex items-center gap-2">
+              <div key={oi} className="flex items-center gap-3">
+                {/* Radio circle — clicking this submits the answer */}
                 <button
                   onClick={() => {
                     if (mcDone) return;
                     setMcDone(true);
                     setMcRight(opt.correct);
+                    setSelectedOi(oi);
                   }}
                   disabled={mcDone}
-                  className="flex-1 text-left rounded-[9px] px-4 py-3 cursor-pointer transition-all duration-150 disabled:cursor-default"
+                  className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer disabled:cursor-default"
+                  style={{
+                    border: `2px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
+                    background: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'transparent',
+                    flexShrink: 0,
+                  }}
+                  title={mcDone ? undefined : 'Select this answer'}
+                >
+                  {showCorrect && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                  {isWrongSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
+                </button>
+
+                {/* Option text — tokens are individually clickable */}
+                <div
+                  className="flex-1 rounded-[9px] px-4 py-3"
                   style={{
                     fontFamily: 'var(--f-han)', fontSize: 16, lineHeight: 1.7,
                     fontWeight: 'var(--han-weight)' as 'bold',
-                    background: showCorrect ? 'var(--jade-soft)' : showWrong ? 'var(--accent-soft)' : 'var(--paper-2)',
-                    border: showCorrect ? '1px solid var(--jade)' : showWrong ? '1px solid var(--accent)' : '1px solid var(--line)',
-                    color: showCorrect ? 'var(--jade)' : showWrong ? 'var(--accent)' : 'var(--ink)',
+                    background: showCorrect ? 'var(--jade-soft)' : isWrongSelected ? 'var(--accent-soft)' : 'var(--paper-2)',
+                    border: `1px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
+                    color: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--ink)',
                   }}
                 >
-                  {renderTokens(opt.tokens, showPinyin)}
-                  {showCorrect && <span style={{ fontFamily: 'var(--f-mono)', fontSize: 13, float: 'right' }}>✓</span>}
-                  {showWrong && <span style={{ fontFamily: 'var(--f-mono)', fontSize: 13, float: 'right' }}>✗</span>}
-                </button>
+                  {opt.tokens.map((t, ti) => (
+                    <ClickableWord key={ti} token={t} onOpen={openPopup} />
+                  ))}
+                </div>
               </div>
             );
           })}
+          {mcDone && mcRight !== null && (
+            <div className="pl-8 mt-1 text-[12.5px]" style={{ color: mcRight ? 'var(--jade)' : 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
+              {mcRight ? 'Correct.' : 'Not quite — the correct answer is highlighted above.'}
+            </div>
+          )}
         </div>
       )}
 
@@ -185,6 +202,13 @@ export default function QuestionComponent({ question, index, mode, showPinyin, s
           )}
         </div>
       )}
+
+      <WordPopup
+        data={popup}
+        onClose={closePopup}
+        onAddVocab={handleAddVocab}
+        onLearnTomorrow={handleLearnTomorrow}
+      />
     </div>
   );
 }

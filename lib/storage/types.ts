@@ -1,4 +1,4 @@
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
 
 export interface DataService {
   getVocabDeck(): Promise<DeckWord[]>;
@@ -12,4 +12,7 @@ export interface DataService {
 
   getClaimedWords(): Promise<ClaimedWords>;
   saveClaimedWords(claimed: ClaimedWords): Promise<void>;
+
+  getDailyContent(hskLevel: number): Promise<DailyContent | null>;
+  saveDailyContent(content: DailyContent): Promise<void>;
 }

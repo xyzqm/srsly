@@ -1,19 +1,18 @@
 'use client';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { ResponseMode, FRResponse, DeckWord } from '@/lib/types';
-import { SENTENCES } from '@/lib/data/passage';
-import { QUESTIONS } from '@/lib/data/questions';
+import { getPassageData } from '@/lib/data/allPassages';
+import { storage } from '@/lib/storage';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { useWordPopup } from '@/hooks/useWordPopup';
+import { useDailyContent } from '@/hooks/useDailyContent';
+import ClickableWord from '@/components/shared/ClickableWord';
+import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
-
-// All vocab-type token texts in the passage (static)
-const PASSAGE_VOCAB_SET = new Set(
-  SENTENCES.flatMap(s => s.tokens.filter(t => t.type === 'vocab').map(t => t.text))
-);
 
 interface Props {
   onScore: (score: number) => void;
@@ -22,16 +21,41 @@ interface Props {
 
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const { deck, addWord } = useVocabDeck();
+
+  // Load HSK level from prefs
+  const [hskLevel, setHskLevel] = useState(4);
+  useEffect(() => {
+    storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
+  }, []);
+
+  // Static passage data for this level (always loaded; used as fallback)
+  const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
+
+  // AI-generated daily content (null when unavailable → fall back to static)
+  const { dailyContent, status: dailyStatus, regenerate } = useDailyContent(hskLevel, deck);
+
+  // Active content: daily when ready, static otherwise
+  const SENTENCES    = dailyContent?.sentences    ?? passageData.sentences;
+  const TITLE_TOKENS = dailyContent?.titleTokens  ?? passageData.titleTokens;
+  const QUESTIONS    = passageData.questions; // comprehension questions stay static
+  const charCount    = dailyContent
+    ? dailyContent.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
+    : passageData.charCount;
+
+  // Vocab set for review-word highlighting
+  const PASSAGE_VOCAB_SET = useMemo(
+    () => dailyContent ? new Set(dailyContent.vocabWords) : passageData.vocabSet,
+    [dailyContent, passageData.vocabSet]
+  );
+
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
-  // Words that are both in the user's deck and appear as vocab tokens in the passage
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
-    [deck]
+    [deck, PASSAGE_VOCAB_SET]
   );
   const reviewWordCount = targetWords.length;
 
   const [activeSentence, setActiveSentence] = useState(0);
-  const [showPinyin, setShowPinyin] = useState(false);
   const [audioOnly, setAudioOnly] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
   const [peeked, setPeeked] = useState<Set<string>>(new Set());
@@ -41,6 +65,28 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const [showResults, setShowResults] = useState(false);
   const [resultsBuilt, setResultsBuilt] = useState(false);
   const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
+
+  // Reset reading state whenever the level changes
+  useEffect(() => {
+    setActiveSentence(0);
+    setPeeked(new Set());
+    setFrResponses({});
+    setShowResults(false);
+    setResultsBuilt(false);
+    setVocabResults([]);
+  }, [hskLevel]);
+
+  // Also reset when daily content arrives so sentence index doesn't go out of bounds
+  useEffect(() => {
+    setActiveSentence(0);
+  }, [dailyContent]);
+
+  // Title popup
+  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning }));
+
+  const handleAddVocabQuestion = useCallback((word: string, pinyin: string, meaning: string) => {
+    addWord({ h: word, p: pinyin, m: meaning });
+  }, [addWord]);
 
   const handlePeek = useCallback((word: string) => {
     setPeeked(prev => new Set([...prev, word]));
@@ -78,7 +124,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck]);
+  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck, QUESTIONS]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -94,20 +140,45 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
-      {/* Title */}
+      {/* Title row */}
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {reviewWordCount > 0
               ? `Today's passage · ${reviewWordCount} review word${reviewWordCount === 1 ? '' : 's'}`
               : "Today's passage · add words to your deck to track them here"}
+            {/* Status badge */}
+            {dailyStatus === 'ready' && dailyContent && (
+              <span style={{ fontSize: 9, letterSpacing: '.06em', background: 'var(--jade-soft)', color: 'var(--jade)', border: '1px solid color-mix(in srgb, var(--jade) 30%, transparent)', borderRadius: 4, padding: '1px 5px' }}>
+                ✦ AI · {dailyContent.date}
+              </span>
+            )}
+            {dailyStatus === 'loading' && (
+              <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--ink-faint)', opacity: 0.6 }}>
+                generating…
+              </span>
+            )}
+            {(dailyStatus === 'error' || dailyStatus === 'no-key') && (
+              <button
+                onClick={regenerate}
+                style={{ fontSize: 9, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontFamily: 'var(--f-mono)' }}
+                title={dailyStatus === 'no-key' ? 'Add ANTHROPIC_API_KEY to .env.local' : 'Retry generation'}
+              >
+                {dailyStatus === 'no-key' ? '⚠ no API key' : '↺ retry'}
+              </button>
+            )}
           </div>
+          {/* Clickable title */}
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
-            城市里的<span style={{ fontFamily: 'var(--f-han)' }}>环境</span>
+            <span style={{ fontFamily: 'var(--f-han)' }}>
+              {TITLE_TOKENS.map((t, i) => (
+                <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} />
+              ))}
+            </span>
           </div>
         </div>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-          level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>HSK 4</span> · ~120 字
+          level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>HSK {hskLevel}</span> · ~{charCount} 字
         </div>
       </div>
 
@@ -118,9 +189,6 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
           <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
             🎧 Audio only
           </button>
-          <button style={toggleStyle(showPinyin)} onClick={() => setShowPinyin(v => !v)}>
-            <span style={{ fontFamily: 'var(--f-han)', fontSize: 13 }}>拼</span> Pinyin
-          </button>
         </div>
       </div>
 
@@ -128,7 +196,6 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       <PassageText
         sentences={SENTENCES}
         activeSentenceIdx={activeSentence}
-        showPinyin={showPinyin}
         audioOnly={audioOnly}
         peeked={peeked}
         onPeek={handlePeek}
@@ -148,7 +215,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       {/* Questions header */}
       <div className="flex justify-between items-center flex-wrap gap-2.5 mb-4">
         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          Reading comprehension · 5 questions
+          Reading comprehension · {QUESTIONS.length} questions
         </span>
         <div className="flex gap-1.5">
           <button style={toggleStyle(responseMode === 'fr')} onClick={() => setResponseMode('fr')}>Free response</button>
@@ -160,13 +227,13 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       <div>
         {QUESTIONS.map((q, i) => (
           <Question
-            key={`${i}-${responseMode}`}
+            key={`${hskLevel}-${i}-${responseMode}`}
             question={q}
             index={i}
             mode={responseMode}
-            showPinyin={showPinyin}
             savedResponse={frResponses[i]}
             onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
+            onAddVocab={handleAddVocabQuestion}
           />
         ))}
       </div>
@@ -199,6 +266,14 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
 
       {/* Vocab results */}
       {showResults && <VocabResults results={vocabResults} />}
+
+      {/* Title popup */}
+      <WordPopup
+        data={titlePopup.popup}
+        onClose={titlePopup.closePopup}
+        onAddVocab={titlePopup.handleAddVocab}
+        onLearnTomorrow={titlePopup.handleLearnTomorrow}
+      />
     </div>
   );
 }

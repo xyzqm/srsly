@@ -1,5 +1,5 @@
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
 
 const KEYS = {
   vocab: 'srsly-vocab-deck',
@@ -56,5 +56,23 @@ export class LocalStorage implements DataService {
   }
   async saveClaimedWords(claimed: ClaimedWords): Promise<void> {
     set(KEYS.claimed, claimed);
+  }
+
+  async getDailyContent(hskLevel: number): Promise<DailyContent | null> {
+    const today = new Date().toISOString().slice(0, 10);
+    return get<DailyContent | null>(`srsly-daily-${hskLevel}-${today}`, null);
+  }
+  async saveDailyContent(content: DailyContent): Promise<void> {
+    const key = `srsly-daily-${content.hskLevel}-${content.date}`;
+    set(key, content);
+    // Prune stale entries (keep only today's)
+    const today = content.date;
+    for (let lvl = 1; lvl <= 6; lvl++) {
+      for (let offset = 1; offset <= 7; offset++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - offset);
+        localStorage.removeItem(`srsly-daily-${lvl}-${d.toISOString().slice(0, 10)}`);
+      }
+    }
   }
 }

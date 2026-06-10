@@ -89,11 +89,10 @@ export default function SettingsTab() {
         })}
       </div>
 
-      {saved && (
-        <div className="mt-5" style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--jade)', letterSpacing: '.06em' }}>
-          Saved.
-        </div>
-      )}
+      {/* Always reserve space so the card never resizes — just toggle visibility */}
+      <div className="mt-5" style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--jade)', letterSpacing: '.06em', visibility: saved ? 'visible' : 'hidden', transition: 'opacity .2s', opacity: saved ? 1 : 0 }}>
+        Saved.
+      </div>
     </div>
   );
 }

@@ -20,6 +20,12 @@ function pickEmoji(streak: number, daysSince: number, todayScore: number, scoreF
   return { emoji: '🤔', tip: 'New day — what are we learning?' };
 }
 
+function yesterday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function useSRS() {
   const [emojiState, setEmojiState] = useState<EmojiState>({ emoji: '🤔', tip: '' });
   const [streak, setStreak] = useState(0);
@@ -27,38 +33,66 @@ export function useSRS() {
 
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10);
+    const yest = yesterday();
+
     storage.getSRSState().then(state => {
-      let { streak: s, lastVisit, todayScore, todayScoreDate } = state;
-      let daysSince = 0;
+      const { streak: s, lastVisit, todayScore, todayScoreDate } = state;
 
-      if (lastVisit && lastVisit !== today) {
-        const diff = new Date(today).getTime() - new Date(lastVisit).getTime();
-        daysSince = Math.floor(diff / 86400000);
-      }
-
-      if (!lastVisit) {
+      // Update lastVisit without touching streak (streak only changes on recordScore)
+      if (!lastVisit || lastVisit !== today) {
         storage.saveSRSState({ ...state, lastVisit: today });
-      } else if (lastVisit !== today) {
-        const newStreak = daysSince === 1 ? s + 1 : 1;
-        s = newStreak;
-        storage.saveSRSState({ ...state, streak: newStreak, lastVisit: today });
       }
 
-      setStreak(s);
+      // Displayed streak: valid only if user completed reading today or yesterday
+      // If they skipped days (last score > 1 day ago), show 0
+      const displayStreak =
+        todayScoreDate === today || todayScoreDate === yest ? s : 0;
+
+      setStreak(displayStreak);
       setSessions(state.sessions ?? 0);
+
+      // daysSince last visit (for emoji)
+      let daysSince = 0;
+      if (lastVisit && lastVisit !== today) {
+        daysSince = Math.floor(
+          (new Date(today).getTime() - new Date(lastVisit).getTime()) / 86400000
+        );
+      }
+
       const scoreFresh = todayScoreDate === today && todayScore >= 0;
-      setEmojiState(pickEmoji(s, daysSince, todayScore, scoreFresh));
+      setEmojiState(pickEmoji(displayStreak, daysSince, todayScore, scoreFresh));
     });
   }, []);
 
   const recordScore = useCallback(async (score: number) => {
     const today = new Date().toISOString().slice(0, 10);
+    const yest = yesterday();
     const state = await storage.getSRSState();
+
+    let newStreak: number;
+    if (state.todayScoreDate === today) {
+      // Already recorded a score today — don't increment again
+      newStreak = state.streak;
+    } else if (state.todayScoreDate === yest) {
+      // Did reading yesterday and again today → extend streak
+      newStreak = state.streak + 1;
+    } else {
+      // Missed one or more days, or first time ever → reset to 1
+      newStreak = 1;
+    }
+
     const newSessions = (state.sessions ?? 0) + 1;
-    const updated = { ...state, todayScore: score, todayScoreDate: today, sessions: newSessions };
+    const updated = {
+      ...state,
+      streak: newStreak,
+      todayScore: score,
+      todayScoreDate: today,
+      sessions: newSessions,
+    };
     await storage.saveSRSState(updated);
     setSessions(newSessions);
-    setEmojiState(pickEmoji(updated.streak, 0, score, true));
+    setStreak(newStreak);
+    setEmojiState(pickEmoji(newStreak, 0, score, true));
   }, []);
 
   return { ...emojiState, recordScore, streak, sessions };

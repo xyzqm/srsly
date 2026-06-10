@@ -70,6 +70,17 @@ export type ResponseMode = 'fr' | 'mc';
 export type TabId = 'read' | 'practice' | 'dash' | 'vocab' | 'settings';
 export type PracticeMode = 'flash' | 'fill' | 'convo';
 
+/** AI-generated daily practice content, cached in localStorage per day+level. */
+export interface DailyContent {
+  date: string;          // YYYY-MM-DD
+  hskLevel: number;
+  titleTokens: PassageToken[];
+  sentences: Sentence[];
+  vocabWords: string[];  // hanzi of the target due words
+  fillItems: FillItem[];
+  conversation: ConvoTurn[];
+}
+
 export interface FRResponse {
   text: string;
   verdict: 'ok' | 'partial' | 'miss';

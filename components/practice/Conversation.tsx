@@ -1,33 +1,44 @@
 'use client';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import type { PassageToken, DeckWord } from '@/lib/types';
+import type { DeckWord, ConvoTurn } from '@/lib/types';
 import { CONVO } from '@/lib/data/conversation';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
+import { useWordPopup } from '@/hooks/useWordPopup';
+import ClickableWord from '@/components/shared/ClickableWord';
+import WordPopup from '@/components/read/WordPopup';
 import ConvoReport from './ConvoReport';
 
-function renderTokens(tokens: PassageToken[], showPinyin: boolean) {
-  return tokens.map((t, i) => {
-    if (!t.pinyin) return <span key={i}>{t.text}</span>;
-    return <ruby key={i}>{t.text}{showPinyin && <rt>{t.pinyin}</rt>}</ruby>;
-  });
+interface ChatMessage {
+  side: 'tutor' | 'me';
+  html: React.ReactNode;
+  audioText?: string; // for audio-only mode
 }
-
-interface ChatMessage { side: 'tutor' | 'me'; html: React.ReactNode; }
 interface Response { text: string; turnIdx: number; }
 
 interface Props {
-  showPinyin: boolean;
   onScore: (score: number) => void;
   deck: DeckWord[];
+  onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  /** Daily AI-generated conversation turns. Falls back to CONVO. */
+  turns?: ConvoTurn[];
 }
 
-export default function Conversation({ showPinyin, onScore, deck }: Props) {
+const SpeakerIcon = () => (
+  <svg viewBox="0 0 24 24" width={13} height={13} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>
+  </svg>
+);
+
+export default function Conversation({ onScore, deck, onAddVocab, turns }: Props) {
+  const ACTIVE_CONVO = turns ?? CONVO;
   const TARGET_WORDS = useMemo(() => deck.map(d => d.h), [deck]);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turnIdx, setTurnIdx] = useState(0);
   const [responses, setResponses] = useState<Response[]>([]);
-  const [chips, setChips] = useState<PassageToken[][]>([]);
+  const [chips, setChips] = useState<{ text: string; tokens: ConvoTurn['suggestions'][0] }[]>([]);
   const [inputVal, setInputVal] = useState('');
   const [sessionEnded, setSessionEnded] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -44,32 +55,32 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
   }, []);
 
   const showTutor = useCallback((idx: number) => {
-    const turn = CONVO[idx];
+    const turn = ACTIVE_CONVO[idx];
     if (!turn) return;
+    const audioText = turn.tokens.map(t => t.text).join('');
     addMessage({
       side: 'tutor',
+      audioText,
       html: (
         <div className="flex items-start gap-2.5">
           <button
-            onClick={() => speak(turn.tokens.map(t => t.text).join(''))}
+            onClick={() => speak(audioText)}
             className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 cursor-pointer"
             style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
           >
-            <svg viewBox="0 0 24 24" width={13} height={13} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>
-            </svg>
+            <SpeakerIcon />
           </button>
           <div
             className="rounded-[14px] rounded-bl-[4px] px-4 py-3"
             style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', fontWeight: 'var(--han-weight)' as 'bold' }}
           >
-            {renderTokens(turn.tokens, showPinyin)}
+            {turn.tokens.map((t, i) => <ClickableWord key={i} token={t} onOpen={openPopup} />)}
           </div>
         </div>
       ),
     });
-    setChips(turn.suggestions);
-  }, [addMessage, showPinyin]);
+    setChips(turn.suggestions.map(toks => ({ text: toks.map(t => t.text).join(''), tokens: toks })));
+  }, [addMessage, openPopup]);
 
   useEffect(() => {
     showTutor(0);
@@ -91,7 +102,6 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
       ),
     });
     setChips([]);
-    // Typing indicator then next tutor turn
     const typingMsg: ChatMessage = {
       side: 'tutor',
       html: (
@@ -108,7 +118,7 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
     setMessages(prev => [...prev, typingMsg]);
     setTimeout(() => {
       setMessages(prev => prev.filter(m => m !== typingMsg));
-      const nextIdx = Math.min(turnIdx + 1, CONVO.length - 1);
+      const nextIdx = Math.min(turnIdx + 1, ACTIVE_CONVO.length - 1);
       setTurnIdx(nextIdx);
       showTutor(nextIdx);
     }, 950);
@@ -121,9 +131,7 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
     userSay(v);
   }, [inputVal, userSay]);
 
-  const onMicResult = useCallback((text: string) => {
-    setInputVal(text);
-  }, []);
+  const onMicResult = useCallback((text: string) => { setInputVal(text); }, []);
   const { listening, toggle: toggleMic, supported: micSupported } = useMic(onMicResult);
 
   const endSession = useCallback(() => {
@@ -135,7 +143,7 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
     let relevantTurns = 0, fluentTurns = 0;
     responses.forEach(r => {
       TARGET_WORDS.forEach(w => { if (r.text.includes(w)) usedSet.add(w); });
-      const key = (CONVO[r.turnIdx]?.key) || [];
+      const key = (ACTIVE_CONVO[r.turnIdx]?.key) || [];
       if (key.some(k => r.text.includes(k))) relevantTurns++;
       const hanCount = (r.text.match(/[一-鿿]/g) || []).length;
       if (hanCount >= 3) fluentTurns++;
@@ -151,13 +159,13 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
     setReportUsed([...usedSet]);
     setReportMissed(missed);
     setShowReport(true);
-  }, [sessionEnded, responses]);
+  }, [sessionEnded, responses, TARGET_WORDS]);
 
-  const usedCount = (() => {
+  const usedCount = useMemo(() => {
     const s = new Set<string>();
     responses.forEach(r => TARGET_WORDS.forEach(w => { if (r.text.includes(w)) s.add(w); }));
     return s;
-  })();
+  }, [responses, TARGET_WORDS]);
 
   if (TARGET_WORDS.length === 0) {
     return (
@@ -181,7 +189,7 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
   });
 
   return (
-    <div className={showPinyin ? 'show-pinyin' : ''}>
+    <div>
       {/* Header */}
       <div className="flex justify-between items-end gap-3 flex-wrap mb-3">
         <div>
@@ -191,9 +199,6 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
         <div className="flex gap-2 flex-wrap items-center">
           <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>🎧 Audio only</button>
           <button style={toggleStyle(suggestionsOn)} onClick={() => setSuggestionsOn(v => !v)}>💬 Suggestions</button>
-          <button style={toggleStyle(showPinyin)} onClick={() => {}}>
-            <span style={{ fontFamily: 'var(--f-han)', fontSize: 13 }}>拼</span> Pinyin
-          </button>
         </div>
       </div>
 
@@ -244,13 +249,19 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={msg.side === 'tutor' ? 'self-start max-w-[80%]' : 'self-end max-w-[80%]'}
-            style={{ alignSelf: msg.side === 'me' ? 'flex-end' : 'flex-start' }}
+            style={{ alignSelf: msg.side === 'me' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}
           >
             {audioOnly && msg.side === 'tutor' ? (
+              /* Audio-only: show a speaker button instead of the full message */
               <div className="flex items-start gap-2.5">
-                <div className="w-7 h-7 shrink-0" />
-                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--ink-faint)', letterSpacing: '.4em', padding: '12px 16px' }}>• • •</div>
+                <button
+                  onClick={() => msg.audioText && speak(msg.audioText)}
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer"
+                  style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
+                  title="Play audio"
+                >
+                  <SpeakerIcon />
+                </button>
               </div>
             ) : (
               msg.html
@@ -264,19 +275,33 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
       {suggestionsOn && chips.length > 0 && !sessionEnded && (
         <div className="flex flex-col gap-2 mt-4 items-end">
           {chips.map((reply, i) => (
-            <button
+            <div
               key={i}
-              onClick={() => userSay(reply.map(t => t.text).join(''))}
-              className="cursor-pointer transition-all duration-150"
-              style={{
-                fontFamily: 'var(--f-han)', fontSize: 16,
-                background: 'var(--card)', border: '1px solid var(--accent)',
-                color: 'var(--accent-deep)', borderRadius: 13, padding: '10px 16px',
-                textAlign: 'right', lineHeight: 1.7, fontWeight: 'var(--han-weight)' as 'bold',
-              }}
+              className="flex items-center gap-2.5"
             >
-              {renderTokens(reply, showPinyin)}
-            </button>
+              {/* Radio circle — submits the reply */}
+              <button
+                onClick={() => userSay(reply.text)}
+                className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer"
+                style={{
+                  border: '2px solid var(--accent)',
+                  background: 'transparent',
+                }}
+                title="Send this reply"
+              />
+              {/* Text — clickable words open popup */}
+              <div
+                className="transition-all duration-150"
+                style={{
+                  fontFamily: 'var(--f-han)', fontSize: 16,
+                  background: 'var(--card)', border: '1px solid var(--accent)',
+                  color: 'var(--accent-deep)', borderRadius: 13, padding: '10px 16px',
+                  textAlign: 'right', lineHeight: 1.7, fontWeight: 'var(--han-weight)' as 'bold',
+                }}
+              >
+                {reply.tokens.map((t, ti) => <ClickableWord key={ti} token={t} onOpen={openPopup} />)}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -333,6 +358,12 @@ export default function Conversation({ showPinyin, onScore, deck }: Props) {
         </button>
       </div>
 
+      <WordPopup
+        data={popup}
+        onClose={closePopup}
+        onAddVocab={handleAddVocab}
+        onLearnTomorrow={handleLearnTomorrow}
+      />
     </div>
   );
 }

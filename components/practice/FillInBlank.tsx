@@ -1,20 +1,28 @@
 'use client';
 import { useState } from 'react';
-import type { PassageToken, DeckWord } from '@/lib/types';
+import type { DeckWord } from '@/lib/types';
+import type { FillItem } from '@/lib/types';
 import { FILL_ITEMS } from '@/lib/data/fill';
 import { speak } from '@/lib/speech';
+import ClickableWord from '@/components/shared/ClickableWord';
+import WordPopup from '@/components/read/WordPopup';
+import { useWordPopup } from '@/hooks/useWordPopup';
 
-function renderTokens(tokens: PassageToken[], showPinyin: boolean) {
-  return tokens.map((t, i) => {
-    if (!t.pinyin) return <span key={i}>{t.text}</span>;
-    return <ruby key={i}>{t.text}{showPinyin && <rt>{t.pinyin}</rt>}</ruby>;
-  });
+interface Props {
+  onDone: () => void;
+  deck: DeckWord[];
+  onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  /** Override items — supplied by daily AI content. Falls back to FILL_ITEMS. */
+  items?: FillItem[];
 }
 
-interface Props { onDone: () => void; showPinyin: boolean; deck: DeckWord[]; }
+export default function FillInBlank({ onDone, deck, onAddVocab, items }: Props) {
+  const activeItems = items ?? FILL_ITEMS;
+  const [answers, setAnswers] = useState<Record<number, { correct: boolean; chosenOi: number } | null>>({});
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
 
-export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
-  const [answers, setAnswers] = useState<Record<number, { correct: boolean; chosen: string } | null>>({});
+  // Reset answers when items change (e.g. daily content arrives)
+  const itemsKey = activeItems.map(it => it.answer[0]).join(',');
 
   if (deck.length === 0) {
     return (
@@ -28,28 +36,29 @@ export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
     );
   }
 
-  const allDone = FILL_ITEMS.every((_, i) => answers[i] != null);
+  const allDone = activeItems.every((_, i) => answers[i] != null);
 
   return (
     <div>
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2">
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Fill in the blank · generated</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Fill in the blank · {items ? 'daily' : 'static'}</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>Choose the missing word</div>
         </div>
       </div>
 
       <p style={{ fontSize: 14.5, color: 'var(--ink-soft)', lineHeight: 1.55, maxWidth: '54ch', marginBottom: 22 }}>
-        Each sentence uses today&apos;s vocabulary. Pick the word that fits — a wrong choice reveals the answer and sends that word back to tomorrow&apos;s queue, just like peeking in a passage.
+        Each sentence uses today&apos;s vocabulary. Click the circle next to a choice to submit — or click any word to look it up first.
       </p>
 
-      <div className={showPinyin ? 'show-pinyin' : ''}>
-        {FILL_ITEMS.map((item, idx) => {
+      <div key={itemsKey}>
+        {activeItems.map((item, idx) => {
           const ans = answers[idx];
           const fullText = item.before.map(t => t.text).join('') + item.answer[0] + item.after.map(t => t.text).join('');
 
           return (
             <div key={idx} className="rounded-xl px-5 py-5 mb-4" style={{ border: '1px solid var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, white), var(--card))' }}>
+              {/* Sentence with blank */}
               <div className="flex items-start gap-3 mb-4">
                 <button
                   onClick={() => speak(fullText)}
@@ -61,7 +70,7 @@ export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
                   </svg>
                 </button>
                 <div style={{ fontFamily: 'var(--f-han)', fontSize: 21, lineHeight: 1.9, fontWeight: 'var(--han-weight)' as 'bold' }}>
-                  {renderTokens(item.before, showPinyin)}
+                  {item.before.map((t, i) => <ClickableWord key={`b${i}`} token={t} onOpen={openPopup} />)}
                   <span
                     className="inline-block text-center mx-1 px-1"
                     style={{
@@ -70,39 +79,53 @@ export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
                       color: ans ? (ans.correct ? 'var(--jade)' : 'var(--accent)') : 'var(--ink-faint)',
                     }}
                   >
-                    {ans ? (
-                      <ruby>{item.answer[0]}<rt>{item.answer[1]}</rt></ruby>
-                    ) : '＿＿'}
+                    {ans ? item.answer[0] : '＿＿'}
                   </span>
-                  {renderTokens(item.after, showPinyin)}
+                  {item.after.map((t, i) => <ClickableWord key={`a${i}`} token={t} onOpen={openPopup} />)}
                 </div>
               </div>
 
-              <div className="flex gap-2 flex-wrap pl-10">
+              {/* Options — radio circle on left, tokens clickable */}
+              <div className="flex flex-col gap-2 pl-10">
                 {item.options.map(([hanzi, pinyin, correct], oi) => {
-                  const chosen = ans?.chosen === hanzi;
-                  const showCorrectMark = ans && correct;
-                  const showWrongMark = ans && chosen && !correct;
+                  const showCorrect = ans != null && correct;
+                  const isWrongSelected = ans != null && !correct && ans.chosenOi === oi;
+                  const optToken = { text: hanzi, pinyin, meaning: '' };
+
                   return (
-                    <button
-                      key={oi}
-                      disabled={!!ans}
-                      onClick={() => {
-                        if (ans) return;
-                        setAnswers(prev => ({ ...prev, [idx]: { correct, chosen: hanzi } }));
-                      }}
-                      className="cursor-pointer transition-all duration-150 disabled:cursor-default"
-                      style={{
-                        fontFamily: 'var(--f-han)', fontSize: 17,
-                        background: showCorrectMark ? 'var(--jade-soft)' : showWrongMark ? 'var(--accent-soft)' : 'var(--paper-2)',
-                        border: showCorrectMark ? '1px solid var(--jade)' : showWrongMark ? '1px solid var(--accent)' : '1px solid var(--line)',
-                        color: showCorrectMark ? 'var(--jade)' : showWrongMark ? 'var(--accent)' : 'var(--ink)',
-                        borderRadius: 9, padding: '9px 17px',
-                        fontWeight: 'var(--han-weight)' as 'bold',
-                      }}
-                    >
-                      <ruby>{hanzi}<rt>{pinyin}</rt></ruby>
-                    </button>
+                    <div key={oi} className="flex items-center gap-3">
+                      {/* Radio circle — submits */}
+                      <button
+                        disabled={!!ans}
+                        onClick={() => {
+                          if (ans) return;
+                          setAnswers(prev => ({ ...prev, [idx]: { correct, chosenOi: oi } }));
+                        }}
+                        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer disabled:cursor-default"
+                        style={{
+                          border: `2px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
+                          background: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'transparent',
+                        }}
+                        title={ans ? undefined : 'Select this answer'}
+                      >
+                        {showCorrect && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                        {isWrongSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
+                      </button>
+
+                      {/* Option text — clickable word */}
+                      <div
+                        className="flex-1 rounded-[9px] px-4 py-2.5"
+                        style={{
+                          fontFamily: 'var(--f-han)', fontSize: 17,
+                          background: showCorrect ? 'var(--jade-soft)' : isWrongSelected ? 'var(--accent-soft)' : 'var(--paper-2)',
+                          border: `1px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
+                          color: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--ink)',
+                          fontWeight: 'var(--han-weight)' as 'bold',
+                        }}
+                      >
+                        <ClickableWord token={optToken} onOpen={openPopup} />
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -136,6 +159,12 @@ export default function FillInBlank({ onDone, showPinyin, deck }: Props) {
         </div>
       )}
 
+      <WordPopup
+        data={popup}
+        onClose={closePopup}
+        onAddVocab={handleAddVocab}
+        onLearnTomorrow={handleLearnTomorrow}
+      />
     </div>
   );
 }
