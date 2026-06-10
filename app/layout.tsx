@@ -18,6 +18,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-full" data-theme="paper" data-font="editorial-warm">
+        {/* Blocking script: reads saved prefs before first paint to prevent theme/font flash */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);}catch(e){}})();` }} />
         {children}
       </body>
     </html>

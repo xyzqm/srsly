@@ -10,6 +10,7 @@ import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
+import PassageSkeleton from './PassageSkeleton';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -23,7 +24,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const { deck, addWord } = useVocabDeck();
 
   // Load HSK level from prefs
-  const [hskLevel, setHskLevel] = useState(4);
+  const [hskLevel, setHskLevel] = useState(0);
   useEffect(() => {
     storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
   }, []);
@@ -169,12 +170,16 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             )}
           </div>
           {/* Clickable title */}
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
-            <span style={{ fontFamily: 'var(--f-han)' }}>
-              {TITLE_TOKENS.map((t, i) => (
-                <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} />
-              ))}
-            </span>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4, minHeight: 36 }}>
+            {hskLevel === 0 || dailyStatus === 'loading' ? (
+              <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
+            ) : (
+              <span style={{ fontFamily: 'var(--f-han)' }}>
+                {TITLE_TOKENS.map((t, i) => (
+                  <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} />
+                ))}
+              </span>
+            )}
           </div>
         </div>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
@@ -182,33 +187,39 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         </div>
       </div>
 
-      {/* Controls row */}
-      <div className="flex gap-2 items-center mb-4 flex-wrap">
-        <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
-        <div className="ml-auto flex gap-2 flex-wrap">
-          <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
-            🎧 Audio only
-          </button>
-        </div>
-      </div>
+      {hskLevel === 0 || dailyStatus === 'loading' ? (
+        <PassageSkeleton />
+      ) : (
+        <>
+          {/* Controls row */}
+          <div className="flex gap-2 items-center mb-4 flex-wrap">
+            <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
+            <div className="ml-auto flex gap-2 flex-wrap">
+              <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
+                🎧 Audio only
+              </button>
+            </div>
+          </div>
 
-      {/* Passage */}
-      <PassageText
-        sentences={SENTENCES}
-        activeSentenceIdx={activeSentence}
-        audioOnly={audioOnly}
-        peeked={peeked}
-        onPeek={handlePeek}
-        deckWords={deckWords}
-        onAddToDeck={handleAddToDeck}
-      />
+          {/* Passage */}
+          <PassageText
+            sentences={SENTENCES}
+            activeSentenceIdx={activeSentence}
+            audioOnly={audioOnly}
+            peeked={peeked}
+            onPeek={handlePeek}
+            deckWords={deckWords}
+            onAddToDeck={handleAddToDeck}
+          />
 
-      {/* Lookup summary */}
-      <LookupSummary
-        peekedCount={peeked.size}
-        totalVocab={reviewWordCount}
-        claimedCount={0}
-      />
+          {/* Lookup summary */}
+          <LookupSummary
+            peekedCount={peeked.size}
+            totalVocab={reviewWordCount}
+            claimedCount={0}
+          />
+        </>
+      )}
 
       <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 

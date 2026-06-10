@@ -4,6 +4,7 @@ import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
 import { storage } from '@/lib/storage';
+import { lookupWord } from '@/lib/data/dict';
 
 interface Props {
   sentences: Sentence[];
@@ -89,14 +90,15 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
+    const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
     if (isReviewWord) {
       onPeek(token.text);
-      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'vocab', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else if (isClaimed) {
       const kind = claimType.get(token.text);
-      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else {
-      setPopup({ word: token.text, pinyin: token.pinyin || '', meaning: token.meaning || '', type: 'free', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
     }
   }, [claimType, onPeek, deckWords]);
 
