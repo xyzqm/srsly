@@ -38,7 +38,10 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   // Active content: daily when ready, static otherwise
   const SENTENCES    = dailyContent?.sentences    ?? passageData.sentences;
   const TITLE_TOKENS = dailyContent?.titleTokens  ?? passageData.titleTokens;
-  const QUESTIONS    = passageData.questions; // comprehension questions stay static
+  // Use AI-generated questions when available, fall back to static
+  const QUESTIONS    = (dailyContent?.questions && dailyContent.questions.length >= 2)
+    ? dailyContent.questions
+    : passageData.questions;
   const charCount    = dailyContent
     ? dailyContent.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
     : passageData.charCount;

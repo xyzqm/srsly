@@ -25,8 +25,8 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   onClick: (e: React.MouseEvent, token: PassageToken) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  // Non-interactive only when there's no pinyin to show (true punctuation / no data)
-  if (!token.pinyin) return <span>{token.text}</span>;
+  // Non-interactive when there's no pinyin or the token is punctuation
+  if (!token.pinyin || token.type === 'punct') return <span>{token.text}</span>;
 
   const isClaimed = claimKind !== null;
 

@@ -16,7 +16,7 @@ interface Props {
 export default function ClickableWord({ token, onOpen, style }: Props) {
   const [hovered, setHovered] = useState(false);
 
-  if (!token.pinyin) return <span style={style}>{token.text}</span>;
+  if (!token.pinyin || token.type === 'punct') return <span style={style}>{token.text}</span>;
 
   return (
     <ruby

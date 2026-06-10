@@ -31,5 +31,12 @@ export function useVocabDeck() {
     await storage.saveVocabDeck(next);
   }, [deck]);
 
-  return { deck, addWord, removeWord, updateWordReview };
+  /** Update pinyin / meaning / other fields of the word at position idx. */
+  const updateWord = useCallback(async (idx: number, update: Partial<DeckWord>) => {
+    const next = deck.map((d, i) => i === idx ? { ...d, ...update } : d);
+    setDeck(next);
+    await storage.saveVocabDeck(next);
+  }, [deck]);
+
+  return { deck, addWord, removeWord, updateWordReview, updateWord };
 }

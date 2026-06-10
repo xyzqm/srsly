@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import type { PassageToken, Sentence, FillItem, ConvoTurn, DailyContent, DeckWord } from '@/lib/types';
+import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DeckWord } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getPassageData } from '@/lib/data/allPassages';
 
@@ -8,23 +8,49 @@ import { getPassageData } from '@/lib/data/allPassages';
 
 type RawTok = [string] | [string, string] | [string, string, string];
 
-function rawToToken(arr: RawTok, dueWords: Set<string>): PassageToken {
+/**
+ * Characters that should always be non-interactive, even when the AI
+ * accidentally attaches a "pinyin" field to them.
+ */
+const PUNCT_CHARS = new Set([
+  '。','！','？','，','、','—','…','·','「','」','『','』',
+  '“','”','‘','’','（','）','【','】','《','》','〈','〉',
+  '：','；',',','.',';',':','!','?','(',')','"',"'",'[',']','{','}',
+  '–','○','●','□','■','◇','◆','△','▲','▽','▼','★','☆','•','‥',
+  '～','~','／','\\','|','`','^',
+]);
+
+function isPunct(text: string): boolean {
+  if (PUNCT_CHARS.has(text)) return true;
+  // Single char that is not a CJK character or Latin letter → treat as punct
+  if (text.length === 1 && !/[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Convert a raw API token to a PassageToken.
+ * @param deckMeanings  map of hanzi → meaning from the user's deck (fallback for due-words)
+ */
+function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken {
   const [text, pinyin, meaning] = arr as [string, string?, string?];
-  if (!pinyin) return { text, type: 'punct' };
-  if (dueWords.has(text) || meaning) {
-    return { text, pinyin, meaning: meaning ?? '', type: 'vocab' };
+  // No pinyin OR text is punctuation/symbol → non-interactive
+  if (!pinyin || isPunct(text)) return { text, type: 'punct' };
+  // Resolve meaning: use AI-provided meaning, then deck meaning as fallback
+  const resolvedMeaning = meaning || deckMeanings.get(text) || '';
+  if (dueWords.has(text) || resolvedMeaning) {
+    return { text, pinyin, meaning: resolvedMeaning, type: 'vocab' };
   }
   return { text, pinyin };
 }
 
-function buildSentences(rawRows: RawTok[][], dueWords: Set<string>): Sentence[] {
+function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckMeanings: Map<string, string>): Sentence[] {
   return rawRows.map(row => {
-    const tokens = row.map(r => rawToToken(r, dueWords));
+    const tokens = row.map(r => rawToToken(r, dueWords, deckMeanings));
     return { tokens, plainText: tokens.map(t => t.text).join('') };
   });
 }
 
-function buildFillItems(rawFills: unknown[], dueWords: Set<string>): FillItem[] {
+function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): FillItem[] {
   return (rawFills as {
     before: RawTok[];
     answer: [string, string];
@@ -41,28 +67,69 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>): FillItem[] 
       [options[i], options[j]] = [options[j], options[i]];
     }
     return {
-      before: f.before.map(r => rawToToken(r, dueWords)),
+      before: f.before.map(r => rawToToken(r, dueWords, deckMeanings)),
       answer: f.answer,
-      after: f.after.map(r => rawToToken(r, dueWords)),
+      after: f.after.map(r => rawToToken(r, dueWords, deckMeanings)),
       options,
     };
   });
 }
 
-function buildConvo(rawTurns: unknown[], dueWords: Set<string>): ConvoTurn[] {
+function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): ConvoTurn[] {
   return (rawTurns as {
     key: string[];
     tutor: RawTok[];
     suggestions: RawTok[][];
   }[]).map(t => ({
     key: t.key,
-    tokens: t.tutor.map(r => rawToToken(r, dueWords)),
-    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords))),
+    tokens: t.tutor.map(r => rawToToken(r, dueWords, deckMeanings)),
+    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords, deckMeanings))),
   }));
 }
 
-function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>): PassageToken[] {
-  return rawTitle.map(r => rawToToken(r, dueWords));
+function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken[] {
+  return rawTitle.map(r => rawToToken(r, dueWords, deckMeanings));
+}
+
+function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): Question[] {
+  return (rawQuestions as {
+    q: RawTok[];
+    model: string;
+    key: string[];
+    options: { tokens: RawTok[]; correct: boolean }[];
+  }[]).map(q => ({
+    q: q.q.map(r => rawToToken(r, dueWords, deckMeanings)),
+    model: q.model,
+    key: q.key,
+    options: q.options.map(opt => ({
+      tokens: opt.tokens.map(r => rawToToken(r, dueWords, deckMeanings)),
+      correct: opt.correct,
+    } as MCOption)),
+  }));
+}
+
+/**
+ * Retroactively fix cached content that was parsed before the punct-detection
+ * logic existed. Any token whose text is punctuation but still has a pinyin
+ * field gets cleaned up so it renders as non-interactive.
+ */
+function sanitizeCachedContent(content: DailyContent): void {
+  function fixToken(t: PassageToken) {
+    if (t.pinyin && isPunct(t.text)) {
+      (t as unknown as Record<string, unknown>).pinyin = undefined;
+      t.type = 'punct';
+    }
+  }
+  content.titleTokens.forEach(fixToken);
+  content.sentences.forEach(s => s.tokens.forEach(fixToken));
+  content.fillItems.forEach(fi => {
+    fi.before.forEach(fixToken);
+    fi.after.forEach(fixToken);
+  });
+  content.conversation.forEach(turn => {
+    turn.tokens.forEach(fixToken);
+    turn.suggestions.forEach(sug => sug.forEach(fixToken));
+  });
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -114,6 +181,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       // 1. Check cache
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
+        // Fix any tokens that were cached before the punct-detection fix
+        sanitizeCachedContent(cached);
         setDailyContent(cached);
         setStatus('ready');
         return;
@@ -151,17 +220,26 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         const { data, vocabWords } = payload as { data: Record<string, unknown>; vocabWords: string[] };
 
         const dueSet = new Set(vocabWords);
+        // Build a meaning lookup from the user's deck so we can fill gaps the AI leaves
+        const deckMeanings = new Map(dueWords.map(w => [w.h, w.m]));
         const passageData = getPassageData(hskLevel);
         const today = new Date().toISOString().slice(0, 10);
+
+        // Parse questions if provided
+        const rawQuestions = Array.isArray(data.questions) ? data.questions : [];
+        const aiQuestions = rawQuestions.length >= 2
+          ? buildQuestions(rawQuestions, dueSet, deckMeanings)
+          : undefined;
 
         const content: DailyContent = {
           date: today,
           hskLevel,
-          titleTokens: buildTitleTokens(data.title as RawTok[], dueSet),
-          sentences: buildSentences(data.sentences as RawTok[][], dueSet),
+          titleTokens: buildTitleTokens(data.title as RawTok[], dueSet, deckMeanings),
+          sentences: buildSentences(data.sentences as RawTok[][], dueSet, deckMeanings),
           vocabWords,
-          fillItems: buildFillItems(data.fill as unknown[], dueSet),
-          conversation: buildConvo(data.convo as unknown[], dueSet),
+          questions: aiQuestions,
+          fillItems: buildFillItems(data.fill as unknown[], dueSet, deckMeanings),
+          conversation: buildConvo(data.convo as unknown[], dueSet, deckMeanings),
         };
 
         // Validate minimums — fall back gracefully if Claude produced garbage

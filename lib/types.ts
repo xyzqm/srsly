@@ -77,6 +77,7 @@ export interface DailyContent {
   titleTokens: PassageToken[];
   sentences: Sentence[];
   vocabWords: string[];  // hanzi of the target due words
+  questions?: Question[]; // comprehension questions (may be absent in old cached content)
   fillItems: FillItem[];
   conversation: ConvoTurn[];
 }

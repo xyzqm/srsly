@@ -157,10 +157,10 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
             </span>
           </div>
           <div style={{ fontSize: 13.5, marginTop: 5, lineHeight: 1.5 }}>
-            {displayData.meaning || <em style={{ opacity: 0.45 }}>No definition available</em>}
-          </div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.08em', color: 'var(--pop-mute)', marginTop: 8, textTransform: 'uppercase' }}>
-            via CC-CEDICT
+            {displayData.meaning
+              ? displayData.meaning
+              : <em style={{ opacity: 0.35, fontSize: 12 }}>definition not in local dictionary</em>
+            }
           </div>
 
           {displayData.type === 'vocab' && (
