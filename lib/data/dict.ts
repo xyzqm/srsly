@@ -407,12 +407,13 @@ const COMMON: Record<string, DictEntry> = {
   '人工智能':{ pinyin: 'réngōng zhìnéng',meaning: 'artificial intelligence; AI' },
 };
 
-// Merge: passage tokens take priority, then COMMON, then comprehensive HSK vocab
+// Merge: passage tokens take priority IF they have a meaning.
+// If a passage entry has an empty meaning, COMMON / HSK_VOCAB fills it in.
 for (const [text, entry] of Object.entries(COMMON)) {
-  if (!DICT[text]) DICT[text] = entry;
+  if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
 }
 for (const [text, entry] of Object.entries(HSK_VOCAB)) {
-  if (!DICT[text]) DICT[text] = entry;
+  if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
 }
 
 /** Look up a word's pinyin + meaning. Falls back to provided values if not found. */

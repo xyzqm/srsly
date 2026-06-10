@@ -1,4 +1,5 @@
 'use client';
+import { useEffect } from 'react';
 
 interface Metrics { vocab: number; relevance: number; fluency: number; overall: number; }
 
@@ -33,8 +34,8 @@ export default function ConvoReport({ metrics, used, missed, onScore }: Props) {
     ? `${used.length} word${used.length === 1 ? '' : 's'} earned credit — interval nudged forward: ${used.join('、')}. ${missed.length ? `The remaining ${missed.length} stay due on their normal schedule.` : ''}`
     : 'No target words used this round — all eight stay due as scheduled.';
 
-  // Report score upward once rendered
-  onScore(overall);
+  // Report score once on mount — not on every render
+  useEffect(() => { onScore(overall); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="mt-5 rounded-[14px] px-6 py-6 animate-rise" style={{ border: '1px solid var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, white), var(--card))' }}>

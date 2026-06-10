@@ -48,8 +48,15 @@ export function useSRS() {
       const displayStreak =
         todayScoreDate === today || todayScoreDate === yest ? s : 0;
 
+      // Guard against a corrupted runaway counter (caused by a past render-loop bug)
+      const rawSessions = state.sessions ?? 0;
+      const safeSessions = rawSessions > 9999 ? 0 : rawSessions;
+      if (rawSessions !== safeSessions) {
+        storage.saveSRSState({ ...state, sessions: safeSessions });
+      }
+
       setStreak(displayStreak);
-      setSessions(state.sessions ?? 0);
+      setSessions(safeSessions);
 
       // daysSince last visit (for emoji)
       let daysSince = 0;
@@ -81,7 +88,10 @@ export function useSRS() {
       newStreak = 1;
     }
 
-    const newSessions = (state.sessions ?? 0) + 1;
+    // Only count a new session if this is the first score recorded today
+    const newSessions = state.todayScoreDate === today
+      ? (state.sessions ?? 0)
+      : (state.sessions ?? 0) + 1;
     const updated = {
       ...state,
       streak: newStreak,

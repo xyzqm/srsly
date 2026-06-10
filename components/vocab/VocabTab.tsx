@@ -120,13 +120,18 @@ interface UndoToastProps {
 function UndoToast({ word, onUndo, progress }: UndoToastProps) {
   return (
     <div
-      className="flex items-center gap-3 rounded-xl px-4 py-3 mt-6"
+      className="flex items-center gap-3 rounded-xl px-4 py-3"
       style={{
+        position: 'fixed',
+        bottom: 28,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(480px, calc(100vw - 32px))',
         background: 'var(--ink)',
         color: 'var(--paper)',
-        boxShadow: '0 4px 16px rgba(0,0,0,.18)',
+        boxShadow: '0 8px 32px rgba(0,0,0,.28)',
         animation: 'rise .2s cubic-bezier(.2,.8,.3,1)',
-        position: 'relative',
+        zIndex: 9000,
         overflow: 'hidden',
       }}
     >

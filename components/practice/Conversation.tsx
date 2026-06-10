@@ -48,6 +48,7 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
   const [reportUsed, setReportUsed] = useState<string[]>([]);
   const [reportMissed, setReportMissed] = useState<string[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const initializedRef = useRef(false);
 
   const addMessage = useCallback((msg: ChatMessage) => {
     setMessages(prev => [...prev, msg]);
@@ -83,6 +84,9 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
   }, [addMessage, openPopup]);
 
   useEffect(() => {
+    // Guard against React Strict Mode double-invocation in development
+    if (initializedRef.current) return;
+    initializedRef.current = true;
     showTutor(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

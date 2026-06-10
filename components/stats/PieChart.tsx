@@ -11,10 +11,10 @@ function computeSegments(deck: DeckWord[]) {
     else mastered++;
   }
   return [
-    { label: 'New',               count: newW,      color: 'var(--gold)',     cls: 'new' },
-    { label: 'Reviewed · 1–2×',   count: reviewed,  color: 'var(--accent)',   cls: 'rev' },
-    { label: 'Proficient · 3–5×', count: proficient, color: 'var(--jade)',    cls: 'pro' },
-    { label: 'Mastered · 6×+',    count: mastered,  color: 'var(--ink-soft)', cls: 'mas' },
+    { label: 'New',               count: newW,       color: '#94A3B8', cls: 'new' },
+    { label: 'Reviewed · 1–2×',   count: reviewed,   color: '#EAB308', cls: 'rev' },
+    { label: 'Proficient · 3–5×', count: proficient, color: '#4ADE80', cls: 'pro' },
+    { label: 'Mastered · 6×+',    count: mastered,   color: '#2563EB', cls: 'mas' },
   ];
 }
 
