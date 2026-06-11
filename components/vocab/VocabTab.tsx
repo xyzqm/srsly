@@ -124,13 +124,9 @@ interface UndoBarProps {
 }
 
 function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
-  const label = pending.kind === 'clear'
-    ? `${pending.count} word${pending.count === 1 ? '' : 's'} cleared`
-    : `${pending.word.h} removed`;
-
   return (
     <div
-      className="flex items-center gap-3 px-3 py-3 rounded-xl mb-1"
+      className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-1"
       style={{
         background: 'var(--ink)',
         color: 'var(--paper)',
@@ -150,18 +146,25 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
           borderRadius: 1,
         }}
       />
-      <span style={{
-        fontFamily: pending.kind === 'clear' ? 'var(--f-mono)' : 'var(--f-han)',
-        fontSize: pending.kind === 'clear' ? 13 : 20,
-        fontWeight: pending.kind === 'clear' ? 500 : ('var(--han-weight)' as 'bold'),
-        opacity: 0.9,
-        letterSpacing: pending.kind === 'clear' ? '.02em' : undefined,
-      }}>
-        {label}
-      </span>
-      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, opacity: 0.45, flex: 1 }}>
-        — undo?
-      </span>
+
+      {/* Message */}
+      <div className="flex items-baseline gap-2 flex-1 min-w-0">
+        {pending.kind === 'single' ? (
+          <>
+            <span style={{ fontFamily: 'var(--f-han)', fontSize: 18, fontWeight: 'var(--han-weight)' as 'bold', opacity: 0.95, flexShrink: 0 }}>
+              {pending.word.h}
+            </span>
+            <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, opacity: 0.45, letterSpacing: '.03em' }}>
+              removed
+            </span>
+          </>
+        ) : (
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, fontWeight: 500, opacity: 0.8, letterSpacing: '.02em' }}>
+            {pending.count} word{pending.count === 1 ? '' : 's'} cleared
+          </span>
+        )}
+      </div>
+
       <button
         onClick={onUndo}
         className="cursor-pointer transition-all duration-150"

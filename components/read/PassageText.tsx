@@ -35,11 +35,12 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
       onClick={e => onClick(e, token)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="cursor-pointer transition-all duration-150 relative"
+      className="cursor-pointer relative"
       style={{
+        // Keep border width constant (1.5px) across all states — width changes cause layout jitter
         borderBottom: isReviewWord
           ? peeked
-            ? '2px solid var(--accent)'
+            ? '1.5px solid var(--accent)'
             : '1.5px dotted var(--accent)'
           : claimKind === 'vocab'
             ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
@@ -53,17 +54,20 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
           : 'transparent',
         borderRadius: 3,
         cursor: 'pointer',
+        // Only transition background — never border or layout properties
+        transition: 'background .12s',
       }}
     >
       {token.text}
+      {/* lineHeight:0 prevents these spans from expanding the ruby base height → no layout shift */}
       {peeked && isReviewWord && (
-        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--accent)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>↺</span>
+        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--accent)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>↺</span>
       )}
       {claimKind === 'vocab' && (
-        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--jade)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>+</span>
+        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--jade)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>+</span>
       )}
       {claimKind === 'tomorrow' && (
-        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--gold)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>▸</span>
+        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--gold)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>▸</span>
       )}
       <rt>{token.pinyin}</rt>
     </ruby>
