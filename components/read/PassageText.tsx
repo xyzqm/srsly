@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -33,7 +33,10 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : claimKind === 'tomorrow' ? 'var(--gold)' : 'var(--accent)';
 
   return (
-    <>
+    // Relative wrapper so the indicator can be absolutely positioned without
+    // affecting layout. Only `color` ever changes on the indicator → repaint only,
+    // never a layout recalculation → no shake.
+    <span style={{ position: 'relative', display: 'inline' }}>
       <ruby
         onClick={e => onClick(e, token)}
         onMouseEnter={() => setHovered(true)}
@@ -63,31 +66,29 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
         <rt>{token.pinyin}</rt>
       </ruby>
       {/*
-        Zero-width sibling span: always rendered so the DOM structure never changes
-        (adding/removing DOM nodes inside <ruby> causes layout recalculation → shake).
-        width:0 + overflow:visible means the indicator character is visually present
-        but contributes zero space to the inline flow → no layout shift ever.
+        Absolutely-positioned indicator badge — always rendered, only `color` changes.
+        position:absolute removes it from flow entirely → never contributes to layout.
+        Sits at the upper-right corner of the character body.
       */}
       <span
         aria-hidden="true"
         style={{
-          display: 'inline-block',
-          width: 0,
-          overflow: 'visible',
-          whiteSpace: 'nowrap',
+          position: 'absolute',
+          right: '-3px',
+          bottom: '0.6em',
+          fontSize: '0.42em',
+          lineHeight: 1,
           fontFamily: 'var(--f-ui)',
-          fontSize: '.5em',
-          lineHeight: 0,
-          verticalAlign: 'super',
           fontWeight: 700,
           pointerEvents: 'none',
           userSelect: 'none',
+          whiteSpace: 'nowrap',
           color: indicatorChar ? indicatorColor : 'transparent',
         }}
       >
         {indicatorChar || '+'}
       </span>
-    </>
+    </span>
   );
 }
 
@@ -98,7 +99,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
 
   // When deckWords shrinks (word removed from deck), clear its vocab claim so the
   // green underline + badge disappear and the popup lets the user re-add it.
-  useEffect(() => {
+  // useLayoutEffect fires synchronously before the browser paints → no visible flash.
+  useLayoutEffect(() => {
     setClaimType(prev => {
       let changed = false;
       const next = new Map(prev);
@@ -128,7 +130,11 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Skip true punctuation and words with no pinyin data
     if (!token.pinyin || token.type === 'punct') return;
 
-    const isClaimed = claimType.has(token.text);
+    // Apply the same deck-check as the render section so a word removed from the
+    // deck (but still in claimType from storage seeding) shows the free popup.
+    const rawClaimKind = claimType.get(token.text) ?? null;
+    const effectiveClaimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
+    const isClaimed = effectiveClaimKind !== null;
     // Priority: claimed this session > SRS review word
     const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
 
@@ -141,8 +147,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else if (isClaimed) {
-      const kind = claimType.get(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else {
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
     }
@@ -230,9 +235,11 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                // Vocab claims are only active while the word is still in the deck
-                const rawClaimKind = claimType.get(token.text) ?? null;
-                const claimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
+                // claimType is kept in sync with the deck by the useLayoutEffect above,
+                // so no render-time deck-check is needed here — that check was causing
+                // a flash on "Add to vocab" when claimType and deckWords updated in
+                // separate renders.
+                const claimKind = claimType.get(token.text) ?? null;
                 const isClaimed = claimKind !== null;
                 // Claimed takes priority over SRS review
                 const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);

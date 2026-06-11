@@ -18,9 +18,19 @@ export function useVocabDeck() {
   }, [deck]);
 
   const removeWord = useCallback(async (idx: number) => {
+    const word = deck[idx];
     const next = deck.filter((_, i) => i !== idx);
     setDeck(next);
     await storage.saveVocabDeck(next);
+    // Also remove from claimedWords storage so PassageText's seed effect
+    // doesn't re-add the vocab badge when the component remounts.
+    if (word) {
+      const c = await storage.getClaimedWords();
+      const newVocab = c.vocab.filter(w => w !== word.h);
+      if (newVocab.length !== c.vocab.length) {
+        await storage.saveClaimedWords({ ...c, vocab: newVocab });
+      }
+    }
   }, [deck]);
 
   const updateWordReview = useCallback(async (hanzi: string, delta: number) => {
@@ -41,6 +51,11 @@ export function useVocabDeck() {
   const clearDeck = useCallback(async () => {
     setDeck([]);
     await storage.saveVocabDeck([]);
+    // Clear all vocab claims from storage so badges don't persist after clearing.
+    const c = await storage.getClaimedWords();
+    if (c.vocab.length > 0) {
+      await storage.saveClaimedWords({ ...c, vocab: [] });
+    }
   }, []);
 
   return { deck, addWord, removeWord, updateWordReview, updateWord, clearDeck };
