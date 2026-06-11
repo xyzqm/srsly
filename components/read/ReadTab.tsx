@@ -179,7 +179,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => (
-                  <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} />
+                  <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} isVocab={deckWords.has(t.text)} />
                 ))}
               </span>
             )}
