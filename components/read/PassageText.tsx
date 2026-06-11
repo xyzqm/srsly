@@ -33,10 +33,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : claimKind === 'tomorrow' ? 'var(--gold)' : 'var(--accent)';
 
   return (
-    // Relative wrapper so the indicator can be absolutely positioned without
-    // affecting layout. Only `color` ever changes on the indicator → repaint only,
-    // never a layout recalculation → no shake.
-    <span style={{ position: 'relative', display: 'inline' }}>
+    <>
       <ruby
         onClick={e => onClick(e, token)}
         onMouseEnter={() => setHovered(true)}
@@ -66,29 +63,29 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
         <rt>{token.pinyin}</rt>
       </ruby>
       {/*
-        Absolutely-positioned indicator badge — always rendered, only `color` changes.
-        position:absolute removes it from flow entirely → never contributes to layout.
-        Sits at the upper-right corner of the character body.
+        Always-rendered inline sibling — only `color` changes between states.
+        Natural (non-zero) width keeps it in flow AFTER the character so it
+        never overlaps the next character. verticalAlign:'super' raises it to
+        the standard superscript position (clear of the ruby base text).
+        lineHeight:0 prevents it from expanding the parent line-height.
       */}
       <span
         aria-hidden="true"
         style={{
-          position: 'absolute',
-          right: '-3px',
-          bottom: '0.6em',
-          fontSize: '0.42em',
-          lineHeight: 1,
+          display: 'inline',
+          fontSize: '0.45em',
+          verticalAlign: 'super',
+          lineHeight: 0,
           fontFamily: 'var(--f-ui)',
           fontWeight: 700,
           pointerEvents: 'none',
           userSelect: 'none',
-          whiteSpace: 'nowrap',
           color: indicatorChar ? indicatorColor : 'transparent',
         }}
       >
         {indicatorChar || '+'}
       </span>
-    </span>
+    </>
   );
 }
 
