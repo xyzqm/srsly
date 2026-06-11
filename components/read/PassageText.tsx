@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, startTransition } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -95,8 +95,12 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Skip true punctuation and words with no pinyin data
     if (!token.pinyin || token.type === 'punct') return;
 
-    const isClaimed = claimType.has(token.text);
-    // Priority: claimed this session > SRS review word
+    // A vocab claim is only "active" while the word is still in the deck.
+    // If the user removes the word, claimKind becomes null so they can re-add it.
+    const rawClaim = claimType.get(token.text) ?? null;
+    const effectiveClaim = rawClaim === 'vocab' && !deckWords.has(token.text) ? null : rawClaim;
+    const isClaimed = effectiveClaim !== null;
+    // Priority: claimed > SRS review word
     const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
 
     const el = e.currentTarget as HTMLElement;
@@ -108,17 +112,19 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else if (isClaimed) {
-      const kind = claimType.get(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaim === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else {
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
     }
   }, [claimType, onPeek, deckWords]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
-    // Optimistic update first — word turns green immediately, no flash
+    // Commit green state first, then defer the deck update in a transition so the
+    // parent re-render (which changes deckWords) never races the claimType commit
     setClaimType(prev => new Map([...prev, [word, 'vocab']]));
-    onAddToDeck({ h: word, p: pinyin, m: meaning });
+    startTransition(() => {
+      onAddToDeck({ h: word, p: pinyin, m: meaning });
+    });
     // Persist in background
     const c = await storage.getClaimedWords();
     await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
@@ -198,10 +204,12 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                const isClaimed = claimType.has(token.text);
-                // Claimed this session takes priority over SRS review
+                // Vocab claims are only active while the word is still in the deck
+                const rawClaimKind = claimType.get(token.text) ?? null;
+                const claimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
+                const isClaimed = claimKind !== null;
+                // Claimed takes priority over SRS review
                 const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
-                const claimKind = claimType.get(token.text) ?? null;
                 return (
                   <TokenEl
                     key={ti}

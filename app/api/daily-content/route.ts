@@ -55,13 +55,22 @@ Generate a cohesive set of practice materials around a single everyday theme tha
 }
 
 TOKEN formats — each token is a small JSON array:
-  ["word", "pinyin", "meaning"]    — ANY Chinese word that a learner might want to look up (include ALL content words)
-  ["word", "pinyin"]               — Very common grammatical particles/words (的、了、是、在、和、也、都 etc.)
+  ["word", "pinyin", "meaning"]    — REQUIRED for every word with 2+ characters, and any content word
+  ["word", "pinyin"]               — ONLY single-character function particles: 的、了、是、在、和、也、都、有、没、不、把、被、让、与、或、于
   ["punctuation"]                  — Punctuation only: 。！？，、—…
 
 TOKEN_ARRAY = array of the token arrays above.
 
-IMPORTANT: Use the 3-element form ["word", "pinyin", "meaning"] for ALL content words (nouns, verbs, adjectives, adverbs). Use the 2-element form ONLY for very common function words (的、了、在、是、和、也、都、有、没、不). For the VOCAB WORDS listed above, use the exact meaning from the list above.
+CRITICAL TOKENIZATION RULES:
+1. Every word with 2+ characters MUST be a 3-element array ["word","pinyin","meaning"]. No exceptions.
+2. NEVER emit ["word","pinyin"] (2-element) for any multi-character word.
+3. Do NOT bundle multiple words into one token. Write 背景下 as ["背景","bèijǐng","background; context"] + ["下","xià"] not as ["背景下","bèijǐng xià"].
+4. For the VOCAB WORDS listed above, use the exact meaning from the list above.
+
+CORRECT:   ["加快","jiākuài","to speed up; to accelerate"] ✓
+CORRECT:   ["文化遗产","wénhuà yíchǎn","cultural heritage"] ✓
+INCORRECT: ["加快","jiākuài"] ✗  ← missing meaning, NEVER do this for 2+ char words
+INCORRECT: ["背景下","bèijǐng xià"] ✗  ← bundled phrase, break it up
 
 QUESTION = {
   "q": TOKEN_ARRAY,

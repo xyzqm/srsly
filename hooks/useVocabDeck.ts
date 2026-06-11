@@ -12,7 +12,7 @@ export function useVocabDeck() {
 
   const addWord = useCallback(async (word: DeckWord) => {
     if (deck.some(d => d.h === word.h)) return;
-    const next = [...deck, word];
+    const next = [word, ...deck]; // prepend so newest words appear at the top
     setDeck(next);
     await storage.saveVocabDeck(next);
   }, [deck]);
