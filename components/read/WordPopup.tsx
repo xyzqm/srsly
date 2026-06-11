@@ -102,13 +102,11 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
         color: 'var(--pop-fg)',
         fontFamily: 'var(--f-ui)',
         boxShadow: '0 8px 32px rgba(0,0,0,.22), 0 2px 8px rgba(0,0,0,.14)',
-        // Only opacity + a subtle translateY — no scale, so content never looks squished
+        // Fade only — no translateY on close so popup never drifts toward the passage
         opacity: show ? 1 : 0,
-        transform: show ? 'translateY(0)' : 'translateY(6px)',
+        transform: 'translateY(0)',
         pointerEvents: show ? 'auto' : 'none',
-        transition: show
-          ? 'opacity .18s ease, transform .22s cubic-bezier(.2,.8,.3,1)'
-          : 'opacity .15s ease, transform .15s ease',
+        transition: 'opacity .15s ease',
       }}
     >
       {/* Close × */}

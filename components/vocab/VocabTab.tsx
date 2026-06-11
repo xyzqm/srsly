@@ -197,10 +197,14 @@ export default function VocabTab() {
   const startTimeRef = useRef<number>(0);
 
   // Keep fresh refs so timer closures never go stale
-  const removeWordRef = useRef(removeWord);
-  const clearDeckRef  = useRef(clearDeck);
-  useEffect(() => { removeWordRef.current = removeWord; }, [removeWord]);
-  useEffect(() => { clearDeckRef.current  = clearDeck;  }, [clearDeck]);
+  const removeWordRef   = useRef(removeWord);
+  const clearDeckRef    = useRef(clearDeck);
+  const pendingUndoRef  = useRef<PendingUndo | null>(null);
+  const deckRef         = useRef(deck);
+  useEffect(() => { removeWordRef.current  = removeWord;    }, [removeWord]);
+  useEffect(() => { clearDeckRef.current   = clearDeck;     }, [clearDeck]);
+  useEffect(() => { pendingUndoRef.current = pendingUndo;   }, [pendingUndo]);
+  useEffect(() => { deckRef.current        = deck;          }, [deck]);
 
   // Drain the progress bar each animation frame while an undo is pending
   useEffect(() => {
@@ -260,9 +264,19 @@ export default function VocabTab() {
     startUndo({ kind: 'clear', count });
   }, [deck.length, startUndo]);
 
-  // Clean up timer on unmount
+  // Clean up on unmount — cancel animation frame, and COMMIT any pending deletion
+  // so switching tabs before the timer expires still removes the word.
   useEffect(() => () => {
+    if (rafRef.current   !== null) cancelAnimationFrame(rafRef.current);
     if (timerRef.current !== null) clearTimeout(timerRef.current);
+    const pending = pendingUndoRef.current;
+    if (!pending) return;
+    if (pending.kind === 'single') {
+      const idx = deckRef.current.findIndex(w => w.h === pending.word.h);
+      if (idx !== -1) removeWordRef.current(idx);
+    } else {
+      clearDeckRef.current();
+    }
   }, []);
 
   // ── Display deck ────────────────────────────────────────────────────────────

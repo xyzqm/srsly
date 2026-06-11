@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect, startTransition } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -28,49 +28,66 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   // Non-interactive when there's no pinyin or the token is punctuation
   if (!token.pinyin || token.type === 'punct') return <span>{token.text}</span>;
 
-  const isClaimed = claimKind !== null;
+  // Indicator character and color — empty string when none so the span is always present
+  const indicatorChar  = claimKind === 'vocab' ? '+' : claimKind === 'tomorrow' ? '▸' : (peeked && isReviewWord) ? '↺' : '';
+  const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : claimKind === 'tomorrow' ? 'var(--gold)' : 'var(--accent)';
 
   return (
-    <ruby
-      onClick={e => onClick(e, token)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="cursor-pointer relative"
-      style={{
-        // Keep border width constant (1.5px) across all states — width changes cause layout jitter
-        borderBottom: isReviewWord
-          ? peeked
-            ? '1.5px solid var(--accent)'
-            : '1.5px dotted var(--accent)'
-          : claimKind === 'vocab'
-            ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-            : claimKind === 'tomorrow'
-              ? '1.5px solid color-mix(in srgb, var(--gold) 80%, transparent)'
-              : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
-        color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
-        paddingBottom: 1,
-        background: hovered
-          ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-          : 'transparent',
-        borderRadius: 3,
-        cursor: 'pointer',
-        // Only transition background — never border or layout properties
-        transition: 'background .12s',
-      }}
-    >
-      {token.text}
-      {/* lineHeight:0 prevents these spans from expanding the ruby base height → no layout shift */}
-      {peeked && isReviewWord && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--accent)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>↺</span>
-      )}
-      {claimKind === 'vocab' && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--jade)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>+</span>
-      )}
-      {claimKind === 'tomorrow' && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', lineHeight: 0, color: 'var(--gold)', marginLeft: 1, fontWeight: 700, pointerEvents: 'none', userSelect: 'none' }}>▸</span>
-      )}
-      <rt>{token.pinyin}</rt>
-    </ruby>
+    <>
+      <ruby
+        onClick={e => onClick(e, token)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="cursor-pointer"
+        style={{
+          borderBottom: isReviewWord
+            ? peeked
+              ? '1.5px solid var(--accent)'
+              : '1.5px dotted var(--accent)'
+            : claimKind === 'vocab'
+              ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
+              : claimKind === 'tomorrow'
+                ? '1.5px solid color-mix(in srgb, var(--gold) 80%, transparent)'
+                : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
+          color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
+          paddingBottom: 1,
+          background: hovered
+            ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+            : 'transparent',
+          borderRadius: 3,
+          cursor: 'pointer',
+          transition: 'background .12s',
+        }}
+      >
+        {token.text}
+        <rt>{token.pinyin}</rt>
+      </ruby>
+      {/*
+        Zero-width sibling span: always rendered so the DOM structure never changes
+        (adding/removing DOM nodes inside <ruby> causes layout recalculation → shake).
+        width:0 + overflow:visible means the indicator character is visually present
+        but contributes zero space to the inline flow → no layout shift ever.
+      */}
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-block',
+          width: 0,
+          overflow: 'visible',
+          whiteSpace: 'nowrap',
+          fontFamily: 'var(--f-ui)',
+          fontSize: '.5em',
+          lineHeight: 0,
+          verticalAlign: 'super',
+          fontWeight: 700,
+          pointerEvents: 'none',
+          userSelect: 'none',
+          color: indicatorChar ? indicatorColor : 'transparent',
+        }}
+      >
+        {indicatorChar || '+'}
+      </span>
+    </>
   );
 }
 
@@ -78,6 +95,22 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
   const [popup, setPopup] = useState<PopupData | null>(null);
   // Claimed tracking: maps word → 'vocab' | 'tomorrow'
   const [claimType, setClaimType] = useState<Map<string, 'vocab' | 'tomorrow'>>(new Map());
+
+  // When deckWords shrinks (word removed from deck), clear its vocab claim so the
+  // green underline + badge disappear and the popup lets the user re-add it.
+  useEffect(() => {
+    setClaimType(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [word, kind] of prev) {
+        if (kind === 'vocab' && !deckWords.has(word)) {
+          next.delete(word);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [deckWords]);
 
   // Seed claimType from storage so words added in previous sessions still look claimed
   useEffect(() => {
@@ -95,12 +128,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Skip true punctuation and words with no pinyin data
     if (!token.pinyin || token.type === 'punct') return;
 
-    // A vocab claim is only "active" while the word is still in the deck.
-    // If the user removes the word, claimKind becomes null so they can re-add it.
-    const rawClaim = claimType.get(token.text) ?? null;
-    const effectiveClaim = rawClaim === 'vocab' && !deckWords.has(token.text) ? null : rawClaim;
-    const isClaimed = effectiveClaim !== null;
-    // Priority: claimed > SRS review word
+    const isClaimed = claimType.has(token.text);
+    // Priority: claimed this session > SRS review word
     const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
 
     const el = e.currentTarget as HTMLElement;
@@ -112,19 +141,16 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else if (isClaimed) {
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaim === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+      const kind = claimType.get(token.text);
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: kind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else {
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
     }
   }, [claimType, onPeek, deckWords]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
-    // Commit green state first, then defer the deck update in a transition so the
-    // parent re-render (which changes deckWords) never races the claimType commit
     setClaimType(prev => new Map([...prev, [word, 'vocab']]));
-    startTransition(() => {
-      onAddToDeck({ h: word, p: pinyin, m: meaning });
-    });
+    onAddToDeck({ h: word, p: pinyin, m: meaning });
     // Persist in background
     const c = await storage.getClaimedWords();
     await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
