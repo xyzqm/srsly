@@ -215,7 +215,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.error ?? `HTTP ${res.status}`);
+          // Surface the real error detail (JSON parse failure, API error, etc.)
+          throw new Error(err.detail ?? err.error ?? `HTTP ${res.status}`);
         }
 
         const payload = await res.json();
