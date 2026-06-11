@@ -57,15 +57,14 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
     >
       {token.text}
       {peeked && isReviewWord && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--accent)', marginLeft: 1, fontWeight: 600 }}>↺</span>
+        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--accent)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>↺</span>
       )}
       {claimKind === 'vocab' && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--jade)', marginLeft: 1, fontWeight: 600 }}>+</span>
+        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--jade)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>+</span>
       )}
       {claimKind === 'tomorrow' && (
-        <span style={{ fontFamily: 'var(--f-ui)', fontSize: '.5em', verticalAlign: 'super', color: 'var(--gold)', marginLeft: 1, fontWeight: 600 }}>▸</span>
+        <span style={{ position: 'absolute', top: '5%', right: -7, fontFamily: 'var(--f-ui)', fontSize: 8, color: 'var(--gold)', fontWeight: 700, lineHeight: 1, pointerEvents: 'none' }}>▸</span>
       )}
-      {/* suppress unused var warning */ isClaimed && false && null}
       <rt>{token.pinyin}</rt>
     </ruby>
   );

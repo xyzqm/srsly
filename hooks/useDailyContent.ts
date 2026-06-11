@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DeckWord } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getPassageData } from '@/lib/data/allPassages';
+import { lookupWord } from '@/lib/data/dict';
 
 // ─── Raw token shapes returned by the API ───────────────────────────────────
 
@@ -35,8 +36,9 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string
   const [text, pinyin, meaning] = arr as [string, string?, string?];
   // No pinyin OR text is punctuation/symbol → non-interactive
   if (!pinyin || isPunct(text)) return { text, type: 'punct' };
-  // Resolve meaning: use AI-provided meaning, then deck meaning as fallback
-  const resolvedMeaning = meaning || deckMeanings.get(text) || '';
+  // Resolve meaning: AI-provided → deck → local dictionary (covers words the AI omits)
+  const dictEntry = lookupWord(text, pinyin, '');
+  const resolvedMeaning = meaning || deckMeanings.get(text) || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
     return { text, pinyin, meaning: resolvedMeaning, type: 'vocab' };
   }
