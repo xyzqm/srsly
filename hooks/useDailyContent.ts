@@ -271,7 +271,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
     load();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hskLevel, deck.length, trigger]); // deck.length as proxy for deck identity
+  }, [hskLevel, deck.length >= 2, trigger]); // only re-run when crossing the 2-word threshold
 
   return { dailyContent, status, errorMsg, regenerate };
 }
