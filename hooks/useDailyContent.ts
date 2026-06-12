@@ -228,15 +228,25 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
     async function load() {
       setStatus('loading');
 
-      // 1. Check cache — serve immediately if today's content exists
+      // 1. Check cache — serve immediately if today's content exists AND is
+      //    still relevant to the current deck. If the user cleared their vocab
+      //    and added new words, the cached passage was built for different words
+      //    and must not be served (would show a passage with no relation to the
+      //    new words).
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated) {
-          sanitizeCachedContent(migrated);
-          setDailyContent(migrated);
-          setStatus('ready');
-          return;
+          const currentHanzi = new Set(deckRef.current.map(w => w.h));
+          const cachedVocab  = migrated.passages.flatMap(p => p.vocabWords);
+          const stillRelevant = cachedVocab.length === 0 || cachedVocab.some(w => currentHanzi.has(w));
+          if (stillRelevant) {
+            sanitizeCachedContent(migrated);
+            setDailyContent(migrated);
+            setStatus('ready');
+            return;
+          }
+          // Cache exists but vocab has changed — fall through to regenerate
         }
       }
 
