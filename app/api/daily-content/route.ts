@@ -35,6 +35,18 @@ export async function POST(req: NextRequest) {
   const levelDesc = hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced';
   const sentenceCount = SENTENCES_PER_PASSAGE[hskLevel] ?? 7;
 
+  // Pick a daily theme so passages vary across days even with the same vocab words
+  const DAILY_THEMES = [
+    'travel and transportation', 'food and restaurants', 'work and career',
+    'family and relationships', 'health and exercise', 'technology and the internet',
+    'nature and the environment', 'shopping and money', 'education and learning',
+    'art and entertainment', 'city life and neighborhoods', 'weather and seasons',
+    'friendship and social life', 'hobbies and free time', 'history and culture',
+  ];
+  const today = new Date().toISOString().slice(0, 10);
+  const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
+  const dailyTheme = DAILY_THEMES[dayHash % DAILY_THEMES.length];
+
   // Split words into batches of BATCH_SIZE — each batch gets its own passage
   const batches: typeof words[] = [];
   for (let i = 0; i < words.length; i += BATCH_SIZE) {
@@ -50,6 +62,7 @@ export async function POST(req: NextRequest) {
   const prompt = `You are a Chinese language teacher generating personalized daily practice content.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
+TODAY'S THEME: ${dailyTheme} — all passages, fill items, and conversation must revolve around this theme.
 
 ${batchDescriptions}
 
@@ -71,7 +84,7 @@ PASSAGE = {
 }
   Each passage uses ALL the words from its designated word list (PASSAGE 1 uses PASSAGE 1 WORDS, etc.).
   Each passage is a coherent, flowing story or description (${sentenceCount}–${sentenceCount + 2} sentences).
-  All passages share one everyday theme so they feel connected.
+  All passages are set within today's theme (${dailyTheme}) and feel connected.
   Each passage must have exactly 3 comprehension questions about its own content.
 
 TOKEN formats — each token is a small JSON array:

@@ -113,7 +113,7 @@ function buildPassage(
   deckMeanings: Map<string, string>,
 ): DailyPassage {
   const rawQs = Array.isArray(rawPassage.questions) ? rawPassage.questions : [];
-  const aiQs = rawQs.length >= 2 ? buildQuestions(rawQs, dueSet, deckMeanings) : undefined;
+  const aiQs = rawQs.length >= 1 ? buildQuestions(rawQs, dueSet, deckMeanings) : undefined;
   return {
     titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckMeanings),
     sentences: buildSentences(rawPassage.sentences, dueSet, deckMeanings),
@@ -178,7 +178,7 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
 /** Maximum number of due words to send to the API per session. */
-const MAX_WORDS = 20;
+const MAX_WORDS = 10;
 /** Minimum words — ensures at least one full passage even if few are due today. */
 const MIN_WORDS = 5;
 

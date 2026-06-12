@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { speak } from '@/lib/speech';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
@@ -31,21 +31,24 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
 ];
 
 export default function Flashcards({ deck, onDone, onGrade }: Props) {
-  // Freeze the session queue at mount time so grading (which updates dueAt)
-  // doesn't mutate the queue mid-session and cause index drift.
-  const initialDeckRef = useRef(deck);
-  const sessionQueue = useMemo(() => {
-    const d = initialDeckRef.current;
-    if (d.length === 0) return [];
+  // Freeze the session queue once the deck first loads (deck is [] at mount
+  // because useVocabDeck loads async). The null→array transition happens
+  // exactly once; subsequent deck changes (FSRS updates) don't rebuild it.
+  const [sessionQueue, setSessionQueue] = useState<DeckWord[] | null>(null);
+
+  useEffect(() => {
+    if (sessionQueue !== null) return; // already frozen — don't rebuild mid-session
+    if (deck.length === 0) return;     // deck not loaded yet — wait
     const today = new Date().toISOString().slice(0, 10);
-    return d
+    const q = deck
       .filter(w => !w.dueAt || w.dueAt <= today)
       .sort((a, b) => {
         // Most overdue first, then fewest reviews
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return (a.reviews ?? 0) - (b.reviews ?? 0);
       });
-  }, []); // intentionally frozen at mount — do NOT add `deck` to deps
+    setSessionQueue(q);
+  }, [deck, sessionQueue]);
 
   const [idx, setIdx]           = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -63,6 +66,11 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         </p>
       </div>
     );
+  }
+
+  // Queue still building (deck loads async — null for one render)
+  if (sessionQueue === null) {
+    return <div className="py-14 text-center" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>Loading…</div>;
   }
 
   // No cards due today

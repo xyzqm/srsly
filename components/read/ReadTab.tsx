@@ -34,7 +34,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
 
   // AI-generated daily content (null when unavailable → fall back to static)
-  const { dailyContent, status: dailyStatus, regenerate } = useDailyContent(hskLevel, deck);
+  const { dailyContent, status: dailyStatus } = useDailyContent(hskLevel, deck);
 
   // Passage navigation
   const numPassages = dailyContent?.passages.length ?? 0;
@@ -46,7 +46,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   // Active content: daily passage when ready, static otherwise
   const SENTENCES    = currentPassage?.sentences    ?? passageData.sentences;
   const TITLE_TOKENS = currentPassage?.titleTokens  ?? passageData.titleTokens;
-  const QUESTIONS    = (currentPassage?.questions && currentPassage.questions.length >= 2)
+  const QUESTIONS    = (currentPassage?.questions && currentPassage.questions.length >= 1)
     ? currentPassage.questions
     : passageData.questions;
   const charCount    = currentPassage
@@ -212,14 +212,15 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
                 generating…
               </span>
             )}
-            {(dailyStatus === 'error' || dailyStatus === 'no-key') && (
-              <button
-                onClick={regenerate}
-                style={{ fontSize: 9, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontFamily: 'var(--f-mono)' }}
-                title={dailyStatus === 'no-key' ? 'Add ANTHROPIC_API_KEY to .env.local' : 'Retry generation'}
-              >
-                {dailyStatus === 'no-key' ? '⚠ no API key' : '↺ retry'}
-              </button>
+            {dailyStatus === 'no-key' && (
+              <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
+                ⚠ no API key
+              </span>
+            )}
+            {dailyStatus === 'error' && (
+              <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
+                ⚠ generation failed — refresh to retry
+              </span>
             )}
           </div>
           {/* Clickable title */}
@@ -305,6 +306,19 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         </>
       )}
 
+      {/* Don't render questions until the passage is ready — avoids static
+          fallback questions flashing while the AI passage is still generating */}
+      {dailyStatus === 'loading' && (
+        <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--line)' }}>
+          <div className="shimmer" style={{ height: 14, width: 180, borderRadius: 4, marginBottom: 22 }} />
+          <div className="shimmer" style={{ height: 96, borderRadius: 10, marginBottom: 14 }} />
+          <div className="shimmer" style={{ height: 96, borderRadius: 10, marginBottom: 14 }} />
+          <div className="shimmer" style={{ height: 96, borderRadius: 10 }} />
+        </div>
+      )}
+
+      {dailyStatus !== 'loading' && (
+      <>
       <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
       {/* Questions header */}
@@ -362,6 +376,8 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
 
       {/* Vocab results */}
       {showResults && <VocabResults results={vocabResults} />}
+      </>
+      )}
 
       {/* Title popup */}
       <WordPopup

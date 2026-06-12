@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import type { PassageToken } from '@/lib/types';
 import type { PopupData } from '@/components/read/WordPopup';
 import { lookupWord } from '@/lib/data/dict';
@@ -24,13 +24,9 @@ export function useWordPopup(
   const [vocabClaimed, setVocabClaimed]       = useState<Set<string>>(new Set());
   const [tomorrowClaimed, setTomorrowClaimed] = useState<Set<string>>(new Set());
 
-  // Seed from storage so previously-added words don't re-show action buttons.
-  useEffect(() => {
-    storage.getClaimedWords().then(claimed => {
-      setVocabClaimed(new Set(claimed.vocab));
-      setTomorrowClaimed(new Set(claimed.tomorrow));
-    });
-  }, []);
+  // No storage seeding — badges only show when the user explicitly acts
+  // in the current session. Deck membership (deckWords) prevents "Add to vocab"
+  // from appearing for words already in the deck.
 
   const closePopup = useCallback(() => setPopup(null), []);
 
@@ -43,16 +39,19 @@ export function useWordPopup(
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    // A vocab claim is only valid when the word is still in the deck.
-    // If deckWords is not provided we conservatively trust the claim.
-    const isVocabClaimed = vocabClaimed.has(token.text) &&
-      (deckWords === undefined || deckWords.has(token.text));
-    const isTomorrowClaimed = tomorrowClaimed.has(token.text);
+    const isInDeck            = deckWords !== undefined && deckWords.has(token.text);
+    const isVocabThisSession  = vocabClaimed.has(token.text);
+    const isTomorrowThisSession = tomorrowClaimed.has(token.text);
 
+    // Popup type priority:
+    //   1. Added to deck in this session → 'lookup' (show +Added badge)
+    //   2. Already in deck from a previous session → 'lookup' (no add button)
+    //   3. Marked learn-tomorrow this session → 'tomorrow'
+    //   4. Unknown word → 'free' (show Add to vocab / Learn this word)
     let type: PopupData['type'];
-    if (isVocabClaimed)    type = 'lookup';
-    else if (isTomorrowClaimed) type = 'tomorrow';
-    else                   type = 'free';
+    if (isVocabThisSession || isInDeck) type = 'lookup';
+    else if (isTomorrowThisSession)     type = 'tomorrow';
+    else                                type = 'free';
 
     setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type, anchorRect: rect });
   }, [vocabClaimed, tomorrowClaimed, deckWords]);

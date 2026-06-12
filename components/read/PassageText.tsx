@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useState, useCallback, useLayoutEffect } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -111,15 +111,9 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     });
   }, [deckWords]);
 
-  // Seed claimType from storage so words added in previous sessions still look claimed
-  useEffect(() => {
-    storage.getClaimedWords().then(claimed => {
-      const map = new Map<string, 'vocab' | 'tomorrow'>();
-      claimed.vocab.forEach(w => map.set(w, 'vocab'));
-      claimed.tomorrow.forEach(w => map.set(w, 'tomorrow'));
-      if (map.size > 0) setClaimType(map);
-    });
-  }, []);
+  // No storage seeding — badges only appear when the user explicitly
+  // adds a word in the current session. Deck words from previous sessions
+  // show as SRS review words (accent underline, "revealed = forgotten" popup).
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken) => {
     e.stopPropagation();
@@ -128,7 +122,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     if (!token.pinyin || token.type === 'punct') return;
 
     // Apply the same deck-check as the render section so a word removed from the
-    // deck (but still in claimType from storage seeding) shows the free popup.
+    // deck (but still in claimType from this session) shows the free popup.
     const rawClaimKind = claimType.get(token.text) ?? null;
     const effectiveClaimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
     const isClaimed = effectiveClaimKind !== null;
@@ -141,10 +135,16 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
 
     const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
     if (isReviewWord) {
+      // SRS vocab word — opening counts as forgotten for this session
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else if (isClaimed) {
+      // Added in this session
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+    } else if (deckWords.has(token.text)) {
+      // Already in deck from a previous session — show definition without add button
+      onPeek(token.text);
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
     } else {
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
     }
