@@ -21,12 +21,14 @@ export async function POST(req: NextRequest) {
   let words: { h: string; p: string; m: string }[];
   let hskLevel: number;
   let themeOffset: number;
+  let passageOnly: boolean;
 
   try {
     const body = await req.json();
     words = body.words;
     hskLevel = body.hskLevel ?? 4;
     themeOffset = body.themeOffset ?? 0;
+    passageOnly = body.passageOnly ?? false;
     if (!Array.isArray(words) || words.length < 1) {
       return NextResponse.json({ error: 'words array required' }, { status: 400 });
     }
@@ -61,7 +63,70 @@ export async function POST(req: NextRequest) {
     return `PASSAGE ${bi + 1} WORDS:\n${list}`;
   }).join('\n\n');
 
-  const prompt = `You are a Chinese language teacher generating personalized daily practice content.
+  // Shared token-format rules injected into both prompt variants
+  const TOKEN_RULES = `
+TOKEN formats — each token is a small JSON array:
+  ["word", "pinyin", "meaning"]  — REQUIRED for every word with 2+ characters and any content word
+  ["word", "pinyin"]             — ONLY single-character function particles: 的、了、是、在、和、也、都、有、没、不、把、被、让、与、或、于
+  ["punctuation"]                — Punctuation only: 。！？，、—…
+
+CRITICAL TOKENIZATION RULES:
+1. Every word with 2+ characters MUST be a 3-element array ["word","pinyin","meaning"]. No exceptions.
+2. NEVER emit ["word","pinyin"] for any multi-character word.
+3. Do NOT bundle multiple words into one token.
+4. For vocab words, use the exact meaning from the word list.
+5. NEVER split compound words: 节日→["节日","jiérì","festival"], never 节+日.
+6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.`.trim();
+
+  const QUESTION_SCHEMA = `QUESTION = {
+  "q": TOKEN_ARRAY,
+  "model": "English model answer (1-2 sentences)",
+  "key": ["hanzi_word1", "hanzi_word2"],
+  "options": [
+    {"tokens": TOKEN_ARRAY, "correct": true},
+    {"tokens": TOKEN_ARRAY, "correct": false},
+    {"tokens": TOKEN_ARRAY, "correct": false},
+    {"tokens": TOKEN_ARRAY, "correct": false}
+  ]
+}`;
+
+  // passage-only prompt (used by loadMore — no fill or convo, smaller output)
+  const passageOnlyPrompt = `You are a Chinese language teacher generating a reading passage.
+
+HSK LEVEL: ${hskLevel} (${levelDesc})
+TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
+
+WORDS TO USE:
+${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}
+
+Generate a JSON object with EXACTLY this structure:
+
+{
+  "passages": [PASSAGE]
+}
+
+PASSAGE = {
+  "title": TOKEN_ARRAY,
+  "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
+  "questions": [QUESTION, QUESTION, QUESTION]
+}
+  Use ALL the words above naturally in a coherent story or description (${sentenceCount}–${sentenceCount + 2} sentences).
+  Include exactly 3 comprehension questions about the passage content.
+
+${TOKEN_RULES}
+
+${QUESTION_SCHEMA}
+
+REQUIREMENTS:
+1. Exactly 1 passage in the "passages" array.
+2. ${sentenceCount}–${sentenceCount + 2} sentences, exactly 3 questions.
+3. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
+4. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
+
+Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
+
+  // full prompt (initial daily load — passage + fill + convo)
+  const fullPrompt = `You are a Chinese language teacher generating personalized daily practice content.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — all passages, fill items, and conversation must revolve around this theme.
@@ -74,7 +139,7 @@ ${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}
 Generate a JSON object with EXACTLY this structure:
 
 {
-  "passages": [PASSAGE, PASSAGE, ...],
+  "passages": [PASSAGE],
   "fill": [FILL_ITEM, ...],
   "convo": [CONVO_TURN, ...]
 }
@@ -84,35 +149,13 @@ PASSAGE = {
   "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
   "questions": [QUESTION, QUESTION, QUESTION]
 }
-  Each passage uses ALL the words from its designated word list (PASSAGE 1 uses PASSAGE 1 WORDS, etc.).
+  Each passage uses ALL the words from its designated word list.
   Each passage is a coherent, flowing story or description (${sentenceCount}–${sentenceCount + 2} sentences).
-  All passages are set within today's theme (${dailyTheme}) and feel connected.
   Each passage must have exactly 3 comprehension questions about its own content.
 
-TOKEN formats — each token is a small JSON array:
-  ["word", "pinyin", "meaning"]  — REQUIRED for every word with 2+ characters and any content word
-  ["word", "pinyin"]             — ONLY single-character function particles: 的、了、是、在、和、也、都、有、没、不、把、被、让、与、或、于
-  ["punctuation"]                — Punctuation only: 。！？，、—…
+${TOKEN_RULES}
 
-CRITICAL TOKENIZATION RULES:
-1. Every word with 2+ characters MUST be a 3-element array ["word","pinyin","meaning"]. No exceptions.
-2. NEVER emit ["word","pinyin"] for any multi-character word.
-3. Do NOT bundle multiple words into one token.
-4. For vocab words, use the exact meaning from the list above.
-5. NEVER split compound words. Even if a single character (e.g. 节, 学, 习) appears in the vocab list, that does NOT mean you should break apart compound words containing it. 节日 must ALWAYS be one token ["节日","jiérì","festival/holiday"], never split into 节+日. The same applies to all compounds: 中秋节, 春节, 学习, 意义, etc.
-6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.
-
-QUESTION = {
-  "q": TOKEN_ARRAY,
-  "model": "English model answer (1-2 sentences)",
-  "key": ["hanzi_word1", "hanzi_word2"],
-  "options": [
-    {"tokens": TOKEN_ARRAY, "correct": true},
-    {"tokens": TOKEN_ARRAY, "correct": false},
-    {"tokens": TOKEN_ARRAY, "correct": false},
-    {"tokens": TOKEN_ARRAY, "correct": false}
-  ]
-}
+${QUESTION_SCHEMA}
 
 FILL_ITEM = {
   "before": TOKEN_ARRAY,
@@ -138,6 +181,8 @@ REQUIREMENTS:
 6. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
+
+  const prompt = passageOnly ? passageOnlyPrompt : fullPrompt;
 
   try {
     const response = await client.messages.create({

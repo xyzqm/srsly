@@ -224,11 +224,17 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       // 1. Check cache — always serve today's cached content if it exists.
       //    The passage stays stable while reading; use loadMore() to add new
       //    passages for new vocab words.
+      //    NOTE: old cache (from when MAX_WORDS was 10) may have 2 passages.
+      //    We cap at MAX_INITIAL_PASSAGES so the page always starts with 1.
+      const MAX_INITIAL_PASSAGES = 1;
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated) {
           sanitizeCachedContent(migrated);
+          if (migrated.passages.length > MAX_INITIAL_PASSAGES) {
+            migrated.passages = migrated.passages.slice(0, MAX_INITIAL_PASSAGES);
+          }
           setDailyContent(migrated);
           setStatus('ready');
           return;
@@ -385,6 +391,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
           hskLevel,
           themeOffset: dailyContent.passages.length, // pick a different theme
+          passageOnly: true, // skip fill/convo for smaller, faster output
         }),
       });
 
