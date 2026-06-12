@@ -177,8 +177,8 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-/** Maximum number of due words to send to the API per session. */
-const MAX_WORDS = 10;
+/** Words per passage — also the max sent for initial generation (= 1 passage). */
+const MAX_WORDS = 5;
 /** Minimum words — ensures at least one full passage even if few are due today. */
 const MIN_WORDS = 5;
 
@@ -188,7 +188,8 @@ export interface UseDailyContentResult {
   dailyContent: DailyContent | null;
   status: DailyContentStatus;
   errorMsg: string;
-  regenerate: () => void;
+  loadMore: () => Promise<void>;
+  loadingMore: boolean;
 }
 
 /**
@@ -201,19 +202,11 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
   const [status, setStatus] = useState<DailyContentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [trigger, setTrigger] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Keep a stable ref to the deck so the async load closure always sees current data
   const deckRef = useRef(deck);
   deckRef.current = deck;
-
-  const regenerate = useCallback(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(`srsly-daily-${hskLevel}-${today}`);
-    }
-    setDailyContent(null);
-    setTrigger(t => t + 1);
-  }, [hskLevel]);
 
   useEffect(() => {
     if (hskLevel === 0) return;
@@ -228,25 +221,17 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
     async function load() {
       setStatus('loading');
 
-      // 1. Check cache — serve immediately if today's content exists AND is
-      //    still relevant to the current deck. If the user cleared their vocab
-      //    and added new words, the cached passage was built for different words
-      //    and must not be served (would show a passage with no relation to the
-      //    new words).
+      // 1. Check cache — always serve today's cached content if it exists.
+      //    The passage stays stable while reading; use loadMore() to add new
+      //    passages for new vocab words.
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated) {
-          const currentHanzi = new Set(deckRef.current.map(w => w.h));
-          const cachedVocab  = migrated.passages.flatMap(p => p.vocabWords);
-          const stillRelevant = cachedVocab.length === 0 || cachedVocab.some(w => currentHanzi.has(w));
-          if (stillRelevant) {
-            sanitizeCachedContent(migrated);
-            setDailyContent(migrated);
-            setStatus('ready');
-            return;
-          }
-          // Cache exists but vocab has changed — fall through to regenerate
+          sanitizeCachedContent(migrated);
+          setDailyContent(migrated);
+          setStatus('ready');
+          return;
         }
       }
 
@@ -361,5 +346,77 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hskLevel, deck.length >= 2, trigger]); // only re-run when crossing the 2-word threshold
 
-  return { dailyContent, status, errorMsg, regenerate };
+  /**
+   * Generate one more passage and append it to the existing list.
+   * Prefers vocab words not yet covered by existing passages.
+   * Picks a shifted daily theme so the story is different from the first.
+   */
+  const loadMore = useCallback(async () => {
+    if (!dailyContent || loadingMore || hskLevel === 0) return;
+    setLoadingMore(true);
+
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const currentDeck = deckRef.current;
+
+      // Prefer words not covered by any existing passage
+      const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
+      const dueWords = currentDeck
+        .filter(w => !w.dueAt || w.dueAt <= todayStr)
+        .sort((a, b) => {
+          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+          return (a.reviews ?? 0) - (b.reviews ?? 0);
+        });
+      const notDue = currentDeck
+        .filter(w => w.dueAt && w.dueAt > todayStr)
+        .sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
+      const allSorted = [...dueWords, ...notDue];
+      const uncovered = allSorted.filter(w => !coveredWords.has(w.h));
+      // Use uncovered if enough; otherwise fall back to all words
+      const pool = uncovered.length >= MIN_WORDS ? uncovered : allSorted;
+      const selectedWords = pool.slice(0, MAX_WORDS);
+
+      if (selectedWords.length < 1) return;
+
+      const res = await fetch('/api/daily-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
+          hskLevel,
+          themeOffset: dailyContent.passages.length, // pick a different theme
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][] };
+      const { data, vocabWords, batches } = payload;
+
+      const dueSet = new Map(selectedWords.map(w => [w.h, w.m]));
+      const dueSetWords = new Set(vocabWords);
+      const rawPassages = Array.isArray(data.passages) ? data.passages : [];
+      if (rawPassages.length === 0) return;
+
+      const newPassage = buildPassage(
+        rawPassages[0] as { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
+        batches[0] ?? [],
+        dueSetWords,
+        dueSet,
+      );
+
+      setDailyContent(prev => {
+        if (!prev) return prev;
+        const updated: DailyContent = { ...prev, passages: [...prev.passages, newPassage] };
+        storage.saveDailyContent(updated);
+        return updated;
+      });
+    } catch (err) {
+      console.error('[loadMore]', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [dailyContent, loadingMore, hskLevel]);
+
+  return { dailyContent, status, errorMsg, loadMore, loadingMore };
 }

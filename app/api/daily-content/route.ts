@@ -20,11 +20,13 @@ export async function POST(req: NextRequest) {
 
   let words: { h: string; p: string; m: string }[];
   let hskLevel: number;
+  let themeOffset: number;
 
   try {
     const body = await req.json();
     words = body.words;
     hskLevel = body.hskLevel ?? 4;
+    themeOffset = body.themeOffset ?? 0;
     if (!Array.isArray(words) || words.length < 1) {
       return NextResponse.json({ error: 'words array required' }, { status: 400 });
     }
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
   ];
   const today = new Date().toISOString().slice(0, 10);
   const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
-  const dailyTheme = DAILY_THEMES[dayHash % DAILY_THEMES.length];
+  const dailyTheme = DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length];
 
   // Split words into batches of BATCH_SIZE — each batch gets its own passage
   const batches: typeof words[] = [];
@@ -147,7 +149,19 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
 
     const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const json = JSON.parse(cleaned);
+
+    // Attempt to repair common AI JSON mistakes before parsing.
+    // Most frequent: trailing commas before ] or } (strict JSON disallows these).
+    function repairJson(s: string): string {
+      return s.replace(/,(\s*[}\]])/g, '$1');
+    }
+
+    let json: Record<string, unknown>;
+    try {
+      json = JSON.parse(cleaned);
+    } catch {
+      json = JSON.parse(repairJson(cleaned));
+    }
 
     return NextResponse.json({
       ok: true,

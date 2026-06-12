@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ResponseMode, FRResponse, DeckWord } from '@/lib/types';
 import { getPassageData } from '@/lib/data/allPassages';
 import { storage } from '@/lib/storage';
@@ -34,7 +34,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
 
   // AI-generated daily content (null when unavailable → fall back to static)
-  const { dailyContent, status: dailyStatus } = useDailyContent(hskLevel, deck);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck);
 
   // Passage navigation
   const numPassages = dailyContent?.passages.length ?? 0;
@@ -105,6 +105,21 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setResultsBuilt(false);
     setVocabResults([]);
   }, [dailyContent]);
+
+  // When loadMore appends a passage, auto-navigate to it
+  const prevNumPassages = useRef(numPassages);
+  useEffect(() => {
+    if (numPassages > prevNumPassages.current) {
+      setPassageIdx(numPassages - 1);
+      setActiveSentence(0);
+      setPeeked(new Set());
+      setFrResponses({});
+      setShowResults(false);
+      setResultsBuilt(false);
+      setVocabResults([]);
+    }
+    prevNumPassages.current = numPassages;
+  }, [numPassages]);
 
   // Reset reading state when switching passages
   const handlePassageChange = useCallback((delta: number) => {
@@ -244,30 +259,47 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         </div>
       </div>
 
-      {/* Passage navigation — shown when there are multiple passages */}
-      {numPassages > 1 && dailyStatus === 'ready' && (
-        <div className="flex items-center gap-3 mb-4">
+      {/* Passage navigation + new-passage button */}
+      {dailyStatus === 'ready' && (
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          {numPassages > 1 && (
+            <>
+              <button
+                onClick={() => handlePassageChange(-1)}
+                disabled={passageIdx === 0}
+                className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+              >
+                ← prev
+              </button>
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.08em' }}>
+                passage <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{passageIdx + 1}</span> / {numPassages}
+                {reviewWordCount > 0 && (
+                  <span style={{ marginLeft: 6, color: 'var(--jade)', fontWeight: 500 }}>· {reviewWordCount} word{reviewWordCount !== 1 ? 's' : ''}</span>
+                )}
+              </span>
+              <button
+                onClick={() => handlePassageChange(1)}
+                disabled={passageIdx === numPassages - 1}
+                className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+              >
+                next →
+              </button>
+            </>
+          )}
           <button
-            onClick={() => handlePassageChange(-1)}
-            disabled={passageIdx === 0}
-            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
-            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
+            style={{
+              marginLeft: 'auto',
+              fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
+              background: 'none', border: '1px solid var(--line)', borderRadius: 6,
+              padding: '5px 10px', color: loadingMore ? 'var(--ink-faint)' : 'var(--ink-soft)',
+            }}
           >
-            ← prev
-          </button>
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.08em' }}>
-            passage <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{passageIdx + 1}</span> / {numPassages}
-            {reviewWordCount > 0 && (
-              <span style={{ marginLeft: 6, color: 'var(--jade)', fontWeight: 500 }}>· {reviewWordCount} word{reviewWordCount !== 1 ? 's' : ''}</span>
-            )}
-          </span>
-          <button
-            onClick={() => handlePassageChange(1)}
-            disabled={passageIdx === numPassages - 1}
-            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
-            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
-          >
-            next →
+            {loadingMore ? 'generating…' : '+ new passage'}
           </button>
         </div>
       )}
