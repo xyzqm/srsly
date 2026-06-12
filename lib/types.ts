@@ -2,12 +2,18 @@ export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
 export interface DeckWord {
-  h: string;   // hanzi
-  p: string;   // pinyin
-  m: string;   // meaning (comma-separated if multiple)
-  cn?: string; // example sentence (HTML)
-  en?: string; // example translation
-  reviews?: number; // correct review count for mastery tracking
+  h: string;     // hanzi
+  p: string;     // pinyin
+  m: string;     // meaning (comma-separated if multiple)
+  cn?: string;   // example sentence (HTML)
+  en?: string;   // example translation
+  reviews?: number;    // successful review count for mastery tracking
+  dueAt?: string;      // YYYY-MM-DD next review date; absent = due immediately
+  // FSRS scheduling fields (added after initial SRS migration)
+  stability?: number;  // days until retrievability ≈ 90%
+  difficulty?: number; // 1–10 card difficulty (higher = harder to remember)
+  lapses?: number;     // number of times the card was forgotten (Again)
+  lastReview?: string; // YYYY-MM-DD of most recent review
 }
 
 export interface PassageToken {
@@ -70,14 +76,19 @@ export type ResponseMode = 'fr' | 'mc';
 export type TabId = 'read' | 'practice' | 'dash' | 'vocab' | 'settings';
 export type PracticeMode = 'flash' | 'fill' | 'convo';
 
-/** AI-generated daily practice content, cached in localStorage per day+level. */
-export interface DailyContent {
-  date: string;          // YYYY-MM-DD
-  hskLevel: number;
+/** One reading passage inside DailyContent. */
+export interface DailyPassage {
   titleTokens: PassageToken[];
   sentences: Sentence[];
-  vocabWords: string[];  // hanzi of the target due words
-  questions?: Question[]; // comprehension questions (may be absent in old cached content)
+  vocabWords: string[];   // hanzi of the words targeted by this passage
+  questions?: Question[];
+}
+
+/** AI-generated daily practice content, cached in localStorage per day+level. */
+export interface DailyContent {
+  date: string;           // YYYY-MM-DD
+  hskLevel: number;
+  passages: DailyPassage[];  // one per batch of ~5 due words
   fillItems: FillItem[];
   conversation: ConvoTurn[];
 }

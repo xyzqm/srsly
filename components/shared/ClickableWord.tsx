@@ -7,18 +7,36 @@ interface Props {
   onOpen: (e: React.MouseEvent, token: PassageToken) => void;
   /** Extra inline styles applied to the ruby/span wrapper */
   style?: React.CSSProperties;
-  /** When true, renders green vocab underline + + badge (matches PassageText TokenEl) */
-  isVocab?: boolean;
+  /**
+   * Visual claim state for this word:
+   *  'vocab'    — already in SRS deck: solid jade underline + '+' badge
+   *  'tomorrow' — queued for tomorrow: solid gold underline + '▸' badge
+   *  null/undefined — unknown word: dotted faint underline, no badge
+   */
+  claimKind?: 'vocab' | 'tomorrow' | null;
 }
 
 /**
  * A single clickable word that opens a definition popup.
  * Tokens without pinyin render as plain spans (punct / plain text).
  */
-export default function ClickableWord({ token, onOpen, style, isVocab }: Props) {
+export default function ClickableWord({ token, onOpen, style, claimKind }: Props) {
   const [hovered, setHovered] = useState(false);
 
   if (!token.pinyin || token.type === 'punct') return <span style={style}>{token.text}</span>;
+
+  const borderStyle = claimKind === 'vocab'
+    ? '1.5px solid var(--jade)'
+    : claimKind === 'tomorrow'
+      ? '1.5px solid var(--gold)'
+      : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
+
+  const badgeChar = claimKind === 'tomorrow' ? '▸' : '+';
+  const badgeColor = claimKind === 'vocab'
+    ? 'var(--jade)'
+    : claimKind === 'tomorrow'
+      ? 'var(--gold)'
+      : 'transparent';
 
   return (
     <>
@@ -28,9 +46,7 @@ export default function ClickableWord({ token, onOpen, style, isVocab }: Props) 
         onMouseLeave={() => setHovered(false)}
         className="cursor-pointer"
         style={{
-          borderBottom: isVocab
-            ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-            : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)',
+          borderBottom: borderStyle,
           background: hovered ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
           borderRadius: 3,
           paddingBottom: 1,
@@ -41,7 +57,7 @@ export default function ClickableWord({ token, onOpen, style, isVocab }: Props) 
         {token.text}
         <rt>{token.pinyin}</rt>
       </ruby>
-      {/* Badge indicator — same approach as PassageText TokenEl */}
+      {/* Badge indicator */}
       <span
         aria-hidden="true"
         style={{
@@ -53,10 +69,10 @@ export default function ClickableWord({ token, onOpen, style, isVocab }: Props) 
           fontWeight: 700,
           pointerEvents: 'none',
           userSelect: 'none',
-          color: isVocab ? 'var(--jade)' : 'transparent',
+          color: badgeColor,
         }}
       >
-        +
+        {badgeChar}
       </span>
     </>
   );

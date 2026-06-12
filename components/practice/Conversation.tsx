@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import type { DeckWord, ConvoTurn } from '@/lib/types';
+import type { DeckWord, ConvoTurn, PassageToken } from '@/lib/types';
 import { CONVO } from '@/lib/data/conversation';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
@@ -9,10 +9,18 @@ import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import ConvoReport from './ConvoReport';
 
+/**
+ * Chat message data model.
+ * Tutor messages store token arrays (not JSX) so the render function can
+ * compute live claimKind on every render — fixing the stale-closure bug where
+ * "Add to vocab" / "Learn this word" didn't update the underline in-chat.
+ */
 interface ChatMessage {
   side: 'tutor' | 'me';
-  html: React.ReactNode;
-  audioText?: string; // for audio-only mode
+  tokens?: PassageToken[];  // tutor messages only
+  text?: string;            // user messages only
+  isTyping?: boolean;       // typing indicator placeholder
+  audioText?: string;
 }
 interface Response { text: string; turnIdx: number; }
 
@@ -20,6 +28,7 @@ interface Props {
   onScore: (score: number) => void;
   deck: DeckWord[];
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  onGrade?: (hanzi: string, grade: number) => void;
   /** Daily AI-generated conversation turns. Falls back to CONVO. */
   turns?: ConvoTurn[];
 }
@@ -30,10 +39,20 @@ const SpeakerIcon = () => (
   </svg>
 );
 
-export default function Conversation({ onScore, deck, onAddVocab, turns }: Props) {
+export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns }: Props) {
   const ACTIVE_CONVO = turns ?? CONVO;
-  const TARGET_WORDS = useMemo(() => deck.map(d => d.h), [deck]);
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
+  // Use a ref so showTutor always reads the current conversation without
+  // needing to be recreated whenever ACTIVE_CONVO reference changes.
+  const activeConvoRef = useRef(ACTIVE_CONVO);
+  activeConvoRef.current = ACTIVE_CONVO;
+
+  // Only show today's SRS-due words in the scorecard — not the entire deck
+  const TARGET_WORDS = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return deck.filter(w => !w.dueAt || w.dueAt <= today).map(d => d.h);
+  }, [deck]);
+  const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turnIdx, setTurnIdx] = useState(0);
@@ -56,32 +75,12 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
   }, []);
 
   const showTutor = useCallback((idx: number) => {
-    const turn = ACTIVE_CONVO[idx];
+    const turn = activeConvoRef.current[idx];
     if (!turn) return;
     const audioText = turn.tokens.map(t => t.text).join('');
-    addMessage({
-      side: 'tutor',
-      audioText,
-      html: (
-        <div className="flex items-start gap-2.5">
-          <button
-            onClick={() => speak(audioText)}
-            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 cursor-pointer"
-            style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
-          >
-            <SpeakerIcon />
-          </button>
-          <div
-            className="rounded-[14px] rounded-bl-[4px] px-4 py-3"
-            style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', fontWeight: 'var(--han-weight)' as 'bold' }}
-          >
-            {turn.tokens.map((t, i) => <ClickableWord key={i} token={t} onOpen={openPopup} />)}
-          </div>
-        </div>
-      ),
-    });
+    addMessage({ side: 'tutor', tokens: turn.tokens, audioText });
     setChips(turn.suggestions.map(toks => ({ text: toks.map(t => t.text).join(''), tokens: toks })));
-  }, [addMessage, openPopup]);
+  }, [addMessage]); // no openPopup dep — tokens are stored, rendered live
 
   useEffect(() => {
     // Guard against React Strict Mode double-invocation in development
@@ -94,35 +93,15 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
   const userSay = useCallback((plain: string) => {
     if (sessionEnded) return;
     setResponses(prev => [...prev, { text: plain, turnIdx }]);
-    addMessage({
-      side: 'me',
-      html: (
-        <div
-          className="rounded-[14px] rounded-br-[4px] px-4 py-3"
-          style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--accent)', color: '#fff', fontWeight: 'var(--han-weight)' as 'bold' }}
-        >
-          {plain}
-        </div>
-      ),
-    });
+    addMessage({ side: 'me', text: plain });
     setChips([]);
-    const typingMsg: ChatMessage = {
-      side: 'tutor',
-      html: (
-        <div className="flex items-start gap-2.5">
-          <div className="w-7 h-7 shrink-0" />
-          <div className="flex gap-1.5 px-4 py-4 rounded-[14px] rounded-bl-[4px]" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-            {[0, 200, 400].map(d => (
-              <span key={d} className="w-[7px] h-[7px] rounded-full" style={{ background: 'var(--ink-faint)', animation: `blink 1.2s infinite`, animationDelay: `${d}ms` }} />
-            ))}
-          </div>
-        </div>
-      ),
-    };
+
+    // Show typing indicator, then advance to next tutor turn
+    const typingMsg: ChatMessage = { side: 'tutor', isTyping: true };
     setMessages(prev => [...prev, typingMsg]);
     setTimeout(() => {
-      setMessages(prev => prev.filter(m => m !== typingMsg));
-      const nextIdx = Math.min(turnIdx + 1, ACTIVE_CONVO.length - 1);
+      setMessages(prev => prev.filter(m => !m.isTyping));
+      const nextIdx = Math.min(turnIdx + 1, activeConvoRef.current.length - 1);
       setTurnIdx(nextIdx);
       showTutor(nextIdx);
     }, 950);
@@ -147,7 +126,7 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
     let relevantTurns = 0, fluentTurns = 0;
     responses.forEach(r => {
       TARGET_WORDS.forEach(w => { if (r.text.includes(w)) usedSet.add(w); });
-      const key = (ACTIVE_CONVO[r.turnIdx]?.key) || [];
+      const key = (activeConvoRef.current[r.turnIdx]?.key) || [];
       if (key.some(k => r.text.includes(k))) relevantTurns++;
       const hanCount = (r.text.match(/[一-鿿]/g) || []).length;
       if (hanCount >= 3) fluentTurns++;
@@ -159,11 +138,16 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
     const overall = Math.round(vocab * 0.4 + relevance * 0.35 + fluency * 0.25);
     const missed = TARGET_WORDS.filter(w => !usedSet.has(w));
 
+    // Apply FSRS grades: Good (3) for words used in conversation, Hard (2) for unused
+    TARGET_WORDS.forEach(w => {
+      onGrade?.(w, usedSet.has(w) ? 3 : 2);
+    });
+
     setReportMetrics({ vocab, relevance, fluency, overall });
     setReportUsed([...usedSet]);
     setReportMissed(missed);
     setShowReport(true);
-  }, [sessionEnded, responses, TARGET_WORDS]);
+  }, [sessionEnded, responses, TARGET_WORDS, onGrade]);
 
   const usedCount = useMemo(() => {
     const s = new Set<string>();
@@ -248,15 +232,23 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
         </div>
       </div>
 
-      {/* Chat messages */}
+      {/* Chat messages — tutor tokens rendered live so claimKind is always current */}
       <div className="flex flex-col gap-3.5 py-1.5">
         {messages.map((msg, i) => (
           <div
             key={i}
             style={{ alignSelf: msg.side === 'me' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}
           >
-            {audioOnly && msg.side === 'tutor' ? (
-              /* Audio-only: show a speaker button instead of the full message */
+            {msg.isTyping ? (
+              <div className="flex items-start gap-2.5">
+                <div className="w-7 h-7 shrink-0" />
+                <div className="flex gap-1.5 px-4 py-4 rounded-[14px] rounded-bl-[4px]" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                  {[0, 200, 400].map(d => (
+                    <span key={d} className="w-[7px] h-[7px] rounded-full" style={{ background: 'var(--ink-faint)', animation: 'blink 1.2s infinite', animationDelay: `${d}ms` }} />
+                  ))}
+                </div>
+              </div>
+            ) : audioOnly && msg.side === 'tutor' ? (
               <div className="flex items-start gap-2.5">
                 <button
                   onClick={() => msg.audioText && speak(msg.audioText)}
@@ -267,8 +259,34 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
                   <SpeakerIcon />
                 </button>
               </div>
+            ) : msg.side === 'tutor' ? (
+              <div className="flex items-start gap-2.5">
+                <button
+                  onClick={() => msg.audioText && speak(msg.audioText)}
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center mt-0.5 cursor-pointer"
+                  style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
+                >
+                  <SpeakerIcon />
+                </button>
+                <div
+                  className="rounded-[14px] rounded-bl-[4px] px-4 py-3"
+                  style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', fontWeight: 'var(--han-weight)' as 'bold' }}
+                >
+                  {msg.tokens?.map((t, ti) => {
+                    const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const
+                      : tomorrowClaimed.has(t.text) ? 'tomorrow' as const
+                      : null;
+                    return <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={ck} />;
+                  })}
+                </div>
+              </div>
             ) : (
-              msg.html
+              <div
+                className="rounded-[14px] rounded-br-[4px] px-4 py-3"
+                style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--accent)', color: '#fff', fontWeight: 'var(--han-weight)' as 'bold' }}
+              >
+                {msg.text}
+              </div>
             )}
           </div>
         ))}
@@ -279,18 +297,12 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
       {suggestionsOn && chips.length > 0 && !sessionEnded && (
         <div className="flex flex-col gap-2 mt-4 items-end">
           {chips.map((reply, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-2.5"
-            >
+            <div key={i} className="flex items-center gap-2.5">
               {/* Radio circle — submits the reply */}
               <button
                 onClick={() => userSay(reply.text)}
-                className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer"
-                style={{
-                  border: '2px solid var(--accent)',
-                  background: 'transparent',
-                }}
+                className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer hover:border-[var(--jade)] hover:bg-[var(--jade-soft)]"
+                style={{ border: '2px solid var(--line)', background: 'transparent' }}
                 title="Send this reply"
               />
               {/* Text — clickable words open popup */}
@@ -298,12 +310,17 @@ export default function Conversation({ onScore, deck, onAddVocab, turns }: Props
                 className="transition-all duration-150"
                 style={{
                   fontFamily: 'var(--f-han)', fontSize: 16,
-                  background: 'var(--card)', border: '1px solid var(--accent)',
-                  color: 'var(--accent-deep)', borderRadius: 13, padding: '10px 16px',
+                  background: 'var(--card)', border: '1px solid var(--line)',
+                  color: 'var(--ink)', borderRadius: 13, padding: '10px 16px',
                   textAlign: 'right', lineHeight: 1.7, fontWeight: 'var(--han-weight)' as 'bold',
                 }}
               >
-                {reply.tokens.map((t, ti) => <ClickableWord key={ti} token={t} onOpen={openPopup} />)}
+                {reply.tokens.map((t, ti) => {
+                  const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const
+                    : tomorrowClaimed.has(t.text) ? 'tomorrow' as const
+                    : null;
+                  return <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={ck} />;
+                })}
               </div>
             </div>
           ))}

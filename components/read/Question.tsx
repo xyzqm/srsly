@@ -13,9 +13,10 @@ interface Props {
   savedResponse?: FRResponse;
   onSave: (r: FRResponse) => void;
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  deckWords?: Set<string>;
 }
 
-export default function QuestionComponent({ question, index, mode, savedResponse, onSave, onAddVocab }: Props) {
+export default function QuestionComponent({ question, index, mode, savedResponse, onSave, onAddVocab, deckWords }: Props) {
   const [mcDone, setMcDone] = useState(false);
   const [mcRight, setMcRight] = useState<boolean | null>(null);
   const [selectedOi, setSelectedOi] = useState<number | null>(null);
@@ -23,7 +24,12 @@ export default function QuestionComponent({ question, index, mode, savedResponse
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
   const [loading, setLoading] = useState(false);
 
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
+  // Only show the vocab badge after the user explicitly claims the word via popup
+  const claimKind = (text: string) =>
+    (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const
+    : tomorrowClaimed.has(text) ? 'tomorrow' as const
+    : null;
 
   const questionText = question.q.map(t => t.text).join('');
 
@@ -79,7 +85,7 @@ export default function QuestionComponent({ question, index, mode, savedResponse
             {index + 1}.
           </span>
           {question.q.map((t, i) => (
-            <ClickableWord key={i} token={t} onOpen={openPopup} />
+            <ClickableWord key={i} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />
           ))}
         </div>
       </div>
@@ -126,7 +132,7 @@ export default function QuestionComponent({ question, index, mode, savedResponse
                   }}
                 >
                   {opt.tokens.map((t, ti) => (
-                    <ClickableWord key={ti} token={t} onOpen={openPopup} />
+                    <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />
                   ))}
                 </div>
               </div>

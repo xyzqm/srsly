@@ -66,6 +66,7 @@ export default function ExtrasTab({ onScore }: Props) {
           onDone={() => setMode('convo')}
           deck={deck}
           onAddVocab={handleAddVocab}
+          onGrade={updateWordReview}
           items={dailyContent?.fillItems}
         />
       )}
@@ -75,6 +76,7 @@ export default function ExtrasTab({ onScore }: Props) {
           onScore={onScore}
           deck={deck}
           onAddVocab={handleAddVocab}
+          onGrade={updateWordReview}
           turns={dailyContent?.conversation}
         />
       )}

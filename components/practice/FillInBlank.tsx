@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import type { FillItem } from '@/lib/types';
 import { FILL_ITEMS } from '@/lib/data/fill';
@@ -12,17 +12,39 @@ interface Props {
   onDone: () => void;
   deck: DeckWord[];
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  onGrade?: (hanzi: string, grade: number) => void;
   /** Override items — supplied by daily AI content. Falls back to FILL_ITEMS. */
   items?: FillItem[];
 }
 
-export default function FillInBlank({ onDone, deck, onAddVocab, items }: Props) {
-  const activeItems = items ?? FILL_ITEMS;
-  const [answers, setAnswers] = useState<Record<number, { correct: boolean; chosenOi: number } | null>>({});
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow } = useWordPopup(onAddVocab);
+/**
+ * Per-item answer state:
+ *  - wrongOis: option indices the user already tried and got wrong
+ *  - resolved: true when no more clicks are allowed (correct, or 2 wrongs)
+ *  - gotCorrect: true if they eventually selected the correct option
+ */
+interface ItemState {
+  wrongOis: number[];
+  resolved: boolean;
+  gotCorrect: boolean;
+}
 
-  // Reset answers when items change (e.g. daily content arrives)
+export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }: Props) {
+  const activeItems = items ?? FILL_ITEMS;
   const itemsKey = activeItems.map(it => it.answer[0]).join(',');
+
+  const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
+
+  // Reset state when the item set changes (e.g. daily content arrives)
+  useEffect(() => { setItemStates({}); }, [itemsKey]);
+
+  const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
+  // Only show the vocab badge after the user explicitly adds a word in this session
+  const claimKind = (text: string) =>
+    (vocabClaimed.has(text) && deckWords.has(text)) ? 'vocab' as const
+    : tomorrowClaimed.has(text) ? 'tomorrow' as const
+    : null;
 
   if (deck.length === 0) {
     return (
@@ -36,7 +58,52 @@ export default function FillInBlank({ onDone, deck, onAddVocab, items }: Props) 
     );
   }
 
-  const allDone = activeItems.every((_, i) => answers[i] != null);
+  const allDone = activeItems.every((_, i) => itemStates[i]?.resolved === true);
+
+  const handleOptionClick = (idx: number, oi: number, correct: boolean) => {
+    const state = itemStates[idx];
+    if (state?.resolved) return;
+    if (state?.wrongOis.includes(oi)) return; // already tried this wrong option
+
+    if (correct) {
+      const wrongs = state?.wrongOis.length ?? 0;
+      // Good (3) if first try, Hard (2) if had to try again
+      const grade = wrongs === 0 ? 3 : 2;
+      onGrade?.(activeItems[idx].answer[0], grade);
+      setItemStates(prev => ({
+        ...prev,
+        [idx]: { wrongOis: state?.wrongOis ?? [], resolved: true, gotCorrect: true },
+      }));
+    } else {
+      const newWrongs = [...(state?.wrongOis ?? []), oi];
+      if (newWrongs.length >= 2) {
+        // Two wrong tries — reveal the answer, grade Again (1)
+        onGrade?.(activeItems[idx].answer[0], 1);
+        setItemStates(prev => ({
+          ...prev,
+          [idx]: { wrongOis: newWrongs, resolved: true, gotCorrect: false },
+        }));
+      } else {
+        // First wrong try — give them another chance
+        setItemStates(prev => ({
+          ...prev,
+          [idx]: { wrongOis: newWrongs, resolved: false, gotCorrect: false },
+        }));
+      }
+    }
+  };
+
+  // Session summary for the completion screen
+  const summary = Object.values(itemStates).reduce(
+    (acc, s) => {
+      if (!s.resolved) return acc;
+      if (s.gotCorrect && s.wrongOis.length === 0) acc.good++;
+      else if (s.gotCorrect) acc.hard++;
+      else acc.again++;
+      return acc;
+    },
+    { good: 0, hard: 0, again: 0 },
+  );
 
   return (
     <div>
@@ -48,116 +115,147 @@ export default function FillInBlank({ onDone, deck, onAddVocab, items }: Props) 
       </div>
 
       <p style={{ fontSize: 14.5, color: 'var(--ink-soft)', lineHeight: 1.55, maxWidth: '54ch', marginBottom: 22 }}>
-        Each sentence uses today&apos;s vocabulary. Click the circle next to a choice to submit — or click any word to look it up first.
+        Each sentence uses today&apos;s vocabulary. You get two tries per blank — first try correct earns the best interval, second try or a miss pushes it to review sooner.
       </p>
 
-      <div key={itemsKey}>
-        {activeItems.map((item, idx) => {
-          const ans = answers[idx];
-          const beforeText = item.before.map(t => t.text).join('');
-          const afterText  = item.after.map(t => t.text).join('');
-          const fullText   = beforeText + item.answer[0] + afterText;
+      {activeItems.map((item, idx) => {
+        const state = itemStates[idx];
+        const beforeText = item.before.map(t => t.text).join('');
+        const afterText  = item.after.map(t => t.text).join('');
+        const fullText   = beforeText + item.answer[0] + afterText;
 
-          return (
-            <div key={idx} className="rounded-xl px-5 py-5 mb-4" style={{ border: '1px solid var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, white), var(--card))' }}>
-              {/* Sentence with blank */}
-              <div className="flex items-start gap-3 mb-4">
-                <button
-                  onClick={() => ans ? speak(fullText) : speakWithBlank(beforeText, afterText)}
-                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer mt-1"
-                  style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
+        const blankColor = state?.resolved
+          ? state.gotCorrect ? 'var(--jade)' : 'var(--accent)'
+          : state?.wrongOis.length ? 'var(--gold)' : 'var(--accent)';
+
+        return (
+          <div key={idx} className="rounded-xl px-5 py-5 mb-4" style={{ border: '1px solid var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, var(--paper)), var(--card))' }}>
+            {/* Sentence with blank */}
+            <div className="flex items-start gap-3 mb-4">
+              <button
+                onClick={() => state?.resolved ? speak(fullText) : speakWithBlank(beforeText, afterText)}
+                className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer mt-1"
+                style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)' }}
+              >
+                <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>
+                </svg>
+              </button>
+              <div style={{ fontFamily: 'var(--f-han)', fontSize: 21, lineHeight: 1.9, fontWeight: 'var(--han-weight)' as 'bold' }}>
+                {item.before.map((t, i) => <ClickableWord key={`b${i}`} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />)}
+                <span
+                  className="inline-block text-center mx-1 px-1"
+                  style={{
+                    minWidth: 54,
+                    borderBottom: `2px solid ${blankColor}`,
+                    color: state?.resolved ? blankColor : 'var(--ink-faint)',
+                  }}
                 >
-                  <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>
-                  </svg>
-                </button>
-                <div style={{ fontFamily: 'var(--f-han)', fontSize: 21, lineHeight: 1.9, fontWeight: 'var(--han-weight)' as 'bold' }}>
-                  {item.before.map((t, i) => <ClickableWord key={`b${i}`} token={t} onOpen={openPopup} />)}
-                  <span
-                    className="inline-block text-center mx-1 px-1"
-                    style={{
-                      minWidth: 54,
-                      borderBottom: `2px solid ${ans ? (ans.correct ? 'var(--jade)' : 'var(--accent)') : 'var(--accent)'}`,
-                      color: ans ? (ans.correct ? 'var(--jade)' : 'var(--accent)') : 'var(--ink-faint)',
-                    }}
-                  >
-                    {ans ? item.answer[0] : '＿＿'}
-                  </span>
-                  {item.after.map((t, i) => <ClickableWord key={`a${i}`} token={t} onOpen={openPopup} />)}
-                </div>
+                  {state?.resolved ? item.answer[0] : '＿＿'}
+                </span>
+                {item.after.map((t, i) => <ClickableWord key={`a${i}`} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />)}
               </div>
-
-              {/* Options — radio circle on left, tokens clickable */}
-              <div className="flex flex-col gap-2 pl-10">
-                {item.options.map(([hanzi, pinyin, correct], oi) => {
-                  const showCorrect = ans != null && correct;
-                  const isWrongSelected = ans != null && !correct && ans.chosenOi === oi;
-                  const optToken = { text: hanzi, pinyin, meaning: '' };
-
-                  return (
-                    <div key={oi} className="flex items-center gap-3">
-                      {/* Radio circle — submits */}
-                      <button
-                        disabled={!!ans}
-                        onClick={() => {
-                          if (ans) return;
-                          setAnswers(prev => ({ ...prev, [idx]: { correct, chosenOi: oi } }));
-                        }}
-                        className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer disabled:cursor-default"
-                        style={{
-                          border: `2px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
-                          background: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'transparent',
-                        }}
-                        title={ans ? undefined : 'Select this answer'}
-                      >
-                        {showCorrect && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
-                        {isWrongSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
-                      </button>
-
-                      {/* Option text — clickable word */}
-                      <div
-                        className="flex-1 rounded-[9px] px-4 py-2.5"
-                        style={{
-                          fontFamily: 'var(--f-han)', fontSize: 17,
-                          background: showCorrect ? 'var(--jade-soft)' : isWrongSelected ? 'var(--accent-soft)' : 'var(--paper-2)',
-                          border: `1px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
-                          color: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--ink)',
-                          fontWeight: 'var(--han-weight)' as 'bold',
-                        }}
-                      >
-                        <ClickableWord token={optToken} onOpen={openPopup} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {ans && !ans.correct && (
-                <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--accent)' }}>
-                  ↺ Answer revealed — {item.answer[0]} goes back to tomorrow&apos;s queue.
-                </div>
-              )}
-              {ans && ans.correct && (
-                <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--jade)' }}>Correct.</div>
-              )}
             </div>
-          );
-        })}
-      </div>
+
+            {/* Options */}
+            <div className="flex flex-col gap-2 pl-10">
+              {item.options.map(([hanzi, pinyin, correct], oi) => {
+                const wasTriedWrong  = state?.wrongOis.includes(oi) === true;
+                const showAsCorrect  = state?.resolved && correct;
+                const isDisabled     = !!state?.resolved || wasTriedWrong;
+                const isGreyed       = !!state?.resolved && !correct && !wasTriedWrong;
+                const optToken       = { text: hanzi, pinyin, meaning: '' };
+
+                let borderColor = 'var(--line)';
+                let bg = 'var(--paper-2)';
+                let textColor = 'var(--ink)';
+                if (showAsCorrect)  { borderColor = 'var(--jade)';   bg = 'var(--jade-soft)';   textColor = 'var(--jade)'; }
+                else if (wasTriedWrong) { borderColor = 'var(--accent)'; bg = 'var(--accent-soft)'; textColor = 'var(--accent)'; }
+                else if (isGreyed)  { textColor = 'var(--ink-faint)'; }
+
+                return (
+                  <div key={oi} className="flex items-center gap-3">
+                    {/* Radio / result indicator */}
+                    <button
+                      disabled={isDisabled}
+                      onClick={() => handleOptionClick(idx, oi, correct)}
+                      className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer disabled:cursor-default"
+                      style={{
+                        border: `2px solid ${showAsCorrect ? 'var(--jade)' : wasTriedWrong ? 'var(--accent)' : 'var(--line)'}`,
+                        background: showAsCorrect ? 'var(--jade)' : wasTriedWrong ? 'var(--accent)' : 'transparent',
+                        opacity: isGreyed ? 0.4 : 1,
+                      }}
+                      title={isDisabled ? undefined : 'Select this answer'}
+                    >
+                      {showAsCorrect   && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                      {wasTriedWrong   && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
+                    </button>
+
+                    {/* Option text */}
+                    <div
+                      className="flex-1 rounded-[9px] px-4 py-2.5 transition-all duration-150"
+                      style={{
+                        fontFamily: 'var(--f-han)', fontSize: 17,
+                        background: bg, border: `1px solid ${borderColor}`,
+                        color: textColor, fontWeight: 'var(--han-weight)' as 'bold',
+                        opacity: isGreyed ? 0.45 : 1,
+                      }}
+                    >
+                      <ClickableWord token={optToken} onOpen={openPopup} claimKind={claimKind(hanzi)} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Feedback message */}
+            {state && !state.resolved && state.wrongOis.length > 0 && (
+              <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--gold)', fontFamily: 'var(--f-mono)' }}>
+                Not quite — one attempt left.
+              </div>
+            )}
+            {state?.resolved && state.gotCorrect && state.wrongOis.length === 0 && (
+              <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--jade)', fontFamily: 'var(--f-mono)' }}>
+                ✓ Correct first try · scheduled further out.
+              </div>
+            )}
+            {state?.resolved && state.gotCorrect && state.wrongOis.length > 0 && (
+              <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--gold)', fontFamily: 'var(--f-mono)' }}>
+                ✓ Correct on second try · scheduled sooner for extra practice.
+              </div>
+            )}
+            {state?.resolved && !state.gotCorrect && (
+              <div className="pl-10 mt-3 text-[12.5px]" style={{ color: 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
+                ↺ {item.answer[0]} ({item.answer[1]}) — back to review soon.
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       {allDone && (
-        <div className="flex justify-center mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
-          <button
-            onClick={onDone}
-            className="cursor-pointer transition-all duration-150"
-            style={{
-              fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-              background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px',
-              boxShadow: '0 2px 0 var(--accent-deep)',
-            }}
-          >
-            Continue to conversation →
-          </button>
+        <div className="mt-6 p-5 rounded-[14px] animate-rise" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
+            Fill-in-blank results
+          </div>
+          <div className="flex gap-4 flex-wrap mb-6">
+            {summary.good  > 0 && <div><span style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, color: 'var(--jade)' }}>{summary.good}</span><span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--jade)', marginLeft: 5 }}>first try</span></div>}
+            {summary.hard  > 0 && <div><span style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, color: 'var(--gold)' }}>{summary.hard}</span><span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--gold)', marginLeft: 5 }}>second try</span></div>}
+            {summary.again > 0 && <div><span style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, color: 'var(--accent)' }}>{summary.again}</span><span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--accent)', marginLeft: 5 }}>missed</span></div>}
+          </div>
+          <div className="flex justify-center">
+            <button
+              onClick={onDone}
+              className="cursor-pointer transition-all duration-150"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px',
+                boxShadow: '0 2px 0 var(--accent-deep)',
+              }}
+            >
+              Continue to conversation →
+            </button>
+          </div>
         </div>
       )}
 

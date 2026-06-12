@@ -1,28 +1,21 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { speak } from '@/lib/speech';
+import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 
 interface Props {
   deck: DeckWord[];
   onDone: () => void;
-  onGrade?: (hanzi: string, delta: number) => void;
+  onGrade?: (hanzi: string, grade: number) => void;
 }
 
-/**
- * Determine if a word is "due" based on when it was last reviewed.
- * We use `reviews` as a rough proxy. Words with no `lastSeen` date fall back
- * to always-due so they're always surfaced for new users.
- */
+/** A word is due when its dueAt date is today or earlier, or when dueAt is absent (new word). */
 function isDue(word: DeckWord): boolean {
-  const reviews = word.reviews ?? 0;
-  // Treat words with 0-1 reviews as always due
-  if (reviews <= 1) return true;
-  // Without a lastSeen timestamp we can't be precise — treat as due
-  return true; // TODO: add lastSeen field to DeckWord for precise scheduling
+  if (!word.dueAt) return true;
+  const today = new Date().toISOString().slice(0, 10);
+  return word.dueAt <= today;
 }
-
-const MAX_SESSION = 20; // cap cards per session so it doesn't feel endless
 
 function sdm(m: string) {
   return m.split(', ').map((part, i, arr) => (
@@ -30,23 +23,35 @@ function sdm(m: string) {
   ));
 }
 
-export default function Flashcards({ deck, onDone, onGrade }: Props) {
-  // Build the session queue once: due words first (sorted fewest reviews → most),
-  // then any non-due words if the total queue is very small.
-  const sessionQueue = useMemo(() => {
-    if (deck.length === 0) return [];
-    const due    = deck.filter(isDue).sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
-    const notDue = deck.filter(w => !isDue(w));
-    // Fill up to MAX_SESSION: prioritise due, then pad with non-due
-    const combined = [...due, ...notDue].slice(0, MAX_SESSION);
-    return combined;
-  }, [deck]); // intentionally only recomputes when deck changes (not on grade)
+const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
+  { label: 'Again', grade: 1, color: 'var(--accent)' },
+  { label: 'Hard',  grade: 2, color: 'var(--gold)' },
+  { label: 'Good',  grade: 3, color: 'var(--jade)' },
+  { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
+];
 
-  const [idx, setIdx]         = useState(0);
+export default function Flashcards({ deck, onDone, onGrade }: Props) {
+  // Freeze the session queue at mount time so grading (which updates dueAt)
+  // doesn't mutate the queue mid-session and cause index drift.
+  const initialDeckRef = useRef(deck);
+  const sessionQueue = useMemo(() => {
+    const d = initialDeckRef.current;
+    if (d.length === 0) return [];
+    const today = new Date().toISOString().slice(0, 10);
+    return d
+      .filter(w => !w.dueAt || w.dueAt <= today)
+      .sort((a, b) => {
+        // Most overdue first, then fewest reviews
+        if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+        return (a.reviews ?? 0) - (b.reviews ?? 0);
+      });
+  }, []); // intentionally frozen at mount — do NOT add `deck` to deps
+
+  const [idx, setIdx]           = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [done, setDone]        = useState(false);
+  const [done, setDone]         = useState(false);
   // Track results within this session for the summary screen
-  const [results, setResults]  = useState<{ label: string; color: string }[]>([]);
+  const [results, setResults]   = useState<{ label: string; color: string }[]>([]);
 
   if (deck.length === 0) {
     return (
@@ -60,15 +65,51 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
     );
   }
 
+  // No cards due today
+  if (sessionQueue.length === 0) {
+    const nextDue = deck.reduce<string | null>((earliest, w) => {
+      if (!w.dueAt) return earliest;
+      return earliest === null || w.dueAt < earliest ? w.dueAt : earliest;
+    }, null);
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>All caught up!</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          No cards are due for review right now.
+          {nextDue && (
+            <> Next review scheduled for <strong>{nextDue}</strong>.</>
+          )}
+        </p>
+        <button
+          onClick={onDone}
+          className="cursor-pointer transition-all duration-150 mt-6 inline-block"
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px',
+            boxShadow: '0 2px 0 var(--accent-deep)',
+          }}
+        >
+          Go to fill-in-blank →
+        </button>
+      </div>
+    );
+  }
+
   if (done) {
     const okCount = results.filter(r => r.label === 'Good' || r.label === 'Easy').length;
     const total   = results.length;
+    const dueNow  = deck.filter(isDue).length;
     return (
       <div className="text-center py-10">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 60, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>完</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 8 }}>Session complete.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 4px' }}>
-          {okCount} / {total} recalled · {deck.length - total > 0 ? `${deck.length - total} more word${deck.length - total === 1 ? '' : 's'} in your deck` : 'all words reviewed'}
+          {okCount} / {total} recalled
+          {dueNow > 0
+            ? <> · <span style={{ color: 'var(--accent)' }}>{dueNow} still due</span></>
+            : ' · all reviewed for today'
+          }
         </p>
         {/* Mini result bar */}
         <div className="flex justify-center gap-1 mt-3 mb-6">
@@ -94,23 +135,15 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
   const card = sessionQueue[idx];
   const totalInSession = sessionQueue.length;
   const progress = (idx / totalInSession) * 100;
+  const dueCount = deck.filter(isDue).length;
 
-  const grade = (delta: number, label: string, color: string) => {
-    onGrade?.(card.h, delta);
+  const grade = (fsrsGrade: FsrsGrade, label: string, color: string) => {
+    onGrade?.(card.h, fsrsGrade);
     setResults(prev => [...prev, { label, color }]);
     if (idx + 1 >= totalInSession) { setDone(true); return; }
     setIdx(i => i + 1);
     setRevealed(false);
   };
-
-  const grades = [
-    { label: 'Again',  interval: 'retry soon',  color: 'var(--accent)',    delta: -1 },
-    { label: 'Hard',   interval: '1 day',        color: 'var(--gold)',      delta: 0  },
-    { label: 'Good',   interval: '3–7 days',     color: 'var(--jade)',      delta: 1  },
-    { label: 'Easy',   interval: '2+ weeks',     color: 'var(--ink-soft)',  delta: 2  },
-  ];
-
-  const dueCount = deck.filter(isDue).length;
 
   return (
     <div>
@@ -118,12 +151,12 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
       <div className="flex justify-between items-end mb-6">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Vocabulary review
+            Vocabulary review · FSRS
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
             Card {idx + 1} of {totalInSession}
             {dueCount > 0 && (
-              <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due</span>
+              <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}
           </div>
         </div>
@@ -132,16 +165,26 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         </div>
       </div>
 
-      {/* Review count badge */}
-      <div className="flex justify-end mb-2">
+      {/* FSRS state badge */}
+      <div className="flex justify-end mb-2 gap-2">
+        {card.stability !== undefined && (
+          <span style={{
+            fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em',
+            background: 'var(--line-soft)', color: 'var(--ink-faint)',
+            borderRadius: 4, padding: '2px 6px',
+          }}>
+            S={card.stability.toFixed(1)}d · D={card.difficulty?.toFixed(1) ?? '?'}
+          </span>
+        )}
         <span style={{
           fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em',
           background: 'var(--line-soft)', color: 'var(--ink-faint)',
           borderRadius: 4, padding: '2px 6px',
         }}>
           reviewed {card.reviews ?? 0}×
-          {(card.reviews ?? 0) >= 5 && ' · mature'}
-          {(card.reviews ?? 0) === 0 && ' · new'}
+          {(card.lapses ?? 0) > 0 && ` · ${card.lapses} lapse${card.lapses === 1 ? '' : 's'}`}
+          {(card.reviews ?? 0) === 0 && card.stability === undefined && ' · new'}
+          {(card.reviews ?? 0) >= 5 && (card.lapses ?? 0) === 0 && ' · mature'}
         </span>
       </div>
 
@@ -149,8 +192,8 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
       <div
         className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[330px] px-10 py-14"
         style={{
-          background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 40%, white), var(--card))',
-          border: '1px solid var(--line)', boxShadow: '0 1px 0 #fff inset, 0 10px 30px rgba(34,32,28,.05)',
+          background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))',
+          border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)',
         }}
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
@@ -190,20 +233,23 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
           </button>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
-            {grades.map(g => (
-              <button
-                key={g.label}
-                onClick={() => grade(g.delta, g.label, g.color)}
-                className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-                style={{
-                  background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`,
-                  borderRadius: 10, padding: '13px 8px', textAlign: 'center',
-                }}
-              >
-                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
-                <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{g.interval}</div>
-              </button>
-            ))}
+            {GRADES.map(g => {
+              const days = fsrsNextInterval(card, g.grade);
+              return (
+                <button
+                  key={g.label}
+                  onClick={() => grade(g.grade, g.label, g.color)}
+                  className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
+                  style={{
+                    background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`,
+                    borderRadius: 10, padding: '13px 8px', textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{fmtInterval(days)}</div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -211,7 +257,7 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
       {/* Session info footer */}
       <div className="mt-6 pt-4" style={{ borderTop: '1px solid var(--line-soft)' }}>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '.05em', textAlign: 'center' }}>
-          Reviewing {totalInSession} of {deck.length} word{deck.length !== 1 ? 's' : ''} this session (max {MAX_SESSION}/session)
+          Reviewing {totalInSession} due card{totalInSession !== 1 ? 's' : ''} · {deck.length} total in deck
         </div>
       </div>
     </div>

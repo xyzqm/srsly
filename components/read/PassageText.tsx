@@ -232,11 +232,11 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                // claimType is kept in sync with the deck by the useLayoutEffect above,
-                // so no render-time deck-check is needed here — that check was causing
-                // a flash on "Add to vocab" when claimType and deckWords updated in
-                // separate renders.
-                const claimKind = claimType.get(token.text) ?? null;
+                const rawClaimKind = claimType.get(token.text) ?? null;
+                // Mask a stale 'vocab' claim when the word is no longer in the deck
+                // (e.g. added then removed). React 18 auto-batches setClaimType and
+                // setDeck from the same event, so both are in sync during a new add.
+                const claimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
                 const isClaimed = claimKind !== null;
                 // Claimed takes priority over SRS review
                 const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);

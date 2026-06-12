@@ -1,6 +1,6 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DeckWord } from '@/lib/types';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getPassageData } from '@/lib/data/allPassages';
 import { lookupWord } from '@/lib/data/dict';
@@ -15,28 +15,21 @@ type RawTok = [string] | [string, string] | [string, string, string];
  */
 const PUNCT_CHARS = new Set([
   '。','！','？','，','、','—','…','·','「','」','『','』',
-  '“','”','‘','’','（','）','【','】','《','》','〈','〉',
+  '\u201c','\u201d','\u2018','\u2019','（','）','【','】','《','》','〈','〉',
   '：','；',',','.',';',':','!','?','(',')','"',"'",'[',']','{','}',
   '–','○','●','□','■','◇','◆','△','▲','▽','▼','★','☆','•','‥',
   '～','~','／','\\','|','`','^',
 ]);
-
 function isPunct(text: string): boolean {
   if (PUNCT_CHARS.has(text)) return true;
-  // Single char that is not a CJK character or Latin letter → treat as punct
-  if (text.length === 1 && !/[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
+  // Single char that is not CJK or Latin → treat as punct
+  if (text.length === 1 && !/[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
   return false;
 }
 
-/**
- * Convert a raw API token to a PassageToken.
- * @param deckMeanings  map of hanzi → meaning from the user's deck (fallback for due-words)
- */
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken {
   const [text, pinyin, meaning] = arr as [string, string?, string?];
-  // No pinyin OR text is punctuation/symbol → non-interactive
   if (!pinyin || isPunct(text)) return { text, type: 'punct' };
-  // Resolve meaning: AI-provided → deck → local dictionary (covers words the AI omits)
   const dictEntry = lookupWord(text, pinyin, '');
   const resolvedMeaning = meaning || deckMeanings.get(text) || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
@@ -47,7 +40,9 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string
 
 function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckMeanings: Map<string, string>): Sentence[] {
   return rawRows.map(row => {
-    const tokens = row.map(r => rawToToken(r, dueWords, deckMeanings));
+    const tokens = row
+      .filter(r => r[0] !== '') // drop empty tokens the AI occasionally emits
+      .map(r => rawToToken(r, dueWords, deckMeanings));
     return { tokens, plainText: tokens.map(t => t.text).join('') };
   });
 }
@@ -69,9 +64,9 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings
       [options[i], options[j]] = [options[j], options[i]];
     }
     return {
-      before: f.before.map(r => rawToToken(r, dueWords, deckMeanings)),
+      before: f.before.filter(r => r[0] !== '').map(r => rawToToken(r, dueWords, deckMeanings)),
       answer: f.answer,
-      after: f.after.map(r => rawToToken(r, dueWords, deckMeanings)),
+      after: f.after.filter(r => r[0] !== '').map(r => rawToToken(r, dueWords, deckMeanings)),
       options,
     };
   });
@@ -110,6 +105,23 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMean
   }));
 }
 
+/** Build a single DailyPassage from raw API output. */
+function buildPassage(
+  rawPassage: { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
+  vocabWords: string[],
+  dueSet: Set<string>,
+  deckMeanings: Map<string, string>,
+): DailyPassage {
+  const rawQs = Array.isArray(rawPassage.questions) ? rawPassage.questions : [];
+  const aiQs = rawQs.length >= 2 ? buildQuestions(rawQs, dueSet, deckMeanings) : undefined;
+  return {
+    titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckMeanings),
+    sentences: buildSentences(rawPassage.sentences, dueSet, deckMeanings),
+    vocabWords,
+    questions: aiQs,
+  };
+}
+
 /**
  * Retroactively fix cached content that was parsed before the punct-detection
  * logic existed. Any token whose text is punctuation but still has a pinyin
@@ -122,8 +134,14 @@ function sanitizeCachedContent(content: DailyContent): void {
       t.type = 'punct';
     }
   }
-  content.titleTokens.forEach(fixToken);
-  content.sentences.forEach(s => s.tokens.forEach(fixToken));
+  content.passages.forEach(p => {
+    p.titleTokens.forEach(fixToken);
+    p.sentences.forEach(s => s.tokens.forEach(fixToken));
+    p.questions?.forEach(q => {
+      q.q.forEach(fixToken);
+      q.options.forEach(opt => opt.tokens.forEach(fixToken));
+    });
+  });
   content.fillItems.forEach(fi => {
     fi.before.forEach(fixToken);
     fi.after.forEach(fixToken);
@@ -134,7 +152,35 @@ function sanitizeCachedContent(content: DailyContent): void {
   });
 }
 
+/**
+ * Migrate old flat-structure DailyContent (pre-passages refactor) to new format.
+ * Returns null if the data is corrupt and should be ignored.
+ */
+function migrateContent(raw: Record<string, unknown>): DailyContent | null {
+  // Already new format
+  if (Array.isArray(raw.passages)) return raw as unknown as DailyContent;
+  // Old format: titleTokens/sentences at top level
+  if (!raw.sentences || !raw.titleTokens) return null;
+  return {
+    date: raw.date as string,
+    hskLevel: raw.hskLevel as number,
+    passages: [{
+      titleTokens: raw.titleTokens as PassageToken[],
+      sentences: raw.sentences as Sentence[],
+      vocabWords: (raw.vocabWords as string[]) ?? [],
+      questions: raw.questions as Question[] | undefined,
+    }],
+    fillItems: (raw.fillItems as FillItem[]) ?? [],
+    conversation: (raw.conversation as ConvoTurn[]) ?? [],
+  };
+}
+
 // ─── Hook ────────────────────────────────────────────────────────────────────
+
+/** Maximum number of due words to send to the API per session. */
+const MAX_WORDS = 20;
+/** Minimum words — ensures at least one full passage even if few are due today. */
+const MIN_WORDS = 5;
 
 export type DailyContentStatus = 'idle' | 'loading' | 'ready' | 'error' | 'no-key' | 'no-words';
 
@@ -147,18 +193,20 @@ export interface UseDailyContentResult {
 
 /**
  * Loads (or generates) today's AI-driven practice content.
+ * Only words with dueAt <= today are sent to the API (SRS scheduling).
  * Falls back to null when: no API key, <2 deck words, or generation fails.
- * @param hskLevel Current HSK level from settings.
- * @param deck     User's vocab deck (needed to pick due words).
  */
 export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [trigger, setTrigger] = useState(0); // bump to force re-fetch
+  const [trigger, setTrigger] = useState(0);
+
+  // Keep a stable ref to the deck so the async load closure always sees current data
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
 
   const regenerate = useCallback(() => {
-    // Clear cached content for today so we re-fetch
     const today = new Date().toISOString().slice(0, 10);
     if (typeof window !== 'undefined') {
       localStorage.removeItem(`srsly-daily-${hskLevel}-${today}`);
@@ -168,7 +216,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
   }, [hskLevel]);
 
   useEffect(() => {
-    if (hskLevel === 0) return; // not loaded yet
+    if (hskLevel === 0) return;
     if (deck.length < 2) {
       setStatus('no-words');
       setDailyContent(null);
@@ -180,19 +228,41 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
     async function load() {
       setStatus('loading');
 
-      // 1. Check cache
+      // 1. Check cache — serve immediately if today's content exists
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
-        // Fix any tokens that were cached before the punct-detection fix
-        sanitizeCachedContent(cached);
-        setDailyContent(cached);
-        setStatus('ready');
-        return;
+        const migrated = migrateContent(cached as unknown as Record<string, unknown>);
+        if (migrated) {
+          sanitizeCachedContent(migrated);
+          setDailyContent(migrated);
+          setStatus('ready');
+          return;
+        }
       }
 
-      // 2. Choose due words: prioritise least-reviewed, cap at 8
-      const sorted = [...deck].sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
-      const dueWords = sorted.slice(0, 8);
+      // 2. Select words to practice today
+      //    Priority: due words (dueAt <= today) sorted most-overdue first, then by fewest reviews.
+      //    If nothing is due, fall back to least-reviewed deck words so first-time users always get content.
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const currentDeck = deckRef.current;
+
+      // Due words — sorted most-overdue first, then fewest reviews
+      const dueWords = currentDeck
+        .filter(w => !w.dueAt || w.dueAt <= todayStr)
+        .sort((a, b) => {
+          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+          return (a.reviews ?? 0) - (b.reviews ?? 0);
+        });
+
+      // Pad with non-due words (least reviewed) to always fill at least one batch (MIN_WORDS).
+      // This ensures new users or fully-reviewed-for-today users still get a passage.
+      // Pad up to MIN_WORDS even if fewer are due today
+      const notDue = currentDeck
+        .filter(w => w.dueAt && w.dueAt > todayStr)
+        .sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
+
+      const combined = [...dueWords, ...notDue];
+      const selectedWords = combined.slice(0, Math.max(MIN_WORDS, Math.min(combined.length, MAX_WORDS)));
 
       // 3. Call API
       try {
@@ -200,7 +270,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            words: dueWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
+            words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
             hskLevel,
           }),
         });
@@ -215,46 +285,53 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          // Surface the real error detail (JSON parse failure, API error, etc.)
           throw new Error(err.detail ?? err.error ?? `HTTP ${res.status}`);
         }
 
         const payload = await res.json();
-        const { data, vocabWords } = payload as { data: Record<string, unknown>; vocabWords: string[] };
+        const { data, vocabWords, batches } = payload as {
+          data: Record<string, unknown>;
+          vocabWords: string[];
+          batches: string[][];
+        };
 
         const dueSet = new Set(vocabWords);
-        // Build a meaning lookup from the user's deck so we can fill gaps the AI leaves
-        const deckMeanings = new Map(dueWords.map(w => [w.h, w.m]));
+        const deckMeanings = new Map(selectedWords.map(w => [w.h, w.m]));
         const passageData = getPassageData(hskLevel);
         const today = new Date().toISOString().slice(0, 10);
 
-        // Parse questions if provided
-        const rawQuestions = Array.isArray(data.questions) ? data.questions : [];
-        const aiQuestions = rawQuestions.length >= 2
-          ? buildQuestions(rawQuestions, dueSet, deckMeanings)
-          : undefined;
+        // 4. Build passages array from API response
+        const rawPassages = Array.isArray(data.passages) ? data.passages : [];
+        let passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) =>
+          buildPassage(
+            p as { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
+            batches[pi] ?? [],
+            dueSet,
+            deckMeanings,
+          )
+        );
+
+        // Fall back to static passage if AI produced nothing usable
+        if (passages.length === 0 || passages[0].sentences.length < 2) {
+          passages = [{
+            titleTokens: passageData.titleTokens,
+            sentences: passageData.sentences,
+            vocabWords,
+            questions: passageData.questions,
+          }];
+        }
 
         const content: DailyContent = {
           date: today,
           hskLevel,
-          titleTokens: buildTitleTokens(data.title as RawTok[], dueSet, deckMeanings),
-          sentences: buildSentences(data.sentences as RawTok[][], dueSet, deckMeanings),
-          vocabWords,
-          questions: aiQuestions,
+          passages,
           fillItems: buildFillItems(data.fill as unknown[], dueSet, deckMeanings),
           conversation: buildConvo(data.convo as unknown[], dueSet, deckMeanings),
         };
 
-        // Validate minimums — fall back gracefully if Claude produced garbage
-        if (
-          content.sentences.length < 2 ||
-          content.fillItems.length < 1 ||
-          content.conversation.length < 2
-        ) {
-          // Supplement with static data if generation was too short
-          if (content.fillItems.length < 1) content.fillItems = passageData.fillItems;
-          if (content.conversation.length < 2) content.conversation = passageData.conversation;
-        }
+        // Validate minimums — supplement with static if generation was too short
+        if (content.fillItems.length < 1) content.fillItems = passageData.fillItems;
+        if (content.conversation.length < 2) content.conversation = passageData.conversation;
 
         if (cancelled) return;
         await storage.saveDailyContent(content);

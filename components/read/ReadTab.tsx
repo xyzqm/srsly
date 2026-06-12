@@ -4,6 +4,7 @@ import type { ResponseMode, FRResponse, DeckWord } from '@/lib/types';
 import { getPassageData } from '@/lib/data/allPassages';
 import { storage } from '@/lib/storage';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import ClickableWord from '@/components/shared/ClickableWord';
@@ -21,7 +22,7 @@ interface Props {
 }
 
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
-  const { deck, addWord } = useVocabDeck();
+  const { deck, addWord, updateWordReview } = useVocabDeck();
 
   // Load HSK level from prefs
   const [hskLevel, setHskLevel] = useState(0);
@@ -35,22 +36,35 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   // AI-generated daily content (null when unavailable → fall back to static)
   const { dailyContent, status: dailyStatus, regenerate } = useDailyContent(hskLevel, deck);
 
-  // Active content: daily when ready, static otherwise
-  const SENTENCES    = dailyContent?.sentences    ?? passageData.sentences;
-  const TITLE_TOKENS = dailyContent?.titleTokens  ?? passageData.titleTokens;
-  // Use AI-generated questions when available, fall back to static
-  const QUESTIONS    = (dailyContent?.questions && dailyContent.questions.length >= 2)
-    ? dailyContent.questions
+  // Passage navigation
+  const numPassages = dailyContent?.passages.length ?? 0;
+  const [passageIdx, setPassageIdx] = useState(0);
+
+  // Current passage from daily content
+  const currentPassage = dailyContent?.passages[passageIdx];
+
+  // Active content: daily passage when ready, static otherwise
+  const SENTENCES    = currentPassage?.sentences    ?? passageData.sentences;
+  const TITLE_TOKENS = currentPassage?.titleTokens  ?? passageData.titleTokens;
+  const QUESTIONS    = (currentPassage?.questions && currentPassage.questions.length >= 2)
+    ? currentPassage.questions
     : passageData.questions;
-  const charCount    = dailyContent
-    ? dailyContent.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
+  const charCount    = currentPassage
+    ? currentPassage.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
     : passageData.charCount;
 
-  // Vocab set for review-word highlighting
+  // Vocab set for review-word highlighting — current passage only
   const PASSAGE_VOCAB_SET = useMemo(
-    () => dailyContent ? new Set(dailyContent.vocabWords) : passageData.vocabSet,
-    [dailyContent, passageData.vocabSet]
+    () => currentPassage ? new Set(currentPassage.vocabWords) : passageData.vocabSet,
+    [currentPassage, passageData.vocabSet]
   );
+
+  // Total unique review words across ALL passages (for header)
+  const totalReviewWordCount = useMemo(() => {
+    if (!dailyContent) return 0;
+    const all = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
+    return all.size;
+  }, [dailyContent]);
 
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
   const targetWords = useMemo(
@@ -73,6 +87,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   // Reset reading state whenever the level changes
   useEffect(() => {
     setActiveSentence(0);
+    setPassageIdx(0);
     setPeeked(new Set());
     setFrResponses({});
     setShowResults(false);
@@ -80,13 +95,30 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setVocabResults([]);
   }, [hskLevel]);
 
-  // Also reset when daily content arrives so sentence index doesn't go out of bounds
+  // Also reset when daily content arrives
   useEffect(() => {
     setActiveSentence(0);
+    setPassageIdx(0);
+    setPeeked(new Set());
+    setFrResponses({});
+    setShowResults(false);
+    setResultsBuilt(false);
+    setVocabResults([]);
   }, [dailyContent]);
 
-  // Title popup
-  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning }));
+  // Reset reading state when switching passages
+  const handlePassageChange = useCallback((delta: number) => {
+    setPassageIdx(prev => Math.max(0, Math.min(prev + delta, numPassages - 1)));
+    setActiveSentence(0);
+    setPeeked(new Set());
+    setFrResponses({});
+    setShowResults(false);
+    setResultsBuilt(false);
+    setVocabResults([]);
+  }, [numPassages]);
+
+  // Title popup — pass deckWords so stale vocab claims are cleared when words are removed
+  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning }), deckWords);
 
   const handleAddVocabQuestion = useCallback((word: string, pinyin: string, meaning: string) => {
     addWord({ h: word, p: pinyin, m: meaning });
@@ -112,13 +144,28 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
           QUESTIONS[+i].key.forEach(k => { if (targetWords.includes(k)) usedWords.add(k); });
         }
       });
+
       const rows = targetWords.map(w => {
         const deckWord = deck.find(d => d.h === w);
-        if (peeked.has(w)) return { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: 'Peeked — back to tomorrow' };
-        if (usedWords.has(w)) return { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: 'Recalled in your answer · +3 days' };
-        return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: 'Not used this session · holds' };
+        // Peeked → Again (1), Recalled → Good (3), Not used → Hard (2)
+        const grade: FsrsGrade = peeked.has(w) ? 1 : usedWords.has(w) ? 3 : 2;
+        const days = deckWord ? fsrsNextInterval(deckWord, grade) : 1;
+        const label = fmtInterval(days);
+        if (peeked.has(w)) {
+          return { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: `Peeked — review in ${label}` };
+        }
+        if (usedWords.has(w)) {
+          return { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: `Recalled — next in ${label}` };
+        }
+        return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: `Not used — next in ${label}` };
       });
       setVocabResults(rows);
+
+      // Apply FSRS grades for every passage vocab word
+      targetWords.forEach(w => {
+        const grade: FsrsGrade = peeked.has(w) ? 1 : usedWords.has(w) ? 3 : 2;
+        updateWordReview(w, grade);
+      });
 
       const okCount =
         Object.values(frResponses).filter(r => r.verdict === 'ok').length +
@@ -128,7 +175,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck, QUESTIONS]);
+  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -148,9 +195,12 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            {reviewWordCount > 0
-              ? `Today's passage · ${reviewWordCount} review word${reviewWordCount === 1 ? '' : 's'}`
-              : "Today's passage · add words to your deck to track them here"}
+            {numPassages > 1
+              ? `Today's ${numPassages} passages · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'} total`
+              : totalReviewWordCount > 0
+                ? `Today's passage · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'}`
+                : "Today's passage · add words to your deck to track them here"
+            }
             {/* Status badge */}
             {dailyStatus === 'ready' && dailyContent && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', background: 'var(--jade-soft)', color: 'var(--jade)', border: '1px solid color-mix(in srgb, var(--jade) 30%, transparent)', borderRadius: 4, padding: '1px 5px' }}>
@@ -178,9 +228,12 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
-                {TITLE_TOKENS.map((t, i) => (
-                  <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} isVocab={deckWords.has(t.text)} />
-                ))}
+                {TITLE_TOKENS.map((t, i) => {
+                  const claimKind = (titlePopup.vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const
+                    : titlePopup.tomorrowClaimed.has(t.text) ? 'tomorrow' as const
+                    : null;
+                  return <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} claimKind={claimKind} />;
+                })}
               </span>
             )}
           </div>
@@ -189,6 +242,34 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
           level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>HSK {hskLevel}</span> · ~{charCount} 字
         </div>
       </div>
+
+      {/* Passage navigation — shown when there are multiple passages */}
+      {numPassages > 1 && dailyStatus === 'ready' && (
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => handlePassageChange(-1)}
+            disabled={passageIdx === 0}
+            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+          >
+            ← prev
+          </button>
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.08em' }}>
+            passage <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{passageIdx + 1}</span> / {numPassages}
+            {reviewWordCount > 0 && (
+              <span style={{ marginLeft: 6, color: 'var(--jade)', fontWeight: 500 }}>· {reviewWordCount} word{reviewWordCount !== 1 ? 's' : ''}</span>
+            )}
+          </span>
+          <button
+            onClick={() => handlePassageChange(1)}
+            disabled={passageIdx === numPassages - 1}
+            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+          >
+            next →
+          </button>
+        </div>
+      )}
 
       {hskLevel === 0 || dailyStatus === 'loading' ? (
         <PassageSkeleton />
@@ -241,13 +322,14 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       <div>
         {QUESTIONS.map((q, i) => (
           <Question
-            key={`${hskLevel}-${i}-${responseMode}`}
+            key={`${hskLevel}-${passageIdx}-${i}-${responseMode}`}
             question={q}
             index={i}
             mode={responseMode}
             savedResponse={frResponses[i]}
             onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
             onAddVocab={handleAddVocabQuestion}
+            deckWords={deckWords}
           />
         ))}
       </div>
