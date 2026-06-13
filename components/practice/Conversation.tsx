@@ -46,7 +46,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
   const activeConvoRef = useRef(ACTIVE_CONVO);
   activeConvoRef.current = ACTIVE_CONVO;
 
-  // Only show today's SRS-due words in the scorecard — not the entire deck
+  // Only show today's SRS-due words in the scorecard
   const TARGET_WORDS = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     return deck.filter(w => !w.dueAt || w.dueAt <= today).map(d => d.h);
@@ -155,13 +155,30 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
     return s;
   }, [responses, TARGET_WORDS]);
 
-  if (TARGET_WORDS.length === 0) {
+  if (deck.length === 0) {
     return (
       <div className="text-center py-14">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
           Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        </p>
+      </div>
+    );
+  }
+
+  if (TARGET_WORDS.length === 0) {
+    const nextDue = deck.reduce<string | null>((earliest, w) => {
+      if (!w.dueAt) return earliest;
+      return earliest === null || w.dueAt < earliest ? w.dueAt : earliest;
+    }, null);
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>All caught up!</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          No words are due for conversation practice today.
+          {nextDue && <> Next review scheduled for <strong>{nextDue}</strong>.</>}
         </p>
       </div>
     );

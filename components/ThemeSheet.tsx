@@ -3,12 +3,12 @@ import type { Theme, Font } from '@/lib/types';
 import { useTheme } from '@/hooks/useTheme';
 
 const THEMES: { id: Theme; name: string; chips: string[] }[] = [
-  { id: 'paper', name: 'Paper',  chips: ['#F4EFE6','#B23A2E','#5C7355'] },
-  { id: 'ink',   name: 'Ink',    chips: ['#FAFAF8','#0F1115','#2E7D4F'] },
-  { id: 'tea',   name: 'Tea',    chips: ['#EEF2EA','#2F6B4C','#9E7C2A'] },
-  { id: 'slate', name: 'Slate',  chips: ['#ECEEF2','#2D5BA9','#3F7A5B'] },
-  { id: 'bone',  name: 'Bone',   chips: ['#F2E7DA','#C44A20','#6B7A33'] },
-  { id: 'dusk',  name: 'Dusk',   chips: ['#1B1A22','#D77A5B','#86A57E'] },
+  { id: 'paper', name: 'Paper',  chips: ['#F4EFE6','#B23A2E'] },
+  { id: 'ink',   name: 'Ink',    chips: ['#FAFAF8','#0F1115'] },
+  { id: 'tea',   name: 'Tea',    chips: ['#EEF2EA','#2F6B4C'] },
+  { id: 'slate', name: 'Slate',  chips: ['#ECEEF2','#2D5BA9'] },
+  { id: 'bone',  name: 'Bone',   chips: ['#F2E7DA','#C44A20'] },
+  { id: 'dusk',  name: 'Dusk',   chips: ['#1B1A22','#D77A5B'] },
 ];
 
 const FONTS: { id: Font; name: string; preview: string; han: string; hanFamily: string }[] = [

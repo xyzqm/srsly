@@ -33,6 +33,17 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
   const activeItems = items ?? FILL_ITEMS;
   const itemsKey = activeItems.map(it => it.answer[0]).join(',');
 
+  // Shuffle options once per item set (at render time, not parse time)
+  const shuffledItems = useMemo(() => activeItems.map(item => {
+    const opts: typeof item.options = [...item.options];
+    for (let i = opts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [opts[i], opts[j]] = [opts[j], opts[i]];
+    }
+    return { ...item, options: opts };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [itemsKey]);
+
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
 
   // Reset state when the item set changes (e.g. daily content arrives)
@@ -58,7 +69,21 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
     );
   }
 
-  const allDone = activeItems.every((_, i) => itemStates[i]?.resolved === true);
+  const today = new Date().toISOString().slice(0, 10);
+  const dueToday = deck.filter(w => !w.dueAt || w.dueAt <= today);
+  if (dueToday.length === 0) {
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No vocab due today.</h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          All your words are scheduled for future review. Come back tomorrow!
+        </p>
+      </div>
+    );
+  }
+
+  const allDone = shuffledItems.every((_, i) => itemStates[i]?.resolved === true);
 
   const handleOptionClick = (idx: number, oi: number, correct: boolean) => {
     const state = itemStates[idx];
@@ -69,7 +94,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
       const wrongs = state?.wrongOis.length ?? 0;
       // Good (3) if first try, Hard (2) if had to try again
       const grade = wrongs === 0 ? 3 : 2;
-      onGrade?.(activeItems[idx].answer[0], grade);
+      onGrade?.(shuffledItems[idx].answer[0], grade);
       setItemStates(prev => ({
         ...prev,
         [idx]: { wrongOis: state?.wrongOis ?? [], resolved: true, gotCorrect: true },
@@ -78,7 +103,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
       const newWrongs = [...(state?.wrongOis ?? []), oi];
       if (newWrongs.length >= 2) {
         // Two wrong tries — reveal the answer, grade Again (1)
-        onGrade?.(activeItems[idx].answer[0], 1);
+        onGrade?.(shuffledItems[idx].answer[0], 1);
         setItemStates(prev => ({
           ...prev,
           [idx]: { wrongOis: newWrongs, resolved: true, gotCorrect: false },
@@ -118,7 +143,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
         Each sentence uses today&apos;s vocabulary. You get two tries per blank — first try correct earns the best interval, second try or a miss pushes it to review sooner.
       </p>
 
-      {activeItems.map((item, idx) => {
+      {shuffledItems.map((item, idx) => {
         const state = itemStates[idx];
         const beforeText = item.before.map(t => t.text).join('');
         const afterText  = item.after.map(t => t.text).join('');

@@ -8,6 +8,12 @@ function useIsMounted() {
   return mounted;
 }
 
+export interface CompoundHint {
+  text: string;
+  pinyin: string;
+  meaning: string;
+}
+
 export interface PopupData {
   word: string;
   pinyin: string;
@@ -16,6 +22,8 @@ export interface PopupData {
    *  lookup = added to vocab deck (definition only); tomorrow = scheduled for tomorrow (definition only) */
   type: 'vocab' | 'free' | 'lookup' | 'tomorrow';
   anchorRect: DOMRect;
+  /** Adjacent compound words this character belongs to (e.g. 已 → 已经) */
+  compounds?: CompoundHint[];
 }
 
 interface Props {
@@ -160,6 +168,33 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
               : <em style={{ opacity: 0.35, fontSize: 12 }}>definition not in local dictionary</em>
             }
           </div>
+
+          {/* Compound hints — shown for single-char words that appear in a compound nearby */}
+          {displayData.compounds && displayData.compounds.length > 0 && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase', opacity: 0.4, marginBottom: 5 }}>
+                also part of
+              </div>
+              {displayData.compounds.map(c => (
+                <div key={c.text} className="flex items-baseline justify-between gap-2 mb-1.5">
+                  <div className="flex items-baseline gap-1.5 min-w-0">
+                    <span style={{ fontFamily: 'var(--f-han)', fontSize: 16, fontWeight: 'var(--han-weight)' as 'bold' }}>{c.text}</span>
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--pop-pin)', flexShrink: 0 }}>{c.pinyin}</span>
+                    <span style={{ fontSize: 11.5, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.meaning}</span>
+                  </div>
+                  {displayData.type === 'free' && (
+                    <button
+                      onClick={() => { onAddVocab(c.text, c.pinyin, c.meaning); onClose(); }}
+                      className="shrink-0 cursor-pointer rounded-md transition-all duration-150"
+                      style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.06em', background: 'var(--jade)', border: 'none', color: '#fff', padding: '3px 7px', fontWeight: 600 }}
+                    >
+                      + add
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {displayData.type === 'vocab' && (
             <div

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import type { Question as Q, FRResponse, ResponseMode } from '@/lib/types';
+import type { FsrsGrade } from '@/lib/fsrs';
 import { speak } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
@@ -10,22 +11,29 @@ interface Props {
   question: Q;
   index: number;
   mode: ResponseMode;
+  hskLevel?: number;
   savedResponse?: FRResponse;
   onSave: (r: FRResponse) => void;
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
   deckWords?: Set<string>;
+  /** Called when MC is fully resolved — grade: 3=Good(1st try), 2=Hard(2nd try), 1=Again(both wrong) */
+  onMcGrade?: (questionIdx: number, grade: FsrsGrade) => void;
 }
 
-export default function QuestionComponent({ question, index, mode, savedResponse, onSave, onAddVocab, deckWords }: Props) {
-  const [mcDone, setMcDone] = useState(false);
-  const [mcRight, setMcRight] = useState<boolean | null>(null);
-  const [selectedOi, setSelectedOi] = useState<number | null>(null);
-  const [frText, setFrText] = useState(savedResponse?.text || '');
+export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, onMcGrade }: Props) {
+  // MC state
+  const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
+  const [mcDone, setMcDone]             = useState(false);
+  const [mcRight, setMcRight]           = useState<boolean | null>(null);
+  const [selectedOi, setSelectedOi]     = useState<number | null>(null);  // last selected index
+  const [firstWrongOi, setFirstWrongOi] = useState<number | null>(null);  // first wrong pick
+
+  // FR state
+  const [frText, setFrText]         = useState(savedResponse?.text || '');
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]       = useState(false);
 
   const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
-  // Only show the vocab badge after the user explicitly claims the word via popup
   const claimKind = (text: string) =>
     (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const
     : tomorrowClaimed.has(text) ? 'tomorrow' as const
@@ -33,34 +41,77 @@ export default function QuestionComponent({ question, index, mode, savedResponse
 
   const questionText = question.q.map(t => t.text).join('');
 
+  // ─── MC handler ────────────────────────────────────────────────────────────
+  function handleMcClick(oi: number, isCorrect: boolean) {
+    if (mcDone) return;
+    setSelectedOi(oi);
+
+    if (isCorrect) {
+      // Correct answer
+      const grade: FsrsGrade = mcTries === 0 ? 3 : 2; // Good on first try, Hard on second
+      setMcDone(true);
+      setMcRight(true);
+      onMcGrade?.(index, grade);
+    } else {
+      // Wrong answer
+      if (mcTries === 0) {
+        // First wrong — show error, allow one more try
+        setFirstWrongOi(oi);
+        setMcTries(1);
+      } else {
+        // Second wrong — reveal and lock
+        setMcDone(true);
+        setMcRight(false);
+        onMcGrade?.(index, 1); // Again
+      }
+    }
+  }
+
+  // ─── FR handler ────────────────────────────────────────────────────────────
   async function submitFR() {
     const text = frText.trim();
     if (!text) return;
     setLoading(true);
-    const wordsHit = question.key.filter(k => text.includes(k));
-    const ratio = wordsHit.length / Math.max(question.key.length, 1);
-    let verdict: FRResponse['verdict'];
-    let message: string;
-    const missed = question.key.filter(k => !text.includes(k));
 
-    if (ratio >= 0.66) {
-      verdict = 'ok';
-      message = `You captured the main idea — "${wordsHit.join('、')}" all land the point. Good Chinese.`;
-    } else if (ratio >= 0.34) {
-      verdict = 'partial';
-      message = `You touched part of the answer. Try also mentioning ${missed.slice(0, 2).join('、')}.`;
-    } else if (text.length < 4) {
-      verdict = 'miss';
-      message = "Too short — try a full sentence using a couple of today's words.";
-    } else {
-      verdict = 'miss';
-      message = `Reread the passage — the key idea uses words like ${question.key.slice(0, 2).join('、')}.`;
+    try {
+      const res = await fetch('/api/grade-response', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: questionText,
+          model: question.model,
+          key: question.key,
+          response: text,
+          hskLevel,
+        }),
+      });
+      const data = await res.json();
+      const result: FRResponse = {
+        text,
+        verdict: data.verdict ?? 'miss',
+        message: data.message ?? 'Could not evaluate — try again.',
+        wordsHit: Array.isArray(data.wordsHit) ? data.wordsHit : [],
+      };
+      setFrFeedback(result);
+      onSave(result);
+    } catch {
+      // Network failure — fall back to local keyword match
+      const wordsHit = question.key.filter(k => text.includes(k));
+      const ratio = wordsHit.length / Math.max(question.key.length, 1);
+      const verdict: FRResponse['verdict'] = ratio >= 0.66 ? 'ok' : ratio >= 0.34 ? 'partial' : 'miss';
+      const message = ratio >= 0.66
+        ? `Good — you used the key ideas (${wordsHit.join('、')}).`
+        : ratio >= 0.34
+          ? `Partially there — try also mentioning ${question.key.filter(k => !text.includes(k)).slice(0, 2).join('、')}.`
+          : text.length < 4
+            ? "Too short — write a full sentence."
+            : `Reread the passage — focus on ${question.key.slice(0, 2).join('、')}.`;
+      const result: FRResponse = { text, verdict, message, wordsHit };
+      setFrFeedback(result);
+      onSave(result);
+    } finally {
+      setLoading(false);
     }
-
-    const result: FRResponse = { text, verdict, message, wordsHit };
-    setFrFeedback(result);
-    onSave(result);
-    setLoading(false);
   }
 
   const verdictColor = frFeedback?.verdict === 'ok' ? 'var(--jade)' : frFeedback?.verdict === 'partial' ? 'var(--gold)' : 'var(--accent)';
@@ -94,41 +145,46 @@ export default function QuestionComponent({ question, index, mode, savedResponse
       {mode === 'mc' && (
         <div className="flex flex-col gap-2 pl-10">
           {question.options.map((opt, oi) => {
-            const showCorrect = mcDone && opt.correct;
-            const isWrongSelected = mcDone && !opt.correct && selectedOi === oi;
+            const isFirstWrong    = firstWrongOi === oi && !mcDone;
+            const showCorrect     = mcDone && opt.correct;
+            const showWrong       = mcDone && !opt.correct && (selectedOi === oi || firstWrongOi === oi);
+            const showFirstWrong  = isFirstWrong;
+            const isDisabled      = mcDone || (mcTries === 1 && oi === firstWrongOi);
+
+            let borderColor = 'var(--line)';
+            let bgColor = 'var(--paper-2)';
+            let textColor = 'var(--ink)';
+            let radioColor = 'transparent';
+            let radioBorder = 'var(--line)';
+
+            if (showCorrect) {
+              borderColor = 'var(--jade)'; bgColor = 'var(--jade-soft)'; textColor = 'var(--jade)';
+              radioColor = 'var(--jade)'; radioBorder = 'var(--jade)';
+            } else if (showWrong || showFirstWrong) {
+              borderColor = 'var(--accent)'; bgColor = 'var(--accent-soft)'; textColor = 'var(--accent)';
+              radioColor = 'var(--accent)'; radioBorder = 'var(--accent)';
+            }
 
             return (
               <div key={oi} className="flex items-center gap-3">
-                {/* Radio circle — clicking this submits the answer */}
                 <button
-                  onClick={() => {
-                    if (mcDone) return;
-                    setMcDone(true);
-                    setMcRight(opt.correct);
-                    setSelectedOi(oi);
-                  }}
-                  disabled={mcDone}
+                  onClick={() => handleMcClick(oi, opt.correct)}
+                  disabled={isDisabled}
                   className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-150 cursor-pointer disabled:cursor-default"
-                  style={{
-                    border: `2px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
-                    background: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'transparent',
-                    flexShrink: 0,
-                  }}
-                  title={mcDone ? undefined : 'Select this answer'}
+                  style={{ border: `2px solid ${radioBorder}`, background: radioColor, flexShrink: 0 }}
                 >
                   {showCorrect && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
-                  {isWrongSelected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
+                  {(showWrong || showFirstWrong) && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✗</span>}
                 </button>
 
-                {/* Option text — tokens are individually clickable */}
                 <div
                   className="flex-1 rounded-[9px] px-4 py-3"
                   style={{
                     fontFamily: 'var(--f-han)', fontSize: 16, lineHeight: 1.7,
                     fontWeight: 'var(--han-weight)' as 'bold',
-                    background: showCorrect ? 'var(--jade-soft)' : isWrongSelected ? 'var(--accent-soft)' : 'var(--paper-2)',
-                    border: `1px solid ${showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--line)'}`,
-                    color: showCorrect ? 'var(--jade)' : isWrongSelected ? 'var(--accent)' : 'var(--ink)',
+                    background: bgColor, border: `1px solid ${borderColor}`, color: textColor,
+                    opacity: (isDisabled && !showCorrect && !showWrong && !showFirstWrong) ? 0.4 : 1,
+                    transition: 'all .15s',
                   }}
                 >
                   {opt.tokens.map((t, ti) => (
@@ -138,9 +194,18 @@ export default function QuestionComponent({ question, index, mode, savedResponse
               </div>
             );
           })}
+
+          {/* Status message */}
+          {mcTries === 1 && !mcDone && (
+            <div className="pl-8 mt-1 text-[12px]" style={{ color: 'var(--accent)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
+              Not quite — one more try.
+            </div>
+          )}
           {mcDone && mcRight !== null && (
-            <div className="pl-8 mt-1 text-[12.5px]" style={{ color: mcRight ? 'var(--jade)' : 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
-              {mcRight ? 'Correct.' : 'Not quite — the correct answer is highlighted above.'}
+            <div className="pl-8 mt-1 text-[12px]" style={{ color: mcRight ? 'var(--jade)' : 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
+              {mcRight
+                ? (mcTries === 0 ? 'Correct first try.' : 'Correct on second try.')
+                : 'Incorrect — correct answer is highlighted.'}
             </div>
           )}
         </div>

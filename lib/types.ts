@@ -14,6 +14,10 @@ export interface DeckWord {
   difficulty?: number; // 1–10 card difficulty (higher = harder to remember)
   lapses?: number;     // number of times the card was forgotten (Again)
   lastReview?: string; // YYYY-MM-DD of most recent review
+  // Learning phase fields
+  phase?: 'learning' | 'review'; // 'learning' = in learning/relearning steps; 'review' = graduated; absent = new card
+  learningStep?: number;          // 0-indexed step within the learning phase
+  dueAtMs?: number;               // epoch-ms for sub-day scheduling (learning phase only)
 }
 
 export interface PassageToken {
@@ -65,6 +69,8 @@ export interface UserPrefs {
   theme: Theme;
   font: Font;
   hskLevel?: number;
+  srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
+  srsMaxDays?: number;   // maximum review interval in days (default 365)
 }
 
 export interface ClaimedWords {

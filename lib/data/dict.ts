@@ -649,11 +649,71 @@ for (const [text, entry] of Object.entries(HSK_VOCAB)) {
   if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
 }
 
-/** Look up a word's pinyin + meaning. Falls back to provided values if not found. */
+/** Look up a word's pinyin + meaning. Falls back to provided values if not found.
+ *
+ * Decomposition fallbacks (in order):
+ *  1. Adverbial 地 suffix  慢慢地 → try 慢慢
+ *  2. AA reduplication     慢慢   → try 慢
+ *  3. AABB reduplication   高高兴兴 → try 高兴
+ */
 export function lookupWord(text: string, fallbackPinyin = '', fallbackMeaning = ''): DictEntry {
   const e = DICT[text];
-  return {
-    pinyin:  e?.pinyin  || fallbackPinyin,
-    meaning: e?.meaning || fallbackMeaning,
-  };
+  if (e) return { pinyin: e.pinyin || fallbackPinyin, meaning: e.meaning || fallbackMeaning };
+
+  // Adverbial 地 suffix: 慢慢地 → 慢慢
+  if (text.length >= 2 && text.endsWith('地')) {
+    const root = lookupWord(text.slice(0, -1));
+    if (root.meaning) return { pinyin: fallbackPinyin, meaning: root.meaning };
+  }
+
+  // AA reduplication: 慢慢 → 慢 (even-length, first half repeats)
+  if (text.length >= 2 && text.length % 2 === 0) {
+    const half = text.slice(0, text.length / 2);
+    if (text === half + half) {
+      const base = lookupWord(half);
+      if (base.meaning) return { pinyin: fallbackPinyin, meaning: base.meaning };
+    }
+  }
+
+  // AABB reduplication: 高高兴兴 → 高兴 (length 4, chars 0+2 same, chars 1+3 same)
+  if (text.length === 4 && text[0] === text[2] && text[1] === text[3]) {
+    const base = lookupWord(text[0] + text[1]);
+    if (base.meaning) return { pinyin: fallbackPinyin, meaning: base.meaning };
+  }
+
+  return { pinyin: fallbackPinyin, meaning: fallbackMeaning };
+}
+
+// ─── Async CC-CEDICT fallback ─────────────────────────────────────────────────
+
+type CedictEntry = { p: string; m: string };
+let cedictCache: Record<string, CedictEntry> | null = null;
+let cedictLoading: Promise<Record<string, CedictEntry>> | null = null;
+
+async function getCedict(): Promise<Record<string, CedictEntry>> {
+  if (cedictCache) return cedictCache;
+  if (!cedictLoading) {
+    cedictLoading = fetch('/cedict.json')
+      .then(r => r.json())
+      .then(data => { cedictCache = data; cedictLoading = null; return data; })
+      .catch(() => { cedictLoading = null; return {}; });
+  }
+  return cedictLoading;
+}
+
+/**
+ * Async version of lookupWord that falls back to the full CC-CEDICT dictionary
+ * (~121k entries) when the local dict doesn't have an entry.
+ */
+export async function lookupWordAsync(text: string, fallbackPinyin = '', fallbackMeaning = ''): Promise<DictEntry> {
+  const local = lookupWord(text, fallbackPinyin, fallbackMeaning);
+  if (local.meaning && local.pinyin) return local;
+
+  try {
+    const cedict = await getCedict();
+    const e = cedict[text];
+    if (e) return { pinyin: e.p || fallbackPinyin, meaning: e.m || fallbackMeaning };
+  } catch { /* ignore */ }
+
+  return { pinyin: local.pinyin || fallbackPinyin, meaning: local.meaning || fallbackMeaning };
 }

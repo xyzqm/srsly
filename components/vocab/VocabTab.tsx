@@ -4,6 +4,7 @@ import type { DeckWord } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { toneNumToMark } from '@/lib/pinyin';
 import AddWordForm from './AddWordForm';
+import ImportPanel from './ImportPanel';
 
 const UNDO_DURATION_MS = 5000;
 
@@ -187,6 +188,7 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
 export default function VocabTab() {
   const { deck, addWord, removeWord, updateWord, clearDeck } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
   // ── Unified undo state ──────────────────────────────────────────────────────
@@ -292,6 +294,13 @@ export default function VocabTab() {
     setShowAdd(false);
   }
 
+  async function handleBulkImport(words: Array<{ h: string; p: string; m: string }>) {
+    for (const w of words) {
+      await addWord({ h: w.h, p: w.p, m: w.m });
+    }
+    setShowImport(false);
+  }
+
   const handleSaveEdit = useCallback((idx: number, update: Partial<DeckWord>) => {
     updateWord(idx, update);
     setEditingIdx(null);
@@ -337,7 +346,20 @@ export default function VocabTab() {
               Clear all
             </button>
           )}
-          {!showAdd && (
+          {!showAdd && !showImport && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 cursor-pointer transition-all duration-150"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+              }}
+            >
+              Import
+            </button>
+          )}
+          {!showAdd && !showImport && (
             <button
               onClick={() => setShowAdd(true)}
               className="flex items-center gap-2 cursor-pointer transition-all duration-150"
@@ -357,7 +379,11 @@ export default function VocabTab() {
         <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
       )}
 
-      <div style={{ borderTop: '1px solid var(--line-soft)' }}>
+      {showImport && (
+        <ImportPanel deck={deck} onImport={handleBulkImport} onCancel={() => setShowImport(false)} />
+      )}
+
+      {!showImport && <div style={{ borderTop: '1px solid var(--line-soft)' }}>
         {/* Inline undo bar — appears at the top of the list, never covers other rows */}
         {pendingUndo && (
           <UndoBar
@@ -423,7 +449,7 @@ export default function VocabTab() {
             Your deck is empty. Add words from the Read tab or above.
           </p>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

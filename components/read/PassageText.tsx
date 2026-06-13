@@ -1,10 +1,38 @@
 'use client';
 import { useState, useCallback, useLayoutEffect } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
-import type { PopupData } from './WordPopup';
+import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { storage } from '@/lib/storage';
 import { lookupWord } from '@/lib/data/dict';
+
+/** Find compound words that include `token` by checking its immediate neighbours. */
+function findCompoundHints(token: PassageToken, sentence: Sentence, tokenIdx: number): CompoundHint[] {
+  // Only look for compounds on single CJK characters
+  if (token.text.length !== 1 || !/[一-鿿]/.test(token.text)) return [];
+
+  const prev = sentence.tokens[tokenIdx - 1];
+  const next = sentence.tokens[tokenIdx + 1];
+  const hints: CompoundHint[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of [
+    prev && prev.type !== 'punct' && prev.text.length === 1 ? prev.text + token.text : null,
+    next && next.type !== 'punct' && next.text.length === 1 ? token.text + next.text : null,
+    // Also try prev+token+next (3-char compound)
+    prev && next && prev.type !== 'punct' && next.type !== 'punct'
+      && prev.text.length === 1 && next.text.length === 1
+      ? prev.text + token.text + next.text : null,
+  ]) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    const entry = lookupWord(candidate);
+    if (entry.pinyin && entry.meaning) {
+      hints.push({ text: candidate, pinyin: entry.pinyin, meaning: entry.meaning });
+    }
+  }
+  return hints;
+}
 
 interface Props {
   sentences: Sentence[];
@@ -17,12 +45,13 @@ interface Props {
   onAddToDeck: (word: DeckWord) => void;
 }
 
-function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }: {
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
   claimKind: 'vocab' | 'tomorrow' | null;
-  onClick: (e: React.MouseEvent, token: PassageToken) => void;
+  compounds: CompoundHint[];
+  onClick: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   // Non-interactive when there's no pinyin or the token is punctuation
@@ -35,7 +64,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, onClick }: {
   return (
     <>
       <ruby
-        onClick={e => onClick(e, token)}
+        onClick={e => onClick(e, token, compounds)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className="cursor-pointer"
@@ -115,7 +144,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
   // adds a word in the current session. Deck words from previous sessions
   // show as SRS review words (accent underline, "revealed = forgotten" popup).
 
-  const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken) => {
+  const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
     // Skip true punctuation and words with no pinyin data
@@ -134,19 +163,19 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
+    // Only surface compound hints for single-char tokens that aren't already deck words
+    const compoundHints = (token.text.length === 1 && !isClaimed) ? compounds : [];
+
     if (isReviewWord) {
-      // SRS vocab word — opening counts as forgotten for this session
       onPeek(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect, compounds: compoundHints });
     } else if (isClaimed) {
-      // Added in this session
       setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
     } else if (deckWords.has(token.text)) {
-      // Already in deck from a previous session — show definition without add button
       onPeek(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect, compounds: compoundHints });
     } else {
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect, compounds: compoundHints });
     }
   }, [claimType, onPeek, deckWords]);
 
@@ -172,7 +201,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       {audioOnly && (
         <div
           className="flex flex-col items-center justify-center text-center gap-4 p-12 rounded-xl"
-          style={{ border: '1px dashed var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 30%, white), var(--card))' }}
+          style={{ border: '1px dashed var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 30%, var(--paper)), var(--card))' }}
         >
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
             Listening mode
@@ -240,6 +269,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                 const isClaimed = claimKind !== null;
                 // Claimed takes priority over SRS review
                 const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
+                // Detect neighboring compounds for single-char tokens
+                const compounds = findCompoundHints(token, sent, ti);
                 return (
                   <TokenEl
                     key={ti}
@@ -247,6 +278,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     peeked={peeked.has(token.text) && isReviewWord}
                     isReviewWord={isReviewWord}
                     claimKind={claimKind}
+                    compounds={compounds}
                     onClick={handleTokenClick}
                   />
                 );

@@ -2,13 +2,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { storage } from '@/lib/storage';
-import { fsrsSchedule, type FsrsGrade } from '@/lib/fsrs';
+import { fsrsSchedule, getSrsSettings, type FsrsGrade } from '@/lib/fsrs';
 
 export function useVocabDeck() {
   const [deck, setDeck] = useState<DeckWord[]>([]);
+  const [deckLoaded, setDeckLoaded] = useState(false);
 
   useEffect(() => {
-    storage.getVocabDeck().then(setDeck);
+    storage.getVocabDeck().then(d => { setDeck(d); setDeckLoaded(true); });
   }, []);
 
   const addWord = useCallback(async (word: DeckWord) => {
@@ -39,9 +40,10 @@ export function useVocabDeck() {
    * grade: 1=Again, 2=Hard, 3=Good, 4=Easy
    */
   const updateWordReview = useCallback(async (hanzi: string, grade: number) => {
+    const settings = getSrsSettings();
     const next = deck.map(d => {
       if (d.h !== hanzi) return d;
-      const update = fsrsSchedule(d, grade as FsrsGrade);
+      const update = fsrsSchedule(d, grade as FsrsGrade, settings);
       return { ...d, ...update };
     });
     setDeck(next);
@@ -65,5 +67,5 @@ export function useVocabDeck() {
     }
   }, []);
 
-  return { deck, addWord, removeWord, updateWordReview, updateWord, clearDeck };
+  return { deck, deckLoaded, addWord, removeWord, updateWordReview, updateWord, clearDeck };
 }

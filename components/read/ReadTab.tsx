@@ -78,8 +78,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
   const [peeked, setPeeked] = useState<Set<string>>(new Set());
   const [frResponses, setFrResponses] = useState<Record<number, FRResponse>>({});
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [mcAnswered, _setMcAnswered] = useState<Record<number, 'right' | 'wrong'>>({});
+  const [mcGrades, setMcGrades] = useState<Record<number, FsrsGrade>>({});
   const [showResults, setShowResults] = useState(false);
   const [resultsBuilt, setResultsBuilt] = useState(false);
   const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
@@ -90,6 +89,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setPassageIdx(0);
     setPeeked(new Set());
     setFrResponses({});
+    setMcGrades({});
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
@@ -101,6 +101,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setPassageIdx(0);
     setPeeked(new Set());
     setFrResponses({});
+    setMcGrades({});
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
@@ -114,6 +115,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       setActiveSentence(0);
       setPeeked(new Set());
       setFrResponses({});
+      setMcGrades({});
       setShowResults(false);
       setResultsBuilt(false);
       setVocabResults([]);
@@ -127,6 +129,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setActiveSentence(0);
     setPeeked(new Set());
     setFrResponses({});
+    setMcGrades({});
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
@@ -150,47 +153,70 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const toggleResults = useCallback(() => {
     if (!resultsBuilt) {
       setResultsBuilt(true);
-      const usedWords = new Set<string>();
+
+      // Words used in free-response answers
+      const frUsedWords = new Set<string>();
       Object.values(frResponses).forEach(r => {
-        targetWords.forEach(w => { if (r.text.includes(w)) usedWords.add(w); });
+        targetWords.forEach(w => { if (r.text.includes(w)) frUsedWords.add(w); });
       });
-      Object.entries(mcAnswered).forEach(([i, ok]) => {
-        if (ok === 'right') {
-          QUESTIONS[+i].key.forEach(k => { if (targetWords.includes(k)) usedWords.add(k); });
-        }
+
+      // Best MC grade per key word across all MC questions
+      // grade 3 = correct first try, 2 = correct second try, 1 = both wrong
+      const mcWordGrades = new Map<string, FsrsGrade>();
+      Object.entries(mcGrades).forEach(([qi, grade]) => {
+        const question = QUESTIONS[+qi];
+        if (!question) return;
+        question.key.forEach(k => {
+          if (!targetWords.includes(k)) return;
+          const existing = mcWordGrades.get(k);
+          if (existing === undefined || grade > existing) mcWordGrades.set(k, grade);
+        });
       });
+
+      // Per-word grade: peeked → 1, best of FR/MC (floor 2) otherwise
+      const getWordGrade = (w: string): FsrsGrade => {
+        if (peeked.has(w)) return 1;
+        let best: FsrsGrade = 2; // Hard = "not clearly demonstrated"
+        if (frUsedWords.has(w)) best = 3;
+        const mcG = mcWordGrades.get(w);
+        if (mcG !== undefined && mcG > best) best = mcG;
+        return best;
+      };
 
       const rows = targetWords.map(w => {
         const deckWord = deck.find(d => d.h === w);
-        // Peeked → Again (1), Recalled → Good (3), Not used → Hard (2)
-        const grade: FsrsGrade = peeked.has(w) ? 1 : usedWords.has(w) ? 3 : 2;
+        const grade = getWordGrade(w);
         const days = deckWord ? fsrsNextInterval(deckWord, grade) : 1;
         const label = fmtInterval(days);
-        if (peeked.has(w)) {
+        if (grade === 1) {
           return { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: `Peeked — review in ${label}` };
         }
-        if (usedWords.has(w)) {
+        if (grade === 3) {
           return { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: `Recalled — next in ${label}` };
+        }
+        // grade === 2
+        const inMc = mcWordGrades.has(w);
+        const inFr = frUsedWords.has(w);
+        if (inMc || inFr) {
+          return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: `Partially recalled — next in ${label}` };
         }
         return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: `Not used — next in ${label}` };
       });
       setVocabResults(rows);
 
-      // Apply FSRS grades for every passage vocab word
-      targetWords.forEach(w => {
-        const grade: FsrsGrade = peeked.has(w) ? 1 : usedWords.has(w) ? 3 : 2;
-        updateWordReview(w, grade);
-      });
+      // Apply FSRS grades
+      targetWords.forEach(w => updateWordReview(w, getWordGrade(w)));
 
+      // Score: count questions answered correctly (FR ok, MC grade ≥ 2)
       const okCount =
         Object.values(frResponses).filter(r => r.verdict === 'ok').length +
-        Object.values(mcAnswered).filter(v => v === 'right').length;
+        Object.values(mcGrades).filter(g => g >= 2).length;
       const peekPenalty = Math.min(peeked.size * 8, 40);
       const score = Math.round(Math.max(0, (okCount / Math.max(QUESTIONS.length, 1)) * 100 - peekPenalty));
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcAnswered, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview]);
+  }, [resultsBuilt, frResponses, mcGrades, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -207,7 +233,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       {/* Title row */}
-      <div className="flex justify-between items-end mb-4 flex-wrap gap-2.5">
+      <div className="flex justify-between items-end mb-2 flex-wrap gap-2.5">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 8 }}>
             {numPassages > 1
@@ -234,12 +260,12 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             )}
             {dailyStatus === 'error' && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--accent)', fontFamily: 'var(--f-mono)' }}>
-                ⚠ generation failed — refresh to retry
+                ⚠ generation failed
               </span>
             )}
           </div>
           {/* Clickable title */}
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4, minHeight: 36 }}>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
             {hskLevel === 0 || dailyStatus === 'loading' ? (
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
             ) : (
@@ -259,47 +285,30 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         </div>
       </div>
 
-      {/* Passage navigation + new-passage button */}
-      {dailyStatus === 'ready' && (
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          {numPassages > 1 && (
-            <>
-              <button
-                onClick={() => handlePassageChange(-1)}
-                disabled={passageIdx === 0}
-                className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
-              >
-                ← prev
-              </button>
-              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.08em' }}>
-                passage <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{passageIdx + 1}</span> / {numPassages}
-                {reviewWordCount > 0 && (
-                  <span style={{ marginLeft: 6, color: 'var(--jade)', fontWeight: 500 }}>· {reviewWordCount} word{reviewWordCount !== 1 ? 's' : ''}</span>
-                )}
-              </span>
-              <button
-                onClick={() => handlePassageChange(1)}
-                disabled={passageIdx === numPassages - 1}
-                className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
-              >
-                next →
-              </button>
-            </>
-          )}
+      {/* Passage navigation — only shown when there are multiple passages */}
+      {dailyStatus === 'ready' && numPassages > 1 && (
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
           <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
-            style={{
-              marginLeft: 'auto',
-              fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
-              background: 'none', border: '1px solid var(--line)', borderRadius: 6,
-              padding: '5px 10px', color: loadingMore ? 'var(--ink-faint)' : 'var(--ink-soft)',
-            }}
+            onClick={() => handlePassageChange(-1)}
+            disabled={passageIdx === 0}
+            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
           >
-            {loadingMore ? 'generating…' : '+ new passage'}
+            ← prev
+          </button>
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.08em' }}>
+            passage <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{passageIdx + 1}</span> / {numPassages}
+            {reviewWordCount > 0 && (
+              <span style={{ marginLeft: 6, color: 'var(--jade)', fontWeight: 500 }}>· {reviewWordCount} word{reviewWordCount !== 1 ? 's' : ''}</span>
+            )}
+          </span>
+          <button
+            onClick={() => handlePassageChange(1)}
+            disabled={passageIdx === numPassages - 1}
+            className="cursor-pointer transition-all duration-150 disabled:opacity-30 disabled:cursor-default"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+          >
+            next →
           </button>
         </div>
       )}
@@ -311,7 +320,21 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
           {/* Controls row */}
           <div className="flex gap-2 items-center mb-4 flex-wrap">
             <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
-            <div className="ml-auto flex gap-2 flex-wrap">
+            <div className="ml-auto flex gap-2 items-center flex-wrap">
+              {(dailyStatus === 'ready' || dailyStatus === 'error') && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
+                    background: 'none', border: '1px solid var(--line)', borderRadius: 8,
+                    padding: '9px 15px', color: loadingMore ? 'var(--ink-faint)' : 'var(--ink-soft)',
+                  }}
+                >
+                  {loadingMore ? 'generating…' : '+ new passage'}
+                </button>
+              )}
               <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
                 🎧 Audio only
               </button>
@@ -372,10 +395,12 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             question={q}
             index={i}
             mode={responseMode}
+            hskLevel={hskLevel}
             savedResponse={frResponses[i]}
             onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
             onAddVocab={handleAddVocabQuestion}
             deckWords={deckWords}
+            onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
           />
         ))}
       </div>

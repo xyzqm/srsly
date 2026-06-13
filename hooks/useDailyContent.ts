@@ -28,8 +28,13 @@ function isPunct(text: string): boolean {
 }
 
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken {
-  const [text, pinyin, meaning] = arr as [string, string?, string?];
-  if (!pinyin || isPunct(text)) return { text, type: 'punct' };
+  const [text, rawPinyin, meaning] = arr as [string, string?, string?];
+  if (isPunct(text)) return { text, type: 'punct' };
+  // If the AI omitted pinyin for a CJK word, look it up in the dictionary so it
+  // still gets an underline and is clickable. Only fall back to plain punct if
+  // the word is genuinely unknown (not in dict and not in the user's deck).
+  const pinyin = rawPinyin || lookupWord(text).pinyin || '';
+  if (!pinyin) return { text, type: 'punct' };
   const dictEntry = lookupWord(text, pinyin, '');
   const resolvedMeaning = meaning || deckMeanings.get(text) || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
@@ -38,11 +43,129 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string
   return { text, pinyin };
 }
 
+/**
+ * Merge adjacent single-character tokens whose combined text is a known word
+ * in the dictionary. Tries 3-char combinations first, then 2-char.
+ * This repairs AI over-segmentation (e.g. 互+联+网→互联网, 已+经→已经).
+ * Only CJK single-char tokens are candidates; punctuation and already-multi-char
+ * tokens are left alone.
+ */
+function mergeCompoundTokens(
+  tokens: PassageToken[],
+  dueWords: Set<string>,
+  deckMeanings: Map<string, string>,
+): PassageToken[] {
+  const result: PassageToken[] = [];
+  let i = 0;
+  const isSingleCJK = (t: PassageToken | undefined): t is PassageToken =>
+    !!t && t.text.length === 1 && t.type !== 'punct' && /[一-鿿]/.test(t.text);
+
+  while (i < tokens.length) {
+    const curr  = tokens[i];
+    const next  = tokens[i + 1];
+    const next2 = tokens[i + 2];
+
+    // Try 3-char merge first (互联网, 程序员, etc.)
+    if (isSingleCJK(curr) && isSingleCJK(next) && isSingleCJK(next2)) {
+      const tri = curr.text + next.text + next2.text;
+      const e3  = lookupWord(tri);
+      if (e3.pinyin) {
+        const meaning = deckMeanings.get(tri) || e3.meaning;
+        result.push({ text: tri, pinyin: e3.pinyin, meaning: meaning || undefined, type: (dueWords.has(tri) || meaning) ? 'vocab' : undefined });
+        i += 3;
+        continue;
+      }
+    }
+
+    // Try 2-char merge
+    if (isSingleCJK(curr) && isSingleCJK(next)) {
+      const bi = curr.text + next.text;
+      const e2 = lookupWord(bi);
+      if (e2.pinyin) {
+        const meaning = deckMeanings.get(bi) || e2.meaning;
+        result.push({ text: bi, pinyin: e2.pinyin, meaning: meaning || undefined, type: (dueWords.has(bi) || meaning) ? 'vocab' : undefined });
+        i += 2;
+        continue;
+      }
+    }
+
+    result.push(curr);
+    i++;
+  }
+  return result;
+}
+
+const CJK_RE = /[一-鿿㐀-䶿]/;
+
+/**
+ * Fix tokens that are unwanted AI phrase-groups.
+ *
+ * Strategy per token:
+ *  - Single char or punctuation → keep as-is.
+ *  - Very long (≥5 CJK chars) → always explode, regardless of dictionary.
+ *  - 2–4 CJK chars → keep if the text is a known dictionary word, OR if it
+ *    is already marked as a due vocab word (type==='vocab', in dueWords/deckMeanings).
+ *    Otherwise explode (e.g. "的力量", "成为了").
+ *
+ * After exploding, re-run mergeCompoundTokens so real 2-char compounds
+ * (e.g. 力+量→力量) are re-assembled.
+ */
+function degroupOversized(
+  tokens: PassageToken[],
+  dueWords: Set<string>,
+  deckMeanings: Map<string, string>,
+): PassageToken[] {
+  const exploded: PassageToken[] = [];
+
+  function explodeToken(t: PassageToken) {
+    for (const ch of t.text) {
+      if (CJK_RE.test(ch)) {
+        const entry = lookupWord(ch);
+        exploded.push({
+          text: ch,
+          pinyin: entry.pinyin || undefined,
+          meaning: entry.meaning || undefined,
+          type: entry.pinyin ? 'vocab' : undefined,
+        });
+      } else {
+        exploded.push({ text: ch, type: isPunct(ch) ? 'punct' : undefined });
+      }
+    }
+  }
+
+  for (const t of tokens) {
+    const cjkCount = (t.text.match(new RegExp(CJK_RE.source, 'g')) ?? []).length;
+
+    // Single chars and punctuation — always keep
+    if (t.type === 'punct' || cjkCount <= 1) {
+      exploded.push(t);
+      continue;
+    }
+
+    // Very long phrases (≥5 CJK chars) — always explode
+    if (cjkCount >= 5) {
+      explodeToken(t);
+      continue;
+    }
+
+    // 2–4 CJK chars: keep if it is a known dict word OR an explicit vocab/due word
+    const entry = lookupWord(t.text);
+    if (entry.pinyin || dueWords.has(t.text) || deckMeanings.has(t.text) || t.type === 'vocab') {
+      exploded.push(t);
+    } else {
+      explodeToken(t);
+    }
+  }
+
+  return mergeCompoundTokens(exploded, dueWords, deckMeanings);
+}
+
 function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckMeanings: Map<string, string>): Sentence[] {
   return rawRows.map(row => {
-    const tokens = row
-      .filter(r => r[0] !== '') // drop empty tokens the AI occasionally emits
+    const raw = row
+      .filter(r => r[0] !== '' && r[0] !== 'punctuation')
       .map(r => rawToToken(r, dueWords, deckMeanings));
+    const tokens = degroupOversized(raw, dueWords, deckMeanings);
     return { tokens, plainText: tokens.map(t => t.text).join('') };
   });
 }
@@ -63,10 +186,15 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings
       const j = Math.floor(Math.random() * (i + 1));
       [options[i], options[j]] = [options[j], options[i]];
     }
+    const build = (arr: RawTok[]) =>
+      degroupOversized(
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckMeanings)),
+        dueWords, deckMeanings,
+      );
     return {
-      before: f.before.filter(r => r[0] !== '').map(r => rawToToken(r, dueWords, deckMeanings)),
+      before: build(f.before),
       answer: f.answer,
-      after: f.after.filter(r => r[0] !== '').map(r => rawToToken(r, dueWords, deckMeanings)),
+      after:  build(f.after),
       options,
     };
   });
@@ -85,7 +213,10 @@ function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckMeanings: Ma
 }
 
 function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken[] {
-  return rawTitle.map(r => rawToToken(r, dueWords, deckMeanings));
+  const raw = rawTitle
+    .filter(r => r[0] !== '' && r[0] !== 'punctuation')
+    .map(r => rawToToken(r, dueWords, deckMeanings));
+  return degroupOversized(raw, dueWords, deckMeanings);
 }
 
 function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): Question[] {
@@ -94,15 +225,28 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMean
     model: string;
     key: string[];
     options: { tokens: RawTok[]; correct: boolean }[];
-  }[]).map(q => ({
-    q: q.q.map(r => rawToToken(r, dueWords, deckMeanings)),
-    model: q.model,
-    key: q.key,
-    options: q.options.map(opt => ({
-      tokens: opt.tokens.map(r => rawToToken(r, dueWords, deckMeanings)),
+  }[]).map(q => {
+    const buildToks = (arr: RawTok[]) =>
+      degroupOversized(
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckMeanings)),
+        dueWords, deckMeanings,
+      );
+    const options: MCOption[] = q.options.map(opt => ({
+      tokens: buildToks(opt.tokens),
       correct: opt.correct,
-    } as MCOption)),
-  }));
+    }));
+    // Fisher-Yates shuffle so the correct answer isn't always first
+    for (let i = options.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [options[i], options[j]] = [options[j], options[i]];
+    }
+    return {
+      q: buildToks(q.q),
+      model: q.model,
+      key: q.key,
+      options,
+    };
+  });
 }
 
 /** Build a single DailyPassage from raw API output. */
@@ -123,32 +267,53 @@ function buildPassage(
 }
 
 /**
- * Retroactively fix cached content that was parsed before the punct-detection
- * logic existed. Any token whose text is punctuation but still has a pinyin
- * field gets cleaned up so it renders as non-interactive.
+ * Retroactively fix cached content:
+ * 1. Punctuation tokens that still have a pinyin field get cleaned up.
+ * 2. Oversized phrase tokens (≥5 CJK chars) get split into individual
+ *    characters then re-merged via mergeCompoundTokens — same logic as
+ *    degroupOversized at parse time, but applied post-hoc to cached data.
  */
 function sanitizeCachedContent(content: DailyContent): void {
+  const emptyDue = new Set<string>();
+  const emptyMeanings = new Map<string, string>();
+
   function fixToken(t: PassageToken) {
     if (t.pinyin && isPunct(t.text)) {
       (t as unknown as Record<string, unknown>).pinyin = undefined;
       t.type = 'punct';
     }
   }
+
+  function fixAndDegroup(tokens: PassageToken[]): PassageToken[] {
+    tokens.forEach(fixToken);
+    return degroupOversized(tokens, emptyDue, emptyMeanings);
+  }
+
   content.passages.forEach(p => {
-    p.titleTokens.forEach(fixToken);
-    p.sentences.forEach(s => s.tokens.forEach(fixToken));
+    p.titleTokens = fixAndDegroup(p.titleTokens);
+    p.sentences.forEach(s => {
+      s.tokens = fixAndDegroup(s.tokens);
+      s.plainText = s.tokens.map(t => t.text).join('');
+    });
     p.questions?.forEach(q => {
-      q.q.forEach(fixToken);
-      q.options.forEach(opt => opt.tokens.forEach(fixToken));
+      q.q = fixAndDegroup(q.q);
+      q.options.forEach(opt => { opt.tokens = fixAndDegroup(opt.tokens); });
+      // Shuffle options so the correct answer isn't pinned to position 0
+      for (let i = q.options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
+      }
     });
   });
+
   content.fillItems.forEach(fi => {
-    fi.before.forEach(fixToken);
-    fi.after.forEach(fixToken);
+    fi.before = fixAndDegroup(fi.before);
+    fi.after  = fixAndDegroup(fi.after);
   });
+
   content.conversation.forEach(turn => {
-    turn.tokens.forEach(fixToken);
-    turn.suggestions.forEach(sug => sug.forEach(fixToken));
+    turn.tokens = fixAndDegroup(turn.tokens);
+    turn.suggestions = turn.suggestions.map(sug => fixAndDegroup(sug));
   });
 }
 
@@ -177,12 +342,10 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-/** Words per passage — also the max sent for initial generation (= 1 passage). */
+/** Max due words sent per passage to the API. */
 const MAX_WORDS = 5;
-/** Minimum words — ensures at least one full passage even if few are due today. */
-const MIN_WORDS = 5;
 
-export type DailyContentStatus = 'idle' | 'loading' | 'ready' | 'error' | 'no-key' | 'no-words';
+export type DailyContentStatus = 'idle' | 'loading' | 'ready' | 'error' | 'no-key';
 
 export interface UseDailyContentResult {
   dailyContent: DailyContent | null;
@@ -194,38 +357,47 @@ export interface UseDailyContentResult {
 
 /**
  * Loads (or generates) today's AI-driven practice content.
- * Only words with dueAt <= today are sent to the API (SRS scheduling).
- * Falls back to null when: no API key, <2 deck words, or generation fails.
+ *
+ * A fresh AI passage is auto-generated every day on first load (even with an
+ * empty deck). Adding words never auto-regenerates — users press "+ new passage"
+ * (loadMore) to get a passage on a different topic using their current words.
  */
 export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [trigger, setTrigger] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Keep a stable ref to the deck so the async load closure always sees current data
+  // Stable ref so async closures always see latest deck without being deps
   const deckRef = useRef(deck);
   deckRef.current = deck;
 
   useEffect(() => {
     if (hskLevel === 0) return;
-    if (deck.length < 2) {
-      setStatus('no-words');
-      setDailyContent(null);
-      return;
-    }
 
     let cancelled = false;
 
     async function load() {
       setStatus('loading');
 
-      // 1. Check cache — always serve today's cached content if it exists.
-      //    The passage stays stable while reading; use loadMore() to add new
-      //    passages for new vocab words.
-      //    NOTE: old cache (from when MAX_WORDS was 10) may have 2 passages.
-      //    We cap at MAX_INITIAL_PASSAGES so the page always starts with 1.
+      const passageData = getPassageData(hskLevel);
+      const today = new Date().toISOString().slice(0, 10);
+
+      // Helper: wrap static data as a DailyContent baseline
+      const staticContent = (): DailyContent => ({
+        date: today,
+        hskLevel,
+        passages: [{
+          titleTokens: passageData.titleTokens,
+          sentences: passageData.sentences,
+          vocabWords: [],
+          questions: passageData.questions,
+        }],
+        fillItems: passageData.fillItems,
+        conversation: passageData.conversation,
+      });
+
+      // 1. Check cache — serve today's cached AI content if it exists.
       const MAX_INITIAL_PASSAGES = 1;
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
@@ -241,31 +413,16 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         }
       }
 
-      // 2. Select words to practice today
-      //    Priority: due words (dueAt <= today) sorted most-overdue first, then by fewest reviews.
-      //    If nothing is due, fall back to least-reviewed deck words so first-time users always get content.
-      const todayStr = new Date().toISOString().slice(0, 10);
+      // 2. No cache — generate. Send due words (may be empty for new users).
       const currentDeck = deckRef.current;
-
-      // Due words — sorted most-overdue first, then fewest reviews
       const dueWords = currentDeck
-        .filter(w => !w.dueAt || w.dueAt <= todayStr)
+        .filter(w => !w.dueAt || w.dueAt <= today)
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
         });
+      const selectedWords = dueWords.slice(0, MAX_WORDS);
 
-      // Pad with non-due words (least reviewed) to always fill at least one batch (MIN_WORDS).
-      // This ensures new users or fully-reviewed-for-today users still get a passage.
-      // Pad up to MIN_WORDS even if fewer are due today
-      const notDue = currentDeck
-        .filter(w => w.dueAt && w.dueAt > todayStr)
-        .sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
-
-      const combined = [...dueWords, ...notDue];
-      const selectedWords = combined.slice(0, Math.max(MIN_WORDS, Math.min(combined.length, MAX_WORDS)));
-
-      // 3. Call API
       try {
         const res = await fetch('/api/daily-content', {
           method: 'POST',
@@ -279,8 +436,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         if (cancelled) return;
 
         if (res.status === 503) {
+          setDailyContent(staticContent());
           setStatus('no-key');
-          setDailyContent(null);
           return;
         }
 
@@ -298,10 +455,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
 
         const dueSet = new Set(vocabWords);
         const deckMeanings = new Map(selectedWords.map(w => [w.h, w.m]));
-        const passageData = getPassageData(hskLevel);
-        const today = new Date().toISOString().slice(0, 10);
 
-        // 4. Build passages array from API response
+        // 4. Build passages from API response
         const rawPassages = Array.isArray(data.passages) ? data.passages : [];
         let passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) =>
           buildPassage(
@@ -312,25 +467,18 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           )
         );
 
-        // Fall back to static passage if AI produced nothing usable
         if (passages.length === 0 || passages[0].sentences.length < 2) {
-          passages = [{
-            titleTokens: passageData.titleTokens,
-            sentences: passageData.sentences,
-            vocabWords,
-            questions: passageData.questions,
-          }];
+          passages = staticContent().passages;
         }
 
         const content: DailyContent = {
           date: today,
           hskLevel,
           passages,
-          fillItems: buildFillItems(data.fill as unknown[], dueSet, deckMeanings),
-          conversation: buildConvo(data.convo as unknown[], dueSet, deckMeanings),
+          fillItems: data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckMeanings) : [],
+          conversation: data.convo ? buildConvo(data.convo as unknown[], dueSet, deckMeanings) : [],
         };
 
-        // Validate minimums — supplement with static if generation was too short
         if (content.fillItems.length < 1) content.fillItems = passageData.fillItems;
         if (content.conversation.length < 2) content.conversation = passageData.conversation;
 
@@ -342,15 +490,16 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         if (cancelled) return;
         console.error('[useDailyContent]', err);
         setErrorMsg(String(err));
+        setDailyContent(staticContent());
         setStatus('error');
-        setDailyContent(null);
       }
     }
 
     load();
     return () => { cancelled = true; };
+  // Only re-run when hskLevel changes. Deck changes never auto-regenerate.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hskLevel, deck.length >= 2, trigger]); // only re-run when crossing the 2-word threshold
+  }, [hskLevel]);
 
   /**
    * Generate one more passage and append it to the existing list.
@@ -365,7 +514,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       const todayStr = new Date().toISOString().slice(0, 10);
       const currentDeck = deckRef.current;
 
-      // Prefer words not covered by any existing passage
+      // Prefer due words not yet covered by existing passages
       const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
       const dueWords = currentDeck
         .filter(w => !w.dueAt || w.dueAt <= todayStr)
@@ -373,13 +522,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
         });
-      const notDue = currentDeck
-        .filter(w => w.dueAt && w.dueAt > todayStr)
-        .sort((a, b) => (a.reviews ?? 0) - (b.reviews ?? 0));
-      const allSorted = [...dueWords, ...notDue];
-      const uncovered = allSorted.filter(w => !coveredWords.has(w.h));
-      // Use uncovered if enough; otherwise fall back to all words
-      const pool = uncovered.length >= MIN_WORDS ? uncovered : allSorted;
+      const uncovered = dueWords.filter(w => !coveredWords.has(w.h));
+      const pool = uncovered.length >= 1 ? uncovered : dueWords;
       const selectedWords = pool.slice(0, MAX_WORDS);
 
       if (selectedWords.length < 1) return;
@@ -395,7 +539,10 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail ?? errBody.error ?? `HTTP ${res.status}`);
+      }
 
       const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][] };
       const { data, vocabWords, batches } = payload;

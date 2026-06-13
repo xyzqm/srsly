@@ -979,4 +979,86 @@ export const HSK_VOCAB: Record<string, { pinyin: string; meaning: string }> = {
   '正确':   { pinyin: 'zhèngquè',    meaning: 'correct; right; proper; appropriate' },
   '制度':   { pinyin: 'zhìdù',       meaning: 'system; institution; rule; regulation' },
   '重要性': { pinyin: 'zhòngyào xìng', meaning: 'importance; significance' },
+
+  // ─── Common words missing from earlier HSK lists ────────────────────────────
+  // Measure words & particles
+  '项':     { pinyin: 'xiàng',        meaning: '(measure word for items/tasks); item; event' },
+  '已':     { pinyin: 'yǐ',           meaning: 'already; stop; then (classical/formal)' },
+  '嘛':     { pinyin: 'ma',           meaning: '(particle expressing obviousness)' },
+  '哦':     { pinyin: 'ó',            meaning: '(exclamation: oh; I see)' },
+  '哎':     { pinyin: 'āi',           meaning: '(exclamation: hey; alas)' },
+  '哇':     { pinyin: 'wā',           meaning: '(exclamation: wow)' },
+
+  // Everyday objects
+  '气球':   { pinyin: 'qìqiú',        meaning: 'balloon' },
+  '风筝':   { pinyin: 'fēngzheng',    meaning: 'kite' },
+  '蜡烛':   { pinyin: 'làzhú',        meaning: 'candle' },
+  '雨伞':   { pinyin: 'yǔsǎn',        meaning: 'umbrella' },
+  '眼镜':   { pinyin: 'yǎnjìng',      meaning: 'glasses; spectacles' },
+  '书包':   { pinyin: 'shūbāo',       meaning: 'schoolbag; backpack' },
+  '钱包':   { pinyin: 'qiánbāo',      meaning: 'wallet; purse' },
+  '镜子':   { pinyin: 'jìngzi',       meaning: 'mirror' },
+  '枕头':   { pinyin: 'zhěntou',      meaning: 'pillow' },
+  '被子':   { pinyin: 'bèizi',        meaning: 'quilt; duvet; blanket' },
+  '毛巾':   { pinyin: 'máojīn',       meaning: 'towel' },
+  '牙刷':   { pinyin: 'yáshuā',       meaning: 'toothbrush' },
+  '地图':   { pinyin: 'dìtú',         meaning: 'map' },
+  '护照':   { pinyin: 'hùzhào',       meaning: 'passport' },
+
+  // Actions & verbs (new entries only)
+  '经历':   { pinyin: 'jīnglì',       meaning: 'to experience; experience; go through' },
+  '掌握':   { pinyin: 'zhǎngwò',      meaning: 'to master; to grasp; to control' },
+  '包括':   { pinyin: 'bāokuò',       meaning: 'to include; to consist of; including' },
+  '描述':   { pinyin: 'miáoshù',      meaning: 'to describe; description; account' },
+  '观察':   { pinyin: 'guānchá',      meaning: 'to observe; to watch; observation' },
+  '分析':   { pinyin: 'fēnxī',        meaning: 'to analyse; analysis' },
+  '区别':   { pinyin: 'qūbié',        meaning: 'difference; to distinguish; to tell apart' },
+  '比赛':   { pinyin: 'bǐsài',        meaning: 'competition; match; game; contest; to compete' },
+  '组织':   { pinyin: 'zǔzhī',        meaning: 'to organise; organisation; structure; tissue' },
+  '保持':   { pinyin: 'bǎochí',       meaning: 'to keep; to maintain; to preserve' },
+  '传递':   { pinyin: 'chuándì',      meaning: 'to pass on; to transmit; to relay' },
+
+  // Abstract nouns & qualities (new entries only)
+  '情感':   { pinyin: 'qínggǎn',      meaning: 'emotion; feeling; sentiment' },
+  '完整':   { pinyin: 'wánzhěng',     meaning: 'complete; intact; whole; integrated' },
+  '专门':   { pinyin: 'zhuānmén',     meaning: 'special; specialised; dedicated; specifically' },
+  '观众':   { pinyin: 'guānzhòng',    meaning: 'audience; spectator; viewer' },
+  '民间':   { pinyin: 'mínjiān',      meaning: 'folk; among the people; popular; nonofficial' },
+  '程度':   { pinyin: 'chéngdù',      meaning: 'degree; level; extent; standard' },
+  '范围':   { pinyin: 'fànwéi',       meaning: 'scope; range; area; extent' },
+  '缺点':   { pinyin: 'quēdiǎn',      meaning: 'shortcoming; weakness; defect; flaw' },
+  '优势':   { pinyin: 'yōushì',       meaning: 'advantage; superiority; dominant position' },
+  '挑战':   { pinyin: 'tiǎozhàn',     meaning: 'challenge; to challenge' },
+
+  // Culture & arts
+  '剪纸':   { pinyin: 'jiǎnzhǐ',      meaning: 'paper cutting; paper-cut art' },
+  '手工':   { pinyin: 'shǒugōng',     meaning: 'handcraft; manual work; handmade' },
+  '工艺':   { pinyin: 'gōngyì',       meaning: 'craft; craftsmanship; technology; technique' },
+  '作品':   { pinyin: 'zuòpǐn',       meaning: 'work (of art/literature); piece; creation' },
+  '风格':   { pinyin: 'fēnggé',       meaning: 'style; manner; genre' },
+  '图案':   { pinyin: "tú'àn",        meaning: 'pattern; design; motif; decorative design' },
+  '象征':   { pinyin: 'xiàngzhēng',   meaning: 'symbol; to symbolise; emblem' },
+  '欣赏':   { pinyin: 'xīnshǎng',     meaning: 'to appreciate; to enjoy; to admire' },
+  '创作':   { pinyin: 'chuàngzuò',    meaning: 'to create; creative work; creation; original work' },
+  '灵感':   { pinyin: 'línggǎn',      meaning: 'inspiration; sudden idea; muse' },
+
+  // Nature (new entries only)
+  '生态':   { pinyin: 'shēngtài',     meaning: 'ecology; ecosystem; ecological' },
+  '资源':   { pinyin: 'zīyuán',       meaning: 'resource; natural resource' },
+  '污染':   { pinyin: 'wūrǎn',        meaning: 'pollution; to pollute; contamination' },
+
+  // Technology & society (new entries only)
+  '人工智能': { pinyin: 'réngōng zhìnéng', meaning: 'artificial intelligence; AI' },
+  '大数据': { pinyin: 'dà shùjù',     meaning: 'big data' },
+  '区块链': { pinyin: 'qūkuàiliàn',   meaning: 'blockchain' },
+  '社交':   { pinyin: 'shèjiāo',      meaning: 'social; social interaction' },
+  '平台':   { pinyin: 'píngtái',      meaning: 'platform; stage; terrace; balcony' },
+  '网络':   { pinyin: 'wǎngluò',      meaning: 'network; internet; the web' },
+  '数据':   { pinyin: 'shùjù',        meaning: 'data; figures; statistics' },
+  '软件':   { pinyin: 'ruǎnjiàn',     meaning: 'software' },
+  '硬件':   { pinyin: 'yìngjiàn',     meaning: 'hardware' },
+  '用户':   { pinyin: 'yònghù',       meaning: 'user; consumer; subscriber' },
+  '界面':   { pinyin: 'jièmiàn',      meaning: 'interface; user interface' },
+  '算法':   { pinyin: 'suànfǎ',       meaning: 'algorithm' },
+  '模型':   { pinyin: 'móxíng',       meaning: 'model; pattern; mould; template' },
 };

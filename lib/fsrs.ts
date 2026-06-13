@@ -1,26 +1,108 @@
 /**
- * Simplified FSRS (Free Spaced Repetition Scheduler)
- * Inspired by FSRS-4.5. Core concepts:
- *   - Stability (S): number of days until retrievability drops to ~90%
- *   - Difficulty (D, 1–10): harder cards grow stability more slowly
- *   - Lapses: forgotten-review count; each lapse shrinks stability further
- *   - Interval ≈ stability days (for 90% target retention)
+ * FSRS v4.5 scheduler with learning phase.
  *
- * Migration: words that have `reviews` but no `stability` (created by the old
- * simple-SRS scheduler) get their stability bootstrapped from the old intervals
- * so they aren't reset to "new card" on first FSRS grade.
+ * Learning steps: [1 min, 10 min]
+ *   Again  → reset to step 0, 1 min
+ *   Hard   → stay at current step, 5 min (fixed)
+ *   Good   → advance step; graduate from step 1
+ *   Easy   → graduate immediately
+ *
+ * Review phase uses the standard FSRS-4.5 formulas with 19 default weights.
+ * Retrievability: R(t, S) = (1 + FACTOR * t/S)^DECAY  where R=0.9 at t=S.
  */
 import type { DeckWord } from './types';
 
-/** FSRS grade: 1=Again, 2=Hard, 3=Good, 4=Easy */
-export type FsrsGrade = 1 | 2 | 3 | 4;
+export type FsrsGrade = 1 | 2 | 3 | 4; // 1=Again 2=Hard 3=Good 4=Easy
 
-// Initial stability (days) and difficulty (1–10) for brand-new cards by grade
-const INIT_S: Record<FsrsGrade, number> = { 1: 0.4, 2: 1.8, 3: 5.5, 4: 14 };
-const INIT_D: Record<FsrsGrade, number> = { 1: 7,   2: 6,   3: 5,   4: 4  };
+// ── Settings ─────────────────────────────────────────────────────────────────
 
-// Old simple-SRS schedule — used only for migration bootstrap
-const OLD_SRS_DAYS = [1, 3, 7, 14, 30, 60];
+export interface SrsSettings {
+  desiredRetention: number; // 0.70–0.99
+  maxIntervalDays: number;
+}
+
+export const DEFAULT_SRS_SETTINGS: SrsSettings = {
+  desiredRetention: 0.90,
+  maxIntervalDays: 365,
+};
+
+export function getSrsSettings(): SrsSettings {
+  if (typeof localStorage === 'undefined') return DEFAULT_SRS_SETTINGS;
+  try {
+    const prefs = JSON.parse(localStorage.getItem('srsly-prefs') ?? '{}');
+    return {
+      desiredRetention: Number(prefs.srsRetention) || DEFAULT_SRS_SETTINGS.desiredRetention,
+      maxIntervalDays:  Number(prefs.srsMaxDays)   || DEFAULT_SRS_SETTINGS.maxIntervalDays,
+    };
+  } catch {
+    return DEFAULT_SRS_SETTINGS;
+  }
+}
+
+// ── FSRS-4.5 weights (19 parameters, 0-indexed) ──────────────────────────────
+
+const W = [
+  0.4072, 1.1829, 3.1262, 15.4722, 7.2102, 0.5316, 1.0651, 0.0589,
+  1.5330, 0.1544, 1.0071, 1.9395, 0.1100, 0.2900, 2.2700, 0.2900,
+  2.9898, 0.5100, 0.4300,
+];
+
+// R(t,S) = (1 + FACTOR*t/S)^DECAY — equals 0.9 when t=S
+const DECAY  = -0.5;
+const FACTOR = Math.pow(0.9, 1 / DECAY) - 1; // 19/81 ≈ 0.2346
+
+// ── Math helpers ─────────────────────────────────────────────────────────────
+
+function retrievability(elapsedDays: number, stability: number): number {
+  if (stability <= 0) return 0;
+  return Math.pow(1 + FACTOR * elapsedDays / stability, DECAY);
+}
+
+function nextInterval(stability: number, desiredRetention: number, maxDays: number): number {
+  // Derived by solving R(I,S)=desiredRetention for I
+  const days = (stability / FACTOR) * (Math.pow(desiredRetention, 1 / DECAY) - 1);
+  return Math.max(1, Math.min(maxDays, Math.round(days)));
+}
+
+function initStability(rating: FsrsGrade): number {
+  return Math.max(0.1, W[rating - 1]);
+}
+
+function initDifficulty(rating: FsrsGrade): number {
+  return Math.max(1, Math.min(10, W[4] - Math.exp(W[5] * (rating - 1)) + 1));
+}
+
+function updateDifficulty(d: number, rating: FsrsGrade): number {
+  const d0Easy = W[4] - Math.exp(W[5] * 3) + 1; // D0 for grade 4 (Easy)
+  const shifted = d - W[6] * (rating - 3);
+  const reverted = W[7] * d0Easy + (1 - W[7]) * shifted; // mean-revert toward Easy baseline
+  return Math.max(1, Math.min(10, reverted));
+}
+
+function updateStabilityPass(d: number, s: number, r: number, rating: FsrsGrade): number {
+  const hardPenalty = rating === 2 ? W[15] : 1;
+  const easyBonus   = rating === 4 ? W[16] : 1;
+  const newS = s * (
+    Math.exp(W[8]) * (11 - d) * Math.pow(s, -W[9]) * (Math.exp((1 - r) * W[10]) - 1)
+    * hardPenalty * easyBonus + 1
+  );
+  return Math.max(0.1, newS);
+}
+
+function updateStabilityFail(d: number, s: number, r: number): number {
+  return Math.max(
+    0.1,
+    W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14]),
+  );
+}
+
+// ── Learning phase ────────────────────────────────────────────────────────────
+
+// Step intervals in minutes; Hard bypasses these and uses HARD_MIN
+const LEARNING_STEPS_MIN = [1, 10] as const;
+const HARD_MIN = 5; // Hard in learning is always 5 min regardless of step
+
+// ── Utility ──────────────────────────────────────────────────────────────────
 
 function addDays(n: number): string {
   const d = new Date();
@@ -34,93 +116,168 @@ function daysBetween(a: string, b: string): number {
   ));
 }
 
-/**
- * Compute new SRS fields for a card after a user grades it.
- * Returns a partial DeckWord — merge into the existing entry.
- */
-export function fsrsSchedule(word: DeckWord, grade: FsrsGrade): Partial<DeckWord> {
-  const today = new Date().toISOString().slice(0, 10);
+/** True when a card is in the learning/relearning phase. */
+export function isLearningCard(word: DeckWord): boolean {
+  return word.phase === 'learning' || (word.phase === undefined && word.stability === undefined);
+}
 
-  // ── Bootstrap stability from old review count (one-time migration) ───────
+// ── Core scheduler ────────────────────────────────────────────────────────────
+
+export function fsrsSchedule(
+  word: DeckWord,
+  grade: FsrsGrade,
+  settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+): Partial<DeckWord> {
+  const today  = new Date().toISOString().slice(0, 10);
+  const nowMs  = Date.now();
+  const step   = word.learningStep ?? 0;
+  const lapses = word.lapses ?? 0;
+
+  // ── Learning / relearning ─────────────────────────────────────────────────
+  if (isLearningCard(word)) {
+
+    if (grade === 4) {
+      // Easy: skip steps, graduate immediately with initial Easy stability
+      const s = initStability(4);
+      const d = initDifficulty(4);
+      return {
+        stability: s, difficulty: d, lapses,
+        reviews: (word.reviews ?? 0) + 1,
+        phase: 'review', learningStep: undefined, dueAtMs: undefined,
+        dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
+        lastReview: today,
+      };
+    }
+
+    if (grade === 1) {
+      // Again: reset to step 0, show again in 1 min
+      return {
+        phase: 'learning', learningStep: 0,
+        dueAtMs: nowMs + LEARNING_STEPS_MIN[0] * 60_000,
+        dueAt: today, lapses: lapses + 1,
+        reviews: word.reviews ?? 0, lastReview: today,
+      };
+    }
+
+    if (grade === 2) {
+      // Hard: keep current step, always 5 min (regardless of step)
+      return {
+        phase: 'learning', learningStep: step,
+        dueAtMs: nowMs + HARD_MIN * 60_000,
+        dueAt: today, lastReview: today,
+      };
+    }
+
+    // Good: advance step, graduate from step 1
+    const nextStep = step + 1;
+    if (nextStep >= LEARNING_STEPS_MIN.length) {
+      // Graduate — use preserved stability for relapsed cards, else initial Good stability
+      const s = word.stability ?? initStability(3);
+      const d = word.difficulty ?? initDifficulty(3);
+      return {
+        stability: s, difficulty: d, lapses,
+        reviews: (word.reviews ?? 0) + 1,
+        phase: 'review', learningStep: undefined, dueAtMs: undefined,
+        dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
+        lastReview: today,
+      };
+    }
+
+    // Advance to next step (step 0 → step 1 = 10 min)
+    return {
+      phase: 'learning', learningStep: nextStep,
+      dueAtMs: nowMs + LEARNING_STEPS_MIN[nextStep] * 60_000,
+      dueAt: today, lastReview: today,
+    };
+  }
+
+  // ── Review phase ──────────────────────────────────────────────────────────
+
   let S = word.stability;
   let D = word.difficulty;
-  const L = word.lapses ?? 0;
 
+  // One-time migration bootstrap for old cards without stability
   if (S === undefined) {
     const rev = word.reviews ?? 0;
     if (rev > 0) {
-      // Approximate: assume the word was reviewed well each time
-      S = OLD_SRS_DAYS[Math.min(rev, OLD_SRS_DAYS.length - 1)];
-      D = Math.max(1, Math.min(10, 6 - Math.round(rev / 2))); // rough difficulty from review count
+      S = [1, 3, 7, 14, 30, 60][Math.min(rev, 5)];
+      D = Math.max(1, Math.min(10, 6 - Math.round(rev / 2)));
     }
   }
 
-  // ── First review (truly new card) ────────────────────────────────────────
   if (S === undefined) {
-    const initS = INIT_S[grade];
-    const initD = INIT_D[grade];
-    const interval = grade === 1 ? 1 : Math.max(1, Math.round(initS));
+    // Shouldn't reach here for phase='review', but handle gracefully
+    const s = initStability(grade);
     return {
-      stability: initS,
-      difficulty: initD,
-      lapses: grade === 1 ? 1 : 0,
-      reviews: grade >= 3 ? 1 : 0,
-      dueAt: addDays(interval),
+      stability: s, difficulty: initDifficulty(grade),
+      lapses: grade === 1 ? 1 : 0, reviews: 1,
+      phase: 'review',
+      dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
       lastReview: today,
     };
   }
 
   D = D ?? 5;
+  const t = daysBetween(word.lastReview ?? today, today);
+  const r = retrievability(t, S);
 
-  // ── Lapse (Again) ────────────────────────────────────────────────────────
   if (grade === 1) {
-    // Each lapse deepens the stability penalty; floor at 0.4 days
-    const newS = Math.max(0.4, S * 0.5 * Math.pow(0.9, L));
-    const newD = Math.min(10, D + 1.0);
+    // Lapse: back to learning with reduced stability
+    const newS = updateStabilityFail(D, S, r);
+    const newD = updateDifficulty(D, 1);
     return {
-      stability: newS,
-      difficulty: newD,
-      lapses: L + 1,
-      reviews: word.reviews ?? 0,
-      dueAt: addDays(1),
-      lastReview: today,
+      stability: newS, difficulty: newD,
+      lapses: lapses + 1, reviews: word.reviews ?? 0,
+      phase: 'learning', learningStep: 0,
+      dueAtMs: nowMs + LEARNING_STEPS_MIN[0] * 60_000,
+      dueAt: today, lastReview: today,
     };
   }
 
-  // ── Recall (Hard / Good / Easy) ──────────────────────────────────────────
-  const t = daysBetween(word.lastReview ?? today, today);
-  const r = Math.exp(-t / Math.max(0.1, S));        // retrievability at review time
-  const gFactor = grade === 2 ? 1.06 : grade === 3 ? 1.22 : 1.50;  // grade growth factor
-  const dFactor = (11 - D) / 6;                     // D=1 → 1.67×, D=5 → 1×, D=10 → 0.17×
-  const rBonus  = Math.exp(0.3 * (1 - r));          // bonus stability growth when overdue
-  const newS    = S * gFactor * dFactor * rBonus;
-
-  const dDelta  = -0.7 * (grade - 3);               // Hard→+0.7, Good→0, Easy→−0.7
-  const newD    = Math.max(1, Math.min(10, D + dDelta));
-  const interval = Math.max(1, Math.round(newS));
-
+  const newS = updateStabilityPass(D, S, r, grade);
+  const newD = updateDifficulty(D, grade);
   return {
-    stability: newS,
-    difficulty: newD,
-    lapses: L,
-    reviews: (word.reviews ?? 0) + 1,
-    dueAt: addDays(interval),
+    stability: newS, difficulty: newD,
+    lapses, reviews: (word.reviews ?? 0) + 1,
+    phase: 'review', dueAtMs: undefined,
+    dueAt: addDays(nextInterval(newS, settings.desiredRetention, settings.maxIntervalDays)),
     lastReview: today,
   };
 }
 
-/** How many days until next review for the given grade (for UI interval preview). */
-export function fsrsNextInterval(word: DeckWord, grade: FsrsGrade): number {
-  const result = fsrsSchedule(word, grade);
+// ── Preview helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Returns fractional days until next review for each grade.
+ * Values < 1 represent sub-day intervals:
+ *   1/1440 ≈ 0.000694 = 1 min
+ */
+export function fsrsNextInterval(
+  word: DeckWord,
+  grade: FsrsGrade,
+  settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+): number {
+  const result = fsrsSchedule(word, grade, settings);
+  const today  = new Date().toISOString().slice(0, 10);
+
+  if (result.phase !== 'review' && result.dueAtMs !== undefined) {
+    const msFromNow = (result.dueAtMs as number) - Date.now();
+    return Math.max(1 / 1440, msFromNow / 86_400_000);
+  }
   if (!result.dueAt) return 1;
-  const today = new Date().toISOString().slice(0, 10);
-  return Math.max(1, daysBetween(today, result.dueAt));
+  return Math.max(1, daysBetween(today, result.dueAt as string));
 }
 
-/** Format a day count as a compact human label: "1 day", "5 days", "3 wks", "2 mo". */
+// ── Display ───────────────────────────────────────────────────────────────────
+
 export function fmtInterval(days: number): string {
+  if (days < 1 / 24) {
+    const m = Math.round(days * 24 * 60);
+    return `${Math.max(1, m)} min`;
+  }
+  if (days < 1)  return `${Math.round(days * 24)} hr`;
   if (days <= 1) return '1 day';
-  if (days < 14)  return `${days} days`;
-  if (days < 60)  return `${Math.round(days / 7)} wks`;
+  if (days < 14) return `${Math.round(days)} days`;
+  if (days < 60) return `${Math.round(days / 7)} wks`;
   return `${Math.round(days / 30)} mo`;
 }

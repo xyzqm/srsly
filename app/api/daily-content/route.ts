@@ -25,13 +25,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    words = body.words;
+    words = body.words ?? [];
     hskLevel = body.hskLevel ?? 4;
     themeOffset = body.themeOffset ?? 0;
     passageOnly = body.passageOnly ?? false;
-    if (!Array.isArray(words) || words.length < 1) {
-      return NextResponse.json({ error: 'words array required' }, { status: 400 });
+    if (!Array.isArray(words)) {
+      return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
     }
+    // Empty words → passage-only (fill/convo fall back to static in the client)
+    if (words.length === 0) passageOnly = true;
   } catch {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
   }
@@ -68,15 +70,31 @@ export async function POST(req: NextRequest) {
 TOKEN formats — each token is a small JSON array:
   ["word", "pinyin", "meaning"]  — REQUIRED for every word with 2+ characters and any content word
   ["word", "pinyin"]             — ONLY single-character function particles: 的、了、是、在、和、也、都、有、没、不、把、被、让、与、或、于
-  ["punctuation"]                — Punctuation only: 。！？，、—…
+  ["。"]  — Punctuation: use the ACTUAL punctuation character as text. Examples: ["。"] ["，"] ["！"] ["？"] ["、"] ["—"] ["…"]
 
 CRITICAL TOKENIZATION RULES:
 1. Every word with 2+ characters MUST be a 3-element array ["word","pinyin","meaning"]. No exceptions.
 2. NEVER emit ["word","pinyin"] for any multi-character word.
 3. Do NOT bundle multiple words into one token.
 4. For vocab words, use the exact meaning from the word list.
-5. NEVER split compound words: 节日→["节日","jiérì","festival"], never 节+日.
-6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.`.trim();
+5. NEVER split compound words. Each multi-character word is ONE token:
+   已经→["已经","yǐjīng","already"]   NOT 已+经
+   科技→["科技","kējì","technology"]  NOT 科+技
+   生活→["生活","shēnghuó","life"]    NOT 生+活
+   学习→["学习","xuéxí","study"]      NOT 学+习
+   工作→["工作","gōngzuò","work"]     NOT 工+作
+   朋友→["朋友","péngyou","friend"]   NOT 朋+友
+   因为→["因为","yīnwèi","because"]   NOT 因+为
+   所以→["所以","suǒyǐ","therefore"]  NOT 所+以
+   但是→["但是","dànshì","but"]       NOT 但+是
+   可以→["可以","kěyǐ","can"]         NOT 可+以
+   知道→["知道","zhīdào","know"]      NOT 知+道
+   觉得→["觉得","juéde","feel"]       NOT 觉+得
+   喜欢→["喜欢","xǐhuan","like"]      NOT 喜+欢
+   高兴→["高兴","gāoxìng","happy"]    NOT 高+兴
+   漂亮→["漂亮","piàoliang","pretty"] NOT 漂+亮
+6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.
+7. For punctuation ALWAYS use the actual character (。，！？、—…), NEVER the word "punctuation".`.trim();
 
   const QUESTION_SCHEMA = `QUESTION = {
   "q": TOKEN_ARRAY,
@@ -90,14 +108,12 @@ CRITICAL TOKENIZATION RULES:
   ]
 }`;
 
-  // passage-only prompt (used by loadMore — no fill or convo, smaller output)
+  // passage-only prompt (used by loadMore and empty-deck daily load)
   const passageOnlyPrompt = `You are a Chinese language teacher generating a reading passage.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
-
-WORDS TO USE:
-${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}
+${words.length > 0 ? `\nWORDS TO USE:\n${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
 
 Generate a JSON object with EXACTLY this structure:
 
@@ -108,10 +124,12 @@ Generate a JSON object with EXACTLY this structure:
 PASSAGE = {
   "title": TOKEN_ARRAY,
   "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
-  "questions": [QUESTION, QUESTION, QUESTION]
+  "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION]
 }
-  Use ALL the words above naturally in a coherent story or description (${sentenceCount}–${sentenceCount + 2} sentences).
-  Include exactly 3 comprehension questions about the passage content.
+  ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
+  Include exactly 5 comprehension questions testing both passage understanding AND vocabulary meaning.
+  Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect questions.
+  The "key" array must contain the specific hanzi words from the passage whose meaning is tested by that question.
 
 ${TOKEN_RULES}
 
@@ -119,7 +137,7 @@ ${QUESTION_SCHEMA}
 
 REQUIREMENTS:
 1. Exactly 1 passage in the "passages" array.
-2. ${sentenceCount}–${sentenceCount + 2} sentences, exactly 3 questions.
+2. ${sentenceCount}–${sentenceCount + 2} sentences, exactly 5 questions.
 3. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
 4. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
 
@@ -147,11 +165,13 @@ Generate a JSON object with EXACTLY this structure:
 PASSAGE = {
   "title": TOKEN_ARRAY,
   "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
-  "questions": [QUESTION, QUESTION, QUESTION]
+  "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION]
 }
   Each passage uses ALL the words from its designated word list.
   Each passage is a coherent, flowing story or description (${sentenceCount}–${sentenceCount + 2} sentences).
-  Each passage must have exactly 3 comprehension questions about its own content.
+  Each passage must have exactly 5 comprehension questions testing both passage understanding AND vocabulary meaning.
+  Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect questions.
+  The "key" array must contain the specific hanzi words from the passage whose meaning is tested by that question.
 
 ${TOKEN_RULES}
 
@@ -174,7 +194,7 @@ CONVO_TURN = {
 
 REQUIREMENTS:
 1. Generate exactly ${numPassages} passage(s) in the "passages" array.
-2. Each passage: ${sentenceCount}–${sentenceCount + 2} sentences, exactly 3 questions.
+2. Each passage: ${sentenceCount}–${sentenceCount + 2} sentences, exactly 5 questions.
 3. "fill": 5–8 items, one per answer word from ALL WORDS.
 4. "convo": 4–5 turns practicing ALL WORDS in a realistic dialogue; last turn has "suggestions": [].
 5. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
@@ -193,19 +213,38 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     });
 
     const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    // Strip markdown fences if the model wrapped the output
+    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    // If the AI prepended any explanation text, skip to the first { ... last }
+    const jStart = cleaned.indexOf('{');
+    const jEnd   = cleaned.lastIndexOf('}');
+    if (jStart > 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
 
     // Attempt to repair common AI JSON mistakes before parsing.
-    // Most frequent: trailing commas before ] or } (strict JSON disallows these).
     function repairJson(s: string): string {
-      return s.replace(/,(\s*[}\]])/g, '$1');
+      let r = s;
+      // 1. Trailing commas before ] or } (most common AI mistake)
+      r = r.replace(/,(\s*[}\]])/g, '$1');
+      // 2. Unescaped newlines inside string values
+      r = r.replace(/"([^"\\]*)(\n)([^"\\]*)"/g, (_, a, _nl, b) => `"${a}\\n${b}"`);
+      // 3. Strip any BOM or zero-width characters
+      r = r.replace(/^﻿/, '').replace(/[​-‍﻿]/g, '');
+      return r;
     }
 
     let json: Record<string, unknown>;
     try {
       json = JSON.parse(cleaned);
     } catch {
-      json = JSON.parse(repairJson(cleaned));
+      try {
+        json = JSON.parse(repairJson(cleaned));
+      } catch (repairErr) {
+        // Log the raw response so server logs can show what the AI produced
+        console.error('[daily-content] JSON parse failed after repair:', repairErr);
+        console.error('[daily-content] raw length:', raw.length, 'cleaned length:', cleaned.length);
+        console.error('[daily-content] first 500 chars:', cleaned.slice(0, 500));
+        throw repairErr;
+      }
     }
 
     return NextResponse.json({

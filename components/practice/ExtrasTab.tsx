@@ -17,7 +17,7 @@ const MODES: { id: PracticeMode; label: string }[] = [
 interface Props { onScore: (score: number) => void; }
 
 export default function ExtrasTab({ onScore }: Props) {
-  const { deck, addWord, updateWordReview } = useVocabDeck();
+  const { deck, deckLoaded, addWord, updateWordReview } = useVocabDeck();
   const [mode, setMode] = useState<PracticeMode>('flash');
 
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
@@ -60,7 +60,7 @@ export default function ExtrasTab({ onScore }: Props) {
         ))}
       </div>
 
-      {mode === 'flash' && <Flashcards deck={deck} onDone={() => setMode('fill')} onGrade={updateWordReview} />}
+      {mode === 'flash' && <Flashcards deck={deck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={updateWordReview} />}
       {mode === 'fill'  && (
         <FillInBlank
           onDone={() => setMode('convo')}

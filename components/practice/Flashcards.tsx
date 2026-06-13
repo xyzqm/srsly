@@ -2,15 +2,18 @@
 import { useState, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { speak } from '@/lib/speech';
-import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
+import {
+  fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
+  DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings,
+} from '@/lib/fsrs';
 
 interface Props {
   deck: DeckWord[];
+  deckLoaded?: boolean;
   onDone: () => void;
   onGrade?: (hanzi: string, grade: number) => void;
 }
 
-/** A word is due when its dueAt date is today or earlier, or when dueAt is absent (new word). */
 function isDue(word: DeckWord): boolean {
   if (!word.dueAt) return true;
   const today = new Date().toISOString().slice(0, 10);
@@ -30,31 +33,51 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, onDone, onGrade }: Props) {
-  // Freeze the session queue once the deck first loads (deck is [] at mount
-  // because useVocabDeck loads async). The null→array transition happens
-  // exactly once; subsequent deck changes (FSRS updates) don't rebuild it.
-  const [sessionQueue, setSessionQueue] = useState<DeckWord[] | null>(null);
+export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }: Props) {
+  const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
+  useEffect(() => { setSettings(getSrsSettings()); }, []);
 
+  // queue: null = not yet initialised; [] = session done or no due cards
+  const [queue, setQueue] = useState<DeckWord[] | null>(null);
+  const [totalInitial, setTotalInitial] = useState(0);
+  const [results, setResults] = useState<{ label: string; color: string }[]>([]);
+  const [revealed, setRevealed] = useState(false);
+  // Tick increments every second when waiting, triggering countdown re-render
+  const [tick, setTick] = useState(0);
+
+  // Build session queue once when deck loads
   useEffect(() => {
-    if (sessionQueue !== null) return; // already frozen — don't rebuild mid-session
-    if (deck.length === 0) return;     // deck not loaded yet — wait
+    if (queue !== null) return;
+    if (!deckLoaded) return;
+    if (deck.length === 0) { setQueue([]); return; }
     const today = new Date().toISOString().slice(0, 10);
     const q = deck
       .filter(w => !w.dueAt || w.dueAt <= today)
       .sort((a, b) => {
-        // Most overdue first, then fewest reviews
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return (a.reviews ?? 0) - (b.reviews ?? 0);
       });
-    setSessionQueue(q);
-  }, [deck, sessionQueue]);
+    setQueue(q);
+    setTotalInitial(q.length);
+  }, [deck, deckLoaded, queue]);
 
-  const [idx, setIdx]           = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const [done, setDone]         = useState(false);
-  // Track results within this session for the summary screen
-  const [results, setResults]   = useState<{ label: string; color: string }[]>([]);
+  // Countdown timer — fires when the next learning card becomes ready
+  useEffect(() => {
+    if (!queue) return;
+    const nowMs = Date.now();
+    const futureMsList = queue
+      .filter(c => c.dueAtMs && c.dueAtMs > nowMs)
+      .map(c => c.dueAtMs!);
+    if (futureMsList.length === 0) return;
+    const nextMs = Math.min(...futureMsList);
+    const delay  = Math.max(250, Math.min(nextMs - nowMs, 1000));
+    const timer  = setTimeout(() => setTick(t => t + 1), delay);
+    return () => clearTimeout(timer);
+  }, [queue, tick]);
+
+  if (!deckLoaded || queue === null) {
+    return <div className="py-14 text-center" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>Loading…</div>;
+  }
 
   if (deck.length === 0) {
     return (
@@ -68,13 +91,12 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
     );
   }
 
-  // Queue still building (deck loads async — null for one render)
-  if (sessionQueue === null) {
-    return <div className="py-14 text-center" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>Loading…</div>;
-  }
+  const nowMs = Date.now();
+  const readyCards  = queue.filter(c => !c.dueAtMs || c.dueAtMs <= nowMs);
+  const futureCards = queue.filter(c => c.dueAtMs  && c.dueAtMs  > nowMs);
 
-  // No cards due today
-  if (sessionQueue.length === 0) {
+  // All caught up — no cards were due today
+  if (queue.length === 0 && results.length === 0) {
     const nextDue = deck.reduce<string | null>((earliest, w) => {
       if (!w.dueAt) return earliest;
       return earliest === null || w.dueAt < earliest ? w.dueAt : earliest;
@@ -85,18 +107,12 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>All caught up!</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
           No cards are due for review right now.
-          {nextDue && (
-            <> Next review scheduled for <strong>{nextDue}</strong>.</>
-          )}
+          {nextDue && <> Next review scheduled for <strong>{nextDue}</strong>.</>}
         </p>
         <button
           onClick={onDone}
           className="cursor-pointer transition-all duration-150 mt-6 inline-block"
-          style={{
-            fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px',
-            boxShadow: '0 2px 0 var(--accent-deep)',
-          }}
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
         >
           Go to fill-in-blank →
         </button>
@@ -104,7 +120,8 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
     );
   }
 
-  if (done) {
+  // Session complete — all cards reviewed
+  if (queue.length === 0 && results.length > 0) {
     const okCount = results.filter(r => r.label === 'Good' || r.label === 'Easy').length;
     const total   = results.length;
     const dueNow  = deck.filter(isDue).length;
@@ -119,7 +136,6 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
             : ' · all reviewed for today'
           }
         </p>
-        {/* Mini result bar */}
         <div className="flex justify-center gap-1 mt-3 mb-6">
           {results.map((r, i) => (
             <div key={i} style={{ width: 10, height: 10, borderRadius: 2, background: r.color }} title={r.label} />
@@ -128,11 +144,7 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         <button
           onClick={onDone}
           className="cursor-pointer transition-all duration-150"
-          style={{
-            fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px',
-            boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex', alignItems: 'center', gap: 10,
-          }}
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex', alignItems: 'center', gap: 10 }}
         >
           Continue to fill-in →
         </button>
@@ -140,29 +152,66 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
     );
   }
 
-  const card = sessionQueue[idx];
-  const totalInSession = sessionQueue.length;
-  const progress = (idx / totalInSession) * 100;
-  const dueCount = deck.filter(isDue).length;
+  // Waiting — all remaining cards have a future dueAtMs
+  if (readyCards.length === 0 && futureCards.length > 0) {
+    const nextMs    = Math.min(...futureCards.map(c => c.dueAtMs!));
+    const waitMs    = Math.max(0, nextMs - Date.now());
+    const waitMin   = Math.floor(waitMs / 60_000);
+    const waitSec   = Math.ceil((waitMs % 60_000) / 1000);
+    const waitLabel = waitMin > 0
+      ? `${waitMin} min${waitSec > 0 ? ` ${waitSec} sec` : ''}`
+      : `${waitSec} sec`;
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>等</div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>
+          Next card in {waitLabel}
+        </h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', lineHeight: 1.6 }}>
+          {futureCards.length} learning card{futureCards.length !== 1 ? 's' : ''} waiting
+        </p>
+      </div>
+    );
+  }
 
-  const grade = (fsrsGrade: FsrsGrade, label: string, color: string) => {
+  const card          = readyCards[0];
+  const doneCount     = totalInitial - Math.max(0, queue.length - (futureCards.length));
+  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length + futureCards.length)) * 100)) : 0;
+  const dueCount      = deck.filter(isDue).length;
+  const cardIsLearning = isLearningCard(card);
+
+  function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
     onGrade?.(card.h, fsrsGrade);
     setResults(prev => [...prev, { label, color }]);
-    if (idx + 1 >= totalInSession) { setDone(true); return; }
-    setIdx(i => i + 1);
+
+    const newState    = fsrsSchedule(card, fsrsGrade, settings);
+    const updatedCard: DeckWord = { ...card, ...newState };
+    const stillLearning = newState.phase !== 'review';
+
+    setQueue(prev => {
+      if (!prev) return prev;
+      // Remove this card instance (reference equality is safe here)
+      const without = prev.filter(c => c !== card);
+      if (stillLearning) {
+        // Re-insert with updated dueAtMs; shown only when dueAtMs <= Date.now()
+        return [...without, updatedCard];
+      }
+      return without;
+    });
+
     setRevealed(false);
-  };
+  }
 
   return (
     <div>
       {/* Header */}
-      <div className="flex justify-between items-end mb-6">
+      <div className="flex justify-between items-end mb-6 gap-4">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
             Vocabulary review · FSRS
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
-            Card {idx + 1} of {totalInSession}
+            {results.length + 1} of {results.length + readyCards.length + futureCards.length}
             {dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}
@@ -173,36 +222,29 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         </div>
       </div>
 
-      {/* FSRS state badge */}
+      {/* Card state badge */}
       <div className="flex justify-end mb-2 gap-2">
-        {card.stability !== undefined && (
-          <span style={{
-            fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em',
-            background: 'var(--line-soft)', color: 'var(--ink-faint)',
-            borderRadius: 4, padding: '2px 6px',
-          }}>
+        {cardIsLearning ? (
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'color-mix(in srgb, var(--gold) 15%, var(--paper))', color: 'var(--gold)', border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)', borderRadius: 4, padding: '2px 6px' }}>
+            {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
+          </span>
+        ) : card.stability !== undefined ? (
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}>
             S={card.stability.toFixed(1)}d · D={card.difficulty?.toFixed(1) ?? '?'}
           </span>
-        )}
-        <span style={{
-          fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em',
-          background: 'var(--line-soft)', color: 'var(--ink-faint)',
-          borderRadius: 4, padding: '2px 6px',
-        }}>
+        ) : null}
+        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}>
           reviewed {card.reviews ?? 0}×
           {(card.lapses ?? 0) > 0 && ` · ${card.lapses} lapse${card.lapses === 1 ? '' : 's'}`}
-          {(card.reviews ?? 0) === 0 && card.stability === undefined && ' · new'}
+          {(card.reviews ?? 0) === 0 && !card.stability && ' · new'}
           {(card.reviews ?? 0) >= 5 && (card.lapses ?? 0) === 0 && ' · mature'}
         </span>
       </div>
 
-      {/* Card */}
+      {/* Card face */}
       <div
         className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[330px] px-10 py-14"
-        style={{
-          background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))',
-          border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)',
-        }}
+        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)' }}
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
@@ -222,14 +264,13 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
           {card.cn && (
             <div style={{ marginTop: 18, fontSize: 15, color: 'var(--ink-soft)', maxWidth: '34ch', lineHeight: 1.6 }}>
               <span style={{ fontFamily: 'var(--f-han)', color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: card.cn }} />
-              <br />
-              {card.en}
+              <br />{card.en}
             </div>
           )}
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* Grade buttons */}
       <div className="text-center mt-5">
         {!revealed ? (
           <button
@@ -242,16 +283,13 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
-              const days = fsrsNextInterval(card, g.grade);
+              const days = fsrsNextInterval(card, g.grade, settings);
               return (
                 <button
                   key={g.label}
-                  onClick={() => grade(g.grade, g.label, g.color)}
+                  onClick={() => handleGrade(g.grade, g.label, g.color)}
                   className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-                  style={{
-                    background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`,
-                    borderRadius: 10, padding: '13px 8px', textAlign: 'center',
-                  }}
+                  style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
                 >
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
                   <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{fmtInterval(days)}</div>
@@ -262,12 +300,17 @@ export default function Flashcards({ deck, onDone, onGrade }: Props) {
         )}
       </div>
 
-      {/* Session info footer */}
+      {/* Footer */}
       <div className="mt-6 pt-4" style={{ borderTop: '1px solid var(--line-soft)' }}>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '.05em', textAlign: 'center' }}>
-          Reviewing {totalInSession} due card{totalInSession !== 1 ? 's' : ''} · {deck.length} total in deck
+          {totalInitial} card{totalInitial !== 1 ? 's' : ''} in today&apos;s session · {deck.length} total in deck
+          {settings.desiredRetention !== DEFAULT_SRS_SETTINGS.desiredRetention && (
+            <span style={{ marginLeft: 8 }}>· {Math.round(settings.desiredRetention * 100)}% retention target</span>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
+const LEARNING_STEP_COUNT = 2;
