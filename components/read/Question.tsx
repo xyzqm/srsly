@@ -6,6 +6,7 @@ import { speak } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import type { ReadingHint } from '@/lib/readings';
 
 interface Props {
   question: Q;
@@ -16,11 +17,12 @@ interface Props {
   onSave: (r: FRResponse) => void;
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
   deckWords?: Set<string>;
+  deckReadings?: Map<string, ReadingHint[]>;
   /** Called when MC is fully resolved — grade: 3=Good(1st try), 2=Hard(2nd try), 1=Again(both wrong) */
   onMcGrade?: (questionIdx: number, grade: FsrsGrade) => void;
 }
 
-export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, onMcGrade }: Props) {
+export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, onMcGrade }: Props) {
   // MC state
   const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
   const [mcDone, setMcDone]             = useState(false);
@@ -33,7 +35,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
   const [loading, setLoading]       = useState(false);
 
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
   const claimKind = (text: string) =>
     (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const
     : tomorrowClaimed.has(text) ? 'tomorrow' as const

@@ -4,6 +4,8 @@ import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, D
 import { storage } from '@/lib/storage';
 import { getPassageData } from '@/lib/data/allPassages';
 import { lookupWord } from '@/lib/data/dict';
+import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
+import { buildAnchorMap } from '@/lib/anchors';
 
 // ─── Raw token shapes returned by the API ───────────────────────────────────
 
@@ -27,7 +29,7 @@ function isPunct(text: string): boolean {
   return false;
 }
 
-function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken {
+function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): PassageToken {
   const [text, rawPinyin, meaning] = arr as [string, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
   // If the AI omitted pinyin for a CJK word, look it up in the dictionary so it
@@ -36,7 +38,8 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string
   const pinyin = rawPinyin || lookupWord(text).pinyin || '';
   if (!pinyin) return { text, type: 'punct' };
   const dictEntry = lookupWord(text, pinyin, '');
-  const resolvedMeaning = meaning || deckMeanings.get(text) || dictEntry.meaning || '';
+  // For a character with multiple deck readings, pick the one matching this token's pinyin.
+  const resolvedMeaning = meaning || pickReading(deckReadings.get(text), pinyin)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
     return { text, pinyin, meaning: resolvedMeaning, type: 'vocab' };
   }
@@ -53,7 +56,7 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckMeanings: Map<string
 function mergeCompoundTokens(
   tokens: PassageToken[],
   dueWords: Set<string>,
-  deckMeanings: Map<string, string>,
+  deckReadings: Map<string, ReadingHint[]>,
 ): PassageToken[] {
   const result: PassageToken[] = [];
   let i = 0;
@@ -70,7 +73,7 @@ function mergeCompoundTokens(
       const tri = curr.text + next.text + next2.text;
       const e3  = lookupWord(tri);
       if (e3.pinyin) {
-        const meaning = deckMeanings.get(tri) || e3.meaning;
+        const meaning = pickReading(deckReadings.get(tri), e3.pinyin)?.m || e3.meaning;
         result.push({ text: tri, pinyin: e3.pinyin, meaning: meaning || undefined, type: (dueWords.has(tri) || meaning) ? 'vocab' : undefined });
         i += 3;
         continue;
@@ -82,7 +85,7 @@ function mergeCompoundTokens(
       const bi = curr.text + next.text;
       const e2 = lookupWord(bi);
       if (e2.pinyin) {
-        const meaning = deckMeanings.get(bi) || e2.meaning;
+        const meaning = pickReading(deckReadings.get(bi), e2.pinyin)?.m || e2.meaning;
         result.push({ text: bi, pinyin: e2.pinyin, meaning: meaning || undefined, type: (dueWords.has(bi) || meaning) ? 'vocab' : undefined });
         i += 2;
         continue;
@@ -104,7 +107,7 @@ const CJK_RE = /[一-鿿㐀-䶿]/;
  *  - Single char or punctuation → keep as-is.
  *  - Very long (≥5 CJK chars) → always explode, regardless of dictionary.
  *  - 2–4 CJK chars → keep if the text is a known dictionary word, OR if it
- *    is already marked as a due vocab word (type==='vocab', in dueWords/deckMeanings).
+ *    is already marked as a due vocab word (type==='vocab', in dueWords/deckReadings).
  *    Otherwise explode (e.g. "的力量", "成为了").
  *
  * After exploding, re-run mergeCompoundTokens so real 2-char compounds
@@ -113,7 +116,7 @@ const CJK_RE = /[一-鿿㐀-䶿]/;
 function degroupOversized(
   tokens: PassageToken[],
   dueWords: Set<string>,
-  deckMeanings: Map<string, string>,
+  deckReadings: Map<string, ReadingHint[]>,
 ): PassageToken[] {
   const exploded: PassageToken[] = [];
 
@@ -150,27 +153,27 @@ function degroupOversized(
 
     // 2–4 CJK chars: keep if it is a known dict word OR an explicit vocab/due word
     const entry = lookupWord(t.text);
-    if (entry.pinyin || dueWords.has(t.text) || deckMeanings.has(t.text) || t.type === 'vocab') {
+    if (entry.pinyin || dueWords.has(t.text) || deckReadings.has(t.text) || t.type === 'vocab') {
       exploded.push(t);
     } else {
       explodeToken(t);
     }
   }
 
-  return mergeCompoundTokens(exploded, dueWords, deckMeanings);
+  return mergeCompoundTokens(exploded, dueWords, deckReadings);
 }
 
-function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckMeanings: Map<string, string>): Sentence[] {
+function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): Sentence[] {
   return rawRows.map(row => {
     const raw = row
       .filter(r => r[0] !== '' && r[0] !== 'punctuation')
-      .map(r => rawToToken(r, dueWords, deckMeanings));
-    const tokens = degroupOversized(raw, dueWords, deckMeanings);
+      .map(r => rawToToken(r, dueWords, deckReadings));
+    const tokens = degroupOversized(raw, dueWords, deckReadings);
     return { tokens, plainText: tokens.map(t => t.text).join('') };
   });
 }
 
-function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): FillItem[] {
+function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): FillItem[] {
   return (rawFills as {
     before: RawTok[];
     answer: [string, string];
@@ -188,8 +191,8 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings
     }
     const build = (arr: RawTok[]) =>
       degroupOversized(
-        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckMeanings)),
-        dueWords, deckMeanings,
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings)),
+        dueWords, deckReadings,
       );
     return {
       before: build(f.before),
@@ -200,26 +203,26 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckMeanings
   });
 }
 
-function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): ConvoTurn[] {
+function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): ConvoTurn[] {
   return (rawTurns as {
     key: string[];
     tutor: RawTok[];
     suggestions: RawTok[][];
   }[]).map(t => ({
     key: t.key,
-    tokens: t.tutor.map(r => rawToToken(r, dueWords, deckMeanings)),
-    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords, deckMeanings))),
+    tokens: t.tutor.map(r => rawToToken(r, dueWords, deckReadings)),
+    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords, deckReadings))),
   }));
 }
 
-function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckMeanings: Map<string, string>): PassageToken[] {
+function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): PassageToken[] {
   const raw = rawTitle
     .filter(r => r[0] !== '' && r[0] !== 'punctuation')
-    .map(r => rawToToken(r, dueWords, deckMeanings));
-  return degroupOversized(raw, dueWords, deckMeanings);
+    .map(r => rawToToken(r, dueWords, deckReadings));
+  return degroupOversized(raw, dueWords, deckReadings);
 }
 
-function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMeanings: Map<string, string>): Question[] {
+function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): Question[] {
   return (rawQuestions as {
     q: RawTok[];
     model: string;
@@ -228,8 +231,8 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMean
   }[]).map(q => {
     const buildToks = (arr: RawTok[]) =>
       degroupOversized(
-        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckMeanings)),
-        dueWords, deckMeanings,
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings)),
+        dueWords, deckReadings,
       );
     const options: MCOption[] = q.options.map(opt => ({
       tokens: buildToks(opt.tokens),
@@ -249,18 +252,41 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckMean
   });
 }
 
+/**
+ * A passage's review words = the surface forms that actually appear AND are
+ * either a sent due word or an anchor compound (e.g. 银行 standing in for 行 háng).
+ * Computed from real tokens so a compound the model chose is counted, and a sent
+ * word the model dropped is not.
+ */
+function collectVocabWords(
+  passage: DailyPassage,
+  dueSet: Set<string>,
+  anchorCompounds: Set<string>,
+): string[] {
+  const present = new Set<string>();
+  const scan = (toks: PassageToken[]) => {
+    for (const t of toks) {
+      if (t.type === 'punct') continue;
+      if (dueSet.has(t.text) || anchorCompounds.has(t.text)) present.add(t.text);
+    }
+  };
+  passage.sentences.forEach(s => scan(s.tokens));
+  scan(passage.titleTokens);
+  return [...present];
+}
+
 /** Build a single DailyPassage from raw API output. */
 function buildPassage(
   rawPassage: { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
   vocabWords: string[],
   dueSet: Set<string>,
-  deckMeanings: Map<string, string>,
+  deckReadings: Map<string, ReadingHint[]>,
 ): DailyPassage {
   const rawQs = Array.isArray(rawPassage.questions) ? rawPassage.questions : [];
-  const aiQs = rawQs.length >= 1 ? buildQuestions(rawQs, dueSet, deckMeanings) : undefined;
+  const aiQs = rawQs.length >= 1 ? buildQuestions(rawQs, dueSet, deckReadings) : undefined;
   return {
-    titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckMeanings),
-    sentences: buildSentences(rawPassage.sentences, dueSet, deckMeanings),
+    titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckReadings),
+    sentences: buildSentences(rawPassage.sentences, dueSet, deckReadings),
     vocabWords,
     questions: aiQs,
   };
@@ -275,7 +301,7 @@ function buildPassage(
  */
 function sanitizeCachedContent(content: DailyContent): void {
   const emptyDue = new Set<string>();
-  const emptyMeanings = new Map<string, string>();
+  const emptyMeanings = new Map<string, ReadingHint[]>();
 
   function fixToken(t: PassageToken) {
     if (t.pinyin && isPunct(t.text)) {
@@ -428,7 +454,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
+            words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
             hskLevel,
           }),
         });
@@ -454,18 +480,23 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         };
 
         const dueSet = new Set(vocabWords);
-        const deckMeanings = new Map(selectedWords.map(w => [w.h, w.m]));
+        const deckReadings = groupReadings(selectedWords);
+        const anchorCompounds = new Set(buildAnchorMap(selectedWords).keys());
 
         // 4. Build passages from API response
         const rawPassages = Array.isArray(data.passages) ? data.passages : [];
-        let passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) =>
-          buildPassage(
+        // Treat anchor compounds as due so their tokens highlight as review words.
+        const buildSet = new Set([...dueSet, ...anchorCompounds]);
+        let passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) => {
+          const passage = buildPassage(
             p as { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
             batches[pi] ?? [],
-            dueSet,
-            deckMeanings,
-          )
-        );
+            buildSet,
+            deckReadings,
+          );
+          passage.vocabWords = collectVocabWords(passage, dueSet, anchorCompounds);
+          return passage;
+        });
 
         if (passages.length === 0 || passages[0].sentences.length < 2) {
           passages = staticContent().passages;
@@ -475,8 +506,8 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           date: today,
           hskLevel,
           passages,
-          fillItems: data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckMeanings) : [],
-          conversation: data.convo ? buildConvo(data.convo as unknown[], dueSet, deckMeanings) : [],
+          fillItems: data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckReadings) : [],
+          conversation: data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings) : [],
         };
 
         if (content.fillItems.length < 1) content.fillItems = passageData.fillItems;
@@ -532,7 +563,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })),
+          words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,
           themeOffset: dailyContent.passages.length, // pick a different theme
           passageOnly: true, // skip fill/convo for smaller, faster output
@@ -547,17 +578,19 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][] };
       const { data, vocabWords, batches } = payload;
 
-      const dueSet = new Map(selectedWords.map(w => [w.h, w.m]));
+      const dueSet = groupReadings(selectedWords);
       const dueSetWords = new Set(vocabWords);
+      const anchorCompounds = new Set(buildAnchorMap(selectedWords).keys());
       const rawPassages = Array.isArray(data.passages) ? data.passages : [];
       if (rawPassages.length === 0) return;
 
       const newPassage = buildPassage(
         rawPassages[0] as { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
         batches[0] ?? [],
-        dueSetWords,
+        new Set([...dueSetWords, ...anchorCompounds]),
         dueSet,
       );
+      newPassage.vocabWords = collectVocabWords(newPassage, dueSetWords, anchorCompounds);
 
       setDailyContent(prev => {
         if (!prev) return prev;

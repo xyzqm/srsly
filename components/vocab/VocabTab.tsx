@@ -2,7 +2,10 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
-import { toneNumToMark } from '@/lib/pinyin';
+import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
+import { lookupWord } from '@/lib/data/dict';
+import { checkCompounds } from '@/lib/compounds';
+import { POLYPHONES } from '@/lib/polyphones';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -17,11 +20,12 @@ type PendingUndo =
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function sdm(m: string) {
-  return m.split(', ').map((part, i, arr) => (
+  // Split on either separator (older cards use commas, newer use semicolons).
+  return m.split(/\s*[;,]\s*/).filter(Boolean).map((part, i, arr) => (
     <span key={i}>
       {part}
       {i < arr.length - 1 && (
-        <span style={{ fontFamily: 'var(--f-display)', fontSize: '1.15em', fontWeight: 500, letterSpacing: '-.01em', color: 'var(--ink-soft)' }}>, </span>
+        <span style={{ fontFamily: 'var(--f-display)', fontSize: '1.15em', fontWeight: 500, letterSpacing: '-.01em', color: 'var(--ink-soft)' }}>; </span>
       )}
     </span>
   ));
@@ -38,9 +42,25 @@ interface EditRowProps {
 function EditRow({ word, onSave, onCancel }: EditRowProps) {
   const [pinyin, setPinyin] = useState(word.p);
   const [meaning, setMeaning] = useState(word.m);
+  const [compounds, setCompounds] = useState<string[]>(word.compounds ?? []);
 
   function handlePinyinBlur(val: string) {
     if (/[1-5]/.test(val)) setPinyin(toneNumToMark(val));
+  }
+
+  function addCompound() { setCompounds(c => [...c, '']); }
+  function removeCompound(i: number) { setCompounds(c => c.filter((_, j) => j !== i)); }
+  function setCompound(i: number, val: string) { setCompounds(c => c.map((v, j) => j === i ? val : v)); }
+
+  async function handleSave() {
+    const p = pinyin.trim();
+    const known = [lookupWord(word.h).pinyin, ...(POLYPHONES[word.h]?.map(r => r.p) ?? [])].filter(Boolean);
+    const warn = checkPinyin(p, word.h, known);
+    if (warn && !window.confirm(warn)) return;
+    const clean = compounds.map(c => c.trim()).filter(Boolean);
+    const compWarn = await checkCompounds(word.h, clean);
+    if (compWarn && !window.confirm(compWarn)) return;
+    onSave({ p, m: meaning.trim(), compounds: clean.length ? clean : undefined });
   }
 
   const inputStyle: React.CSSProperties = {
@@ -49,6 +69,8 @@ function EditRow({ word, onSave, onCancel }: EditRowProps) {
     borderRadius: 7, padding: '7px 10px', color: 'var(--ink)',
     width: '100%', outline: 'none', transition: 'border-color .15s',
   };
+
+  const showCompounds = !!POLYPHONES[word.h] || compounds.length > 0;
 
   return (
     <div
@@ -83,14 +105,54 @@ function EditRow({ word, onSave, onCancel }: EditRowProps) {
           <input
             value={meaning}
             onChange={e => setMeaning(e.target.value)}
+            placeholder="shown separated by semicolons"
             style={inputStyle}
             onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
           />
         </div>
       </div>
+
+      {/* Compounds — words that surface this reading in generated passages */}
+      {showCompounds && (
+        <div className="mt-2.5">
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
+            Compounds{' '}
+            <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>
+              — words that use this reading; generated passages can use these to show it in context
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            {compounds.map((c, i) => (
+              <div key={i} className="flex items-center gap-1" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 7, padding: '3px 5px 3px 9px' }}>
+                <input
+                  value={c}
+                  onChange={e => setCompound(i, e.target.value)}
+                  placeholder=""
+                  style={{ fontFamily: 'var(--f-han)', fontSize: 14, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', width: `${Math.max(c.length, 2) + 1}ch` }}
+                />
+                <button
+                  onClick={() => removeCompound(i)}
+                  className="shrink-0 cursor-pointer"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 13, background: 'none', border: 'none', color: 'var(--ink-faint)', width: 18, height: 18, borderRadius: 5 }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addCompound}
+              className="cursor-pointer transition-all duration-150"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', background: 'none', border: '1px dashed var(--line)', color: 'var(--ink-faint)', borderRadius: 7, padding: '6px 10px' }}
+            >
+              + add compound
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2 mt-3">
         <button
-          onClick={() => onSave({ p: pinyin.trim(), m: meaning.trim() })}
+          onClick={handleSave}
           className="cursor-pointer transition-all duration-150"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500,
@@ -186,7 +248,7 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VocabTab() {
-  const { deck, addWord, removeWord, updateWord, clearDeck } = useVocabDeck();
+  const { deck, addWord, addWords, removeWord, updateWord, clearDeck } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -227,7 +289,7 @@ export default function VocabTab() {
   /** Commit whatever is pending to storage, then clear pending state. */
   const commitPending = useCallback((pending: PendingUndo) => {
     if (pending.kind === 'single') {
-      const idx = deck.findIndex(w => w.h === pending.word.h);
+      const idx = deck.findIndex(w => w.id === pending.word.id);
       if (idx !== -1) removeWordRef.current(idx);
     } else {
       clearDeckRef.current();
@@ -274,7 +336,7 @@ export default function VocabTab() {
     const pending = pendingUndoRef.current;
     if (!pending) return;
     if (pending.kind === 'single') {
-      const idx = deckRef.current.findIndex(w => w.h === pending.word.h);
+      const idx = deckRef.current.findIndex(w => w.id === pending.word.id);
       if (idx !== -1) removeWordRef.current(idx);
     } else {
       clearDeckRef.current();
@@ -284,7 +346,7 @@ export default function VocabTab() {
   // ── Display deck ────────────────────────────────────────────────────────────
   const displayDeck = useMemo(() => {
     if (!pendingUndo) return deck;
-    if (pendingUndo.kind === 'single') return deck.filter(w => w.h !== pendingUndo.word.h);
+    if (pendingUndo.kind === 'single') return deck.filter(w => w.id !== pendingUndo.word.id);
     return []; // pending clear — show empty
   }, [deck, pendingUndo]);
 
@@ -295,9 +357,7 @@ export default function VocabTab() {
   }
 
   async function handleBulkImport(words: Array<{ h: string; p: string; m: string }>) {
-    for (const w of words) {
-      await addWord({ h: w.h, p: w.p, m: w.m });
-    }
+    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m })));
     setShowImport(false);
   }
 
@@ -395,9 +455,9 @@ export default function VocabTab() {
 
         {displayDeck.map((w) => {
           // Map display index back to real deck index for editing/saving
-          const realIdx = deck.findIndex(d => d.h === w.h);
+          const realIdx = deck.findIndex(d => d.id === w.id);
           return (
-            <div key={w.h}>
+            <div key={w.id}>
               {editingIdx === realIdx ? (
                 <div className="py-2">
                   <EditRow

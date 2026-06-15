@@ -7,6 +7,7 @@ import { speak, speakWithBlank } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { groupReadings } from '@/lib/readings';
 
 interface Props {
   onDone: () => void;
@@ -50,7 +51,8 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
   useEffect(() => { setItemStates({}); }, [itemsKey]);
 
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
+  const deckReadings = useMemo(() => groupReadings(deck), [deck]);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
   // Only show the vocab badge after the user explicitly adds a word in this session
   const claimKind = (text: string) =>
     (vocabClaimed.has(text) && deckWords.has(text)) ? 'vocab' as const
@@ -134,7 +136,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
     <div>
       <div className="flex justify-between items-end mb-4 flex-wrap gap-2">
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Fill in the blank · {items ? 'daily' : 'static'}</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Fill in the blank</div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>Choose the missing word</div>
         </div>
       </div>

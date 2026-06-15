@@ -8,6 +8,11 @@ function useIsMounted() {
   return mounted;
 }
 
+/** Display definitions separated by semicolons (some sources use a middle dot). */
+function fmtMeaning(m: string): string {
+  return m.replace(/\s*·\s*/g, '; ');
+}
+
 export interface CompoundHint {
   text: string;
   pinyin: string;
@@ -24,6 +29,8 @@ export interface PopupData {
   anchorRect: DOMRect;
   /** Adjacent compound words this character belongs to (e.g. 已 → 已经) */
   compounds?: CompoundHint[];
+  /** Other readings of this character in the deck (e.g. 行 háng when xíng is shown) */
+  otherReadings?: { p: string; m: string }[];
 }
 
 interface Props {
@@ -164,10 +171,25 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
           </div>
           <div style={{ fontSize: 13.5, marginTop: 5, lineHeight: 1.5 }}>
             {displayData.meaning
-              ? displayData.meaning
+              ? fmtMeaning(displayData.meaning)
               : <em style={{ opacity: 0.35, fontSize: 12 }}>definition not in local dictionary</em>
             }
           </div>
+
+          {/* Other readings — shown when this character has more than one reading in the deck */}
+          {displayData.otherReadings && displayData.otherReadings.length > 0 && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase', opacity: 0.4, marginBottom: 5 }}>
+                also read as
+              </div>
+              {displayData.otherReadings.map((r, ri) => (
+                <div key={ri} className="flex items-baseline gap-2 mb-1">
+                  <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--pop-pin)', flexShrink: 0 }}>{r.p}</span>
+                  <span style={{ fontSize: 12, opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtMeaning(r.m)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Compound hints — shown for single-char words that appear in a compound nearby */}
           {displayData.compounds && displayData.compounds.length > 0 && (
@@ -180,7 +202,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
                   <div className="flex items-baseline gap-1.5 min-w-0">
                     <span style={{ fontFamily: 'var(--f-han)', fontSize: 16, fontWeight: 'var(--han-weight)' as 'bold' }}>{c.text}</span>
                     <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--pop-pin)', flexShrink: 0 }}>{c.pinyin}</span>
-                    <span style={{ fontSize: 11.5, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.meaning}</span>
+                    <span style={{ fontSize: 11.5, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmtMeaning(c.meaning)}</span>
                   </div>
                   {displayData.type === 'free' && (
                     <button

@@ -9,6 +9,36 @@ const SENTENCES_PER_PASSAGE: Record<number, number> = {
   1: 7, 2: 8, 3: 9, 4: 10, 5: 12, 6: 14,
 };
 
+/** How many times to ask the model before giving up (handles occasional bad JSON). */
+const MAX_GEN_ATTEMPTS = 2;
+
+/** Repair common model JSON mistakes before parsing. */
+function repairJson(s: string): string {
+  let r = s;
+  // Trailing commas before ] or } (most common model mistake)
+  r = r.replace(/,(\s*[}\]])/g, '$1');
+  // Unescaped newlines inside string values
+  r = r.replace(/"([^"\\]*)(\n)([^"\\]*)"/g, (_, a, _nl, b) => `"${a}\\n${b}"`);
+  // Strip any BOM or zero-width characters
+  r = r.replace(/^﻿/, '').replace(/[​-‍﻿]/g, '');
+  return r;
+}
+
+/** Extract and parse the JSON object from a raw model response. Throws if unparseable. */
+function extractJson(raw: string): Record<string, unknown> {
+  // Strip markdown fences if the model wrapped the output
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  // If the model prepended explanation text, narrow to the first { … last }
+  const jStart = cleaned.indexOf('{');
+  const jEnd = cleaned.lastIndexOf('}');
+  if (jStart > 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return JSON.parse(repairJson(cleaned)); // throws if still invalid
+  }
+}
+
 export async function POST(req: NextRequest) {
   // Use SRSLY_API_KEY to avoid being blocked by Claude Code's ANTHROPIC_API_KEY='' override.
   // Falls back to ANTHROPIC_API_KEY for standard deployments.
@@ -18,7 +48,7 @@ export async function POST(req: NextRequest) {
   }
   const client = new Anthropic({ apiKey });
 
-  let words: { h: string; p: string; m: string }[];
+  let words: { h: string; p: string; m: string; compounds?: string[] }[];
   let hskLevel: number;
   let themeOffset: number;
   let passageOnly: boolean;
@@ -60,6 +90,32 @@ export async function POST(req: NextRequest) {
   }
   const numPassages = batches.length;
 
+  // Words whose reading must be surfaced through a compound (e.g. 行 háng → 银行).
+  // Fires per-word whenever compounds are present — independent of whether the deck
+  // happens to hold another reading of the same character.
+  const compoundWords = words.filter(w => w.compounds && w.compounds.length > 0);
+  const compoundNote = compoundWords.length > 0
+    ? `\nREADING-IN-COMPOUND REQUIREMENT: Each reading below does NOT stand alone as a bare character — you MUST use it through ONE of its whole multi-character words (emitted as a single token), picking whichever best fits the passage. Never use the bare character for these readings.\n${compoundWords.map(w =>
+        `  ${w.h} (${w.p}, "${w.m.split(/[;,]/)[0].trim()}") → use one of: ${w.compounds!.join('、')}`
+      ).join('\n')}\n`
+    : '';
+
+  // Detect polyphones (same hanzi, multiple readings in the deck) so each reading
+  // is used in a distinct, disambiguating context.
+  const hanziGroups = new Map<string, typeof words>();
+  for (const w of words) {
+    if (!hanziGroups.has(w.h)) hanziGroups.set(w.h, []);
+    hanziGroups.get(w.h)!.push(w);
+  }
+  const polyphonePairs = [...hanziGroups.entries()].filter(([, ws]) => ws.length > 1);
+  const polyphoneNote = polyphonePairs.length > 0
+    ? `\nPOLYPHONE GUIDANCE: These characters carry multiple readings (多音字). Use EACH reading in the passage, in natural grammatical contexts that make the intended reading clear. Natural, correct sentences ALWAYS take priority over forcing a reading.\n${polyphonePairs.map(([h, ws]) =>
+        `  ${h}: ${ws.map(w => `${w.p} = "${w.m.split(';')[0].trim()}"`).join(' / ')}`
+      ).join('\n')}\n`
+    : '';
+
+  const readingNotes = compoundNote + polyphoneNote;
+
   const batchDescriptions = batches.map((batch, bi) => {
     const list = batch.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
     return `PASSAGE ${bi + 1} WORDS:\n${list}`;
@@ -94,7 +150,11 @@ CRITICAL TOKENIZATION RULES:
    高兴→["高兴","gāoxìng","happy"]    NOT 高+兴
    漂亮→["漂亮","piàoliang","pretty"] NOT 漂+亮
 6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.
-7. For punctuation ALWAYS use the actual character (。，！？、—…), NEVER the word "punctuation".`.trim();
+7. For punctuation ALWAYS use the actual character (。，！？、—…), NEVER the word "punctuation".
+8. Proper names (people, places) are ONE token, never split into characters:
+   小王→["小王","Xiǎo Wáng","(name) Xiao Wang"]   NOT 小+王
+   老李→["老李","Lǎo Lǐ","(name) Old Li"]          NOT 老+李
+   北京→["北京","Běijīng","Beijing"]               NOT 北+京`.trim();
 
   const QUESTION_SCHEMA = `QUESTION = {
   "q": TOKEN_ARRAY,
@@ -113,7 +173,7 @@ CRITICAL TOKENIZATION RULES:
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
-${words.length > 0 ? `\nWORDS TO USE:\n${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
+${words.length > 0 ? `\nWORDS TO USE:\n${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}${readingNotes}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
 
 Generate a JSON object with EXACTLY this structure:
 
@@ -152,8 +212,7 @@ TODAY'S THEME: ${dailyTheme} — all passages, fill items, and conversation must
 ${batchDescriptions}
 
 ALL WORDS (used for fill-in-blank and conversation):
-${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}
-
+${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}${readingNotes}
 Generate a JSON object with EXACTLY this structure:
 
 {
@@ -204,57 +263,34 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
 
   const prompt = passageOnly ? passageOnlyPrompt : fullPrompt;
 
-  try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 16000,
-      system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
-    // Strip markdown fences if the model wrapped the output
-    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    // If the AI prepended any explanation text, skip to the first { ... last }
-    const jStart = cleaned.indexOf('{');
-    const jEnd   = cleaned.lastIndexOf('}');
-    if (jStart > 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
-
-    // Attempt to repair common AI JSON mistakes before parsing.
-    function repairJson(s: string): string {
-      let r = s;
-      // 1. Trailing commas before ] or } (most common AI mistake)
-      r = r.replace(/,(\s*[}\]])/g, '$1');
-      // 2. Unescaped newlines inside string values
-      r = r.replace(/"([^"\\]*)(\n)([^"\\]*)"/g, (_, a, _nl, b) => `"${a}\\n${b}"`);
-      // 3. Strip any BOM or zero-width characters
-      r = r.replace(/^﻿/, '').replace(/[​-‍﻿]/g, '');
-      return r;
-    }
-
-    let json: Record<string, unknown>;
+  // Generate, retrying once if the model returns unparseable JSON (it occasionally does).
+  let json: Record<string, unknown> | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
     try {
-      json = JSON.parse(cleaned);
-    } catch {
-      try {
-        json = JSON.parse(repairJson(cleaned));
-      } catch (repairErr) {
-        // Log the raw response so server logs can show what the AI produced
-        console.error('[daily-content] JSON parse failed after repair:', repairErr);
-        console.error('[daily-content] raw length:', raw.length, 'cleaned length:', cleaned.length);
-        console.error('[daily-content] first 500 chars:', cleaned.slice(0, 500));
-        throw repairErr;
-      }
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 16000,
+        system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+      json = extractJson(raw);
+      break; // parsed successfully
+    } catch (err) {
+      lastErr = err;
+      console.error(`[daily-content] attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed:`, String(err));
     }
-
-    return NextResponse.json({
-      ok: true,
-      data: json,
-      vocabWords: words.map(w => w.h),
-      batches: batches.map(b => b.map(w => w.h)),
-    });
-  } catch (err) {
-    console.error('[daily-content] generation error:', err);
-    return NextResponse.json({ error: 'generation failed', detail: String(err) }, { status: 500 });
   }
+
+  if (!json) {
+    return NextResponse.json({ error: 'generation failed', detail: String(lastErr) }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    data: json,
+    vocabWords: words.map(w => w.h),
+    batches: batches.map(b => b.map(w => w.h)),
+  });
 }

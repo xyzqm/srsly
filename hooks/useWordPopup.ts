@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import type { PassageToken } from '@/lib/types';
 import type { PopupData } from '@/components/read/WordPopup';
 import { lookupWord } from '@/lib/data/dict';
+import { pickReading, type ReadingHint } from '@/lib/readings';
 import { storage } from '@/lib/storage';
 
 /**
@@ -17,6 +18,7 @@ import { storage } from '@/lib/storage';
 export function useWordPopup(
   onAddVocab?: (word: string, pinyin: string, meaning: string) => void,
   deckWords?: Set<string>,
+  deckReadings?: Map<string, ReadingHint[]>,
 ) {
   const [popup, setPopup] = useState<PopupData | null>(null);
 
@@ -53,8 +55,23 @@ export function useWordPopup(
     else if (isTomorrowThisSession)     type = 'tomorrow';
     else                                type = 'free';
 
-    setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type, anchorRect: rect });
-  }, [vocabClaimed, tomorrowClaimed, deckWords]);
+    // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
+    // dictionary's). For a polyphone, headline the reading matching this token's pinyin
+    // and list the rest under "also read as".
+    let pinyin = entry.pinyin, meaning = entry.meaning;
+    let otherReadings: { p: string; m: string }[] | undefined;
+    const all = deckReadings?.get(token.text);
+    if (all && all.length >= 1) {
+      const matched = pickReading(all, token.pinyin) ?? all[0];
+      pinyin = matched.p || entry.pinyin;
+      meaning = matched.m || entry.meaning;
+      if (all.length > 1) {
+        otherReadings = all.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+      }
+    }
+
+    setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings });
+  }, [vocabClaimed, tomorrowClaimed, deckWords, deckReadings]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     setVocabClaimed(prev => new Set([...prev, word]));

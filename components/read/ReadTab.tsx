@@ -7,6 +7,8 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
 import { useDailyContent } from '@/hooks/useDailyContent';
+import { groupReadings } from '@/lib/readings';
+import { buildAnchorMap, type Anchor } from '@/lib/anchors';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
@@ -22,7 +24,7 @@ interface Props {
 }
 
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
-  const { deck, addWord, updateWordReview } = useVocabDeck();
+  const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
   // Load HSK level from prefs
   const [hskLevel, setHskLevel] = useState(0);
@@ -67,11 +69,33 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   }, [dailyContent]);
 
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
+  const deckReadings = useMemo(() => groupReadings(deck), [deck]);
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
     [deck, PASSAGE_VOCAB_SET]
   );
-  const reviewWordCount = targetWords.length;
+
+  // Compound-anchored polyphones: 银行 in the passage → the 行 háng card.
+  const anchorMap = useMemo(() => buildAnchorMap(deck), [deck]);
+  // Anchors whose compound actually appears in the current passage.
+  const passageAnchors = useMemo(() => {
+    const present = new Map<string, Anchor>();
+    const toks = currentPassage?.sentences.flatMap(s => s.tokens) ?? [];
+    for (const t of toks) {
+      const a = anchorMap.get(t.text);
+      if (a && !present.has(t.text)) present.set(t.text, a);
+    }
+    return present;
+  }, [currentPassage, anchorMap]);
+
+  // Pass anchor compounds to PassageText as review words so the whole word
+  // (银行) highlights and tracks peeks — no mid-word single-char highlight.
+  const passageDeckWords = useMemo(
+    () => passageAnchors.size ? new Set([...deckWords, ...passageAnchors.keys()]) : deckWords,
+    [deckWords, passageAnchors]
+  );
+
+  const reviewWordCount = targetWords.length + passageAnchors.size;
 
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
@@ -136,7 +160,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   }, [numPassages]);
 
   // Title popup — pass deckWords so stale vocab claims are cleared when words are removed
-  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning }), deckWords);
+  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning }), deckWords, deckReadings);
 
   const handleAddVocabQuestion = useCallback((word: string, pinyin: string, meaning: string) => {
     addWord({ h: word, p: pinyin, m: meaning });
@@ -202,10 +226,40 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
         }
         return { word: w, pinyin: deckWord?.p, status: 'stable' as const, msg: `Not used — next in ${label}` };
       });
-      setVocabResults(rows);
+      // Anchor compounds (银行 → 行 háng card): grade the underlying reading card by id.
+      const frTextAll = Object.values(frResponses).map(r => r.text).join(' ');
+      const mcKeyRecalled = (word: string) =>
+        Object.entries(mcGrades).some(([qi, g]) => g >= 2 && QUESTIONS[+qi]?.key.includes(word));
+      const anchorGrade = (compound: string): FsrsGrade => {
+        if (peeked.has(compound)) return 1;
+        if (frTextAll.includes(compound) || mcKeyRecalled(compound)) return 3;
+        return 2;
+      };
+      // Several compounds (银行, 同行) can map to the SAME reading card — grade each
+      // card once, taking the most punishing grade (a peek on any = forgotten).
+      const byCard = new Map<string, { anchor: Anchor; compounds: string[]; grade: FsrsGrade }>();
+      passageAnchors.forEach((anchor, compound) => {
+        const g = anchorGrade(compound);
+        const cur = byCard.get(anchor.id);
+        if (!cur) byCard.set(anchor.id, { anchor, compounds: [compound], grade: g });
+        else { cur.compounds.push(compound); cur.grade = Math.min(cur.grade, g) as FsrsGrade; }
+      });
+      const anchorRows = [...byCard.values()].map(({ anchor, compounds, grade }) => {
+        const card = deck.find(d => d.id === anchor.id);
+        const days = card ? fsrsNextInterval(card, grade) : 1;
+        const label = fmtInterval(days);
+        const tag = `${anchor.hanzi} ${anchor.pinyin}`;
+        const shown = compounds.join('、');
+        if (grade === 1) return { word: shown, pinyin: anchor.pinyin, status: 'down' as const, msg: `Peeked (${tag}) — review in ${label}` };
+        if (grade === 3) return { word: shown, pinyin: anchor.pinyin, status: 'up' as const, msg: `Recalled (${tag}) — next in ${label}` };
+        return { word: shown, pinyin: anchor.pinyin, status: 'stable' as const, msg: `${tag} — next in ${label}` };
+      });
+
+      setVocabResults([...rows, ...anchorRows]);
 
       // Apply FSRS grades
       targetWords.forEach(w => updateWordReview(w, getWordGrade(w)));
+      byCard.forEach(({ anchor, grade }) => gradeCard(anchor.id, grade));
 
       // Score: count questions answered correctly (FR ok, MC grade ≥ 2)
       const okCount =
@@ -216,7 +270,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcGrades, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview]);
+  }, [resultsBuilt, frResponses, mcGrades, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -348,7 +402,8 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             audioOnly={audioOnly}
             peeked={peeked}
             onPeek={handlePeek}
-            deckWords={deckWords}
+            deckWords={passageDeckWords}
+            deckReadings={deckReadings}
             onAddToDeck={handleAddToDeck}
           />
 
@@ -400,6 +455,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
             onAddVocab={handleAddVocabQuestion}
             deckWords={deckWords}
+            deckReadings={deckReadings}
             onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
           />
         ))}

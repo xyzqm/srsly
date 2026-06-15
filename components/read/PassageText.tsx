@@ -5,6 +5,7 @@ import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { storage } from '@/lib/storage';
 import { lookupWord } from '@/lib/data/dict';
+import { pickReading, type ReadingHint } from '@/lib/readings';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
 function findCompoundHints(token: PassageToken, sentence: Sentence, tokenIdx: number): CompoundHint[] {
@@ -42,6 +43,7 @@ interface Props {
   peeked: Set<string>;
   onPeek: (word: string) => void;
   deckWords: Set<string>;
+  deckReadings?: Map<string, ReadingHint[]>;
   onAddToDeck: (word: DeckWord) => void;
 }
 
@@ -118,7 +120,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, onAddToDeck }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, deckReadings, onAddToDeck }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   // Claimed tracking: maps word → 'vocab' | 'tomorrow'
   const [claimType, setClaimType] = useState<Map<string, 'vocab' | 'tomorrow'>>(new Map());
@@ -166,18 +168,33 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Only surface compound hints for single-char tokens that aren't already deck words
     const compoundHints = (token.text.length === 1 && !isClaimed) ? compounds : [];
 
+    // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
+    // dictionary's). For a polyphone, headline the reading matching this token's pinyin
+    // and list the rest under "also read as".
+    let pin = entry.pinyin, mean = entry.meaning;
+    let otherReadings: { p: string; m: string }[] | undefined;
+    const allReadings = deckReadings?.get(token.text);
+    if (allReadings && allReadings.length >= 1) {
+      const matched = pickReading(allReadings, token.pinyin || '') ?? allReadings[0];
+      pin = matched.p || entry.pinyin;
+      mean = matched.m || entry.meaning;
+      if (allReadings.length > 1) {
+        otherReadings = allReadings.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+      }
+    }
+
     if (isReviewWord) {
       onPeek(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect, compounds: compoundHints });
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'vocab', anchorRect: rect, compounds: compoundHints, otherReadings });
     } else if (isClaimed) {
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect });
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect, otherReadings });
     } else if (deckWords.has(token.text)) {
       onPeek(token.text);
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'vocab', anchorRect: rect, compounds: compoundHints });
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'vocab', anchorRect: rect, compounds: compoundHints, otherReadings });
     } else {
-      setPopup({ word: token.text, pinyin: entry.pinyin, meaning: entry.meaning, type: 'free', anchorRect: rect, compounds: compoundHints });
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
     }
-  }, [claimType, onPeek, deckWords]);
+  }, [claimType, onPeek, deckWords, deckReadings]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     setClaimType(prev => new Map([...prev, [word, 'vocab']]));

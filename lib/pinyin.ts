@@ -63,6 +63,63 @@ const HAN_PIN: Record<string, string> = {
   '真': 'zhen1', '好': 'hao3', '学': 'xue2', '校': 'xiao4',
 };
 
+const PINYIN_TONE_MARK = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+const PINYIN_ONLY = /^[a-zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüv'\s]+$/i;
+
+/**
+ * If a definition leads with tone-marked pinyin (e.g. "háng - a row", "nǐ · you"),
+ * split it into { pinyin, meaning }. This lets imported polyphones keep distinct,
+ * correct readings — the dictionary returns one reading per character, but a
+ * "Character → Pinyin + Definition" card carries the right reading in its text.
+ *
+ * Conservative by design: only fires when the leading segment is punctuation-delimited
+ * AND actually contains a tone mark, so English-first definitions are never altered.
+ * Returns null when no leading pinyin is found.
+ */
+export function splitLeadingPinyin(def: string): { pinyin: string; meaning: string } | null {
+  const trimmed = (def || '').trim();
+  if (!trimmed) return null;
+  const m = trimmed.match(/^([^\-–—:;·,()/]+)[\-–—:;·,()/]+\s*(.+)$/);
+  if (!m) return null;
+  const head = m[1].trim();
+  const meaning = m[2].trim();
+  if (!head || !meaning) return null;
+  if (!PINYIN_TONE_MARK.test(head)) return null;   // leading segment must look like pinyin
+  if (!PINYIN_ONLY.test(head)) return null;        // …and contain no stray English/punctuation
+  if (head.split(/\s+/).length > 4) return null;   // pinyin is a few syllables, not a phrase
+  return { pinyin: head, meaning };
+}
+
+/** Canonical form for comparison: tone numbers → marks, drop spaces/separators, lowercase. */
+function canonPinyin(s: string): string {
+  return toneNumToMark(s).normalize('NFC').replace(/[\s'·]/g, '').toLowerCase();
+}
+
+/**
+ * Returns a warning message if `pinyin` looks wrong for `hanzi`, else null.
+ * Checks: (1) only valid pinyin characters, and (2) it matches one of
+ * `knownReadings` (dictionary + polyphone readings supplied by the caller).
+ *
+ * The match is tone-SENSITIVE, so wrong tones (ma2ma2 vs māma) AND missing
+ * tones (mama vs māma) are both flagged — pinyin auto-fills with correct tones,
+ * so a toneless value means the user deleted them. Genuinely neutral-tone words
+ * are NOT flagged: their correct reading is itself toneless, so it still matches.
+ * The caller passes knownReadings so this stays free of dictionary imports.
+ */
+export function checkPinyin(pinyin: string, hanzi: string, knownReadings: string[]): string | null {
+  const p = (pinyin || '').trim();
+  if (!p) return null;
+  // 1. Valid pinyin characters only (allow tone numbers, which blur to marks on save)
+  if (!PINYIN_ONLY.test(p.replace(/[1-5]/g, ''))) {
+    return `"${pinyin}" doesn't look like valid pinyin. Add it anyway?`;
+  }
+  // 2. Cross-check against known readings — only warn when we have a reference
+  const known = knownReadings.map(canonPinyin).filter(Boolean);
+  if (known.length === 0 || known.includes(canonPinyin(p))) return null;
+  const refs = [...new Set(knownReadings.filter(Boolean))].map(r => `"${r}"`).join(' or ');
+  return `${hanzi} is usually read ${refs}, not "${pinyin}". Add it anyway?`;
+}
+
 /** Auto-fill pinyin from hanzi. Returns empty string if unknown. */
 export function autoFillPinyin(hanzi: string): string {
   if (!hanzi) return '';

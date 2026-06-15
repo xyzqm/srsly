@@ -45,7 +45,8 @@ export default function PassagePlayer({ sentences, onSentenceChange }: Props) {
   }, [idx, playing, play, onSentenceChange]);
 
   const next = useCallback(() => {
-    const ni = Math.min(sentences.length - 1, idx + 1);
+    // Wrap back to the start when already on the last sentence
+    const ni = idx >= sentences.length - 1 ? 0 : idx + 1;
     setIdx(ni);
     onSentenceChange(ni);
     if (playing) play(ni);

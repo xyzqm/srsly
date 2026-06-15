@@ -5,6 +5,7 @@ import { CONVO } from '@/lib/data/conversation';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { groupReadings } from '@/lib/readings';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import ConvoReport from './ConvoReport';
@@ -52,7 +53,8 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
     return deck.filter(w => !w.dueAt || w.dueAt <= today).map(d => d.h);
   }, [deck]);
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords);
+  const deckReadings = useMemo(() => groupReadings(deck), [deck]);
+  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turnIdx, setTurnIdx] = useState(0);

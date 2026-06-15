@@ -1,7 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
-import { speak } from '@/lib/speech';
 import {
   fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
   DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings,
@@ -11,7 +10,7 @@ interface Props {
   deck: DeckWord[];
   deckLoaded?: boolean;
   onDone: () => void;
-  onGrade?: (hanzi: string, grade: number) => void;
+  onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
 }
 
 function isDue(word: DeckWord): boolean {
@@ -21,8 +20,9 @@ function isDue(word: DeckWord): boolean {
 }
 
 function sdm(m: string) {
-  return m.split(', ').map((part, i, arr) => (
-    <span key={i}>{part}{i < arr.length - 1 && <span style={{ fontFamily: 'var(--f-display)', fontSize: '1.15em', fontWeight: 500, letterSpacing: '-.01em', color: 'var(--ink-soft)' }}>, </span>}</span>
+  // Split on either separator (older cards use commas, newer use semicolons).
+  return m.split(/\s*[;,]\s*/).filter(Boolean).map((part, i, arr) => (
+    <span key={i}>{part}{i < arr.length - 1 && <span style={{ fontFamily: 'var(--f-display)', fontSize: '1.15em', fontWeight: 500, letterSpacing: '-.01em', color: 'var(--ink-soft)' }}>; </span>}</span>
   ));
 }
 
@@ -181,7 +181,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
-    onGrade?.(card.h, fsrsGrade);
+    onGrade?.(card.id ?? card.h, fsrsGrade);
     setResults(prev => [...prev, { label, color }]);
 
     const newState    = fsrsSchedule(card, fsrsGrade, settings);
@@ -274,7 +274,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
       <div className="text-center mt-5">
         {!revealed ? (
           <button
-            onClick={() => { setRevealed(true); speak(card.h); }}
+            onClick={() => setRevealed(true)}
             className="cursor-pointer transition-all duration-150"
             style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '11px 22px' }}
           >

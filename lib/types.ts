@@ -2,9 +2,12 @@ export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
 export interface DeckWord {
+  id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
   h: string;     // hanzi
   p: string;     // pinyin
   m: string;     // meaning (comma-separated if multiple)
+  compounds?: string[]; // words carrying THIS reading (e.g. 行 háng → 银行, 行业); used to
+                        // surface a reading that isn't natural standalone, in generated passages
   cn?: string;   // example sentence (HTML)
   en?: string;   // example translation
   reviews?: number;    // successful review count for mastery tracking
