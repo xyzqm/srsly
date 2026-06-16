@@ -112,6 +112,9 @@ export interface DailyContent {
   // such a cache (instead of serving stale static fill all day) the next time the
   // user has due words.
   complete?: boolean;
+  // The study deck this content was generated for (absent/'' = all decks). Part of
+  // the cache identity so switching decks serves/generates the right passage.
+  deck?: string;
 }
 
 export interface FRResponse {

@@ -33,8 +33,8 @@ export default function ExtrasTab({ onScore }: Props) {
   // same scoped deck for their due-word checks.
   const scopedDeck = useMemo(() => deck.filter(w => inStudyDeck(w, studyDeck)), [deck, studyDeck]);
 
-  // Daily AI-generated content
-  const { dailyContent } = useDailyContent(hskLevel, deck);
+  // Daily AI-generated content (scoped to the selected study deck)
+  const { dailyContent } = useDailyContent(hskLevel, deck, studyDeck);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     addWord({ h: word, p: pinyin, m: meaning });

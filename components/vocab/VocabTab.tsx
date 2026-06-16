@@ -33,6 +33,23 @@ function sdm(m: string) {
   ));
 }
 
+function BulkBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="ml-auto cursor-pointer transition-all duration-150"
+      style={{
+        fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
+        background: 'none', color: 'var(--accent)',
+        border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+        borderRadius: 7, padding: '5px 11px',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function StatusChip({ label }: { label: string }) {
   return (
     <span style={{ marginLeft: 8, fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-faint)', background: 'var(--line-soft)', borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap' }}>{label}</span>
@@ -347,6 +364,7 @@ export default function VocabTab() {
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress, setWordDeck,
+    resumeAll, unsnoozeAll, unfocusAll,
   } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -602,9 +620,10 @@ export default function VocabTab() {
           />
         )}
 
-        {/* Filter chips — only once some words are starred / paused / snoozed */}
-        {(counts.focus > 0 || counts.paused > 0 || counts.snoozed > 0) && (
-          <div className="flex flex-wrap gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+        {/* Filter chips — always shown (when the deck has words) so you can always
+            switch back to the full deck, even after emptying a filtered view. */}
+        {deckScoped.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
             {([
               ['all', `All ${deckScoped.length}`],
               ['focus', `★ Focus ${counts.focus}`],
@@ -626,6 +645,10 @@ export default function VocabTab() {
                 {label}
               </button>
             ))}
+            {/* Bulk action for the active filter */}
+            {filter === 'focus'   && counts.focus   > 0 && <BulkBtn label="Unfocus all"   onClick={unfocusAll} />}
+            {filter === 'paused'  && counts.paused  > 0 && <BulkBtn label="Resume all"    onClick={resumeAll} />}
+            {filter === 'snoozed' && counts.snoozed > 0 && <BulkBtn label="Un-snooze all" onClick={unsnoozeAll} />}
           </div>
         )}
 

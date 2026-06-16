@@ -13,6 +13,6 @@ export interface DataService {
   getClaimedWords(): Promise<ClaimedWords>;
   saveClaimedWords(claimed: ClaimedWords): Promise<void>;
 
-  getDailyContent(hskLevel: number): Promise<DailyContent | null>;
+  getDailyContent(hskLevel: number, deck?: string): Promise<DailyContent | null>;
   saveDailyContent(content: DailyContent): Promise<void>;
 }

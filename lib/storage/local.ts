@@ -23,6 +23,12 @@ function set(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+/** Cache key for daily content, scoped by HSK level + study deck + date. */
+function dailyKey(hskLevel: number, deck: string | undefined, date: string): string {
+  const d = deck && deck.trim() ? deck.trim() : 'all';
+  return `srsly-daily-${hskLevel}-${d}-${date}`;
+}
+
 export class LocalStorage implements DataService {
   async getVocabDeck(): Promise<DeckWord[]> {
     return get<DeckWord[]>(KEYS.vocab, []);
@@ -58,21 +64,17 @@ export class LocalStorage implements DataService {
     set(KEYS.claimed, claimed);
   }
 
-  async getDailyContent(hskLevel: number): Promise<DailyContent | null> {
+  async getDailyContent(hskLevel: number, deck?: string): Promise<DailyContent | null> {
     const today = new Date().toISOString().slice(0, 10);
-    return get<DailyContent | null>(`srsly-daily-${hskLevel}-${today}`, null);
+    return get<DailyContent | null>(dailyKey(hskLevel, deck, today), null);
   }
   async saveDailyContent(content: DailyContent): Promise<void> {
-    const key = `srsly-daily-${content.hskLevel}-${content.date}`;
-    set(key, content);
-    // Prune stale entries (keep only today's)
+    set(dailyKey(content.hskLevel, content.deck, content.date), content);
+    // Prune any cached daily content from previous days (across all level/deck scopes).
     const today = content.date;
-    for (let lvl = 1; lvl <= 6; lvl++) {
-      for (let offset = 1; offset <= 7; offset++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - offset);
-        localStorage.removeItem(`srsly-daily-${lvl}-${d.toISOString().slice(0, 10)}`);
-      }
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('srsly-daily-') && !k.endsWith(today)) localStorage.removeItem(k);
     }
   }
 }

@@ -26,17 +26,18 @@ interface Props {
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
-  // Load HSK level from prefs
+  // Load HSK level + selected study deck from prefs
   const [hskLevel, setHskLevel] = useState(0);
+  const [studyDeck, setStudyDeck] = useState('');
   useEffect(() => {
-    storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
+    storage.getPrefs().then(p => { setHskLevel(p.hskLevel ?? 4); setStudyDeck(p.studyDeck ?? ''); });
   }, []);
 
   // Static passage data for this level (always loaded; used as fallback)
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
 
   // AI-generated daily content (null when unavailable → fall back to static)
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck, studyDeck);
 
   // Passage navigation
   const numPassages = dailyContent?.passages.length ?? 0;

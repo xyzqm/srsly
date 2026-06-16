@@ -6,7 +6,7 @@ import { getPassageData } from '@/lib/data/allPassages';
 import { lookupWord } from '@/lib/data/dict';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
-import { isDueToday } from '@/lib/deck';
+import { isDueToday, inStudyDeck } from '@/lib/deck';
 
 // ─── Raw token shapes returned by the API ───────────────────────────────────
 
@@ -389,7 +389,7 @@ export interface UseDailyContentResult {
  * empty deck). Adding words never auto-regenerates — users press "+ new passage"
  * (loadMore) to get a passage on a different topic using their current words.
  */
-export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyContentResult {
+export function useDailyContent(hskLevel: number, deck: DeckWord[], studyDeck = ''): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -414,6 +414,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       const staticContent = (): DailyContent => ({
         date: today,
         hskLevel,
+        deck: studyDeck || undefined,
         passages: [{
           titleTokens: passageData.titleTokens,
           sentences: passageData.sentences,
@@ -424,10 +425,11 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         conversation: passageData.conversation,
       });
 
-      // Words due today drive both the cache-freshness check and generation.
+      // Words due today (within the selected study deck) drive both the cache-freshness
+      // check and generation.
       const currentDeck = deckRef.current;
       const dueWords = currentDeck
-        .filter(w => isDueToday(w, today))
+        .filter(w => isDueToday(w, today) && inStudyDeck(w, studyDeck))
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
@@ -435,11 +437,11 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       const selectedWords = dueWords.slice(0, MAX_WORDS);
       const hasDueWords = selectedWords.length > 0;
 
-      // 1. Check cache — serve today's cached content if it's complete. If it fell back
-      // to static fill/convo while the user has due words, regenerate instead so the
-      // fill reflects the deck rather than showing generic static items all day.
+      // 1. Check cache — serve today's cached content (for this deck) if it's complete.
+      // If it fell back to static fill/convo while the user has due words, regenerate
+      // instead so the fill reflects the deck rather than showing generic static items.
       const MAX_INITIAL_PASSAGES = 1;
-      const cached = await storage.getDailyContent(hskLevel);
+      const cached = await storage.getDailyContent(hskLevel, studyDeck);
       if (cached && !cancelled) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated && (migrated.complete === true || !hasDueWords)) {
@@ -521,6 +523,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         const content: DailyContent = {
           date: today,
           hskLevel,
+          deck: studyDeck || undefined,
           passages,
           fillItems:    fillFellBack  ? passageData.fillItems    : builtFill,
           conversation: convoFellBack ? passageData.conversation : builtConvo,
@@ -542,9 +545,9 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
 
     load();
     return () => { cancelled = true; };
-  // Only re-run when hskLevel changes. Deck changes never auto-regenerate.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hskLevel]);
+  // Re-run on HSK level or study-deck change (each has its own cached passage).
+  // Vocab-deck content changes never auto-regenerate (deck is read via deckRef).
+  }, [hskLevel, studyDeck]);
 
   /**
    * Generate one more passage and append it to the existing list.
@@ -562,7 +565,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       // Prefer due words not yet covered by existing passages
       const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
       const dueWords = currentDeck
-        .filter(w => isDueToday(w, todayStr))
+        .filter(w => isDueToday(w, todayStr) && inStudyDeck(w, studyDeck))
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
@@ -617,7 +620,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
     } finally {
       setLoadingMore(false);
     }
-  }, [dailyContent, loadingMore, hskLevel]);
+  }, [dailyContent, loadingMore, hskLevel, studyDeck]);
 
   return { dailyContent, status, errorMsg, loadMore, loadingMore };
 }
