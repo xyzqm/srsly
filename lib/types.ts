@@ -100,6 +100,11 @@ export interface DailyContent {
   passages: DailyPassage[];  // one per batch of ~5 due words
   fillItems: FillItem[];
   conversation: ConvoTurn[];
+  // true when fill + conversation were AI-generated from this day's due words.
+  // false/absent means they fell back to static content — the loader regenerates
+  // such a cache (instead of serving stale static fill all day) the next time the
+  // user has due words.
+  complete?: boolean;
 }
 
 export interface FRResponse {

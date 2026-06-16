@@ -423,12 +423,25 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         conversation: passageData.conversation,
       });
 
-      // 1. Check cache — serve today's cached AI content if it exists.
+      // Words due today drive both the cache-freshness check and generation.
+      const currentDeck = deckRef.current;
+      const dueWords = currentDeck
+        .filter(w => !w.dueAt || w.dueAt <= today)
+        .sort((a, b) => {
+          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+          return (a.reviews ?? 0) - (b.reviews ?? 0);
+        });
+      const selectedWords = dueWords.slice(0, MAX_WORDS);
+      const hasDueWords = selectedWords.length > 0;
+
+      // 1. Check cache — serve today's cached content if it's complete. If it fell back
+      // to static fill/convo while the user has due words, regenerate instead so the
+      // fill reflects the deck rather than showing generic static items all day.
       const MAX_INITIAL_PASSAGES = 1;
       const cached = await storage.getDailyContent(hskLevel);
       if (cached && !cancelled) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
-        if (migrated) {
+        if (migrated && (migrated.complete === true || !hasDueWords)) {
           sanitizeCachedContent(migrated);
           if (migrated.passages.length > MAX_INITIAL_PASSAGES) {
             migrated.passages = migrated.passages.slice(0, MAX_INITIAL_PASSAGES);
@@ -439,15 +452,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         }
       }
 
-      // 2. No cache — generate. Send due words (may be empty for new users).
-      const currentDeck = deckRef.current;
-      const dueWords = currentDeck
-        .filter(w => !w.dueAt || w.dueAt <= today)
-        .sort((a, b) => {
-          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
-          return (a.reviews ?? 0) - (b.reviews ?? 0);
-        });
-      const selectedWords = dueWords.slice(0, MAX_WORDS);
+      // 2. No usable cache — generate from the due words computed above.
 
       try {
         const res = await fetch('/api/daily-content', {
@@ -473,10 +478,11 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
         }
 
         const payload = await res.json();
-        const { data, vocabWords, batches } = payload as {
+        const { data, vocabWords, batches, complete } = payload as {
           data: Record<string, unknown>;
           vocabWords: string[];
           batches: string[][];
+          complete?: boolean;
         };
 
         const dueSet = new Set(vocabWords);
@@ -502,16 +508,23 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
           passages = staticContent().passages;
         }
 
+        // Build fill/convo and track when the model omitted them. A static fallback is
+        // fine to *show*, but we must not cache it as the day's "complete" content —
+        // otherwise generic static fill would be frozen in all day. Passage-only days
+        // (no due words) legitimately have static fill and count as complete.
+        const builtFill  = data.fill  ? buildFillItems(data.fill as unknown[], dueSet, deckReadings) : [];
+        const builtConvo = data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings) : [];
+        const fillFellBack  = builtFill.length < 1;
+        const convoFellBack = builtConvo.length < 2;
+
         const content: DailyContent = {
           date: today,
           hskLevel,
           passages,
-          fillItems: data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckReadings) : [],
-          conversation: data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings) : [],
+          fillItems:    fillFellBack  ? passageData.fillItems    : builtFill,
+          conversation: convoFellBack ? passageData.conversation : builtConvo,
+          complete: hasDueWords ? (complete !== false && !fillFellBack && !convoFellBack) : true,
         };
-
-        if (content.fillItems.length < 1) content.fillItems = passageData.fillItems;
-        if (content.conversation.length < 2) content.conversation = passageData.conversation;
 
         if (cancelled) return;
         await storage.saveDailyContent(content);

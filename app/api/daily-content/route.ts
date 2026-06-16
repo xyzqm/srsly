@@ -39,6 +39,40 @@ function extractJson(raw: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Run one generation prompt, retrying when the model returns unparseable JSON OR
+ * an output that fails `isComplete` (e.g. missing fill/convo). Returns the first
+ * complete result as `json`, plus the last parseable result as `best` so callers
+ * can degrade gracefully instead of failing outright.
+ */
+async function generateJson(
+  client: Anthropic,
+  prompt: string,
+  isComplete: (j: Record<string, unknown>) => boolean,
+  label: string,
+): Promise<{ json: Record<string, unknown> | null; best: Record<string, unknown> | null }> {
+  let json: Record<string, unknown> | null = null;
+  let best: Record<string, unknown> | null = null;
+  for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 16000,
+        system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+      const parsed = extractJson(raw);
+      best = parsed;
+      if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
+      console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} incomplete`);
+    } catch (err) {
+      console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed:`, String(err));
+    }
+  }
+  return { json, best };
+}
+
 export async function POST(req: NextRequest) {
   // Use SRSLY_API_KEY to avoid being blocked by Claude Code's ANTHROPIC_API_KEY='' override.
   // Falls back to ANTHROPIC_API_KEY for standard deployments.
@@ -88,7 +122,6 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < words.length; i += BATCH_SIZE) {
     batches.push(words.slice(i, i + BATCH_SIZE));
   }
-  const numPassages = batches.length;
 
   // Words whose reading must be surfaced through a compound (e.g. 行 háng → 银行).
   // Fires per-word whenever compounds are present — independent of whether the deck
@@ -115,11 +148,6 @@ export async function POST(req: NextRequest) {
     : '';
 
   const readingNotes = compoundNote + polyphoneNote;
-
-  const batchDescriptions = batches.map((batch, bi) => {
-    const list = batch.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
-    return `PASSAGE ${bi + 1} WORDS:\n${list}`;
-  }).join('\n\n');
 
   // Shared token-format rules injected into both prompt variants
   const TOKEN_RULES = `
@@ -203,38 +231,25 @@ REQUIREMENTS:
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  // full prompt (initial daily load — passage + fill + convo)
-  const fullPrompt = `You are a Chinese language teacher generating personalized daily practice content.
+  // extras prompt (fill + conversation only). These don't depend on the passage, so
+  // they're generated in PARALLEL with the passage/questions call below — each is
+  // roughly half the output, so wall-clock latency drops to about the slower half
+  // instead of the sum of both.
+  const extrasPrompt = `You are a Chinese language teacher generating fill-in-the-blank and conversation practice.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
-TODAY'S THEME: ${dailyTheme} — all passages, fill items, and conversation must revolve around this theme.
+TODAY'S THEME: ${dailyTheme} — fill items and conversation must revolve around this theme.
 
-${batchDescriptions}
-
-ALL WORDS (used for fill-in-blank and conversation):
+WORDS (used for fill-in-blank and conversation):
 ${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}${readingNotes}
 Generate a JSON object with EXACTLY this structure:
 
 {
-  "passages": [PASSAGE],
   "fill": [FILL_ITEM, ...],
   "convo": [CONVO_TURN, ...]
 }
 
-PASSAGE = {
-  "title": TOKEN_ARRAY,
-  "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
-  "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION]
-}
-  Each passage uses ALL the words from its designated word list.
-  Each passage is a coherent, flowing story or description (${sentenceCount}–${sentenceCount + 2} sentences).
-  Each passage must have exactly 5 comprehension questions testing both passage understanding AND vocabulary meaning.
-  Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect questions.
-  The "key" array must contain the specific hanzi words from the passage whose meaning is tested by that question.
-
 ${TOKEN_RULES}
-
-${QUESTION_SCHEMA}
 
 FILL_ITEM = {
   "before": TOKEN_ARRAY,
@@ -242,7 +257,7 @@ FILL_ITEM = {
   "after": TOKEN_ARRAY,
   "distractors": [["h","p"], ["h","p"], ["h","p"]]
 }
-  "answer" MUST be one of the ALL WORDS above.
+  "answer" MUST be one of the WORDS above.
 
 CONVO_TURN = {
   "key": ["hanzi", ...],
@@ -252,44 +267,59 @@ CONVO_TURN = {
   Last turn must have "suggestions": [].
 
 REQUIREMENTS:
-1. Generate exactly ${numPassages} passage(s) in the "passages" array.
-2. Each passage: ${sentenceCount}–${sentenceCount + 2} sentences, exactly 5 questions.
-3. "fill": 5–8 items, one per answer word from ALL WORDS.
-4. "convo": 4–5 turns practicing ALL WORDS in a realistic dialogue; last turn has "suggestions": [].
-5. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
-6. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
+1. "fill": 5–8 items, one per answer word from WORDS.
+2. "convo": 4–5 turns practicing the WORDS in a realistic dialogue; last turn has "suggestions": [].
+3. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
+4. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  const prompt = passageOnly ? passageOnlyPrompt : fullPrompt;
+  const passageComplete = (j: Record<string, unknown>): boolean =>
+    Array.isArray(j.passages) && j.passages.length > 0;
+  const extrasComplete = (j: Record<string, unknown>): boolean => {
+    const fill = Array.isArray(j.fill) ? j.fill : [];
+    const convo = Array.isArray(j.convo) ? j.convo : [];
+    return fill.length >= 1 && convo.length >= 2;
+  };
 
-  // Generate, retrying once if the model returns unparseable JSON (it occasionally does).
-  let json: Record<string, unknown> | null = null;
-  let lastErr: unknown = null;
-  for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
-    try {
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 16000,
-        system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
-      json = extractJson(raw);
-      break; // parsed successfully
-    } catch (err) {
-      lastErr = err;
-      console.error(`[daily-content] attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed:`, String(err));
+  // loadMore / empty-deck: passage (+ questions) only — a single call.
+  if (passageOnly) {
+    const { json, best } = await generateJson(client, passageOnlyPrompt, passageComplete, 'passage');
+    const finalJson = json ?? best;
+    if (!finalJson) {
+      return NextResponse.json({ error: 'generation failed' }, { status: 500 });
     }
+    return NextResponse.json({
+      ok: true,
+      complete: json !== null,
+      data: finalJson,
+      vocabWords: words.map(w => w.h),
+      batches: batches.map(b => b.map(w => w.h)),
+    });
   }
 
-  if (!json) {
-    return NextResponse.json({ error: 'generation failed', detail: String(lastErr) }, { status: 500 });
+  // Initial daily load: passage+questions and fill+convo run concurrently.
+  const [passageRes, extrasRes] = await Promise.all([
+    generateJson(client, passageOnlyPrompt, passageComplete, 'passage'),
+    generateJson(client, extrasPrompt, extrasComplete, 'extras'),
+  ]);
+
+  const passageJson = passageRes.json ?? passageRes.best;
+  if (!passageJson) {
+    return NextResponse.json({ error: 'generation failed' }, { status: 500 });
   }
+  const extrasJson = (extrasRes.json ?? extrasRes.best ?? {}) as { fill?: unknown; convo?: unknown };
 
   return NextResponse.json({
     ok: true,
-    data: json,
+    // Complete only when BOTH halves succeeded — the client caches fill/convo as the
+    // day's final content only then; otherwise it shows static and regenerates later.
+    complete: passageRes.json !== null && extrasRes.json !== null,
+    data: {
+      passages: (passageJson as { passages?: unknown }).passages ?? [],
+      fill: extrasJson.fill ?? [],
+      convo: extrasJson.convo ?? [],
+    },
     vocabWords: words.map(w => w.h),
     batches: batches.map(b => b.map(w => w.h)),
   });
