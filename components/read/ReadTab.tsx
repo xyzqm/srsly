@@ -55,6 +55,12 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     ? currentPassage.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
     : passageData.charCount;
 
+  // Rough wall-clock estimate for AI generation, surfaced while the user waits so
+  // the delay reads as expected, not broken. Higher HSK levels write longer
+  // passages, so they take a little longer.
+  const genEstShort = hskLevel <= 3 ? '~15–25s' : '~20–35s';
+  const genEstLong  = hskLevel <= 3 ? 'about 15–25 seconds' : 'about 20–35 seconds';
+
   // Vocab set for review-word highlighting — current passage only
   const PASSAGE_VOCAB_SET = useMemo(
     () => currentPassage ? new Set(currentPassage.vocabWords) : passageData.vocabSet,
@@ -304,7 +310,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
             )}
             {dailyStatus === 'loading' && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--ink-faint)', opacity: 0.6 }}>
-                generating…
+                generating… {genEstShort}
               </span>
             )}
             {dailyStatus === 'no-key' && (
@@ -368,7 +374,14 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       )}
 
       {hskLevel === 0 || dailyStatus === 'loading' ? (
-        <PassageSkeleton />
+        <>
+          {dailyStatus === 'loading' && (
+            <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, marginBottom: 16 }}>
+              Writing today&apos;s passage around your due words — this usually takes {genEstLong}.
+            </p>
+          )}
+          <PassageSkeleton />
+        </>
       ) : (
         <>
           {/* Controls row */}
@@ -386,7 +399,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
                     padding: '9px 15px', color: loadingMore ? 'var(--ink-faint)' : 'var(--ink-soft)',
                   }}
                 >
-                  {loadingMore ? 'generating…' : '+ new passage'}
+                  {loadingMore ? `generating… ${genEstShort}` : '+ new passage'}
                 </button>
               )}
               <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
