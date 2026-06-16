@@ -81,6 +81,8 @@ export interface UserPrefs {
   hskLevel?: number;
   srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
   srsMaxDays?: number;   // maximum review interval in days (default 365)
+  srsNewPerDay?: number;     // max new cards introduced per day (default 20)
+  srsReviewsPerDay?: number; // max review cards shown per day (default 200)
   studyDeck?: string;    // currently-selected deck to study; absent/'' = all decks
 }
 

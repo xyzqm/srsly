@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { isDueToday, isActive } from '@/lib/deck';
+import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import {
@@ -60,6 +61,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   // queue: null = not yet initialised; [] = session done or no due cards
   const [queue, setQueue] = useState<DeckWord[] | null>(null);
   const [totalInitial, setTotalInitial] = useState(0);
+  const [hiddenByLimit, setHiddenByLimit] = useState(0);
   const [results, setResults] = useState<{ label: string; color: string }[]>([]);
   const [revealed, setRevealed] = useState(false);
   // Tick increments every second when waiting, triggering countdown re-render
@@ -71,14 +73,31 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     if (!deckLoaded) return;
     if (deck.length === 0) { setQueue([]); return; }
     const today = new Date().toISOString().slice(0, 10);
-    const q = deck
+    const due = deck
       .filter(w => isDueToday(w, today))
       .sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return (a.reviews ?? 0) - (b.reviews ?? 0);
       });
+
+    // Apply the daily new-cards/reviews limits (counting across sessions). Learning
+    // cards are time-critical and never capped; new and review cards each have a
+    // remaining daily budget.
+    const s = getSrsSettings();
+    const counts = getTodayCounts();
+    const isNew = (w: DeckWord) => (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning';
+    const learningDue = due.filter(w => w.phase === 'learning');
+    const newDue      = due.filter(isNew);
+    const reviewDue   = due.filter(w => !isNew(w) && w.phase !== 'learning');
+
+    const cappedReview = reviewDue.slice(0, Math.max(0, s.reviewsPerDay - counts.reviewCount));
+    const cappedNew    = newDue.slice(0, Math.max(0, s.newPerDay - counts.newCount));
+    const q = [...learningDue, ...cappedReview, ...cappedNew];
+    const hidden = (reviewDue.length - cappedReview.length) + (newDue.length - cappedNew.length);
+
     setQueue(q);
     setTotalInitial(q.length);
+    setHiddenByLimit(hidden);
   }, [deck, deckLoaded, queue]);
 
   // Countdown timer — fires when the next learning card becomes ready
@@ -154,10 +173,14 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     return (
       <div className="text-center py-14">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
-        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>All caught up!</h3>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>
+          {hiddenByLimit > 0 ? "That's your limit for today" : 'All caught up!'}
+        </h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
-          No cards are due for review right now.
-          {nextDue && <> Next review scheduled for <strong>{nextDue}</strong>.</>}
+          {hiddenByLimit > 0
+            ? <>{hiddenByLimit} more card{hiddenByLimit === 1 ? '' : 's'} held back by today&apos;s daily limit. Raise it in <strong>Settings</strong> if you have time.</>
+            : <>No cards are due for review right now.{nextDue && <> Next review scheduled for <strong>{nextDue}</strong>.</>}</>
+          }
         </p>
         <button
           onClick={onDone}
@@ -186,6 +209,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
             : ' · all reviewed for today'
           }
         </p>
+        {hiddenByLimit > 0 && (
+          <p style={{ color: 'var(--gold)', fontFamily: 'var(--f-mono)', fontSize: 12, margin: '0 0 4px' }}>
+            {hiddenByLimit} more held back by today&apos;s limit — raise it in Settings.
+          </p>
+        )}
         <div className="flex justify-center gap-1 mt-3 mb-6">
           {results.map((r, i) => (
             <div key={i} style={{ width: 10, height: 10, borderRadius: 2, background: r.color }} title={r.label} />
@@ -231,6 +259,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
     onGrade?.(card.id ?? card.h, fsrsGrade);
+    // Count toward the daily limits: a first-ever grade introduces a new card; a
+    // graduated card being reviewed counts as a review. Learning repeats don't count.
+    if (card.phase === undefined && (card.reviews ?? 0) === 0 && card.stability === undefined) bumpCount('new');
+    else if (card.phase === 'review') bumpCount('review');
     setResults(prev => [...prev, { label, color }]);
 
     const newState    = fsrsSchedule(card, fsrsGrade, settings);

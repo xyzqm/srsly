@@ -31,6 +31,10 @@ export default function SettingsTab() {
   const [retention,  setRetention]  = useState(0.90);
   const [maxDays,    setMaxDays]    = useState(365);
   const [maxDaysRaw, setMaxDaysRaw] = useState('365');
+  const [newPerDay,     setNewPerDay]     = useState(20);
+  const [newPerDayRaw,  setNewPerDayRaw]  = useState('20');
+  const [revPerDay,     setRevPerDay]     = useState(200);
+  const [revPerDayRaw,  setRevPerDayRaw]  = useState('200');
   const [saved,      setSaved]      = useState(false);
 
   useEffect(() => {
@@ -41,10 +45,14 @@ export default function SettingsTab() {
       const md = p.srsMaxDays ?? 365;
       setMaxDays(md);
       setMaxDaysRaw(String(md));
+      const npd = p.srsNewPerDay ?? 20;
+      setNewPerDay(npd); setNewPerDayRaw(String(npd));
+      const rpd = p.srsReviewsPerDay ?? 200;
+      setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
     });
   }, []);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; srsRetention: number; srsMaxDays: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -70,6 +78,19 @@ export default function SettingsTab() {
       await savePrefs({ srsMaxDays: clamped });
     } else {
       setMaxDaysRaw(String(maxDays)); // reset to last valid
+    }
+  }
+
+  async function handleLimitBlur(kind: 'new' | 'review') {
+    const raw = kind === 'new' ? newPerDayRaw : revPerDayRaw;
+    const last = kind === 'new' ? newPerDay : revPerDay;
+    const v = parseInt(raw, 10);
+    if (!isNaN(v) && v >= 0) {
+      const clamped = Math.min(Math.max(v, 0), 9999);
+      if (kind === 'new') { setNewPerDay(clamped); setNewPerDayRaw(String(clamped)); await savePrefs({ srsNewPerDay: clamped }); }
+      else { setRevPerDay(clamped); setRevPerDayRaw(String(clamped)); await savePrefs({ srsReviewsPerDay: clamped }); }
+    } else {
+      if (kind === 'new') setNewPerDayRaw(String(last)); else setRevPerDayRaw(String(last));
     }
   }
 
@@ -198,6 +219,40 @@ export default function SettingsTab() {
             {d === 30 ? '1 mo' : d === 90 ? '3 mo' : d === 180 ? '6 mo' : '1 yr'}
           </button>
         ))}
+      </div>
+
+      {/* ── Daily limits ──────────────────────────────────────────────────── */}
+      <SectionLabel>Daily limits</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
+        Cap how many cards you study per day to smooth out peaks (and avoid a wall of
+        reviews after a break). Counted across sessions; learning cards are never capped.
+        Set to 0 to introduce no new cards. Held-back cards return the next day.
+      </p>
+      <div className="flex flex-wrap gap-8 mb-10">
+        <div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-soft)', marginBottom: 7 }}>New cards / day</div>
+          <input
+            type="number" min={0} max={9999}
+            value={newPerDayRaw}
+            onChange={e => setNewPerDayRaw(e.target.value)}
+            onBlur={() => handleLimitBlur('new')}
+            onKeyDown={e => e.key === 'Enter' && handleLimitBlur('new')}
+            className="rounded-[9px] px-4 py-2.5"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 14, width: 100, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', outline: 'none' }}
+          />
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-soft)', marginBottom: 7 }}>Max reviews / day</div>
+          <input
+            type="number" min={0} max={9999}
+            value={revPerDayRaw}
+            onChange={e => setRevPerDayRaw(e.target.value)}
+            onBlur={() => handleLimitBlur('review')}
+            onKeyDown={e => e.key === 'Enter' && handleLimitBlur('review')}
+            className="rounded-[9px] px-4 py-2.5"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 14, width: 100, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', outline: 'none' }}
+          />
+        </div>
       </div>
 
       {/* Saved indicator */}

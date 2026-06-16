@@ -19,11 +19,15 @@ export type FsrsGrade = 1 | 2 | 3 | 4; // 1=Again 2=Hard 3=Good 4=Easy
 export interface SrsSettings {
   desiredRetention: number; // 0.70–0.99
   maxIntervalDays: number;
+  newPerDay: number;        // max new cards introduced per day
+  reviewsPerDay: number;    // max review cards shown per day
 }
 
 export const DEFAULT_SRS_SETTINGS: SrsSettings = {
   desiredRetention: 0.90,
   maxIntervalDays: 365,
+  newPerDay: 20,
+  reviewsPerDay: 200,
 };
 
 /** Lapse count at which a word is auto-flagged as a leech (then auto-paused + starred). */
@@ -36,6 +40,8 @@ export function getSrsSettings(): SrsSettings {
     return {
       desiredRetention: Number(prefs.srsRetention) || DEFAULT_SRS_SETTINGS.desiredRetention,
       maxIntervalDays:  Number(prefs.srsMaxDays)   || DEFAULT_SRS_SETTINGS.maxIntervalDays,
+      newPerDay:     Number.isFinite(+prefs.srsNewPerDay)     ? Number(prefs.srsNewPerDay)     : DEFAULT_SRS_SETTINGS.newPerDay,
+      reviewsPerDay: Number.isFinite(+prefs.srsReviewsPerDay) ? Number(prefs.srsReviewsPerDay) : DEFAULT_SRS_SETTINGS.reviewsPerDay,
     };
   } catch {
     return DEFAULT_SRS_SETTINGS;
