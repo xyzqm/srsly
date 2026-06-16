@@ -1,9 +1,10 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { PracticeMode } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
+import { inStudyDeck } from '@/lib/deck';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -23,9 +24,14 @@ export default function ExtrasTab({ onScore }: Props) {
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
   const [hskLevel, setHskLevel] = useState(0);
+  const [studyDeck, setStudyDeck] = useState('');
   useEffect(() => {
-    storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4));
+    storage.getPrefs().then(p => { setHskLevel(p.hskLevel ?? 4); setStudyDeck(p.studyDeck ?? ''); });
   }, []);
+
+  // Review (flashcards) is scoped to the selected deck. Fill/conversation use the
+  // same scoped deck for their due-word checks.
+  const scopedDeck = useMemo(() => deck.filter(w => inStudyDeck(w, studyDeck)), [deck, studyDeck]);
 
   // Daily AI-generated content
   const { dailyContent } = useDailyContent(hskLevel, deck);
@@ -60,11 +66,11 @@ export default function ExtrasTab({ onScore }: Props) {
         ))}
       </div>
 
-      {mode === 'flash' && <Flashcards deck={deck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
+      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
       {mode === 'fill'  && (
         <FillInBlank
           onDone={() => setMode('convo')}
-          deck={deck}
+          deck={scopedDeck}
           onAddVocab={handleAddVocab}
           onGrade={updateWordReview}
           items={dailyContent?.fillItems}
@@ -74,7 +80,7 @@ export default function ExtrasTab({ onScore }: Props) {
         <Conversation
           key={convoKey}
           onScore={onScore}
-          deck={deck}
+          deck={scopedDeck}
           onAddVocab={handleAddVocab}
           onGrade={updateWordReview}
           turns={dailyContent?.conversation}

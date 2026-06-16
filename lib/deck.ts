@@ -29,3 +29,16 @@ export function isDueToday(w: DeckWord, today: string = todayStr()): boolean {
   if (!isActive(w, today)) return false;
   return !w.dueAt || w.dueAt <= today;
 }
+
+/** Whether a word belongs to the selected study deck (empty/undefined = all decks). */
+export function inStudyDeck(w: DeckWord, studyDeck?: string): boolean {
+  if (!studyDeck) return true;
+  return (w.deck || '') === studyDeck;
+}
+
+/** Distinct deck names present in the deck, sorted alphabetically. */
+export function deckNames(deck: DeckWord[]): string[] {
+  const names = new Set<string>();
+  for (const w of deck) { if (w.deck) names.add(w.deck); }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}

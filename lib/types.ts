@@ -26,6 +26,7 @@ export interface DeckWord {
   focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
+  deck?: string;         // optional deck/group name; absent = the default deck
 }
 
 export interface PassageToken {
@@ -79,6 +80,7 @@ export interface UserPrefs {
   hskLevel?: number;
   srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
   srsMaxDays?: number;   // maximum review interval in days (default 365)
+  studyDeck?: string;    // currently-selected deck to study; absent/'' = all decks
 }
 
 export interface ClaimedWords {

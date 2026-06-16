@@ -6,7 +6,8 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { todayStr } from '@/lib/deck';
+import { todayStr, deckNames, inStudyDeck } from '@/lib/deck';
+import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -257,15 +258,17 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
 interface CardManageProps {
   word: DeckWord;
   today: string;
+  deckOptions: string[];
   onPause: (paused: boolean) => void;
   onSnooze: () => void;
   onUnsnooze: () => void;
   onReschedule: (date: string) => void;
   onReset: () => void;
+  onSetDeck: (deck: string) => void;
   onClose: () => void;
 }
 
-function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onClose }: CardManageProps) {
+function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onSetDeck, onClose }: CardManageProps) {
   const snoozed = !!word.snoozeUntil && word.snoozeUntil > today;
   const status =
     word.paused ? 'Paused'
@@ -319,6 +322,18 @@ function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, 
             style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)' }}
           />
         </label>
+        <label className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '4px 8px' }}>
+          Deck
+          <input
+            list="srsly-deck-names"
+            defaultValue={word.deck ?? ''}
+            placeholder="default"
+            onBlur={e => { if ((e.target.value.trim() || undefined) !== word.deck) onSetDeck(e.target.value); }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', width: '11ch' }}
+          />
+          <datalist id="srsly-deck-names">{deckOptions.map(d => <option key={d} value={d} />)}</datalist>
+        </label>
         {actBtn('Reset progress', onReset, 'danger')}
         <div className="ml-auto">{actBtn('Close', onClose, 'ghost')}</div>
       </div>
@@ -331,7 +346,7 @@ function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, 
 export default function VocabTab() {
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
-    toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
+    toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress, setWordDeck,
   } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -339,6 +354,15 @@ export default function VocabTab() {
   const [managingId, setManagingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'focus' | 'paused' | 'snoozed'>('all');
   const today = todayStr();
+
+  // Selected study deck — persisted to prefs so the practice/read tabs scope to it too.
+  const [studyDeck, setStudyDeck] = useState('');
+  useEffect(() => { storage.getPrefs().then(p => setStudyDeck(p.studyDeck ?? '')); }, []);
+  const changeStudyDeck = useCallback((name: string) => {
+    setStudyDeck(name);
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDeck: name || undefined }));
+  }, []);
+  const allDeckNames = useMemo(() => deckNames(deck), [deck]);
 
   // ── Unified undo state ──────────────────────────────────────────────────────
   const [pendingUndo, setPendingUndo] = useState<PendingUndo | null>(null);
@@ -437,22 +461,26 @@ export default function VocabTab() {
     return []; // pending clear — show empty
   }, [deck, pendingUndo]);
 
-  // Apply the focus/paused/snoozed filter on top of the display deck.
+  // Scope to the selected deck first, then apply the focus/paused/snoozed chip filter.
+  const deckScoped = useMemo(
+    () => displayDeck.filter(w => inStudyDeck(w, studyDeck)),
+    [displayDeck, studyDeck],
+  );
   const visibleDeck = useMemo(() => {
-    if (filter === 'all') return displayDeck;
-    return displayDeck.filter(w =>
+    if (filter === 'all') return deckScoped;
+    return deckScoped.filter(w =>
       filter === 'focus'  ? !!w.focus :
       filter === 'paused' ? !!w.paused :
       (!!w.snoozeUntil && w.snoozeUntil > today),
     );
-  }, [displayDeck, filter, today]);
+  }, [deckScoped, filter, today]);
 
-  // Counts for the filter chips
+  // Counts for the filter chips (within the selected deck)
   const counts = useMemo(() => ({
-    focus:   displayDeck.filter(w => w.focus).length,
-    paused:  displayDeck.filter(w => w.paused).length,
-    snoozed: displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
-  }), [displayDeck, today]);
+    focus:   deckScoped.filter(w => w.focus).length,
+    paused:  deckScoped.filter(w => w.paused).length,
+    snoozed: deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
+  }), [deckScoped, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
   function handleAdd(word: DeckWord) {
@@ -489,9 +517,26 @@ export default function VocabTab() {
       </div>
       <div className="flex justify-between items-end flex-wrap gap-3 my-2 mb-6">
         <div>
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>Word deck</div>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>Word deck</span>
+            {allDeckNames.length > 0 && (
+              <select
+                value={studyDeck}
+                onChange={e => changeStudyDeck(e.target.value)}
+                style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.04em',
+                  background: 'var(--paper-2)', color: 'var(--ink)',
+                  border: '1px solid var(--line)', borderRadius: 7, padding: '5px 9px', cursor: 'pointer',
+                }}
+              >
+                <option value="">All decks</option>
+                {allDeckNames.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            )}
+          </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
-            {displayDeck.length} word{displayDeck.length === 1 ? '' : 's'} in your deck
+            {deckScoped.length} word{deckScoped.length === 1 ? '' : 's'}
+            {studyDeck ? <> in <strong>{studyDeck}</strong></> : ' in your deck'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -561,7 +606,7 @@ export default function VocabTab() {
         {(counts.focus > 0 || counts.paused > 0 || counts.snoozed > 0) && (
           <div className="flex flex-wrap gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
             {([
-              ['all', `All ${displayDeck.length}`],
+              ['all', `All ${deckScoped.length}`],
               ['focus', `★ Focus ${counts.focus}`],
               ['paused', `Paused ${counts.paused}`],
               ['snoozed', `Snoozed ${counts.snoozed}`],
@@ -611,6 +656,7 @@ export default function VocabTab() {
                     <span style={{ fontSize: 14, color: 'var(--ink)' }}>
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
                       {sdm(w.m)}
+                      {w.deck && !studyDeck && <StatusChip label={w.deck} />}
                       {w.paused && <StatusChip label="paused" />}
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
                     </span>
@@ -656,11 +702,13 @@ export default function VocabTab() {
                     <CardManage
                       word={w}
                       today={today}
+                      deckOptions={allDeckNames}
                       onPause={(p) => setPaused(w.id!, p)}
                       onSnooze={() => snoozeWord(w.id!)}
                       onUnsnooze={() => unsnoozeWord(w.id!)}
                       onReschedule={(d) => rescheduleWord(w.id!, d)}
                       onReset={() => resetProgress(w.id!)}
+                      onSetDeck={(d) => setWordDeck(w.id!, d)}
                       onClose={() => setManagingId(null)}
                     />
                   )}
