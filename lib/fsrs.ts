@@ -64,6 +64,19 @@ function nextInterval(stability: number, desiredRetention: number, maxDays: numb
   return Math.max(1, Math.min(maxDays, Math.round(days)));
 }
 
+/**
+ * Anki-style interval fuzz: nudges a multi-day interval by a small random amount so
+ * cards introduced together and graded the same don't all resurface on the same day.
+ * Applied only when actually scheduling — the preview/answer-button intervals show the
+ * un-fuzzed value (as in Anki). No fuzz on short intervals (time-critical learning).
+ */
+function applyFuzz(ivl: number): number {
+  if (ivl < 2.5) return ivl;
+  const pct = ivl < 7 ? 0.25 : ivl < 20 ? 0.15 : 0.05;
+  const delta = Math.max(1, Math.round(ivl * pct));
+  return Math.max(1, ivl + Math.round((Math.random() * 2 - 1) * delta));
+}
+
 function initStability(rating: FsrsGrade): number {
   return Math.max(0.1, W[rating - 1]);
 }
@@ -127,11 +140,15 @@ export function fsrsSchedule(
   word: DeckWord,
   grade: FsrsGrade,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+  opts: { fuzz?: boolean } = {},
 ): Partial<DeckWord> {
   const today  = new Date().toISOString().slice(0, 10);
   const nowMs  = Date.now();
   const step   = word.learningStep ?? 0;
   const lapses = word.lapses ?? 0;
+  // Fuzz only when persisting a real grade; previews (fsrsNextInterval) leave it off
+  // so the answer-button labels stay stable.
+  const fz = (ivl: number) => (opts.fuzz ? applyFuzz(ivl) : ivl);
 
   // ── Learning / relearning ─────────────────────────────────────────────────
   if (isLearningCard(word)) {
@@ -144,7 +161,7 @@ export function fsrsSchedule(
         stability: s, difficulty: d, lapses,
         reviews: (word.reviews ?? 0) + 1,
         phase: 'review', learningStep: undefined, dueAtMs: undefined,
-        dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
+        dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
         lastReview: today,
       };
     }
@@ -178,7 +195,7 @@ export function fsrsSchedule(
         stability: s, difficulty: d, lapses,
         reviews: (word.reviews ?? 0) + 1,
         phase: 'review', learningStep: undefined, dueAtMs: undefined,
-        dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
+        dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
         lastReview: today,
       };
     }
@@ -212,7 +229,7 @@ export function fsrsSchedule(
       stability: s, difficulty: initDifficulty(grade),
       lapses: grade === 1 ? 1 : 0, reviews: 1,
       phase: 'review',
-      dueAt: addDays(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays)),
+      dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
       lastReview: today,
     };
   }
@@ -240,7 +257,7 @@ export function fsrsSchedule(
     stability: newS, difficulty: newD,
     lapses, reviews: (word.reviews ?? 0) + 1,
     phase: 'review', dueAtMs: undefined,
-    dueAt: addDays(nextInterval(newS, settings.desiredRetention, settings.maxIntervalDays)),
+    dueAt: addDays(fz(nextInterval(newS, settings.desiredRetention, settings.maxIntervalDays))),
     lastReview: today,
   };
 }

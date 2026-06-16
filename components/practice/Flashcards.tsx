@@ -2,10 +2,35 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { isDueToday, isActive } from '@/lib/deck';
+import { speak, prefetchAudio } from '@/lib/speech';
+import { POLYPHONES } from '@/lib/polyphones';
 import {
   fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
   DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings,
 } from '@/lib/fsrs';
+
+function stripHtml(s: string): string {
+  return s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Text to speak for a card. A bare polyphone character is ambiguous to TTS — with no
+ * surrounding words it just reads the most common pronunciation (e.g. 行 → xíng even on
+ * a háng card). Passages avoid this because the sentence supplies context; here we give
+ * the same context by speaking the example sentence (if it contains the character) or a
+ * compound that does, so the intended reading is voiced. Non-polyphones read the
+ * character directly.
+ */
+function cardSpeechText(card: DeckWord): string {
+  const isPoly = !!POLYPHONES[card.h] || !!(card.compounds && card.compounds.length);
+  if (isPoly) {
+    const cn = card.cn ? stripHtml(card.cn) : '';
+    if (cn && cn.includes(card.h)) return cn;
+    const comp = card.compounds?.find(c => c.includes(card.h));
+    if (comp) return comp;
+  }
+  return card.h;
+}
 
 interface Props {
   deck: DeckWord[];
@@ -73,9 +98,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   // Keyboard shortcuts: Space/Enter reveals the answer, then grades Good; 1–4 pick a
   // grade directly. A single listener reads live handlers from a ref so it always
   // acts on the current card without re-binding every render.
-  const kbd = useRef<{ canAct: boolean; revealed: boolean; reveal: () => void; grade: (g: FsrsGrade) => void }>({
-    canAct: false, revealed: false, reveal: () => {}, grade: () => {},
+  const kbd = useRef<{ canAct: boolean; revealed: boolean; reveal: () => void; grade: (g: FsrsGrade) => void; replay: () => void }>({
+    canAct: false, revealed: false, reveal: () => {}, grade: () => {}, replay: () => {},
   });
+  const lastPrefetch = useRef<string | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = kbd.current;
@@ -88,6 +114,9 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
       } else if (k.revealed && e.key >= '1' && e.key <= '4') {
         e.preventDefault();
         k.grade(Number(e.key) as FsrsGrade);
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        k.replay();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -196,7 +225,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   }
 
   const card          = readyCards[0];
-  const doneCount     = totalInitial - Math.max(0, queue.length - (futureCards.length));
   const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length + futureCards.length)) * 100)) : 0;
   const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
@@ -223,12 +251,21 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     setRevealed(false);
   }
 
+  // Audio: warm the cache when a new card appears so the first replay is instant.
+  const speechText = cardSpeechText(card);
+  const cardKey = card.id ?? card.h;
+  if (lastPrefetch.current !== cardKey) {
+    lastPrefetch.current = cardKey;
+    void prefetchAudio(speechText);
+  }
+
   // Enable keyboard shortcuts for the card currently on screen.
   kbd.current = {
     canAct: true,
     revealed,
     reveal: () => setRevealed(true),
     grade: (g) => { const m = GRADES.find(x => x.grade === g)!; handleGrade(m.grade, m.label, m.color); },
+    replay: () => { void speak(speechText); },
   };
 
   return (
@@ -279,6 +316,16 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
           What does this mean?
         </div>
+        <button
+          onClick={() => { void speak(speechText); }}
+          title="Play audio (R)"
+          className="absolute cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
+          style={{ top: 12, right: 14, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
+        >
+          <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a9 9 0 0 1 0 14" />
+          </svg>
+        </button>
 
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 88, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>
           {card.h}

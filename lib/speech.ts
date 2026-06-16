@@ -243,6 +243,15 @@ export function speakWithBlank(
   });
 }
 
+/**
+ * Warm the audio cache for a text so a later speak() plays instantly. Safe to call
+ * eagerly (e.g. when a flashcard is shown) — failures are swallowed.
+ */
+export async function prefetchAudio(text: string): Promise<void> {
+  if (!text) return;
+  try { await fetchApiAudio(text); } catch { /* ignore */ }
+}
+
 /** Prime the voice list — call once on a user gesture to avoid the async delay. */
 export function primeTTS(): void {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
