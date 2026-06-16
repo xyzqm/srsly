@@ -6,6 +6,7 @@ import { getPassageData } from '@/lib/data/allPassages';
 import { lookupWord } from '@/lib/data/dict';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
+import { isDueToday } from '@/lib/deck';
 
 // ─── Raw token shapes returned by the API ───────────────────────────────────
 
@@ -426,7 +427,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       // Words due today drive both the cache-freshness check and generation.
       const currentDeck = deckRef.current;
       const dueWords = currentDeck
-        .filter(w => !w.dueAt || w.dueAt <= today)
+        .filter(w => isDueToday(w, today))
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
@@ -561,7 +562,7 @@ export function useDailyContent(hskLevel: number, deck: DeckWord[]): UseDailyCon
       // Prefer due words not yet covered by existing passages
       const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
       const dueWords = currentDeck
-        .filter(w => !w.dueAt || w.dueAt <= todayStr)
+        .filter(w => isDueToday(w, todayStr))
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);

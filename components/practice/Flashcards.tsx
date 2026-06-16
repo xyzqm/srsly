@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
+import { isDueToday, isActive } from '@/lib/deck';
 import {
   fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
   DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings,
@@ -11,12 +12,6 @@ interface Props {
   deckLoaded?: boolean;
   onDone: () => void;
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
-}
-
-function isDue(word: DeckWord): boolean {
-  if (!word.dueAt) return true;
-  const today = new Date().toISOString().slice(0, 10);
-  return word.dueAt <= today;
 }
 
 function sdm(m: string) {
@@ -52,7 +47,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     if (deck.length === 0) { setQueue([]); return; }
     const today = new Date().toISOString().slice(0, 10);
     const q = deck
-      .filter(w => !w.dueAt || w.dueAt <= today)
+      .filter(w => isDueToday(w, today))
       .sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return (a.reviews ?? 0) - (b.reviews ?? 0);
@@ -74,6 +69,32 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     const timer  = setTimeout(() => setTick(t => t + 1), delay);
     return () => clearTimeout(timer);
   }, [queue, tick]);
+
+  // Keyboard shortcuts: Space/Enter reveals the answer, then grades Good; 1–4 pick a
+  // grade directly. A single listener reads live handlers from a ref so it always
+  // acts on the current card without re-binding every render.
+  const kbd = useRef<{ canAct: boolean; revealed: boolean; reveal: () => void; grade: (g: FsrsGrade) => void }>({
+    canAct: false, revealed: false, reveal: () => {}, grade: () => {},
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = kbd.current;
+      if (!k.canAct) return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        if (!k.revealed) k.reveal(); else k.grade(3);
+      } else if (k.revealed && e.key >= '1' && e.key <= '4') {
+        e.preventDefault();
+        k.grade(Number(e.key) as FsrsGrade);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // Disabled by default each render; the card render path below re-enables it.
+  kbd.current.canAct = false;
 
   if (!deckLoaded || queue === null) {
     return <div className="py-14 text-center" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>Loading…</div>;
@@ -98,7 +119,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   // All caught up — no cards were due today
   if (queue.length === 0 && results.length === 0) {
     const nextDue = deck.reduce<string | null>((earliest, w) => {
-      if (!w.dueAt) return earliest;
+      if (!w.dueAt || !isActive(w)) return earliest;
       return earliest === null || w.dueAt < earliest ? w.dueAt : earliest;
     }, null);
     return (
@@ -124,7 +145,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   if (queue.length === 0 && results.length > 0) {
     const okCount = results.filter(r => r.label === 'Good' || r.label === 'Easy').length;
     const total   = results.length;
-    const dueNow  = deck.filter(isDue).length;
+    const dueNow  = deck.filter(w => isDueToday(w)).length;
     return (
       <div className="text-center py-10">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: 60, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>完</div>
@@ -177,7 +198,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   const card          = readyCards[0];
   const doneCount     = totalInitial - Math.max(0, queue.length - (futureCards.length));
   const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length + futureCards.length)) * 100)) : 0;
-  const dueCount      = deck.filter(isDue).length;
+  const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
@@ -201,6 +222,14 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
 
     setRevealed(false);
   }
+
+  // Enable keyboard shortcuts for the card currently on screen.
+  kbd.current = {
+    canAct: true,
+    revealed,
+    reveal: () => setRevealed(true),
+    grade: (g) => { const m = GRADES.find(x => x.grade === g)!; handleGrade(m.grade, m.label, m.color); },
+  };
 
   return (
     <div>

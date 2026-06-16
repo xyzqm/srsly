@@ -8,6 +8,7 @@ import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
 import { groupReadings } from '@/lib/readings';
+import { isDueToday } from '@/lib/deck';
 
 interface Props {
   onDone: () => void;
@@ -72,7 +73,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const dueToday = deck.filter(w => !w.dueAt || w.dueAt <= today);
+  const dueToday = deck.filter(w => isDueToday(w, today));
   if (dueToday.length === 0) {
     return (
       <div className="text-center py-14">

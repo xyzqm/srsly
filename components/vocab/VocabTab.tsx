@@ -6,6 +6,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
+import { todayStr } from '@/lib/deck';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -29,6 +30,12 @@ function sdm(m: string) {
       )}
     </span>
   ));
+}
+
+function StatusChip({ label }: { label: string }) {
+  return (
+    <span style={{ marginLeft: 8, fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-faint)', background: 'var(--line-soft)', borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap' }}>{label}</span>
+  );
 }
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
@@ -245,13 +252,93 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
   );
 }
 
+// ─── Card management panel (Details + Pause / Snooze / Reschedule / Reset) ──────
+
+interface CardManageProps {
+  word: DeckWord;
+  today: string;
+  onPause: (paused: boolean) => void;
+  onSnooze: () => void;
+  onUnsnooze: () => void;
+  onReschedule: (date: string) => void;
+  onReset: () => void;
+  onClose: () => void;
+}
+
+function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onClose }: CardManageProps) {
+  const snoozed = !!word.snoozeUntil && word.snoozeUntil > today;
+  const status =
+    word.paused ? 'Paused'
+    : snoozed ? `Snoozed → ${word.snoozeUntil}`
+    : word.phase === 'learning' ? 'Learning'
+    : (word.reviews ?? 0) === 0 && word.stability === undefined ? 'New'
+    : 'In review';
+
+  const stat = (label: string, value: string) => (
+    <div>
+      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>{label}</div>
+      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 13, color: 'var(--ink)', marginTop: 2 }}>{value}</div>
+    </div>
+  );
+
+  const actBtn = (label: string, onClick: () => void, tone: 'normal' | 'danger' | 'ghost' = 'normal') => (
+    <button
+      onClick={onClick}
+      className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+      style={{
+        fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em',
+        background: 'none', borderRadius: 7, padding: '7px 12px',
+        border: `1px solid ${tone === 'danger' ? 'color-mix(in srgb, var(--accent) 45%, transparent)' : 'var(--line)'}`,
+        color: tone === 'danger' ? 'var(--accent)' : tone === 'ghost' ? 'var(--ink-faint)' : 'var(--ink-soft)',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="rounded-xl px-4 py-3.5 mb-1" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(74px, 1fr))', gap: 12, marginBottom: 14 }}>
+        {stat('Status', status)}
+        {stat('Reviews', String(word.reviews ?? 0))}
+        {stat('Lapses', String(word.lapses ?? 0))}
+        {stat('Due', word.dueAt ?? 'now')}
+        {word.stability !== undefined && stat('Stability', `${word.stability.toFixed(1)}d`)}
+        {word.difficulty !== undefined && stat('Difficulty', word.difficulty.toFixed(1))}
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {word.paused ? actBtn('Resume', () => onPause(false)) : actBtn('Pause', () => onPause(true))}
+        {snoozed ? actBtn('Un-snooze', onUnsnooze) : actBtn('Snooze to tomorrow', onSnooze)}
+        <label className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '4px 8px' }}>
+          Reschedule
+          <input
+            type="date"
+            value={word.dueAt ?? ''}
+            min={today}
+            onChange={e => { if (e.target.value) onReschedule(e.target.value); }}
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)' }}
+          />
+        </label>
+        {actBtn('Reset progress', onReset, 'danger')}
+        <div className="ml-auto">{actBtn('Close', onClose, 'ghost')}</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VocabTab() {
-  const { deck, addWord, addWords, removeWord, updateWord, clearDeck } = useVocabDeck();
+  const {
+    deck, addWord, addWords, removeWord, updateWord, clearDeck,
+    toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
+  } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [managingId, setManagingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'focus' | 'paused' | 'snoozed'>('all');
+  const today = todayStr();
 
   // ── Unified undo state ──────────────────────────────────────────────────────
   const [pendingUndo, setPendingUndo] = useState<PendingUndo | null>(null);
@@ -349,6 +436,23 @@ export default function VocabTab() {
     if (pendingUndo.kind === 'single') return deck.filter(w => w.id !== pendingUndo.word.id);
     return []; // pending clear — show empty
   }, [deck, pendingUndo]);
+
+  // Apply the focus/paused/snoozed filter on top of the display deck.
+  const visibleDeck = useMemo(() => {
+    if (filter === 'all') return displayDeck;
+    return displayDeck.filter(w =>
+      filter === 'focus'  ? !!w.focus :
+      filter === 'paused' ? !!w.paused :
+      (!!w.snoozeUntil && w.snoozeUntil > today),
+    );
+  }, [displayDeck, filter, today]);
+
+  // Counts for the filter chips
+  const counts = useMemo(() => ({
+    focus:   displayDeck.filter(w => w.focus).length,
+    paused:  displayDeck.filter(w => w.paused).length,
+    snoozed: displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
+  }), [displayDeck, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
   function handleAdd(word: DeckWord) {
@@ -453,9 +557,38 @@ export default function VocabTab() {
           />
         )}
 
-        {displayDeck.map((w) => {
+        {/* Filter chips — only once some words are starred / paused / snoozed */}
+        {(counts.focus > 0 || counts.paused > 0 || counts.snoozed > 0) && (
+          <div className="flex flex-wrap gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+            {([
+              ['all', `All ${displayDeck.length}`],
+              ['focus', `★ Focus ${counts.focus}`],
+              ['paused', `Paused ${counts.paused}`],
+              ['snoozed', `Snoozed ${counts.snoozed}`],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className="cursor-pointer transition-all duration-150"
+                style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
+                  background: filter === key ? 'var(--ink)' : 'none',
+                  color: filter === key ? 'var(--paper)' : 'var(--ink-faint)',
+                  border: `1px solid ${filter === key ? 'var(--ink)' : 'var(--line)'}`,
+                  borderRadius: 7, padding: '5px 11px',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {visibleDeck.map((w) => {
           // Map display index back to real deck index for editing/saving
           const realIdx = deck.findIndex(d => d.id === w.id);
+          const snoozed  = !!w.snoozeUntil && w.snoozeUntil > today;
+          const managing = managingId === w.id;
           return (
             <div key={w.id}>
               {editingIdx === realIdx ? (
@@ -467,38 +600,71 @@ export default function VocabTab() {
                   />
                 </div>
               ) : (
-                <div
-                  className="grid items-center gap-4 py-3 px-1"
-                  style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: '1px solid var(--line-soft)' }}
-                >
-                  <span style={{ fontFamily: 'var(--f-han)', fontSize: 23, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 60 }}>
-                    {w.h}
-                  </span>
-                  <span style={{ fontSize: 14, color: 'var(--ink)' }}>
-                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
-                    {sdm(w.m)}
-                  </span>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setEditingIdx(realIdx)}
-                      className="cursor-pointer transition-all duration-150 whitespace-nowrap"
-                      style={btnGhost}
-                      onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
-                      onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleRemove(w)}
-                      className="cursor-pointer transition-all duration-150 whitespace-nowrap"
-                      style={btnGhost}
-                      onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
-                      onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
-                    >
-                      Remove
-                    </button>
+                <>
+                  <div
+                    className="grid items-center gap-4 py-3 px-1"
+                    style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: w.paused ? 0.55 : 1 }}
+                  >
+                    <span style={{ fontFamily: 'var(--f-han)', fontSize: 23, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 60 }}>
+                      {w.h}
+                    </span>
+                    <span style={{ fontSize: 14, color: 'var(--ink)' }}>
+                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
+                      {sdm(w.m)}
+                      {w.paused && <StatusChip label="paused" />}
+                      {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
+                    </span>
+                    <div className="flex gap-1.5 items-center">
+                      <button
+                        onClick={() => w.id && toggleFocus(w.id)}
+                        title={w.focus ? 'Remove focus' : 'Mark as focus'}
+                        className="cursor-pointer transition-all duration-150"
+                        style={{ background: 'none', border: 'none', fontSize: 17, lineHeight: 1, padding: '2px 4px', color: w.focus ? 'var(--gold)' : 'var(--ink-faint)' }}
+                      >
+                        {w.focus ? '★' : '☆'}
+                      </button>
+                      <button
+                        onClick={() => setEditingIdx(realIdx)}
+                        className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+                        style={btnGhost}
+                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
+                        onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setManagingId(managing ? null : (w.id ?? null))}
+                        className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+                        style={managing ? { ...btnGhost, borderColor: 'var(--accent)', color: 'var(--accent)' } : btnGhost}
+                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
+                        onMouseLeave={e => { if (!managing) { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; } }}
+                      >
+                        Manage
+                      </button>
+                      <button
+                        onClick={() => handleRemove(w)}
+                        className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+                        style={btnGhost}
+                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
+                        onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
-                </div>
+                  {managing && w.id && (
+                    <CardManage
+                      word={w}
+                      today={today}
+                      onPause={(p) => setPaused(w.id!, p)}
+                      onSnooze={() => snoozeWord(w.id!)}
+                      onUnsnooze={() => unsnoozeWord(w.id!)}
+                      onReschedule={(d) => rescheduleWord(w.id!, d)}
+                      onReset={() => resetProgress(w.id!)}
+                      onClose={() => setManagingId(null)}
+                    />
+                  )}
+                </>
               )}
             </div>
           );
@@ -507,6 +673,11 @@ export default function VocabTab() {
         {displayDeck.length === 0 && !pendingUndo && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
             Your deck is empty. Add words from the Read tab or above.
+          </p>
+        )}
+        {displayDeck.length > 0 && visibleDeck.length === 0 && (
+          <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
+            No {filter} words.
           </p>
         )}
       </div>}

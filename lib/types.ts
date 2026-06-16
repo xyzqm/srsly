@@ -21,6 +21,11 @@ export interface DeckWord {
   phase?: 'learning' | 'review'; // 'learning' = in learning/relearning steps; 'review' = graduated; absent = new card
   learningStep?: number;          // 0-indexed step within the learning phase
   dueAtMs?: number;               // epoch-ms for sub-day scheduling (learning phase only)
+  // Card-management state — srsly's take on Anki's flag/suspend/bury. Kept separate
+  // from scheduling so they can be toggled without disturbing FSRS history.
+  focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
+  paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
+  snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
 }
 
 export interface PassageToken {
