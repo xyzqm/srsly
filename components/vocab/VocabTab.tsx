@@ -680,6 +680,7 @@ export default function VocabTab() {
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
                       {sdm(w.m)}
                       {w.deck && !studyDeck && <StatusChip label={w.deck} />}
+                      {w.leech && <StatusChip label="🐛 leech" />}
                       {w.paused && <StatusChip label="paused" />}
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
                     </span>

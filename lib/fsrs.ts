@@ -26,6 +26,9 @@ export const DEFAULT_SRS_SETTINGS: SrsSettings = {
   maxIntervalDays: 365,
 };
 
+/** Lapse count at which a word is auto-flagged as a leech (then auto-paused + starred). */
+export const LEECH_THRESHOLD = 8;
+
 export function getSrsSettings(): SrsSettings {
   if (typeof localStorage === 'undefined') return DEFAULT_SRS_SETTINGS;
   try {
