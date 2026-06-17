@@ -12,6 +12,42 @@ const SENTENCES_PER_PASSAGE: Record<number, number> = {
 /** How many times to ask the model before giving up (handles occasional bad JSON). */
 const MAX_GEN_ATTEMPTS = 2;
 
+/** Independently-generated content blocks. */
+type Section = 'passage' | 'fill' | 'convo';
+
+// ─── Token wire format ───────────────────────────────────────────────────────
+// The model emits each token-list as a single pipe-delimited string of bare hanzi
+// (no pinyin/meaning) — e.g. "我|住|在|城市|。". We resolve pinyin/meaning from the
+// dictionary on the client. Proper names are the one exception: the model tags them
+// "~汉字::pīnyīn::gloss" since the dictionary won't cover them. We expand these strings
+// back into the RawTok arrays the client parser already consumes.
+
+type RawTok = [string] | [string, string] | [string, string, string];
+
+/** Split one pipe-delimited token string into RawTok[]. */
+function parseTokenString(s: unknown, inputMap: Map<string, { p: string; m: string }>): RawTok[] {
+  if (typeof s !== 'string' || !s) return [];
+  const out: RawTok[] = [];
+  for (const rawSeg of s.split('|')) {
+    let seg = rawSeg.trim();
+    if (!seg) continue;
+    if (seg.startsWith('~')) seg = seg.slice(1).trim();
+    // Tolerate an inline name escape (h::pinyin::gloss) in case the model reverts to it
+    // instead of using the "names" side-channel — keeps junk out of the token text.
+    if (seg.includes('::')) {
+      const [h, p = '', m = ''] = seg.split('::').map(x => x.trim());
+      if (!h) continue;
+      out.push(p ? [h, p, m] : [h]);
+      continue;
+    }
+    // Target/due words carry authoritative pinyin+meaning from the deck (preserves the
+    // intended polyphone reading); everything else stays bare for client dict lookup.
+    const hit = inputMap.get(seg);
+    out.push(hit ? [seg, hit.p, hit.m] : [seg]);
+  }
+  return out;
+}
+
 /** Repair common model JSON mistakes before parsing. */
 function repairJson(s: string): string {
   let r = s;
@@ -85,21 +121,36 @@ export async function POST(req: NextRequest) {
   let words: { h: string; p: string; m: string; compounds?: string[] }[];
   let hskLevel: number;
   let themeOffset: number;
-  let passageOnly: boolean;
+  let sections: Section[];
 
   try {
     const body = await req.json();
     words = body.words ?? [];
     hskLevel = body.hskLevel ?? 4;
     themeOffset = body.themeOffset ?? 0;
-    passageOnly = body.passageOnly ?? false;
+    // `sections` selects which blocks to generate. Back-compat: `passageOnly` → passage only.
+    if (Array.isArray(body.sections) && body.sections.length > 0) {
+      sections = body.sections.filter((s: unknown): s is Section =>
+        s === 'passage' || s === 'fill' || s === 'convo');
+    } else if (body.passageOnly) {
+      sections = ['passage'];
+    } else {
+      sections = ['passage', 'fill', 'convo'];
+    }
     if (!Array.isArray(words)) {
       return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
     }
-    // Empty words → passage-only (fill/convo fall back to static in the client)
-    if (words.length === 0) passageOnly = true;
+    // Fill/convo need vocab words to anchor on — without them, only a passage is meaningful.
+    if (words.length === 0) sections = sections.filter(s => s === 'passage');
+    if (sections.length === 0) sections = ['passage'];
   } catch {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
+  }
+
+  // Authoritative pinyin/meaning for the practiced words, keyed by hanzi.
+  const inputMap = new Map<string, { p: string; m: string }>();
+  for (const w of words) {
+    if (!inputMap.has(w.h)) inputMap.set(w.h, { p: w.p, m: w.m });
   }
 
   const levelDesc = hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced';
@@ -148,178 +199,269 @@ export async function POST(req: NextRequest) {
     : '';
 
   const readingNotes = compoundNote + polyphoneNote;
+  const wordList = words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
+  const difficultyNote = hskLevel <= 2 ? 'simple grammar, short sentences'
+    : hskLevel <= 4 ? 'varied patterns, moderate complexity'
+    : 'complex grammar, literary or abstract vocabulary';
 
-  // Shared token-format rules injected into both prompt variants
-  const TOKEN_RULES = `
-TOKEN formats — each token is a small JSON array:
-  ["word", "pinyin", "meaning"]  — REQUIRED for every word with 2+ characters and any content word
-  ["word", "pinyin"]             — ONLY single-character function particles: 的、了、是、在、和、也、都、有、没、不、把、被、让、与、或、于
-  ["。"]  — Punctuation: use the ACTUAL punctuation character as text. Examples: ["。"] ["，"] ["！"] ["？"] ["、"] ["—"] ["…"]
+  // Shared pipe-format rules injected into every prompt variant
+  const PIPE_RULES = `
+OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
+Every field marked "WORDS" below MUST be a SINGLE STRING in which you place a | (vertical bar)
+between EVERY word and EVERY punctuation mark. Do NOT write an ordinary sentence — you MUST
+insert a | between every single token. A sentence with no | bars is INVALID output.
 
-CRITICAL TOKENIZATION RULES:
-1. Every word with 2+ characters MUST be a 3-element array ["word","pinyin","meaning"]. No exceptions.
-2. NEVER emit ["word","pinyin"] for any multi-character word.
-3. Do NOT bundle multiple words into one token.
-4. For vocab words, use the exact meaning from the word list.
-5. NEVER split compound words. Each multi-character word is ONE token:
-   已经→["已经","yǐjīng","already"]   NOT 已+经
-   科技→["科技","kējì","technology"]  NOT 科+技
-   生活→["生活","shēnghuó","life"]    NOT 生+活
-   学习→["学习","xuéxí","study"]      NOT 学+习
-   工作→["工作","gōngzuò","work"]     NOT 工+作
-   朋友→["朋友","péngyou","friend"]   NOT 朋+友
-   因为→["因为","yīnwèi","because"]   NOT 因+为
-   所以→["所以","suǒyǐ","therefore"]  NOT 所+以
-   但是→["但是","dànshì","but"]       NOT 但+是
-   可以→["可以","kěyǐ","can"]         NOT 可+以
-   知道→["知道","zhīdào","know"]      NOT 知+道
-   觉得→["觉得","juéde","feel"]       NOT 觉+得
-   喜欢→["喜欢","xǐhuan","like"]      NOT 喜+欢
-   高兴→["高兴","gāoxìng","happy"]    NOT 高+兴
-   漂亮→["漂亮","piàoliang","pretty"] NOT 漂+亮
-6. NEVER emit empty tokens like ["",""] or ["","",""]. Every token must have a non-empty text field.
-7. For punctuation ALWAYS use the actual character (。，！？、—…), NEVER the word "punctuation".
-8. Proper names (people, places) are ONE token, never split into characters:
-   小王→["小王","Xiǎo Wáng","(name) Xiao Wang"]   NOT 小+王
-   老李→["老李","Lǎo Lǐ","(name) Old Li"]          NOT 老+李
-   北京→["北京","Běijīng","Beijing"]               NOT 北+京`.trim();
+  CORRECT:  "在|现代|社会|中|，|艺术|对|经济|发展|很|重要|。"
+  WRONG:    "在现代社会中，艺术对经济发展很重要。"   ← no bars = INVALID, do NOT do this
 
-  const QUESTION_SCHEMA = `QUESTION = {
-  "q": TOKEN_ARRAY,
-  "model": "English model answer (1-2 sentences)",
-  "key": ["hanzi_word1", "hanzi_word2"],
-  "options": [
-    {"tokens": TOKEN_ARRAY, "correct": true},
-    {"tokens": TOKEN_ARRAY, "correct": false},
-    {"tokens": TOKEN_ARRAY, "correct": false},
-    {"tokens": TOKEN_ARRAY, "correct": false}
-  ]
-}`;
+Rules for the tokens between the bars:
+  - Output ONLY hanzi and punctuation. NO pinyin, NO English, NO tone numbers, NO meanings.
+  - Keep every multi-character word / compound WHOLE as one token between bars:
+      现代 经济 发展 已经 科技 朋友 因为 所以 — never 现|代, 经|济, 已|经, 朋|友.
+  - Keep proper names (people, places) WHOLE as one bare token too: 小王 北京 李明 — never split them.
+  - Each punctuation mark (。 ， ！ ？ 、 — …) is its OWN token between bars.
+  - NEVER output an empty token, and NEVER write pinyin or English inside the bars.
 
-  // passage-only prompt (used by loadMore and empty-deck daily load)
-  const passageOnlyPrompt = `You are a Chinese language teacher generating a reading passage.
+PROPER NAMES: list EVERY person/place name you used in the separate "names" array (see schema),
+giving its pinyin and a short English gloss. The pipe strings stay pure hanzi; names get their
+reading from this list.`.trim();
+
+  // Side-channel for proper-name readings — keeps the pipe stream pure hanzi.
+  const NAMES_SCHEMA = `NAME = {"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}
+  "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.`;
+
+  // ── Prompt builders (one per section) ──────────────────────────────────────
+
+  const passagePrompt = `You are a Chinese language teacher generating a reading passage.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
-${words.length > 0 ? `\nWORDS TO USE:\n${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}${readingNotes}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
+${words.length > 0 ? `\nWORDS TO USE:\n${wordList}${readingNotes}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
 
 Generate a JSON object with EXACTLY this structure:
 
 {
-  "passages": [PASSAGE]
+  "passages": [PASSAGE],
+  "names": [NAME, ...]
 }
 
 PASSAGE = {
-  "title": TOKEN_ARRAY,
-  "sentences": [TOKEN_ARRAY, TOKEN_ARRAY, ...],
+  "title": "WORDS",
+  "sentences": ["WORDS", "WORDS", ...],
   "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION]
 }
+Example of a single correctly-formatted sentence string (note the | between every token):
+  "城市|的|经济|发展|离不开|科技|的|进步|。"
   ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
   Include exactly 5 comprehension questions testing both passage understanding AND vocabulary meaning.
   Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect questions.
   The "key" array must contain the specific hanzi words from the passage whose meaning is tested by that question.
 
-${TOKEN_RULES}
+${PIPE_RULES}
 
-${QUESTION_SCHEMA}
+QUESTION = {
+  "q": "WORDS",
+  "model": "English model answer (1-2 sentences)",
+  "key": ["hanzi_word1", "hanzi_word2"],
+  "options": [
+    {"tokens": "WORDS", "correct": true},
+    {"tokens": "WORDS", "correct": false},
+    {"tokens": "WORDS", "correct": false},
+    {"tokens": "WORDS", "correct": false}
+  ]
+}
+
+${NAMES_SCHEMA}
 
 REQUIREMENTS:
 1. Exactly 1 passage in the "passages" array.
 2. ${sentenceCount}–${sentenceCount + 2} sentences, exactly 5 questions.
-3. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
-4. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
+3. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  // extras prompt (fill + conversation only). These don't depend on the passage, so
-  // they're generated in PARALLEL with the passage/questions call below — each is
-  // roughly half the output, so wall-clock latency drops to about the slower half
-  // instead of the sum of both.
-  const extrasPrompt = `You are a Chinese language teacher generating fill-in-the-blank and conversation practice.
+  const fillPrompt = `You are a Chinese language teacher generating fill-in-the-blank practice.
 
 HSK LEVEL: ${hskLevel} (${levelDesc})
-TODAY'S THEME: ${dailyTheme} — fill items and conversation must revolve around this theme.
+TODAY'S THEME: ${dailyTheme} — fill items must revolve around this theme.
 
-WORDS (used for fill-in-blank and conversation):
-${words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n')}${readingNotes}
+WORDS (each is the answer to one fill item):
+${wordList}${readingNotes}
 Generate a JSON object with EXACTLY this structure:
 
 {
   "fill": [FILL_ITEM, ...],
-  "convo": [CONVO_TURN, ...]
+  "names": [NAME, ...]
 }
 
-${TOKEN_RULES}
+${PIPE_RULES}
 
 FILL_ITEM = {
-  "before": TOKEN_ARRAY,
-  "answer": ["hanzi", "pinyin"],
-  "after": TOKEN_ARRAY,
-  "distractors": [["h","p"], ["h","p"], ["h","p"]]
+  "before": "WORDS",
+  "answer": "hanzi",
+  "after": "WORDS",
+  "distractors": ["hanzi", "hanzi", "hanzi"]
 }
-  "answer" MUST be one of the WORDS above.
+  "answer" is a SINGLE word (bare hanzi) and MUST be one of the WORDS above.
+  "distractors" are three plausible-but-wrong bare-hanzi words, same part of speech as the answer.
 
-CONVO_TURN = {
-  "key": ["hanzi", ...],
-  "tutor": TOKEN_ARRAY,
-  "suggestions": [TOKEN_ARRAY, TOKEN_ARRAY]
-}
-  Last turn must have "suggestions": [].
+${NAMES_SCHEMA}
 
 REQUIREMENTS:
 1. "fill": 5–8 items, one per answer word from WORDS.
-2. "convo": 4–5 turns practicing the WORDS in a realistic dialogue; last turn has "suggestions": [].
-3. Pinyin must use diacritical tone marks: ā á ǎ à, NOT numbers.
-4. Difficulty appropriate for HSK ${hskLevel}: ${hskLevel <= 2 ? 'simple grammar, short sentences' : hskLevel <= 4 ? 'varied patterns, moderate complexity' : 'complex grammar, literary or abstract vocabulary'}.
+2. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
+  const convoPrompt = `You are a Chinese language teacher generating conversation practice.
+
+HSK LEVEL: ${hskLevel} (${levelDesc})
+TODAY'S THEME: ${dailyTheme} — the conversation must revolve around this theme.
+
+WORDS (practice these in a realistic dialogue):
+${wordList}${readingNotes}
+Generate a JSON object with EXACTLY this structure:
+
+{
+  "convo": [CONVO_TURN, ...],
+  "names": [NAME, ...]
+}
+
+${PIPE_RULES}
+
+CONVO_TURN = {
+  "key": ["hanzi", ...],
+  "tutor": "WORDS",
+  "suggestions": ["WORDS", "WORDS"]
+}
+  Last turn must have "suggestions": [].
+
+${NAMES_SCHEMA}
+
+REQUIREMENTS:
+1. "convo": 4–5 turns practicing the WORDS; last turn has "suggestions": [].
+2. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+
+Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
+
+  // ── Completeness checks ────────────────────────────────────────────────────
   const passageComplete = (j: Record<string, unknown>): boolean =>
     Array.isArray(j.passages) && j.passages.length > 0;
-  const extrasComplete = (j: Record<string, unknown>): boolean => {
-    const fill = Array.isArray(j.fill) ? j.fill : [];
-    const convo = Array.isArray(j.convo) ? j.convo : [];
-    return fill.length >= 1 && convo.length >= 2;
-  };
+  const fillComplete = (j: Record<string, unknown>): boolean =>
+    Array.isArray(j.fill) && j.fill.length >= 1;
+  const convoComplete = (j: Record<string, unknown>): boolean =>
+    Array.isArray(j.convo) && j.convo.length >= 2;
 
-  // loadMore / empty-deck: passage (+ questions) only — a single call.
-  if (passageOnly) {
-    const { json, best } = await generateJson(client, passageOnlyPrompt, passageComplete, 'passage');
-    const finalJson = json ?? best;
-    if (!finalJson) {
+  // Build the per-section resolve map: practiced words (authoritative) plus the model's
+  // proper-name list. parseTokenString consults this so names get their reading from a
+  // robust side-channel instead of a fragile inline escape.
+  function resolveMap(j: Record<string, unknown> | null): Map<string, { p: string; m: string }> {
+    const map = new Map(inputMap);
+    const names = Array.isArray(j?.names) ? (j!.names as Record<string, unknown>[]) : [];
+    for (const n of names) {
+      const h = typeof n?.h === 'string' ? n.h.trim() : '';
+      if (h && !map.has(h)) {
+        map.set(h, { p: typeof n.p === 'string' ? n.p : '', m: typeof n.m === 'string' ? n.m : '' });
+      }
+    }
+    return map;
+  }
+
+  // ── Expanders: model JSON (pipe strings) → RawTok shapes the client consumes ─
+  function expandPassage(p: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+    const qs = Array.isArray(p.questions) ? p.questions : [];
+    return {
+      title: parseTokenString(p.title, map),
+      sentences: (Array.isArray(p.sentences) ? p.sentences : []).map(s => parseTokenString(s, map)),
+      questions: qs.map(q => {
+        const qq = q as Record<string, unknown>;
+        const opts = Array.isArray(qq.options) ? qq.options : [];
+        return {
+          q: parseTokenString(qq.q, map),
+          model: qq.model,
+          key: qq.key,
+          options: opts.map(o => {
+            const oo = o as Record<string, unknown>;
+            return { tokens: parseTokenString(oo.tokens, map), correct: oo.correct };
+          }),
+        };
+      }),
+    };
+  }
+
+  function expandFill(f: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+    const ansH = typeof f.answer === 'string' ? f.answer.trim() : '';
+    const ansP = map.get(ansH)?.p ?? '';
+    const distractors = Array.isArray(f.distractors) ? f.distractors : [];
+    return {
+      before: parseTokenString(f.before, map),
+      answer: [ansH, ansP] as [string, string],
+      after: parseTokenString(f.after, map),
+      // Bare hanzi — the client resolves distractor pinyin from the dictionary.
+      distractors: distractors.map(d => [String(d).trim()] as [string]),
+    };
+  }
+
+  function expandConvo(t: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+    const sugg = Array.isArray(t.suggestions) ? t.suggestions : [];
+    return {
+      key: t.key,
+      tutor: parseTokenString(t.tutor, map),
+      suggestions: sugg.map(s => parseTokenString(s, map)),
+    };
+  }
+
+  // ── Generate the requested sections concurrently ───────────────────────────
+  const jobs = sections.map(async (section): Promise<[Section, { complete: boolean; out: unknown }]> => {
+    if (section === 'passage') {
+      const { json, best } = await generateJson(client, passagePrompt, passageComplete, 'passage');
+      const j = json ?? best;
+      const map = resolveMap(j);
+      const passages = Array.isArray((j as { passages?: unknown })?.passages)
+        ? ((j as { passages: Record<string, unknown>[] }).passages).map(p => expandPassage(p, map))
+        : [];
+      return ['passage', { complete: json !== null, out: passages }];
+    }
+    if (section === 'fill') {
+      const { json, best } = await generateJson(client, fillPrompt, fillComplete, 'fill');
+      const j = json ?? best;
+      const map = resolveMap(j);
+      const fill = Array.isArray((j as { fill?: unknown })?.fill)
+        ? ((j as { fill: Record<string, unknown>[] }).fill).map(f => expandFill(f, map))
+        : [];
+      return ['fill', { complete: json !== null, out: fill }];
+    }
+    const { json, best } = await generateJson(client, convoPrompt, convoComplete, 'convo');
+    const j = json ?? best;
+    const map = resolveMap(j);
+    const convo = Array.isArray((j as { convo?: unknown })?.convo)
+      ? ((j as { convo: Record<string, unknown>[] }).convo).map(t => expandConvo(t, map))
+      : [];
+    return ['convo', { complete: json !== null, out: convo }];
+  });
+
+  const results = await Promise.all(jobs);
+  const bySection = new Map(results);
+
+  // If passage was requested but failed entirely, that's a hard failure.
+  if (sections.includes('passage')) {
+    const p = bySection.get('passage');
+    if (!p || (Array.isArray(p.out) && p.out.length === 0)) {
       return NextResponse.json({ error: 'generation failed' }, { status: 500 });
     }
-    return NextResponse.json({
-      ok: true,
-      complete: json !== null,
-      data: finalJson,
-      vocabWords: words.map(w => w.h),
-      batches: batches.map(b => b.map(w => w.h)),
-    });
   }
 
-  // Initial daily load: passage+questions and fill+convo run concurrently.
-  const [passageRes, extrasRes] = await Promise.all([
-    generateJson(client, passageOnlyPrompt, passageComplete, 'passage'),
-    generateJson(client, extrasPrompt, extrasComplete, 'extras'),
-  ]);
-
-  const passageJson = passageRes.json ?? passageRes.best;
-  if (!passageJson) {
-    return NextResponse.json({ error: 'generation failed' }, { status: 500 });
-  }
-  const extrasJson = (extrasRes.json ?? extrasRes.best ?? {}) as { fill?: unknown; convo?: unknown };
+  const data: { passages?: unknown; fill?: unknown; convo?: unknown } = {};
+  const complete: { passage?: boolean; fill?: boolean; convo?: boolean } = {};
+  if (bySection.has('passage')) { data.passages = bySection.get('passage')!.out; complete.passage = bySection.get('passage')!.complete; }
+  if (bySection.has('fill'))    { data.fill     = bySection.get('fill')!.out;    complete.fill    = bySection.get('fill')!.complete; }
+  if (bySection.has('convo'))   { data.convo    = bySection.get('convo')!.out;   complete.convo   = bySection.get('convo')!.complete; }
 
   return NextResponse.json({
     ok: true,
-    // Complete only when BOTH halves succeeded — the client caches fill/convo as the
-    // day's final content only then; otherwise it shows static and regenerates later.
-    complete: passageRes.json !== null && extrasRes.json !== null,
-    data: {
-      passages: (passageJson as { passages?: unknown }).passages ?? [],
-      fill: extrasJson.fill ?? [],
-      convo: extrasJson.convo ?? [],
-    },
+    complete,
+    sections,
+    data,
     vocabWords: words.map(w => w.h),
     batches: batches.map(b => b.map(w => w.h)),
   });

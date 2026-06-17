@@ -115,10 +115,17 @@ export interface DailyContent {
   // such a cache (instead of serving stale static fill all day) the next time the
   // user has due words.
   complete?: boolean;
+  // Which blocks were AI-generated (vs static fallback). Drives lazy per-tab
+  // generation: each block is generated independently the first time its tab/mode
+  // is opened, and merged into this cache. Absent = legacy cache (see migrateContent).
+  sections?: { passage?: boolean; fill?: boolean; convo?: boolean };
   // The study deck this content was generated for (absent/'' = all decks). Part of
   // the cache identity so switching decks serves/generates the right passage.
   deck?: string;
 }
+
+/** A single independently-generated daily content block. */
+export type ContentSection = 'passage' | 'fill' | 'convo';
 
 export interface FRResponse {
   text: string;

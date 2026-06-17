@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { PracticeMode } from '@/lib/types';
+import type { PracticeMode, ContentSection } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
@@ -33,16 +33,22 @@ export default function ExtrasTab({ onScore }: Props) {
   // same scoped deck for their due-word checks.
   const scopedDeck = useMemo(() => deck.filter(w => inStudyDeck(w, studyDeck)), [deck, studyDeck]);
 
-  // Daily AI-generated content (scoped to the selected study deck)
-  const { dailyContent } = useDailyContent(hskLevel, deck, studyDeck);
+  // Generate only the block the active mode needs: Fill → fill, Convo → convo,
+  // Flashcards → nothing. The hook generates lazily and caches per day.
+  const want = useMemo<ContentSection[]>(
+    () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
+    [mode],
+  );
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyDeck, want);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     addWord({ h: word, p: pinyin, m: meaning });
   }, [addWord]);
 
-  // Stable key for the Conversation so it remounts when turns change
+  // Stable key for the Conversation so it remounts when the turns change — include
+  // whether the convo block is AI-generated so it remounts when lazy AI turns arrive.
   const convoKey = dailyContent
-    ? `ai-${dailyContent.date}-${hskLevel}`
+    ? `${dailyContent.sections?.convo ? 'ai' : 'static'}-${dailyContent.date}-${hskLevel}`
     : `static-${hskLevel}`;
 
   const toggleStyle = (on: boolean) => ({
@@ -74,17 +80,30 @@ export default function ExtrasTab({ onScore }: Props) {
           onAddVocab={handleAddVocab}
           onGrade={updateWordReview}
           items={dailyContent?.fillItems}
+          loading={generating.has('fill')}
         />
       )}
       {mode === 'convo' && (
-        <Conversation
-          key={convoKey}
-          onScore={onScore}
-          deck={scopedDeck}
-          onAddVocab={handleAddVocab}
-          onGrade={updateWordReview}
-          turns={dailyContent?.conversation}
-        />
+        // Mount only once the convo block is final — Conversation seeds its chat from
+        // turn 0 on mount and won't remount, so mounting mid-generation would pin the
+        // static first turn.
+        generating.has('convo') ? (
+          <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
+            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>话</div>
+            <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
+              Generating a conversation for your due words…
+            </p>
+          </div>
+        ) : (
+          <Conversation
+            key={convoKey}
+            onScore={onScore}
+            deck={scopedDeck}
+            onAddVocab={handleAddVocab}
+            onGrade={updateWordReview}
+            turns={dailyContent?.conversation}
+          />
+        )
       )}
     </div>
   );

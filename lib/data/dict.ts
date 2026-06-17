@@ -660,6 +660,13 @@ export function lookupWord(text: string, fallbackPinyin = '', fallbackMeaning = 
   const e = DICT[text];
   if (e) return { pinyin: e.pinyin || fallbackPinyin, meaning: e.meaning || fallbackMeaning };
 
+  // Full CC-CEDICT, but ONLY once it's been preloaded into memory (see preloadCedict).
+  // Most generated tokens are now bare hanzi that rely on this for pinyin/meaning.
+  if (cedictCache) {
+    const c = cedictCache[text];
+    if (c) return { pinyin: c.p || fallbackPinyin, meaning: c.m || fallbackMeaning };
+  }
+
   // Adverbial 地 suffix: 慢慢地 → 慢慢
   if (text.length >= 2 && text.endsWith('地')) {
     const root = lookupWord(text.slice(0, -1));
@@ -699,6 +706,15 @@ async function getCedict(): Promise<Record<string, CedictEntry>> {
       .catch(() => { cedictLoading = null; return {}; });
   }
   return cedictLoading;
+}
+
+/**
+ * Load the full CC-CEDICT into memory so the synchronous `lookupWord` can resolve
+ * bare-hanzi tokens (the generation pipeline emits words only and looks up pinyin/
+ * meaning here). Safe to call repeatedly — the fetch is cached.
+ */
+export async function preloadCedict(): Promise<void> {
+  await getCedict();
 }
 
 /**

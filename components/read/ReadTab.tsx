@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { ResponseMode, FRResponse, DeckWord } from '@/lib/types';
+import type { ResponseMode, FRResponse, DeckWord, ContentSection } from '@/lib/types';
 import { getPassageData } from '@/lib/data/allPassages';
 import { storage } from '@/lib/storage';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
@@ -23,6 +23,9 @@ interface Props {
   onNavigatePractice: () => void;
 }
 
+// Stable reference so the hook's effect dependency doesn't change every render.
+const READ_WANT: ContentSection[] = ['passage'];
+
 export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
@@ -37,7 +40,8 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
 
   // AI-generated daily content (null when unavailable → fall back to static)
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck, studyDeck);
+  // Read only needs the passage block — fill/convo are generated lazily by ExtrasTab.
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck, studyDeck, READ_WANT);
 
   // Passage navigation
   const numPassages = dailyContent?.passages.length ?? 0;
@@ -126,7 +130,13 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setVocabResults([]);
   }, [hskLevel]);
 
-  // Also reset when daily content arrives
+  // Reset only when a genuinely new day's content loads — keyed on content identity
+  // (date/level/deck), NOT object reference. Appending a passage via loadMore or merging
+  // a lazily-generated section keeps the same identity, so it won't snap back to passage 0
+  // and fight the auto-navigate effect below.
+  const contentKey = dailyContent
+    ? `${dailyContent.date}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`
+    : '';
   useEffect(() => {
     setActiveSentence(0);
     setPassageIdx(0);
@@ -136,7 +146,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
-  }, [dailyContent]);
+  }, [contentKey]);
 
   // When loadMore appends a passage, auto-navigate to it
   const prevNumPassages = useRef(numPassages);

@@ -17,6 +17,8 @@ interface Props {
   onGrade?: (hanzi: string, grade: number) => void;
   /** Override items — supplied by daily AI content. Falls back to FILL_ITEMS. */
   items?: FillItem[];
+  /** True while the AI fill block is being generated for the deck's due words. */
+  loading?: boolean;
 }
 
 /**
@@ -31,7 +33,7 @@ interface ItemState {
   gotCorrect: boolean;
 }
 
-export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }: Props) {
+export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, loading }: Props) {
   const activeItems = items ?? FILL_ITEMS;
   const itemsKey = activeItems.map(it => it.answer[0]).join(',');
 
@@ -81,6 +83,18 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items }
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No vocab due today.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
           All your words are scheduled for future review. Come back tomorrow!
+        </p>
+      </div>
+    );
+  }
+
+  // While the AI block is generating, show a spinner rather than flashing static items.
+  if (loading) {
+    return (
+      <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
+        <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>填</div>
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
+          Generating fill-in-the-blank for your due words…
         </p>
       </div>
     );
