@@ -110,6 +110,11 @@
    retain cascade priority over these element/universal selectors. */
 @layer base {
   html, body { height: 100%; }
+  /* Always reserve the scrollbar gutter so the layout doesn't shift sideways when
+     a filter/search changes the page height. overflow-y:scroll forces the track to
+     persist (its space is always reserved); scrollbar-gutter is the modern equivalent
+     for browsers that honor it. The track itself is transparent (see ::-webkit-scrollbar). */
+  html { overflow-y: scroll; scrollbar-gutter: stable; }
 
   body {
     font-family: var(--f-ui);

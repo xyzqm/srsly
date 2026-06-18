@@ -415,8 +415,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);
-              // In cram only the pass/fail distinction matters; show a hint instead of an interval.
-              const sub = cram ? (g.grade === 1 ? 'again' : 'got it') : fmtInterval(days);
+              const sub = fmtInterval(days);
               return (
                 <button
                   key={g.label}
