@@ -7,6 +7,7 @@ import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, deckNames, inStudyDeck } from '@/lib/deck';
+import { matchesSearch } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
@@ -371,6 +372,7 @@ export default function VocabTab() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'focus' | 'paused' | 'snoozed'>('all');
+  const [query, setQuery] = useState('');
   const today = todayStr();
 
   // Selected study deck — persisted to prefs so the practice/read tabs scope to it too.
@@ -484,7 +486,7 @@ export default function VocabTab() {
     () => displayDeck.filter(w => inStudyDeck(w, studyDeck)),
     [displayDeck, studyDeck],
   );
-  const visibleDeck = useMemo(() => {
+  const chipFiltered = useMemo(() => {
     if (filter === 'all') return deckScoped;
     return deckScoped.filter(w =>
       filter === 'focus'  ? !!w.focus :
@@ -492,6 +494,12 @@ export default function VocabTab() {
       (!!w.snoozeUntil && w.snoozeUntil > today),
     );
   }, [deckScoped, filter, today]);
+
+  // Search narrows further (text + is:/lapses>/deck: filters).
+  const visibleDeck = useMemo(
+    () => (query.trim() ? chipFiltered.filter(w => matchesSearch(w, query, today)) : chipFiltered),
+    [chipFiltered, query, today],
+  );
 
   // Counts for the filter chips (within the selected deck)
   const counts = useMemo(() => ({
@@ -618,6 +626,34 @@ export default function VocabTab() {
             onUndo={handleUndo}
             progress={undoProgress}
           />
+        )}
+
+        {/* Search — text + is:/lapses>/deck: filters */}
+        {deckScoped.length > 0 && (
+          <div className="relative pt-3">
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search…  try: is:due · is:leech · lapses>3 · deck:Food"
+              style={{
+                width: '100%', fontFamily: 'var(--f-mono)', fontSize: 12.5,
+                background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 8,
+                padding: '9px 30px 9px 12px', color: 'var(--ink)', outline: 'none',
+              }}
+              onFocus={e => { e.target.style.borderColor = 'var(--accent)'; }}
+              onBlur={e => { e.target.style.borderColor = 'var(--line)'; }}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                title="Clear search"
+                className="absolute cursor-pointer"
+                style={{ right: 8, top: '50%', transform: 'translateY(-30%)', background: 'none', border: 'none', color: 'var(--ink-faint)', fontSize: 16, lineHeight: 1 }}
+              >
+                ×
+              </button>
+            )}
+          </div>
         )}
 
         {/* Filter chips — always shown (when the deck has words) so you can always
@@ -749,7 +785,7 @@ export default function VocabTab() {
         )}
         {displayDeck.length > 0 && visibleDeck.length === 0 && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
-            No {filter} words.
+            {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter} words.`}
           </p>
         )}
       </div>}
