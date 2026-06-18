@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { storage } from '@/lib/storage';
+import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 
 const HSK_LEVELS = [
   { level: 1, label: 'HSK 1', desc: 'Absolute beginner · ~150 words · greetings, numbers, basic nouns' },
@@ -78,6 +79,36 @@ export default function SettingsTab() {
       await savePrefs({ srsMaxDays: clamped });
     } else {
       setMaxDaysRaw(String(maxDays)); // reset to last valid
+    }
+  }
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleExport(format: 'json' | 'csv') {
+    const date = new Date().toISOString().slice(0, 10);
+    const deck = await storage.getVocabDeck();
+    if (format === 'csv') {
+      downloadFile(`srsly-deck-${date}.csv`, toCsv(deck), 'text/csv;charset=utf-8');
+      return;
+    }
+    const prefs = await storage.getPrefs();
+    const backup = { version: 1, exportedAt: new Date().toISOString(), deck, prefs };
+    downloadFile(`srsly-backup-${date}.json`, JSON.stringify(backup, null, 2), 'application/json');
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const backup = parseBackup(await file.text());
+      const cur = await storage.getVocabDeck();
+      if (!window.confirm(`Restore ${backup.deck.length} word${backup.deck.length === 1 ? '' : 's'} from this backup? This replaces your current deck of ${cur.length}.`)) return;
+      await storage.saveVocabDeck(backup.deck);
+      if (backup.prefs) await storage.savePrefs(backup.prefs);
+      window.location.reload();
+    } catch (err) {
+      window.alert(`Couldn't restore: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -253,6 +284,35 @@ export default function SettingsTab() {
             style={{ fontFamily: 'var(--f-mono)', fontSize: 14, width: 100, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', outline: 'none' }}
           />
         </div>
+      </div>
+
+      {/* ── Backup & data ─────────────────────────────────────────────────── */}
+      <SectionLabel>Backup &amp; data</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
+        Your deck lives on this device. Export a backup to keep it safe or move it
+        elsewhere — JSON preserves all scheduling; CSV is a plain word list. Restoring a
+        JSON backup replaces your current deck.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-10">
+        {([['Export backup (JSON)', () => handleExport('json')],
+           ['Export words (CSV)',  () => handleExport('csv')],
+           ['Restore from backup', () => fileInputRef.current?.click()]] as const).map(([label, onClick]) => (
+          <button
+            key={label}
+            onClick={onClick}
+            className="cursor-pointer transition-all duration-150 rounded-[9px]"
+            style={{
+              fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.04em',
+              background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)',
+              padding: '9px 14px',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-soft)'; }}
+          >
+            {label}
+          </button>
+        ))}
+        <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} style={{ display: 'none' }} />
       </div>
 
       {/* Saved indicator */}
