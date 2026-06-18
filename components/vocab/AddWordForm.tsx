@@ -6,10 +6,16 @@ import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 
-interface Props { onAdd: (word: DeckWord) => void; onCancel: () => void; }
+interface Props {
+  onAdd: (word: DeckWord) => void;
+  onCancel: () => void;
+  deckOptions?: string[];  // existing deck names, for autocomplete
+  defaultDeck?: string;    // pre-fill (e.g. the currently-selected study deck)
+}
 
-export default function AddWordForm({ onAdd, onCancel }: Props) {
+export default function AddWordForm({ onAdd, onCancel, deckOptions = [], defaultDeck = '' }: Props) {
   const [hanzi, setHanzi] = useState('');
+  const [deckName, setDeckName] = useState(defaultDeck);
   const [pinyin, setPinyin] = useState('');
   const [pinHint, setPinHint] = useState('type with tone numbers e.g. shui3bei1');
   const [defs, setDefs] = useState<string[]>(['']);
@@ -113,7 +119,8 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
     // Warn if a compound doesn't contain this character or isn't a real word
     const compWarn = await checkCompounds(h, cleanCompounds);
     if (compWarn && !window.confirm(compWarn)) return;
-    onAdd({ h, p, m, ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
+    const deck = deckName.trim() || undefined;
+    onAdd({ h, p, m, ...(deck ? { deck } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
   }
 
   function toggleVoice() {
@@ -340,6 +347,27 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
           </div>
         </div>
       )}
+
+      {/* Deck — optional; type a new name to create a deck, or pick an existing one */}
+      <div className="mt-3.5">
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>
+          Deck <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>— optional; type a new name to create one</span>
+        </div>
+        <input
+          list="addword-decks"
+          value={deckName}
+          onChange={e => setDeckName(e.target.value)}
+          placeholder="default"
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 13, width: 220, maxWidth: '100%',
+            background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 8,
+            padding: '8px 11px', color: 'var(--ink)', outline: 'none',
+          }}
+          onFocus={e => { e.target.style.borderColor = 'var(--accent)'; }}
+          onBlur={e => { e.target.style.borderColor = 'var(--line)'; }}
+        />
+        <datalist id="addword-decks">{deckOptions.map(d => <option key={d} value={d} />)}</datalist>
+      </div>
 
       <div className="flex gap-2 mt-3.5">
         <button

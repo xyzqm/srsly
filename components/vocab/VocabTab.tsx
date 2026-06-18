@@ -6,7 +6,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { todayStr, deckNames, inStudyDeck } from '@/lib/deck';
+import { todayStr, deckNames, inStudyDeck, isDueToday } from '@/lib/deck';
 import { matchesSearch } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
@@ -371,7 +371,7 @@ export default function VocabTab() {
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'focus' | 'paused' | 'snoozed'>('all');
+  const [filter, setFilter] = useState<'all' | 'due' | 'new' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
   const today = todayStr();
 
@@ -486,16 +486,21 @@ export default function VocabTab() {
     () => displayDeck.filter(w => inStudyDeck(w, studyDeck)),
     [displayDeck, studyDeck],
   );
+  const isNewCard = (w: DeckWord) => (w.reviews ?? 0) === 0 && w.stability === undefined;
   const chipFiltered = useMemo(() => {
-    if (filter === 'all') return deckScoped;
-    return deckScoped.filter(w =>
-      filter === 'focus'  ? !!w.focus :
-      filter === 'paused' ? !!w.paused :
-      (!!w.snoozeUntil && w.snoozeUntil > today),
-    );
+    switch (filter) {
+      case 'due':       return deckScoped.filter(w => isDueToday(w, today));
+      case 'new':       return deckScoped.filter(isNewCard);
+      case 'focus':     return deckScoped.filter(w => w.focus);
+      case 'forgotten': return deckScoped.filter(w => (w.lapses ?? 0) > 0);
+      case 'leech':     return deckScoped.filter(w => w.leech);
+      case 'paused':    return deckScoped.filter(w => w.paused);
+      case 'snoozed':   return deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today);
+      default:          return deckScoped;
+    }
   }, [deckScoped, filter, today]);
 
-  // Search narrows further (text + is:/lapses>/deck: filters).
+  // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(
     () => (query.trim() ? chipFiltered.filter(w => matchesSearch(w, query, today)) : chipFiltered),
     [chipFiltered, query, today],
@@ -503,9 +508,13 @@ export default function VocabTab() {
 
   // Counts for the filter chips (within the selected deck)
   const counts = useMemo(() => ({
-    focus:   deckScoped.filter(w => w.focus).length,
-    paused:  deckScoped.filter(w => w.paused).length,
-    snoozed: deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
+    due:       deckScoped.filter(w => isDueToday(w, today)).length,
+    new:       deckScoped.filter(isNewCard).length,
+    focus:     deckScoped.filter(w => w.focus).length,
+    forgotten: deckScoped.filter(w => (w.lapses ?? 0) > 0).length,
+    leech:     deckScoped.filter(w => w.leech).length,
+    paused:    deckScoped.filter(w => w.paused).length,
+    snoozed:   deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
   }), [deckScoped, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
@@ -611,7 +620,7 @@ export default function VocabTab() {
       </div>
 
       {showAdd && (
-        <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
+        <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} deckOptions={allDeckNames} defaultDeck={studyDeck} />
       )}
 
       {showImport && (
@@ -634,7 +643,7 @@ export default function VocabTab() {
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search…  try: is:due · is:leech · lapses>3 · deck:Food"
+              placeholder="Search words — hanzi, pinyin, or meaning"
               style={{
                 width: '100%', fontFamily: 'var(--f-mono)', fontSize: 12.5,
                 background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 8,
@@ -662,7 +671,11 @@ export default function VocabTab() {
           <div className="flex flex-wrap items-center gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
             {([
               ['all', `All ${deckScoped.length}`],
+              ['due', `Due ${counts.due}`],
+              ['new', `New ${counts.new}`],
               ['focus', `★ Focus ${counts.focus}`],
+              ['forgotten', `Forgotten ${counts.forgotten}`],
+              ['leech', `🐛 Leeches ${counts.leech}`],
               ['paused', `Paused ${counts.paused}`],
               ['snoozed', `Snoozed ${counts.snoozed}`],
             ] as const).map(([key, label]) => (
