@@ -25,7 +25,8 @@ function matchTerm(w: DeckWord, term: string, today: string): boolean {
       case 'new':      return (w.reviews ?? 0) === 0 && w.stability === undefined;
       case 'paused':   return !!w.paused;
       case 'snoozed':  return !!w.snoozeUntil && w.snoozeUntil > today;
-      case 'leech':    return !!w.leech;
+      case 'leech':
+      case 'stuck':    return !!w.leech;
       case 'focus':
       case 'starred':  return !!w.focus;
       case 'learning': return w.phase === 'learning';

@@ -739,7 +739,7 @@ export default function VocabTab() {
               ['new', `New ${counts.new}`],
               ['focus', `★ Focus ${counts.focus}`],
               ['forgotten', `Forgotten ${counts.forgotten}`],
-              ['leech', `🐛 Leeches ${counts.leech}`],
+              ['leech', `Stuck ${counts.leech}`],
               ['paused', `Paused ${counts.paused}`],
               ['snoozed', `Snoozed ${counts.snoozed}`],
             ] as const).map(([key, label]) => (
@@ -793,7 +793,7 @@ export default function VocabTab() {
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
                       {sdm(w.m)}
                       {w.deck && !studyDeck && <StatusChip label={w.deck} />}
-                      {w.leech && <StatusChip label="🐛 leech" />}
+                      {w.leech && <StatusChip label="stuck" />}
                       {w.paused && <StatusChip label="paused" />}
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
                     </span>

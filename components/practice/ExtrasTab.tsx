@@ -131,7 +131,7 @@ export default function ExtrasTab({ onScore }: Props) {
             {([
               ['all',       `All ${scopedDeck.length}`],
               ['focus',     `★ Focus ${scopedDeck.filter(w => w.focus).length}`],
-              ['leech',     `🐛 Leeches ${scopedDeck.filter(w => w.leech).length}`],
+              ['leech',     `Stuck ${scopedDeck.filter(w => w.leech).length}`],
               ['forgotten', `Forgotten ${scopedDeck.filter(w => (w.lapses ?? 0) > 0).length}`],
               ['soon',      `Due soon ${scopedDeck.filter(w => w.dueAt && w.dueAt <= dateInDays(7)).length}`],
             ] as [CramScope, string][]).map(([key, label]) => (
