@@ -365,7 +365,7 @@ export default function VocabTab() {
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress, setWordDeck,
-    resumeAll, unsnoozeAll, unfocusAll,
+    resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck,
   } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -375,14 +375,52 @@ export default function VocabTab() {
   const [query, setQuery] = useState('');
   const today = todayStr();
 
-  // Selected study deck — persisted to prefs so the practice/read tabs scope to it too.
+  // Selected study deck + the user's explicit deck list — both persisted to prefs so the
+  // practice/read tabs scope to them and empty decks survive a reload.
   const [studyDeck, setStudyDeck] = useState('');
-  useEffect(() => { storage.getPrefs().then(p => setStudyDeck(p.studyDeck ?? '')); }, []);
+  const [customDecks, setCustomDecks] = useState<string[]>([]);
+  const [addingDeck, setAddingDeck] = useState(false);
+  const [newDeckName, setNewDeckName] = useState('');
+  useEffect(() => { storage.getPrefs().then(p => { setStudyDeck(p.studyDeck ?? ''); setCustomDecks(p.decks ?? []); }); }, []);
+
   const changeStudyDeck = useCallback((name: string) => {
     setStudyDeck(name);
     storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDeck: name || undefined }));
   }, []);
-  const allDeckNames = useMemo(() => deckNames(deck), [deck]);
+
+  // All deck names = explicitly-created decks ∪ decks derived from words.
+  const allDeckNames = useMemo(
+    () => [...new Set([...customDecks, ...deckNames(deck)])].sort((a, b) => a.localeCompare(b)),
+    [customDecks, deck],
+  );
+
+  // Write deck list + selected deck together in one read-modify-write so the two
+  // don't race and clobber each other in prefs.
+  const saveDeckState = useCallback((names: string[], selected: string) => {
+    setCustomDecks(names);
+    setStudyDeck(selected);
+    storage.getPrefs().then(p => storage.savePrefs({
+      ...p,
+      decks: names.length ? names : undefined,
+      studyDeck: selected || undefined,
+    }));
+  }, []);
+
+  const createDeck = useCallback((raw: string) => {
+    const name = raw.trim();
+    setAddingDeck(false);
+    setNewDeckName('');
+    if (!name) return;
+    const names = allDeckNames.includes(name) ? customDecks : [...customDecks, name];
+    saveDeckState(names, name);
+  }, [allDeckNames, customDecks, saveDeckState]);
+
+  const deleteDeck = useCallback(async (name: string) => {
+    if (!name) return;
+    if (!window.confirm(`Delete the deck “${name}”? Its words stay in your collection but lose this deck tag.`)) return;
+    await clearWordsDeck(name);
+    saveDeckState(customDecks.filter(d => d !== name), '');
+  }, [clearWordsDeck, customDecks, saveDeckState]);
 
   // ── Unified undo state ──────────────────────────────────────────────────────
   const [pendingUndo, setPendingUndo] = useState<PendingUndo | null>(null);
@@ -567,6 +605,32 @@ export default function VocabTab() {
                 <option value="">All decks</option>
                 {allDeckNames.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            )}
+            {addingDeck ? (
+              <input
+                autoFocus
+                value={newDeckName}
+                onChange={e => setNewDeckName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') createDeck(newDeckName); if (e.key === 'Escape') { setAddingDeck(false); setNewDeckName(''); } }}
+                onBlur={() => createDeck(newDeckName)}
+                placeholder="deck name"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--paper-2)', border: '1px solid var(--accent)', borderRadius: 7, padding: '5px 9px', color: 'var(--ink)', outline: 'none', width: 130 }}
+              />
+            ) : (
+              <button onClick={() => { setAddingDeck(true); setNewDeckName(''); }} style={btnGhost} title="Create a new deck">
+                + New deck
+              </button>
+            )}
+            {studyDeck && !addingDeck && (
+              <button
+                onClick={() => deleteDeck(studyDeck)}
+                style={{ ...btnGhost }}
+                title={`Delete deck ${studyDeck}`}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-faint)'; }}
+              >
+                Delete deck
+              </button>
             )}
           </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
@@ -796,7 +860,12 @@ export default function VocabTab() {
             Your deck is empty. Add words from the Read tab or above.
           </p>
         )}
-        {displayDeck.length > 0 && visibleDeck.length === 0 && (
+        {displayDeck.length > 0 && deckScoped.length === 0 && studyDeck && (
+          <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
+            No words in <strong>{studyDeck}</strong> yet — add a word above (it&apos;ll default to this deck), or assign one via Manage.
+          </p>
+        )}
+        {deckScoped.length > 0 && visibleDeck.length === 0 && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
             {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter} words.`}
           </p>

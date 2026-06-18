@@ -84,6 +84,7 @@ export interface UserPrefs {
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
   studyDeck?: string;    // currently-selected deck to study; absent/'' = all decks
+  decks?: string[];      // explicitly-created deck names (so empty decks persist)
 }
 
 export interface ClaimedWords {
