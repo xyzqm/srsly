@@ -38,6 +38,9 @@ interface Props {
   deckLoaded?: boolean;
   onDone: () => void;
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
+  /** Cram mode: drill the given words regardless of due date or daily limits, and
+   *  WITHOUT changing their schedule (Again re-queues within the session; safe before a test). */
+  cram?: boolean;
 }
 
 function sdm(m: string) {
@@ -54,7 +57,7 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }: Props) {
+export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, cram = false }: Props) {
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
   useEffect(() => { setSettings(getSrsSettings()); }, []);
 
@@ -72,6 +75,14 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     if (queue !== null) return;
     if (!deckLoaded) return;
     if (deck.length === 0) { setQueue([]); return; }
+    // Cram: drill the given subset as-is — no due/limit filtering, no scheduling.
+    if (cram) {
+      const q = deck.slice();
+      setQueue(q);
+      setTotalInitial(q.length);
+      setHiddenByLimit(0);
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const due = deck
       .filter(w => isDueToday(w, today))
@@ -98,7 +109,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     setQueue(q);
     setTotalInitial(q.length);
     setHiddenByLimit(hidden);
-  }, [deck, deckLoaded, queue]);
+  }, [deck, deckLoaded, queue, cram]);
 
   // Countdown timer — fires when the next learning card becomes ready
   useEffect(() => {
@@ -258,6 +269,18 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
+    // Cram: no scheduling, no counters. "Again" re-drills at the end of the session;
+    // anything else removes the card. The card's saved state is never touched.
+    if (cram) {
+      setResults(prev => [...prev, { label, color }]);
+      setQueue(prev => {
+        if (!prev) return prev;
+        const without = prev.filter(c => c !== card);
+        return fsrsGrade === 1 ? [...without, card] : without;
+      });
+      setRevealed(false);
+      return;
+    }
     onGrade?.(card.id ?? card.h, fsrsGrade);
     // Count toward the daily limits: a first-ever grade introduces a new card; a
     // graduated card being reviewed counts as a review. Learning repeats don't count.
@@ -306,11 +329,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
       <div className="flex justify-between items-end mb-6 gap-4">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Vocabulary review · FSRS
+            {cram ? 'Cram · not scheduled' : 'Vocabulary review · FSRS'}
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
             {results.length + 1} of {results.length + readyCards.length + futureCards.length}
-            {dueCount > 0 && (
+            {!cram && dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}
           </div>
@@ -392,6 +415,8 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);
+              // In cram only the pass/fail distinction matters; show a hint instead of an interval.
+              const sub = cram ? (g.grade === 1 ? 'again' : 'got it') : fmtInterval(days);
               return (
                 <button
                   key={g.label}
@@ -400,7 +425,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
                   style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
                 >
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{fmtInterval(days)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>
                 </button>
               );
             })}

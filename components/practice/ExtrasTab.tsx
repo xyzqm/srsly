@@ -4,7 +4,7 @@ import type { PracticeMode, ContentSection } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
-import { inStudyDeck } from '@/lib/deck';
+import { inStudyDeck, dateInDays } from '@/lib/deck';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -13,7 +13,10 @@ const MODES: { id: PracticeMode; label: string }[] = [
   { id: 'flash', label: 'Flashcards' },
   { id: 'fill',  label: 'Fill-in-the-blank' },
   { id: 'convo', label: 'Conversation' },
+  { id: 'cram',  label: 'Cram' },
 ];
+
+type CramScope = 'all' | 'focus' | 'leech' | 'forgotten' | 'soon';
 
 interface Props { onScore: (score: number) => void; }
 
@@ -32,6 +35,18 @@ export default function ExtrasTab({ onScore }: Props) {
   // Review (flashcards) is scoped to the selected deck. Fill/conversation use the
   // same scoped deck for their due-word checks.
   const scopedDeck = useMemo(() => deck.filter(w => inStudyDeck(w, studyDeck)), [deck, studyDeck]);
+
+  // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
+  const [cramScope, setCramScope] = useState<CramScope>('all');
+  const cramDeck = useMemo(() => {
+    switch (cramScope) {
+      case 'focus':     return scopedDeck.filter(w => w.focus);
+      case 'leech':     return scopedDeck.filter(w => w.leech);
+      case 'forgotten': return scopedDeck.filter(w => (w.lapses ?? 0) > 0);
+      case 'soon':      { const lim = dateInDays(7); return scopedDeck.filter(w => w.dueAt && w.dueAt <= lim); }
+      default:          return scopedDeck;
+    }
+  }, [scopedDeck, cramScope]);
 
   // Generate only the block the active mode needs: Fill → fill, Convo → convo,
   // Flashcards → nothing. The hook generates lazily and caches per day.
@@ -104,6 +119,46 @@ export default function ExtrasTab({ onScore }: Props) {
             turns={dailyContent?.conversation}
           />
         )
+      )}
+      {mode === 'cram' && (
+        <div>
+          <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 14 }}>
+            Drill a set of words now, ignoring due dates — and without changing their
+            schedule. Good for cramming before a test. &ldquo;Again&rdquo; re-shows the card
+            later in this session.
+          </p>
+          <div className="flex flex-wrap gap-1.5 mb-6">
+            {([
+              ['all',       `All ${scopedDeck.length}`],
+              ['focus',     `★ Focus ${scopedDeck.filter(w => w.focus).length}`],
+              ['leech',     `🐛 Leeches ${scopedDeck.filter(w => w.leech).length}`],
+              ['forgotten', `Forgotten ${scopedDeck.filter(w => (w.lapses ?? 0) > 0).length}`],
+              ['soon',      `Due soon ${scopedDeck.filter(w => w.dueAt && w.dueAt <= dateInDays(7)).length}`],
+            ] as [CramScope, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setCramScope(key)}
+                className="cursor-pointer transition-all duration-150"
+                style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
+                  background: cramScope === key ? 'var(--ink)' : 'none',
+                  color: cramScope === key ? 'var(--paper)' : 'var(--ink-faint)',
+                  border: `1px solid ${cramScope === key ? 'var(--ink)' : 'var(--line)'}`,
+                  borderRadius: 7, padding: '5px 11px',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {cramDeck.length === 0 ? (
+            <div className="text-center py-12" style={{ color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)', fontSize: 13 }}>
+              No words in this set.
+            </div>
+          ) : (
+            <Flashcards key={`cram-${cramScope}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
+          )}
+        </div>
       )}
     </div>
   );
