@@ -867,7 +867,7 @@ export default function VocabTab() {
         )}
         {deckScoped.length > 0 && visibleDeck.length === 0 && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
-            {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter} words.`}
+            {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter === 'leech' ? 'stuck' : filter} words.`}
           </p>
         )}
       </div>}
