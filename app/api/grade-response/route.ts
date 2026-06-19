@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { isAnonymousGuest } from '@/lib/supabase/server';
 
 /** Keyword-match fallback — used when no API key or Claude fails. */
 function keywordFallback(response: string, key: string[]): {
@@ -46,8 +47,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'question and response are required' }, { status: 400 });
   }
 
-  // No API key → fall back immediately
-  if (!apiKey || apiKey === 'your-api-key-here') {
+  // No API key, or an anonymous guest → free keyword grading (reserve AI grading for
+  // signed-in accounts; no AI cost for guests, and no impact on the passage budget).
+  if (!apiKey || apiKey === 'your-api-key-here' || await isAnonymousGuest()) {
     return NextResponse.json(keywordFallback(response, key));
   }
 

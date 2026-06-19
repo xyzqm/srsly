@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { consumeAiCredit } from '@/lib/supabase/server';
+
+const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
 /** Batch size: words per reading passage */
 const BATCH_SIZE = 5;
@@ -145,6 +148,13 @@ export async function POST(req: NextRequest) {
     if (sections.length === 0) sections = ['passage'];
   } catch {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
+  }
+
+  // Meter generation: guests get a small budget, signed-in users are unlimited. Checked
+  // (and decremented) before we spend any Anthropic tokens. No-op when Supabase is off.
+  const credit = await consumeAiCredit();
+  if (!credit.allowed) {
+    return NextResponse.json({ error: 'guest_limit', message: GUEST_LIMIT_MSG, aiRemaining: 0 }, { status: 402 });
   }
 
   // Authoritative pinyin/meaning for the practiced words, keyed by hanzi.
@@ -464,5 +474,6 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     data,
     vocabWords: words.map(w => w.h),
     batches: batches.map(b => b.map(w => w.h)),
+    aiRemaining: credit.remaining,
   });
 }

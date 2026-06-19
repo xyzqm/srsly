@@ -7,6 +7,7 @@ import { lookupWord, preloadCedict } from '@/lib/data/dict';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, inStudyDeck } from '@/lib/deck';
+import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 
 // ─── Raw token shapes returned by the API ───────────────────────────────────
 
@@ -395,6 +396,8 @@ export interface UseDailyContentResult {
   generating: Set<ContentSection>;
   loadMore: () => Promise<void>;
   loadingMore: boolean;
+  /** True once the guest AI budget is spent — surface a sign-in prompt. */
+  guestLimited: boolean;
 }
 
 /** Which cached sections were AI-generated, tolerating legacy `complete`-only caches. */
@@ -448,6 +451,7 @@ export function useDailyContent(
   const [errorMsg, setErrorMsg] = useState('');
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
+  const [guestLimited, setGuestLimited] = useState(false);
 
   // Stable ref so async closures always see latest deck without being deps
   const deckRef = useRef(deck);
@@ -545,12 +549,20 @@ export function useDailyContent(
           if (cancelled) return;
 
           if (res.status === 503) { setStatus('no-key'); break; }
+          if (res.status === 402) {
+            // Guest AI budget exhausted — keep the static fallback and prompt sign-in.
+            markGuestAiExhausted();
+            setGuestLimited(true);
+            setStatus(prev => (prev === 'ready' ? prev : 'ready'));
+            break;
+          }
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail ?? err.error ?? `HTTP ${res.status}`);
           }
 
           const payload = await res.json();
+          syncGuestAiRemaining((payload as { aiRemaining?: number | null }).aiRemaining);
           const { data, vocabWords, batches, complete } = payload as {
             data: Record<string, unknown>;
             vocabWords: string[];
@@ -672,12 +684,14 @@ export function useDailyContent(
         }),
       });
 
+      if (res.status === 402) { markGuestAiExhausted(); setGuestLimited(true); return; }
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.detail ?? errBody.error ?? `HTTP ${res.status}`);
       }
 
-      const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][] };
+      const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][]; aiRemaining?: number | null };
+      syncGuestAiRemaining(payload.aiRemaining);
       const { data, vocabWords, batches } = payload;
 
       const dueSet = groupReadings(selectedWords);
@@ -707,5 +721,5 @@ export function useDailyContent(
     }
   }, [dailyContent, loadingMore, hskLevel, studyDeck]);
 
-  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore };
+  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited };
 }

@@ -21,12 +21,15 @@ import VocabResults from './VocabResults';
 interface Props {
   onScore: (score: number) => void;
   onNavigatePractice: () => void;
+  onRequireSignIn?: (reason?: string) => void;
 }
 
 // Stable reference so the hook's effect dependency doesn't change every render.
 const READ_WANT: ContentSection[] = ['passage'];
 
-export default function ReadTab({ onScore, onNavigatePractice }: Props) {
+const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for unlimited AI-generated passages and to sync your progress across devices.";
+
+export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }: Props) {
   const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
   // Load HSK level + selected study deck from prefs
@@ -41,7 +44,7 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
 
   // AI-generated daily content (null when unavailable → fall back to static)
   // Read only needs the passage block — fill/convo are generated lazily by ExtrasTab.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore } = useDailyContent(hskLevel, deck, studyDeck, READ_WANT);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited } = useDailyContent(hskLevel, deck, studyDeck, READ_WANT);
 
   // Passage navigation
   const numPassages = dailyContent?.passages.length ?? 0;
@@ -303,6 +306,23 @@ export default function ReadTab({ onScore, onNavigatePractice }: Props) {
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      {/* Guest AI budget exhausted — prompt sign-in (passage falls back to a static one) */}
+      {guestLimited && (
+        <div
+          className="flex items-center justify-between gap-3 flex-wrap rounded-[11px] px-4 py-3 mb-5"
+          style={{ background: 'var(--accent-soft, color-mix(in srgb, var(--accent) 10%, var(--card)))', border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+        >
+          <span style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>{GUEST_LIMIT_PROMPT}</span>
+          <button
+            onClick={() => onRequireSignIn?.(GUEST_LIMIT_PROMPT)}
+            className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 16px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+          >
+            Sign in
+          </button>
+        </div>
+      )}
+
       {/* Title row */}
       <div className="flex justify-between items-end mb-2 flex-wrap gap-2.5">
         <div>
