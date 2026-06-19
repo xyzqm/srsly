@@ -30,7 +30,7 @@ export const DEFAULT_SRS_SETTINGS: SrsSettings = {
   reviewsPerDay: 200,
 };
 
-/** Lapse count at which a word is auto-flagged as a leech (then auto-paused + starred). */
+/** Lapse count at which a word is auto-flagged as a leech (and auto-paused). */
 export const LEECH_THRESHOLD = 8;
 
 export function getSrsSettings(): SrsSettings {
