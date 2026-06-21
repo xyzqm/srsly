@@ -38,6 +38,9 @@ interface Props {
   deckLoaded?: boolean;
   onDone: () => void;
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
+  /** Cram mode: drill the given words regardless of due date or daily limits, and
+   *  WITHOUT changing their schedule (Again re-queues within the session; safe before a test). */
+  cram?: boolean;
 }
 
 function sdm(m: string) {
@@ -54,7 +57,7 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }: Props) {
+export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, cram = false }: Props) {
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
   useEffect(() => { setSettings(getSrsSettings()); }, []);
 
@@ -72,6 +75,14 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     if (queue !== null) return;
     if (!deckLoaded) return;
     if (deck.length === 0) { setQueue([]); return; }
+    // Cram: drill the given subset as-is — no due/limit filtering, no scheduling.
+    if (cram) {
+      const q = deck.slice();
+      setQueue(q);
+      setTotalInitial(q.length);
+      setHiddenByLimit(0);
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const due = deck
       .filter(w => isDueToday(w, today))
@@ -98,7 +109,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
     setQueue(q);
     setTotalInitial(q.length);
     setHiddenByLimit(hidden);
-  }, [deck, deckLoaded, queue]);
+  }, [deck, deckLoaded, queue, cram]);
 
   // Countdown timer — fires when the next learning card becomes ready
   useEffect(() => {
@@ -117,8 +128,13 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   // Keyboard shortcuts: Space/Enter reveals the answer, then grades Good; 1–4 pick a
   // grade directly. A single listener reads live handlers from a ref so it always
   // acts on the current card without re-binding every render.
-  const kbd = useRef<{ canAct: boolean; revealed: boolean; reveal: () => void; grade: (g: FsrsGrade) => void; replay: () => void }>({
-    canAct: false, revealed: false, reveal: () => {}, grade: () => {}, replay: () => {},
+  const kbd = useRef<{
+    canAct: boolean; revealed: boolean; cram: boolean;
+    reveal: () => void; grade: (g: FsrsGrade) => void; replay: () => void;
+    cramAgain: () => void; cramGot: () => void;
+  }>({
+    canAct: false, revealed: false, cram: false,
+    reveal: () => {}, grade: () => {}, replay: () => {}, cramAgain: () => {}, cramGot: () => {},
   });
   const lastPrefetch = useRef<string | null>(null);
   useEffect(() => {
@@ -127,15 +143,21 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
       if (!k.canAct) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (e.key === 'r' || e.key === 'R') { e.preventDefault(); k.replay(); return; }
+      if (k.cram) {
+        // Quizlet-style: space/click reveals, then ←/1 = again, →/2 = got it.
+        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!k.revealed) k.reveal(); return; }
+        if (!k.revealed) return;
+        if (e.key === 'ArrowLeft' || e.key === '1') { e.preventDefault(); k.cramAgain(); }
+        else if (e.key === 'ArrowRight' || e.key === '2') { e.preventDefault(); k.cramGot(); }
+        return;
+      }
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         if (!k.revealed) k.reveal(); else k.grade(3);
       } else if (k.revealed && e.key >= '1' && e.key <= '4') {
         e.preventDefault();
         k.grade(Number(e.key) as FsrsGrade);
-      } else if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault();
-        k.replay();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -258,6 +280,18 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
+    // Cram: no scheduling, no counters. "Again" re-drills at the end of the session;
+    // anything else removes the card. The card's saved state is never touched.
+    if (cram) {
+      setResults(prev => [...prev, { label, color }]);
+      setQueue(prev => {
+        if (!prev) return prev;
+        const without = prev.filter(c => c !== card);
+        return fsrsGrade === 1 ? [...without, card] : without;
+      });
+      setRevealed(false);
+      return;
+    }
     onGrade?.(card.id ?? card.h, fsrsGrade);
     // Count toward the daily limits: a first-ever grade introduces a new card; a
     // graduated card being reviewed counts as a review. Learning repeats don't count.
@@ -295,9 +329,12 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
   kbd.current = {
     canAct: true,
     revealed,
+    cram,
     reveal: () => setRevealed(true),
     grade: (g) => { const m = GRADES.find(x => x.grade === g)!; handleGrade(m.grade, m.label, m.color); },
     replay: () => { void speak(speechText); },
+    cramAgain: () => handleGrade(1, 'Again', 'var(--accent)'),
+    cramGot: () => handleGrade(3, 'Got it', 'var(--jade)'),
   };
 
   return (
@@ -306,11 +343,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
       <div className="flex justify-between items-end mb-6 gap-4">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Vocabulary review · FSRS
+            {cram ? 'Cram · not scheduled' : 'Vocabulary review · FSRS'}
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
             {results.length + 1} of {results.length + readyCards.length + futureCards.length}
-            {dueCount > 0 && (
+            {!cram && dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}
           </div>
@@ -320,8 +357,8 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
         </div>
       </div>
 
-      {/* Card state badge */}
-      <div className="flex justify-end mb-2 gap-2">
+      {/* Card state badge — hidden in cram (no scheduling, Quizlet-style clean face) */}
+      {!cram && <div className="flex justify-end mb-2 gap-2">
         {cardIsLearning ? (
           <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'color-mix(in srgb, var(--gold) 15%, var(--paper))', color: 'var(--gold)', border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)', borderRadius: 4, padding: '2px 6px' }}>
             {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
@@ -337,19 +374,20 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
           {(card.reviews ?? 0) === 0 && !card.stability && ' · new'}
           {(card.reviews ?? 0) >= 5 && (card.lapses ?? 0) === 0 && ' · mature'}
         </span>
-      </div>
+      </div>}
 
-      {/* Card face */}
+      {/* Card face — in cram, the whole card flips on click (Quizlet-style) */}
       <div
+        onClick={cram && !revealed ? () => setRevealed(true) : undefined}
         className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[330px] px-10 py-14"
-        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)' }}
+        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)', cursor: cram && !revealed ? 'pointer' : 'default' }}
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
           What does this mean?
         </div>
         <button
-          onClick={() => { void speak(speechText); }}
+          onClick={(e) => { e.stopPropagation(); void speak(speechText); }}
           title="Play audio (R)"
           className="absolute cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
           style={{ top: 12, right: 14, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
@@ -363,7 +401,9 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
           {card.h}
         </div>
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
-          {revealed ? 'How well did you remember?' : 'Think of the meaning, then reveal'}
+          {cram
+            ? (revealed ? 'Did you know it?' : 'Press space or click to reveal')
+            : (revealed ? 'How well did you remember?' : 'Think of the meaning, then reveal')}
         </div>
 
         <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 300 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
@@ -380,7 +420,31 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
 
       {/* Grade buttons */}
       <div className="text-center mt-5">
-        {!revealed ? (
+        {cram ? (
+          // Cram: Quizlet-style two-way outcome — no scheduling, no intervals.
+          !revealed ? (
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-faint)', padding: '11px 0' }}>
+              Press <strong style={{ color: 'var(--ink-soft)' }}>space</strong> or click the card to reveal
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginTop: 22 }}>
+              {([
+                { label: 'Again',  color: 'var(--accent)', sub: '← or 1', onClick: () => handleGrade(1, 'Again', 'var(--accent)') },
+                { label: 'Got it', color: 'var(--jade)',   sub: '→ or 2', onClick: () => handleGrade(3, 'Got it', 'var(--jade)') },
+              ]).map(b => (
+                <button
+                  key={b.label}
+                  onClick={b.onClick}
+                  className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
+                  style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${b.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
+                >
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: b.color }}>{b.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3 }}>{b.sub}</div>
+                </button>
+              ))}
+            </div>
+          )
+        ) : !revealed ? (
           <button
             onClick={() => setRevealed(true)}
             className="cursor-pointer transition-all duration-150"
@@ -392,6 +456,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);
+              const sub = fmtInterval(days);
               return (
                 <button
                   key={g.label}
@@ -400,7 +465,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade }:
                   style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
                 >
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{fmtInterval(days)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>
                 </button>
               );
             })}

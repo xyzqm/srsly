@@ -1,6 +1,9 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { storage } from '@/lib/storage';
+import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
+import { useAuth } from '@/lib/auth/AuthProvider';
+import SignInModal from '@/components/auth/SignInModal';
 
 const HSK_LEVELS = [
   { level: 1, label: 'HSK 1', desc: 'Absolute beginner · ~150 words · greetings, numbers, basic nouns' },
@@ -27,6 +30,9 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default function SettingsTab() {
+  const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [hasDismissed, setHasDismissed] = useState(false); // New state to safely track local dismissal
   const [hskLevel,   setHskLevel]   = useState(3);
   const [retention,  setRetention]  = useState(0.90);
   const [maxDays,    setMaxDays]    = useState(365);
@@ -81,6 +87,36 @@ export default function SettingsTab() {
     }
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleExport(format: 'json' | 'csv') {
+    const date = new Date().toISOString().slice(0, 10);
+    const deck = await storage.getVocabDeck();
+    if (format === 'csv') {
+      downloadFile(`srsly-deck-${date}.csv`, toCsv(deck), 'text/csv;charset=utf-8');
+      return;
+    }
+    const prefs = await storage.getPrefs();
+    const backup = { version: 1, exportedAt: new Date().toISOString(), deck, prefs };
+    downloadFile(`srsly-backup-${date}.json`, JSON.stringify(backup, null, 2), 'application/json');
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const backup = parseBackup(await file.text());
+      const cur = await storage.getVocabDeck();
+      if (!window.confirm(`Restore ${backup.deck.length} word${backup.deck.length === 1 ? '' : 's'} from this backup? This replaces your current deck of ${cur.length}.`)) return;
+      await storage.saveVocabDeck(backup.deck);
+      if (backup.prefs) await storage.savePrefs(backup.prefs);
+      window.location.reload();
+    } catch (err) {
+      window.alert(`Couldn't restore: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   async function handleLimitBlur(kind: 'new' | 'review') {
     const raw = kind === 'new' ? newPerDayRaw : revPerDayRaw;
     const last = kind === 'new' ? newPerDay : revPerDay;
@@ -108,6 +144,44 @@ export default function SettingsTab() {
       <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '48ch', lineHeight: 1.55, marginBottom: 32 }}>
         Adjust your HSK level and spaced-repetition schedule.
       </p>
+
+      {/* ── Account ───────────────────────────────────────────────────────── */}
+      {authEnabled && (
+        <>
+          <SectionLabel>Account</SectionLabel>
+          {signedIn ? (
+            <div className="flex items-center gap-3 flex-wrap mb-10">
+              <span style={{ fontSize: 14, color: 'var(--ink)' }}>
+                Signed in as <strong>{user?.email ?? 'your account'}</strong> — synced across devices.
+              </span>
+              <button
+                onClick={signOut}
+                className="cursor-pointer transition-all duration-150 rounded-[9px]"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.04em', background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)', padding: '9px 14px' }}
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <div className="mb-10">
+              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 12 }}>
+                You&apos;re studying as a guest — your deck lives on this device. Sign in to sync it
+                across devices and unlock unlimited AI-generated content.
+              </p>
+              <button
+                onClick={() => {
+                  setHasDismissed(false); // Reset dismissal condition if intentionally clicked
+                  setSignInOpen(true);
+                }}
+                className="cursor-pointer transition-all duration-150 rounded-[9px]"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', padding: '11px 18px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+              >
+                Sign in
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {/* ── HSK Level ─────────────────────────────────────────────────────── */}
       <SectionLabel>HSK level</SectionLabel>
@@ -255,10 +329,47 @@ export default function SettingsTab() {
         </div>
       </div>
 
+      {/* ── Backup & data ─────────────────────────────────────────────────── */}
+      <SectionLabel>Backup &amp; data</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
+        Your deck lives on this device. Export a backup to keep it safe or move it
+        elsewhere — JSON preserves all scheduling; CSV is a plain word list. Restoring a
+        JSON backup replaces your current deck.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-10">
+        {([['Export backup (JSON)', () => handleExport('json')],
+           ['Export words (CSV)',  () => handleExport('csv')],
+           ['Restore from backup', () => fileInputRef.current?.click()]] as const).map(([label, onClick]) => (
+          <button
+            key={label}
+            onClick={onClick}
+            className="cursor-pointer transition-all duration-150 rounded-[9px]"
+            style={{
+              fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.04em',
+              background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)',
+              padding: '9px 14px',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-soft)'; }}
+          >
+            {label}
+          </button>
+        ))}
+        <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} style={{ display: 'none' }} />
+      </div>
+
       {/* Saved indicator */}
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--jade)', letterSpacing: '.06em', visibility: saved ? 'visible' : 'hidden', opacity: saved ? 1 : 0, transition: 'opacity .2s' }}>
         Saved.
       </div>
+
+      <SignInModal 
+        open={signInOpen && !hasDismissed} 
+        onClose={() => {
+          setSignInOpen(false);
+          setHasDismissed(true);
+        }} 
+      />
     </div>
   );
 }

@@ -6,26 +6,21 @@ import { getPassageData } from '@/lib/data/allPassages';
 import { lookupWord, preloadCedict } from '@/lib/data/dict';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
-import { isDueToday, inStudyDeck } from '@/lib/deck';
-
-// ─── Raw token shapes returned by the API ───────────────────────────────────
+import { isDueToday, inSelectedDecks, decksSignature } from '@/lib/deck';
+import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 
 type RawTok = [string] | [string, string] | [string, string, string];
 
-/**
- * Characters that should always be non-interactive, even when the AI
- * accidentally attaches a "pinyin" field to them.
- */
 const PUNCT_CHARS = new Set([
   '。','！','？','，','、','—','…','·','「','」','『','』',
   '\u201c','\u201d','\u2018','\u2019','（','）','【','】','《','》','〈','〉',
-  '：','；',',','.',';',':','!','?','(',')','"',"'",'[',']','{','}',
+  '：','；',',','.',';',':','!','?','項目','项目','(',')','"',"'",'[',']','{','}',
   '–','○','●','□','■','◇','◆','△','▲','▽','▼','★','☆','•','‥',
   '～','~','／','\\','|','`','^',
 ]);
+
 function isPunct(text: string): boolean {
   if (PUNCT_CHARS.has(text)) return true;
-  // Single char that is not CJK or Latin → treat as punct
   if (text.length === 1 && !/[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
   return false;
 }
@@ -33,19 +28,12 @@ function isPunct(text: string): boolean {
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): PassageToken {
   const [text, rawPinyin, meaning] = arr as [string, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
-  // If the AI omitted pinyin for a CJK word, look it up in the dictionary so it
-  // still gets an underline and is clickable. Only fall back to plain punct if
-  // the word is genuinely unknown (not in dict and not in the user's deck).
   const pinyin = rawPinyin || lookupWord(text).pinyin || '';
   if (!pinyin) {
-    // No reading found. A single char is treated as punct/unknown; a multi-character
-    // CJK run is an un-segmented phrase (e.g. the model didn't insert | bars) — leave it
-    // untyped so degroupOversized explodes it into characters and re-merges real words.
     const cjkCount = (text.match(/[一-鿿㐀-䶿]/g) ?? []).length;
     return cjkCount >= 2 ? { text } : { text, type: 'punct' };
   }
   const dictEntry = lookupWord(text, pinyin, '');
-  // For a character with multiple deck readings, pick the one matching this token's pinyin.
   const resolvedMeaning = meaning || pickReading(deckReadings.get(text), pinyin)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
     return { text, pinyin, meaning: resolvedMeaning, type: 'vocab' };
@@ -53,13 +41,13 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
   return { text, pinyin };
 }
 
-/**
- * Merge adjacent single-character tokens whose combined text is a known word
- * in the dictionary. Tries 3-char combinations first, then 2-char.
- * This repairs AI over-segmentation (e.g. 互+联+网→互联网, 已+经→已经).
- * Only CJK single-char tokens are candidates; punctuation and already-multi-char
- * tokens are left alone.
- */
+// Structural / aspect / modal particles that are almost always standalone grammar words.
+// We refuse to absorb them into a compound during the greedy single-char merge below, so
+// e.g. 中 + 的 (zhōng + particle) doesn't collapse into the rare word 中的 (zhòngdì, "to hit
+// the target"). Real words ending in these (目的, 觉得, …) arrive whole from the model and
+// never reach this single-char merge path.
+const NON_MERGING_PARTICLES = new Set(['的', '了', '着', '地', '吗', '呢', '吧', '啊', '呀', '嘛']);
+
 function mergeCompoundTokens(
   tokens: PassageToken[],
   dueWords: Set<string>,
@@ -75,8 +63,8 @@ function mergeCompoundTokens(
     const next  = tokens[i + 1];
     const next2 = tokens[i + 2];
 
-    // Try 3-char merge first (互联网, 程序员, etc.)
-    if (isSingleCJK(curr) && isSingleCJK(next) && isSingleCJK(next2)) {
+    if (isSingleCJK(curr) && isSingleCJK(next) && isSingleCJK(next2)
+        && !NON_MERGING_PARTICLES.has(next.text) && !NON_MERGING_PARTICLES.has(next2.text)) {
       const tri = curr.text + next.text + next2.text;
       const e3  = lookupWord(tri);
       if (e3.pinyin) {
@@ -87,8 +75,7 @@ function mergeCompoundTokens(
       }
     }
 
-    // Try 2-char merge
-    if (isSingleCJK(curr) && isSingleCJK(next)) {
+    if (isSingleCJK(curr) && isSingleCJK(next) && !NON_MERGING_PARTICLES.has(next.text)) {
       const bi = curr.text + next.text;
       const e2 = lookupWord(bi);
       if (e2.pinyin) {
@@ -107,19 +94,6 @@ function mergeCompoundTokens(
 
 const CJK_RE = /[一-鿿㐀-䶿]/;
 
-/**
- * Fix tokens that are unwanted AI phrase-groups.
- *
- * Strategy per token:
- *  - Single char or punctuation → keep as-is.
- *  - Very long (≥5 CJK chars) → always explode, regardless of dictionary.
- *  - 2–4 CJK chars → keep if the text is a known dictionary word, OR if it
- *    is already marked as a due vocab word (type==='vocab', in dueWords/deckReadings).
- *    Otherwise explode (e.g. "的力量", "成为了").
- *
- * After exploding, re-run mergeCompoundTokens so real 2-char compounds
- * (e.g. 力+量→力量) are re-assembled.
- */
 function degroupOversized(
   tokens: PassageToken[],
   dueWords: Set<string>,
@@ -146,19 +120,16 @@ function degroupOversized(
   for (const t of tokens) {
     const cjkCount = (t.text.match(new RegExp(CJK_RE.source, 'g')) ?? []).length;
 
-    // Single chars and punctuation — always keep
     if (t.type === 'punct' || cjkCount <= 1) {
       exploded.push(t);
       continue;
     }
 
-    // Very long phrases (≥5 CJK chars) — always explode
     if (cjkCount >= 5) {
       explodeToken(t);
       continue;
     }
 
-    // 2–4 CJK chars: keep if it is a known dict word OR an explicit vocab/due word
     const entry = lookupWord(t.text);
     if (entry.pinyin || dueWords.has(t.text) || deckReadings.has(t.text) || t.type === 'vocab') {
       exploded.push(t);
@@ -187,8 +158,6 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings
     after: RawTok[];
     distractors: string[][];
   }[]).map(f => {
-    // Distractors arrive as bare hanzi (the model no longer emits pinyin); resolve
-    // their reading from the dictionary so the click-popup shows pinyin.
     const options: FillItem['options'] = [
       [f.answer[0], f.answer[1] || lookupWord(f.answer[0]).pinyin || '', true],
       ...f.distractors.map(d => {
@@ -196,7 +165,6 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings
         return [h, d[1] || lookupWord(h).pinyin || '', false] as [string, string, boolean];
       }),
     ];
-    // Fisher-Yates shuffle
     for (let i = options.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [options[i], options[j]] = [options[j], options[i]];
@@ -250,7 +218,6 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckRead
       tokens: buildToks(opt.tokens),
       correct: opt.correct,
     }));
-    // Fisher-Yates shuffle so the correct answer isn't always first
     for (let i = options.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [options[i], options[j]] = [options[j], options[i]];
@@ -264,12 +231,6 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckRead
   });
 }
 
-/**
- * A passage's review words = the surface forms that actually appear AND are
- * either a sent due word or an anchor compound (e.g. 银行 standing in for 行 háng).
- * Computed from real tokens so a compound the model chose is counted, and a sent
- * word the model dropped is not.
- */
 function collectVocabWords(
   passage: DailyPassage,
   dueSet: Set<string>,
@@ -287,7 +248,6 @@ function collectVocabWords(
   return [...present];
 }
 
-/** Build a single DailyPassage from raw API output. */
 function buildPassage(
   rawPassage: { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
   vocabWords: string[],
@@ -304,13 +264,6 @@ function buildPassage(
   };
 }
 
-/**
- * Retroactively fix cached content:
- * 1. Punctuation tokens that still have a pinyin field get cleaned up.
- * 2. Oversized phrase tokens (≥5 CJK chars) get split into individual
- *    characters then re-merged via mergeCompoundTokens — same logic as
- *    degroupOversized at parse time, but applied post-hoc to cached data.
- */
 function sanitizeCachedContent(content: DailyContent): void {
   const emptyDue = new Set<string>();
   const emptyMeanings = new Map<string, ReadingHint[]>();
@@ -336,7 +289,6 @@ function sanitizeCachedContent(content: DailyContent): void {
     p.questions?.forEach(q => {
       q.q = fixAndDegroup(q.q);
       q.options.forEach(opt => { opt.tokens = fixAndDegroup(opt.tokens); });
-      // Shuffle options so the correct answer isn't pinned to position 0
       for (let i = q.options.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
@@ -355,14 +307,8 @@ function sanitizeCachedContent(content: DailyContent): void {
   });
 }
 
-/**
- * Migrate old flat-structure DailyContent (pre-passages refactor) to new format.
- * Returns null if the data is corrupt and should be ignored.
- */
 function migrateContent(raw: Record<string, unknown>): DailyContent | null {
-  // Already new format
   if (Array.isArray(raw.passages)) return raw as unknown as DailyContent;
-  // Old format: titleTokens/sentences at top level
   if (!raw.sentences || !raw.titleTokens) return null;
   return {
     date: raw.date as string,
@@ -378,32 +324,40 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
   };
 }
 
-// ─── Hook ────────────────────────────────────────────────────────────────────
-
-/** Max due words sent per passage to the API. */
 const MAX_WORDS = 5;
-
 const ALL_SECTIONS: ContentSection[] = ['passage', 'fill', 'convo'];
 
+/**
+ * True if any daily content is already cached for `today` (across every level/deck scope).
+ * Lets us tell the day's first load (auto-generate the passage) apart from a later HSK-level
+ * or deck switch (don't auto-generate — just show that scope's cache or the static fallback,
+ * so changing a setting never silently burns a generation or wipes the view).
+ */
+function hasAnyDailyContentToday(today: string): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('srsly-daily-') && k.endsWith(today)) return true;
+  }
+  return false;
+}
 export type DailyContentStatus = 'idle' | 'loading' | 'ready' | 'error' | 'no-key';
 
 export interface UseDailyContentResult {
   dailyContent: DailyContent | null;
   status: DailyContentStatus;
   errorMsg: string;
-  /** Sections currently being generated (drives per-block spinners). */
   generating: Set<ContentSection>;
   loadMore: () => Promise<void>;
   loadingMore: boolean;
+  guestLimited: boolean;
 }
 
-/** Which cached sections were AI-generated, tolerating legacy `complete`-only caches. */
 function sectionFlags(c: DailyContent): { passage?: boolean; fill?: boolean; convo?: boolean } {
   if (c.sections) return c.sections;
   return c.complete ? { passage: true, fill: true, convo: true } : {};
 }
 
-/** Merge one freshly-generated block into a DailyContent, leaving the others intact. */
 function mergeSection(
   c: DailyContent,
   section: ContentSection,
@@ -426,21 +380,10 @@ function mergeSection(
   return { ...c, conversation: convo.length ? convo : c.conversation, sections };
 }
 
-/**
- * Loads (or generates) today's AI-driven practice content.
- *
- * Generation is lazy and per-section: a consumer declares the blocks it needs via
- * `want`, and only those are generated (the first time their tab/mode is opened),
- * then merged into the shared per-day cache. The Read tab asks for `['passage']`;
- * the Practice tab asks for `['fill']` or `['convo']` as the user switches modes.
- *
- * A fresh AI passage is auto-generated every day on first load (even with an empty
- * deck). Fill/convo are only generated when there are due words to anchor on.
- */
 export function useDailyContent(
   hskLevel: number,
   deck: DeckWord[],
-  studyDeck = '',
+  studyDecks: string[] | null = null,
   want: ContentSection[] = ALL_SECTIONS,
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
@@ -448,12 +391,17 @@ export function useDailyContent(
   const [errorMsg, setErrorMsg] = useState('');
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
+  const [guestLimited, setGuestLimited] = useState(false);
 
-  // Stable ref so async closures always see latest deck without being deps
   const deckRef = useRef(deck);
   deckRef.current = deck;
+  // Stable string key for the selected decks — used for the cache scope and as an effect
+  // dep (the array itself changes identity every render). A ref lets callbacks read the
+  // latest selection without re-subscribing.
+  const deckKey = decksSignature(studyDecks);
+  const studyDecksRef = useRef(studyDecks);
+  studyDecksRef.current = studyDecks;
 
-  // Stable dependency for the effect (arrays change identity each render).
   const wantKey = [...want].sort().join(',');
 
   useEffect(() => {
@@ -464,18 +412,16 @@ export function useDailyContent(
 
     async function load() {
       setStatus(prev => (prev === 'ready' ? prev : 'loading'));
-      // Bare-hanzi tokens depend on full dictionary coverage at parse time.
       await preloadCedict().catch(() => {});
       if (cancelled) return;
 
       const passageData = getPassageData(hskLevel);
       const today = new Date().toISOString().slice(0, 10);
 
-      // Helper: wrap static data as a DailyContent baseline (no AI sections yet)
       const staticContent = (): DailyContent => ({
         date: today,
         hskLevel,
-        deck: studyDeck || undefined,
+        deck: deckKey || undefined,
         passages: [{
           titleTokens: passageData.titleTokens,
           sentences: passageData.sentences,
@@ -487,10 +433,9 @@ export function useDailyContent(
         sections: {},
       });
 
-      // Words due today (within the selected study deck) drive generation.
       const currentDeck = deckRef.current;
       const dueWords = currentDeck
-        .filter(w => isDueToday(w, today) && inStudyDeck(w, studyDeck))
+        .filter(w => isDueToday(w, today) && inSelectedDecks(w, studyDecksRef.current))
         .sort((a, b) => {
           if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
           return (a.reviews ?? 0) - (b.reviews ?? 0);
@@ -498,38 +443,41 @@ export function useDailyContent(
       const selectedWords = dueWords.slice(0, MAX_WORDS);
       const hasDueWords = selectedWords.length > 0;
 
-      // 1. Load today's cache (for this deck) and show it immediately. Sections that
-      // weren't AI-generated yet keep their static fallback so nothing is ever empty.
-      const MAX_INITIAL_PASSAGES = 1;
-      const cached = await storage.getDailyContent(hskLevel, studyDeck);
+      // Restore the FULL cached set of passages — every one the user generated today via
+      // "+ new passage" persists across reloads and tab switches (the cache is date-keyed,
+      // so a new day still starts fresh). Don't truncate; that's what was erasing extras.
+      const cached = await storage.getDailyContent(hskLevel, deckKey);
       if (cancelled) return;
       let base: DailyContent | null = null;
       if (cached) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated) {
           sanitizeCachedContent(migrated);
-          if (migrated.passages.length > MAX_INITIAL_PASSAGES) {
-            migrated.passages = migrated.passages.slice(0, MAX_INITIAL_PASSAGES);
-          }
           base = migrated;
         }
       }
       const content = base ?? staticContent();
       setDailyContent(content);
-      setStatus('ready');
 
-      // 2. Decide which wanted sections still need generation. The daily passage is
-      // generated even with an empty deck; fill/convo require due words to anchor on.
       const flags = sectionFlags(content);
+      // Auto-generate a passage only on the day's first load. On a later HSK-level / deck
+      // switch (when other content already exists today), show this scope's cache or the
+      // static fallback instead — the user gets a fresh AI passage via "+ new passage".
+      const firstLoadToday = !hasAnyDailyContentToday(today);
       const needed: ContentSection[] = [];
-      if (wantSet.has('passage') && !flags.passage) needed.push('passage');
+      if (wantSet.has('passage') && !flags.passage && firstLoadToday) needed.push('passage');
       if (wantSet.has('fill')    && hasDueWords && !flags.fill)  needed.push('fill');
       if (wantSet.has('convo')   && hasDueWords && !flags.convo) needed.push('convo');
+
+      // If a fresh passage is being generated (none cached yet), stay in 'loading' so the
+      // user sees the skeleton — not the static fallback wearing an "✦ AI" badge — until
+      // the real passage lands. When an AI passage is already cached, show it immediately.
+      setStatus(needed.includes('passage') ? 'loading' : 'ready');
+
       if (needed.length === 0) return;
 
       setGenerating(new Set(needed));
 
-      // 3. Generate each needed section, merging into both state and the shared cache.
       for (const section of needed) {
         if (cancelled) break;
         try {
@@ -545,12 +493,19 @@ export function useDailyContent(
           if (cancelled) return;
 
           if (res.status === 503) { setStatus('no-key'); break; }
+          if (res.status === 402) {
+            markGuestAiExhausted();
+            setGuestLimited(true);
+            setStatus('ready'); // guest over budget — show the static fallback we already have
+            break;
+          }
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail ?? err.error ?? `HTTP ${res.status}`);
           }
 
           const payload = await res.json();
+          syncGuestAiRemaining((payload as { aiRemaining?: number | null }).aiRemaining);
           const { data, vocabWords, batches, complete } = payload as {
             data: Record<string, unknown>;
             vocabWords: string[];
@@ -595,19 +550,18 @@ export function useDailyContent(
 
           if (cancelled) return;
 
-          // Merge into the latest on-disk cache so a sibling tab's section isn't lost.
-          const disk = await storage.getDailyContent(hskLevel, studyDeck);
+          const disk = await storage.getDailyContent(hskLevel, deckKey);
           if (cancelled) return;
-          const diskBase = disk
-            ? (migrateContent(disk as unknown as Record<string, unknown>) ?? content)
-            : content;
+          const diskBase = disk ? (migrateContent(disk as unknown as Record<string, unknown>) ?? content) : content;
           const merged = mergeSection(
-            { ...diskBase, date: today, hskLevel, deck: studyDeck || undefined },
+            { ...diskBase, date: today, hskLevel, deck: deckKey || undefined },
             section, built, done,
           );
           await storage.saveDailyContent(merged);
           if (cancelled) return;
           setDailyContent(prev => mergeSection(prev ?? content, section, built, done));
+          // Section landed (real or static fallback) — leave the loading skeleton.
+          setStatus(prev => (prev === 'loading' ? 'ready' : prev));
         } catch (err) {
           if (cancelled) return;
           console.error('[useDailyContent]', section, err);
@@ -625,28 +579,19 @@ export function useDailyContent(
 
     load();
     return () => { cancelled = true; };
-  // Re-run on HSK level, study-deck, or requested-section change.
-  // Vocab-deck content changes never auto-regenerate (deck is read via deckRef).
-  }, [hskLevel, studyDeck, wantKey]);
+  }, [hskLevel, deckKey, wantKey]);
 
-  /**
-   * Generate one more passage and append it to the existing list.
-   * Prefers vocab words not yet covered by existing passages.
-   * Picks a shifted daily theme so the story is different from the first.
-   */
   const loadMore = useCallback(async () => {
     if (!dailyContent || loadingMore || hskLevel === 0) return;
+
     setLoadingMore(true);
 
     try {
       const todayStr = new Date().toISOString().slice(0, 10);
       const currentDeck = deckRef.current;
 
-      // "+ new passage" should ALWAYS produce a passage, even when nothing is due today.
-      // Preference order: due words not yet covered → any due → in-scope words not yet
-      // covered → any in-scope word. An empty deck falls through to a generic passage.
       const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
-      const inScope = currentDeck.filter(w => inStudyDeck(w, studyDeck));
+      const inScope = currentDeck.filter(w => inSelectedDecks(w, studyDecksRef.current));
       const dueWords = inScope
         .filter(w => isDueToday(w, todayStr))
         .sort((a, b) => {
@@ -654,11 +599,12 @@ export function useDailyContent(
           return (a.reviews ?? 0) - (b.reviews ?? 0);
         });
       const notCovered = (ws: DeckWord[]) => ws.filter(w => !coveredWords.has(w.h));
+      // Only target words that are actually due. Never pull in words scheduled for a future
+      // day (e.g. ones just added as "due tomorrow") — prefer due words not yet covered today,
+      // then re-use due words; if nothing is due, generate a generic passage (no forced vocab).
       const pool =
         notCovered(dueWords).length ? notCovered(dueWords) :
-        dueWords.length             ? dueWords :
-        notCovered(inScope).length  ? notCovered(inScope) :
-        inScope;
+        dueWords;
       const selectedWords = pool.slice(0, MAX_WORDS);
 
       const res = await fetch('/api/daily-content', {
@@ -667,17 +613,19 @@ export function useDailyContent(
         body: JSON.stringify({
           words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,
-          themeOffset: dailyContent.passages.length, // pick a different theme
-          sections: ['passage'], // skip fill/convo for smaller, faster output
+          themeOffset: dailyContent.passages.length,
+          sections: ['passage'],
         }),
       });
 
+      if (res.status === 402) { markGuestAiExhausted(); setGuestLimited(true); return; }
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.detail ?? errBody.error ?? `HTTP ${res.status}`);
       }
 
-      const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][] };
+      const payload = await res.json() as { data: Record<string, unknown>; vocabWords: string[]; batches: string[][]; aiRemaining?: number | null };
+      syncGuestAiRemaining(payload.aiRemaining);
       const { data, vocabWords, batches } = payload;
 
       const dueSet = groupReadings(selectedWords);
@@ -705,7 +653,7 @@ export function useDailyContent(
     } finally {
       setLoadingMore(false);
     }
-  }, [dailyContent, loadingMore, hskLevel, studyDeck]);
+  }, [dailyContent, loadingMore, hskLevel]);
 
-  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore };
+  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited };
 }
