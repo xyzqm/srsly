@@ -37,18 +37,21 @@ export function inStudyDeck(w: DeckWord, studyDeck?: string): boolean {
 }
 
 /**
- * Whether a word belongs to ANY of the selected decks (multi-select). An empty or
- * undefined selection means "all decks". The default (untagged) deck is represented by
- * the empty string ''.
+ * Whether a word belongs to ANY of the selected decks (multi-select). The selection is:
+ *   null / undefined → all decks (default)
+ *   []               → no decks (explicitly deselected everything)
+ *   [...]            → only those decks (default/untagged deck is the empty string '')
  */
-export function inSelectedDecks(w: DeckWord, decks?: string[]): boolean {
-  if (!decks || decks.length === 0) return true;
+export function inSelectedDecks(w: DeckWord, decks?: string[] | null): boolean {
+  if (decks == null) return true;        // all
+  if (decks.length === 0) return false;  // none
   return decks.includes(w.deck || '');
 }
 
 /** Stable cache/identity signature for a multi-deck selection ('' default → '(default)'). */
-export function decksSignature(decks?: string[]): string {
-  if (!decks || decks.length === 0) return '';
+export function decksSignature(decks?: string[] | null): string {
+  if (decks == null) return '';          // all
+  if (decks.length === 0) return 'none';
   return [...decks].map(d => d || '(default)').sort().join('|');
 }
 

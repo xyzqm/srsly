@@ -7,16 +7,20 @@ interface Props {
   deck: DeckWord[];
   /** Explicitly-created deck names (so empty decks still appear). */
   customDecks: string[];
-  /** Selected deck keys ('' = default/untagged deck). Empty array = all decks. */
-  selected: string[];
-  onChange: (next: string[]) => void;
+  /**
+   * Current selection ('' = default/untagged deck):
+   *   null → all decks (default)   ·   [] → no decks   ·   [...] → only those decks
+   */
+  selected: string[] | null;
+  onChange: (next: string[] | null) => void;
 }
 
 /**
- * Multi-select deck picker for the learning modes. "All decks" (empty selection) studies
- * every deck; otherwise only the checked decks. Shows each deck's due count as a hint so
- * the user can see, e.g., "Deck B has 15 waiting" even while studying only Deck A.
- * Selecting a deck never changes any card's due date — it only filters this session.
+ * Multi-select deck picker for the learning modes. "All decks" studies every deck;
+ * unchecking it deselects everything; otherwise only the checked decks are studied.
+ * Shows each deck's due count as a hint (e.g. "Deck B has 15 waiting" while studying
+ * only Deck A). Choosing decks never changes any card's due date — it only filters
+ * this session.
  */
 export default function DeckSelector({ deck, customDecks, selected, onChange }: Props) {
   const [open, setOpen] = useState(false);
@@ -40,22 +44,26 @@ export default function DeckSelector({ deck, customDecks, selected, onChange }: 
   const dueCount = (key: string) => deck.filter(w => (w.deck || '') === key && isDueToday(w, today)).length;
   const totalDue = deck.filter(w => isDueToday(w, today)).length;
 
-  const isAll = selected.length === 0;
+  const isAll = selected == null;
+  const arr = selected ?? [];            // [] for both "all" and "none"; isAll distinguishes
+  const isNone = !isAll && arr.length === 0;
   const label = isAll ? 'All decks'
-    : selected.length === 1 ? (selected[0] || 'Default')
-    : `${selected.length} decks`;
+    : isNone ? 'No decks'
+    : arr.length === 1 ? (arr[0] || 'Default')
+    : `${arr.length} decks`;
 
   // Only one place to study from → no selector needed.
   if (options.length <= 1) return null;
 
   const toggle = (key: string) => {
-    // From "All decks", clicking one deck focuses just that deck (intuitive "study this").
-    if (isAll) { onChange([key]); return; }
-    const set = new Set(selected);
+    // Behave like a real checkbox. "All decks" means every box is checked, so start from
+    // the full list and flip the clicked one (clicking a checked box unchecks ONLY it).
+    const base = isAll ? options : arr;
+    const set = new Set(base);
     if (set.has(key)) set.delete(key); else set.add(key);
     const next = [...set];
-    // Selecting every deck (or none) collapses back to "all".
-    onChange(next.length === 0 || next.length === options.length ? [] : next);
+    // Checking every deck → "all" (null); any partial set (incl. empty = none) stays as-is.
+    onChange(next.length === options.length ? null : next);
   };
 
   const rowStyle: React.CSSProperties = {
@@ -108,10 +116,11 @@ export default function DeckSelector({ deck, customDecks, selected, onChange }: 
             boxShadow: '0 10px 30px rgba(0,0,0,.16)', padding: 6,
           }}
         >
-          <Row checked={isAll} name="All decks" count={totalDue} onClick={() => onChange([])} bold />
+          {/* "All decks": checked → click clears to none ([]); unchecked → click selects all (null). */}
+          <Row checked={isAll} name="All decks" count={totalDue} onClick={() => onChange(isAll ? [] : null)} bold />
           <div style={{ height: 1, background: 'var(--line-soft)', margin: '4px 2px' }} />
           {options.map(key => (
-            <Row key={key || '(default)'} checked={isAll || selected.includes(key)} name={key || 'Default'} count={dueCount(key)} onClick={() => toggle(key)} />
+            <Row key={key || '(default)'} checked={isAll || arr.includes(key)} name={key || 'Default'} count={dueCount(key)} onClick={() => toggle(key)} />
           ))}
         </div>
       )}

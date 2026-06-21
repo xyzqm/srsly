@@ -4,7 +4,7 @@ import type { PracticeMode, ContentSection } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
-import { inSelectedDecks, dateInDays } from '@/lib/deck';
+import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
 import DeckSelector from '@/components/shared/DeckSelector';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
@@ -28,26 +28,27 @@ export default function ExtrasTab({ onScore }: Props) {
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
   const [hskLevel, setHskLevel] = useState(0);
-  // Multi-deck study selection (shared across learning modes via prefs). [] = all decks.
-  const [studyDecks, setStudyDecks] = useState<string[]>([]);
+  // Multi-deck study selection (shared across learning modes via prefs).
+  // null = all decks (default) · [] = none · [...] = specific decks.
+  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
   const [customDecks, setCustomDecks] = useState<string[]>([]);
   useEffect(() => {
     storage.getPrefs().then(p => {
       setHskLevel(p.hskLevel ?? 4);
-      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : []));
+      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : null));
       setCustomDecks(p.decks ?? []);
     });
   }, []);
-  const changeStudyDecks = useCallback((next: string[]) => {
+  const changeStudyDecks = useCallback((next: string[] | null) => {
     setStudyDecks(next);
-    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next.length ? next : undefined }));
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next ?? undefined }));
   }, []);
 
   // Every practice mode (flashcards / fill / conversation / cram) is scoped to the
-  // selected decks. An empty selection means all decks.
+  // selected decks. null = all decks, [] = none.
   const scopedDeck = useMemo(() => deck.filter(w => inSelectedDecks(w, studyDecks)), [deck, studyDecks]);
   // Remount key so a deck-selection change rebuilds the flashcard/cram session.
-  const deckSig = studyDecks.length ? [...studyDecks].sort().join(',') : 'all';
+  const deckSig = decksSignature(studyDecks) || 'all';
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');

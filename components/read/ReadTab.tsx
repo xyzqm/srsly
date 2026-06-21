@@ -47,19 +47,20 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
   const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
   const [hskLevel, setHskLevel] = useState(0);
-  // Multi-deck study selection (shared across learning modes via prefs). [] = all decks.
-  const [studyDecks, setStudyDecks] = useState<string[]>([]);
+  // Multi-deck study selection (shared across learning modes via prefs).
+  // null = all decks (default) · [] = none · [...] = specific decks.
+  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
   const [customDecks, setCustomDecks] = useState<string[]>([]);
   useEffect(() => {
     storage.getPrefs().then(p => {
       setHskLevel(p.hskLevel ?? 4);
-      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : []));
+      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : null));
       setCustomDecks(p.decks ?? []);
     });
   }, []);
-  const changeStudyDecks = useCallback((next: string[]) => {
+  const changeStudyDecks = useCallback((next: string[] | null) => {
     setStudyDecks(next);
-    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next.length ? next : undefined }));
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next ?? undefined }));
   }, []);
 
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);

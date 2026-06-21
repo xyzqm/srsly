@@ -383,7 +383,7 @@ function mergeSection(
 export function useDailyContent(
   hskLevel: number,
   deck: DeckWord[],
-  studyDecks: string[] = [],
+  studyDecks: string[] | null = null,
   want: ContentSection[] = ALL_SECTIONS,
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
