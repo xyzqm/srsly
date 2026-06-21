@@ -36,6 +36,22 @@ export function inStudyDeck(w: DeckWord, studyDeck?: string): boolean {
   return (w.deck || '') === studyDeck;
 }
 
+/**
+ * Whether a word belongs to ANY of the selected decks (multi-select). An empty or
+ * undefined selection means "all decks". The default (untagged) deck is represented by
+ * the empty string ''.
+ */
+export function inSelectedDecks(w: DeckWord, decks?: string[]): boolean {
+  if (!decks || decks.length === 0) return true;
+  return decks.includes(w.deck || '');
+}
+
+/** Stable cache/identity signature for a multi-deck selection ('' default → '(default)'). */
+export function decksSignature(decks?: string[]): string {
+  if (!decks || decks.length === 0) return '';
+  return [...decks].map(d => d || '(default)').sort().join('|');
+}
+
 /** Distinct deck names present in the deck, sorted alphabetically. */
 export function deckNames(deck: DeckWord[]): string[] {
   const names = new Set<string>();

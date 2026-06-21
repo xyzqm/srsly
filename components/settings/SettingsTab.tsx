@@ -32,6 +32,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function SettingsTab() {
   const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
   const [signInOpen, setSignInOpen] = useState(false);
+  const [hasDismissed, setHasDismissed] = useState(false); // New state to safely track local dismissal
   const [hskLevel,   setHskLevel]   = useState(3);
   const [retention,  setRetention]  = useState(0.90);
   const [maxDays,    setMaxDays]    = useState(365);
@@ -168,7 +169,10 @@ export default function SettingsTab() {
                 across devices and unlock unlimited AI-generated content.
               </p>
               <button
-                onClick={() => setSignInOpen(true)}
+                onClick={() => {
+                  setHasDismissed(false); // Reset dismissal condition if intentionally clicked
+                  setSignInOpen(true);
+                }}
                 className="cursor-pointer transition-all duration-150 rounded-[9px]"
                 style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', padding: '11px 18px', boxShadow: '0 2px 0 var(--accent-deep)' }}
               >
@@ -359,7 +363,13 @@ export default function SettingsTab() {
         Saved.
       </div>
 
-      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
+      <SignInModal 
+        open={signInOpen && !hasDismissed} 
+        onClose={() => {
+          setSignInOpen(false);
+          setHasDismissed(true);
+        }} 
+      />
     </div>
   );
 }

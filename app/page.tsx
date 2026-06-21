@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import type { TabId } from '@/lib/types';
 import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
@@ -25,16 +25,43 @@ function AccountChip({ onSignIn }: { onSignIn: () => void }) {
   const { enabled, signedIn, user, signOut } = useAuth();
   if (!enabled) return null;
   const chip: React.CSSProperties = {
-    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
-    background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--ink-soft)',
-    borderRadius: 7, padding: '8px 12px', cursor: 'pointer',
+    fontFamily: 'var(--f-mono)',
+    fontSize: 11,
+    letterSpacing: '.08em',
+    textTransform: 'uppercase',
+    background: 'var(--card)',
+    border: '1px solid var(--line)',
+    color: 'var(--ink-faint)',
+    borderRadius: 7,
+    padding: '8px 12px',
+    cursor: 'pointer',
   };
   if (signedIn) {
     const email = user?.email ?? 'account';
-    const short = email.length > 18 ? email.slice(0, 16) + '…' : email;
-    return <button onClick={signOut} title={`Signed in as ${email} — sign out`} style={chip}>{short} · sign out</button>;
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <span
+          title={`Signed in as ${email}`}
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.02em',
+            background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--ink-soft)',
+            borderRadius: 7, padding: '8px 12px', maxWidth: 200,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}
+        >
+          {email}
+        </span>
+        <button onClick={signOut} style={chip} title="Sign out">
+          Sign out
+        </button>
+      </div>
+    );
   }
-  return <button onClick={onSignIn} style={chip}>Sign in</button>;
+  return (
+    <button onClick={onSignIn} style={chip}>
+      Sign in
+    </button>
+  );
 }
 
 function AppShell() {
@@ -42,12 +69,12 @@ function AppShell() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
   const { recordScore } = useSRS();
-  const requireSignIn = (reason?: string) => setSignIn({ open: true, reason });
+  const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
   return (
     <>
       <div className="relative z-[1]">
-        <Header onOpenTheme={() => setSheetOpen(true)} accountSlot={<AccountChip onSignIn={() => requireSignIn()} />} />
+        <Header onOpenTheme={() => setSheetOpen(true)} accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} />} />
         <TabNav active={tab} onChange={setTab} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
           {tab === 'read' && (
@@ -70,12 +97,14 @@ function AppShell() {
             <SettingsTab />
           )}
         </main>
-        <footer className="text-center pb-10 text-xs" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', letterSpacing: '.04em' }}>
+        <footer className="text-center pb-10 text-xs" style={{ color: 'var(--ink-faint)' }}>
           srsly.
         </footer>
       </div>
 
       <ThemeSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      
+      {/* FIXED: Removed "|| !signedIn" so it respects your click state perfectly */}
       <SignInModal open={signIn.open} reason={signIn.reason} onClose={() => setSignIn({ open: false })} />
     </>
   );

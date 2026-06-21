@@ -7,10 +7,9 @@ import { SupabaseStorage, migrateLocalToCloud } from '@/lib/storage/supabase';
 
 interface AuthState {
   user: User | null;
-  isAnonymous: boolean;  // true for guests (and when auth is disabled)
-  signedIn: boolean;     // a real (non-anonymous) account
-  enabled: boolean;      // Supabase configured
-  /** Link an email to the current guest (or sign in). Returns {} or {error}. */
+  isAnonymous: boolean;
+  signedIn: boolean;
+  enabled: boolean;
   signInWithEmail: (email: string) => Promise<{ error?: string }>;
   signInWithGoogle: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -27,10 +26,8 @@ export function useAuth(): AuthState {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const sb = getSupabaseBrowser();
   const [user, setUser] = useState<User | null>(null);
-  // When Supabase isn't configured we render immediately as a pure-local guest.
   const [ready, setReady] = useState(!supabaseEnabled);
 
-  // Point `storage` at the right backend for the given user (cloud for real accounts).
   const applyBackend = useCallback(async (u: User | null) => {
     if (sb && u && u.is_anonymous !== true) {
       try { await migrateLocalToCloud(sb, u.id); } catch (e) { console.error('[auth] migrate failed', e); }
@@ -41,56 +38,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [sb]);
 
   useEffect(() => {
-    if (!sb) return; // disabled: stay pure-local
+    if (!sb) return;
     let active = true;
     (async () => {
-      const { data: { session } } = await sb.auth.getSession();
+      let u = (await sb.auth.getUser()).data.user;
       if (!active) return;
-      if (!session) {
-        const { error } = await sb.auth.signInAnonymously();
+      if (!u) {
+        // No session → create an anonymous one so the server-side guest AI budget
+        // (consume_ai_credit) has a user to meter. Without this, guests have no session
+        // and generation is effectively unlimited. Requires "Anonymous sign-ins" enabled
+        // in the Supabase project (see supabase/schema.sql setup notes).
+        const { data, error } = await sb.auth.signInAnonymously();
         if (error) console.error('[auth] anonymous sign-in failed', error.message);
+        if (!active) return;
+        u = data?.user ?? null;
       }
-      const u = (await sb.auth.getUser()).data.user;
-      if (!active) return;
-      await applyBackend(u);          // set backend BEFORE the app reads storage
+      await applyBackend(u);
       setUser(u);
       setReady(true);
     })();
-
     const { data: sub } = sb.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       const u = session?.user ?? null;
       await applyBackend(u);
       setUser(u);
-      // A real sign-in arrives via OAuth/email redirect (fresh load handles the rest).
-      if (event === 'SIGNED_IN' && u?.is_anonymous !== true) {
-        // ensure already-mounted hooks re-read from the cloud
-        if (typeof window !== 'undefined') window.location.reload();
+      console.log("AuthProvider: Auth state changed. User is now:", u);
+      if (event === 'SIGNED_IN') {
+        // Only redirect if the URL contains auth recovery/access tokens to prevent infinite loops on home page reloads
+        if (window.location.hash.includes('access_token') || window.location.search.includes('code')) {
+          window.location.href = '/';
+        }
       }
     });
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, [sb, applyBackend]);
 
-  const isAnonymous = !user || user.is_anonymous === true;
+  const isAnonymous = !user || (user.is_anonymous === true && !user.email);
   const signedIn = !!user && !isAnonymous;
 
   const signInWithEmail = useCallback(async (email: string) => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
     const e = email.trim();
     if (!e) return { error: 'Enter an email address.' };
-    const { error } = isAnonymous
-      ? await sb.auth.updateUser({ email: e })          // link email to the guest account
+    
+    // Check session before updating
+    const { data: { session } } = await sb.auth.getSession();
+    const { error } = (isAnonymous && session)
+      ? await sb.auth.updateUser({ email: e })
       : await sb.auth.signInWithOtp({ email: e });
+      
     return error ? { error: error.message } : {};
   }, [sb, isAnonymous]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
-    const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-    const { error } = isAnonymous
-      ? await sb.auth.linkIdentity({ provider: 'google', options: { redirectTo } })
-      : await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+    
+    const { error } = await sb.auth.signInWithOAuth({ 
+      provider: 'google', 
+      options: { redirectTo } 
+    });
     return error ? { error: error.message } : {};
-  }, [sb, isAnonymous]);
+  }, [sb]);
 
   const signOut = useCallback(async () => {
     if (!sb) return;

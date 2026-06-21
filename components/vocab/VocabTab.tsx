@@ -6,7 +6,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { todayStr, deckNames, inStudyDeck, isDueToday } from '@/lib/deck';
+import { todayStr, dateInDays, deckNames, inStudyDeck, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
@@ -371,7 +371,7 @@ export default function VocabTab() {
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'due' | 'new' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
+  const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
   const today = todayStr();
 
@@ -528,6 +528,7 @@ export default function VocabTab() {
   const chipFiltered = useMemo(() => {
     switch (filter) {
       case 'due':       return deckScoped.filter(w => isDueToday(w, today));
+      case 'soon':      { const lim = dateInDays(7); return deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= lim && isActive(w, today)); }
       case 'new':       return deckScoped.filter(isNewCard);
       case 'focus':     return deckScoped.filter(w => w.focus);
       case 'forgotten': return deckScoped.filter(w => (w.lapses ?? 0) > 0);
@@ -545,24 +546,30 @@ export default function VocabTab() {
   );
 
   // Counts for the filter chips (within the selected deck)
-  const counts = useMemo(() => ({
+  const counts = useMemo(() => {
+    const soonLim = dateInDays(7);
+    return ({
     due:       deckScoped.filter(w => isDueToday(w, today)).length,
+    soon:      deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= soonLim && isActive(w, today)).length,
     new:       deckScoped.filter(isNewCard).length,
     focus:     deckScoped.filter(w => w.focus).length,
     forgotten: deckScoped.filter(w => (w.lapses ?? 0) > 0).length,
     leech:     deckScoped.filter(w => w.leech).length,
     paused:    deckScoped.filter(w => w.paused).length,
     snoozed:   deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
-  }), [deckScoped, today]);
+    });
+  }, [deckScoped, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
+  // A single word typed in by hand is due today (you added it deliberately to study now).
   function handleAdd(word: DeckWord) {
     addWord(word);
     setShowAdd(false);
   }
 
+  // A bulk import is due tomorrow so a big batch doesn't flood today's review queue.
   async function handleBulkImport(words: Array<{ h: string; p: string; m: string }>) {
-    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m })));
+    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, dueAt: dateInDays(1) })));
     setShowImport(false);
   }
 
@@ -736,6 +743,7 @@ export default function VocabTab() {
             {([
               ['all', `All ${deckScoped.length}`],
               ['due', `Due ${counts.due}`],
+              ['soon', `Due soon ${counts.soon}`],
               ['new', `New ${counts.new}`],
               ['focus', `★ Focus ${counts.focus}`],
               ['forgotten', `Forgotten ${counts.forgotten}`],
@@ -867,7 +875,7 @@ export default function VocabTab() {
         )}
         {deckScoped.length > 0 && visibleDeck.length === 0 && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
-            {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter} words.`}
+            {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter === 'leech' ? 'stuck' : filter} words.`}
           </p>
         )}
       </div>}

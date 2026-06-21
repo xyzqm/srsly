@@ -27,26 +27,55 @@ type Section = 'passage' | 'fill' | 'convo';
 
 type RawTok = [string] | [string, string] | [string, string, string];
 
+/** Longest known-name/word a greedy merge will reconstruct from split segments. */
+const MAX_NAME_MERGE = 4;
+
 /** Split one pipe-delimited token string into RawTok[]. */
 function parseTokenString(s: unknown, inputMap: Map<string, { p: string; m: string }>): RawTok[] {
   if (typeof s !== 'string' || !s) return [];
-  const out: RawTok[] = [];
+
+  // First pass: clean each segment, surfacing any inline name escape (h::pinyin::gloss)
+  // the model may have emitted instead of using the "names" side-channel.
+  type Seg = { h: string; inline: { p: string; m: string } | null };
+  const segs: Seg[] = [];
   for (const rawSeg of s.split('|')) {
     let seg = rawSeg.trim();
     if (!seg) continue;
     if (seg.startsWith('~')) seg = seg.slice(1).trim();
-    // Tolerate an inline name escape (h::pinyin::gloss) in case the model reverts to it
-    // instead of using the "names" side-channel — keeps junk out of the token text.
     if (seg.includes('::')) {
       const [h, p = '', m = ''] = seg.split('::').map(x => x.trim());
       if (!h) continue;
-      out.push(p ? [h, p, m] : [h]);
+      segs.push({ h, inline: p ? { p, m } : null });
       continue;
     }
-    // Target/due words carry authoritative pinyin+meaning from the deck (preserves the
+    segs.push({ h: seg, inline: null });
+  }
+
+  // Second pass: greedily merge consecutive plain segments whose concatenation is a known
+  // name/word in the map. The model sometimes splits a full name across tokens (王|小雨)
+  // or breaks a compound apart; since the map holds the model's listed names plus the
+  // practiced words, rejoining against it keeps names like 王小雨 whole. Inline-escaped
+  // names are authoritative and never merged.
+  const out: RawTok[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].inline) {
+      out.push([segs[i].h, segs[i].inline!.p, segs[i].inline!.m]);
+      continue;
+    }
+    let merged: string | null = null;
+    let used = 1;
+    for (let len = Math.min(MAX_NAME_MERGE, segs.length - i); len >= 2; len--) {
+      const window = segs.slice(i, i + len);
+      if (window.some(x => x.inline)) continue;
+      const joined = window.map(x => x.h).join('');
+      if (inputMap.has(joined)) { merged = joined; used = len; break; }
+    }
+    // Target/due words and listed names carry authoritative pinyin+meaning (preserves the
     // intended polyphone reading); everything else stays bare for client dict lookup.
-    const hit = inputMap.get(seg);
-    out.push(hit ? [seg, hit.p, hit.m] : [seg]);
+    const text = merged ?? segs[i].h;
+    const hit = inputMap.get(text);
+    out.push(hit ? [text, hit.p, hit.m] : [text]);
+    i += used - 1;
   }
   return out;
 }
@@ -228,7 +257,8 @@ Rules for the tokens between the bars:
   - Output ONLY hanzi and punctuation. NO pinyin, NO English, NO tone numbers, NO meanings.
   - Keep every multi-character word / compound WHOLE as one token between bars:
       现代 经济 发展 已经 科技 朋友 因为 所以 — never 现|代, 经|济, 已|经, 朋|友.
-  - Keep proper names (people, places) WHOLE as one bare token too: 小王 北京 李明 — never split them.
+  - Keep proper names (people, places) WHOLE as ONE token — a surname AND its given name
+    together count as a single name token: 王小雨 (never 王|小雨), 李小明 (never 李|小明), 北京, 小王.
   - Each punctuation mark (。 ， ！ ？ 、 — …) is its OWN token between bars.
   - NEVER output an empty token, and NEVER write pinyin or English inside the bars.
 

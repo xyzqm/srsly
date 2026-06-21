@@ -1,11 +1,11 @@
 'use client';
-import { useState, useCallback, useLayoutEffect } from 'react';
+import { useState, useCallback } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
-import { storage } from '@/lib/storage';
 import { lookupWord } from '@/lib/data/dict';
 import { pickReading, type ReadingHint } from '@/lib/readings';
+import type { ClaimKind } from '@/hooks/useClaims';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
 function findCompoundHints(token: PassageToken, sentence: Sentence, tokenIdx: number): CompoundHint[] {
@@ -43,8 +43,17 @@ interface Props {
   peeked: Set<string>;
   onPeek: (word: string) => void;
   deckWords: Set<string>;
+  /** Deck words whose next review is due now → dotted accent underline (review word). */
+  dueDeckWords: Set<string>;
+  /** Deck words added but not yet due (new card, e.g. "due tomorrow") → green '+' badge. */
+  pendingDeckWords: Set<string>;
   deckReadings?: Map<string, ReadingHint[]>;
   onAddToDeck: (word: DeckWord) => void;
+  /** Shared session claim state — used only for the "learn tomorrow" preview badge now;
+   *  the added/due visuals are derived from the deck so they survive reloads. */
+  claims: Map<string, ClaimKind>;
+  onClaimVocab: (word: string) => void;
+  onClaimTomorrow: (word: string) => void;
 }
 
 function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }: {
@@ -120,31 +129,13 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, deckReadings, onAddToDeck }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, claims, onClaimVocab, onClaimTomorrow }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
-  // Claimed tracking: maps word → 'vocab' | 'tomorrow'
-  const [claimType, setClaimType] = useState<Map<string, 'vocab' | 'tomorrow'>>(new Map());
-
-  // When deckWords shrinks (word removed from deck), clear its vocab claim so the
-  // green underline + badge disappear and the popup lets the user re-add it.
-  // useLayoutEffect fires synchronously before the browser paints → no visible flash.
-  useLayoutEffect(() => {
-    setClaimType(prev => {
-      let changed = false;
-      const next = new Map(prev);
-      for (const [word, kind] of prev) {
-        if (kind === 'vocab' && !deckWords.has(word)) {
-          next.delete(word);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [deckWords]);
-
-  // No storage seeding — badges only appear when the user explicitly
-  // adds a word in the current session. Deck words from previous sessions
-  // show as SRS review words (accent underline, "revealed = forgotten" popup).
+  // Visual state is derived from the deck's scheduling (passed in via dueDeckWords /
+  // pendingDeckWords), so it survives reloads and only flips on the real due day:
+  //   due now → review word (accent, click reveals = counts as forgotten)
+  //   pending → added but not yet due (green '+', click just shows the definition)
+  // The "learn tomorrow" preview (gold '▸') isn't in the deck, so it still rides on `claims`.
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     e.stopPropagation();
@@ -152,21 +143,18 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Skip true punctuation and words with no pinyin data
     if (!token.pinyin || token.type === 'punct') return;
 
-    // Apply the same deck-check as the render section so a word removed from the
-    // deck (but still in claimType from this session) shows the free popup.
-    const rawClaimKind = claimType.get(token.text) ?? null;
-    const effectiveClaimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
-    const isClaimed = effectiveClaimKind !== null;
-    // Priority: claimed this session > SRS review word
-    const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
+    const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
+    const isPending    = !isReviewWord && pendingDeckWords.has(token.text);
+    const isTomorrow   = !isReviewWord && !isPending && claims.get(token.text) === 'tomorrow';
+    const inDeck       = deckWords.has(token.text);
 
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
-    // Only surface compound hints for single-char tokens that aren't already deck words
-    const compoundHints = (token.text.length === 1 && !isClaimed) ? compounds : [];
+    // Only surface compound hints for single-char tokens not already tracked in the deck
+    const compoundHints = (token.text.length === 1 && !inDeck && !isTomorrow) ? compounds : [];
 
     // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
     // dictionary's). For a polyphone, headline the reading matching this token's pinyin
@@ -186,31 +174,24 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     if (isReviewWord) {
       onPeek(token.text);
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'vocab', anchorRect: rect, compounds: compoundHints, otherReadings });
-    } else if (isClaimed) {
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: effectiveClaimKind === 'tomorrow' ? 'tomorrow' : 'lookup', anchorRect: rect, otherReadings });
-    } else if (deckWords.has(token.text)) {
-      onPeek(token.text);
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'vocab', anchorRect: rect, compounds: compoundHints, otherReadings });
+    } else if (isPending || inDeck) {
+      // Added to the deck (pending its first review, or just not due today) — definition only.
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings });
+    } else if (isTomorrow) {
+      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'tomorrow', anchorRect: rect, otherReadings });
     } else {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
     }
-  }, [claimType, onPeek, deckWords, deckReadings]);
+  }, [claims, onPeek, deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
 
-  const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
-    setClaimType(prev => new Map([...prev, [word, 'vocab']]));
+  const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
+    onClaimVocab(word);
     onAddToDeck({ h: word, p: pinyin, m: meaning });
-    // Persist in background
-    const c = await storage.getClaimedWords();
-    await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
-  }, [onAddToDeck]);
+  }, [onClaimVocab, onAddToDeck]);
 
-  const handleLearnTomorrow = useCallback(async (word: string) => {
-    // Optimistic update first
-    setClaimType(prev => new Map([...prev, [word, 'tomorrow']]));
-    // Persist in background
-    const c = await storage.getClaimedWords();
-    await storage.saveClaimedWords({ ...c, tomorrow: [...new Set([...c.tomorrow, word])] });
-  }, []);
+  const handleLearnTomorrow = useCallback((word: string) => {
+    onClaimTomorrow(word);
+  }, [onClaimTomorrow]);
 
   return (
     <div>
@@ -278,14 +259,14 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                const rawClaimKind = claimType.get(token.text) ?? null;
-                // Mask a stale 'vocab' claim when the word is no longer in the deck
-                // (e.g. added then removed). React 18 auto-batches setClaimType and
-                // setDeck from the same event, so both are in sync during a new add.
-                const claimKind = rawClaimKind === 'vocab' && !deckWords.has(token.text) ? null : rawClaimKind;
-                const isClaimed = claimKind !== null;
-                // Claimed takes priority over SRS review
-                const isReviewWord = !isClaimed && token.type === 'vocab' && deckWords.has(token.text);
+                // due → accent (review word); else pending → green '+'; else a tomorrow
+                // preview → gold '▸'. Derived from deck scheduling so it persists across
+                // reloads and only flips to the accent review style on the real due day.
+                const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
+                const claimKind = isReviewWord ? null
+                  : pendingDeckWords.has(token.text) ? 'vocab'
+                  : claims.get(token.text) === 'tomorrow' ? 'tomorrow'
+                  : null;
                 // Detect neighboring compounds for single-char tokens
                 const compounds = findCompoundHints(token, sent, ti);
                 return (
