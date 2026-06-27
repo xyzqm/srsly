@@ -143,6 +143,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
     const today = todayStr();
     const status = new Map<string, 'due' | 'pending'>();
     const mark = (key: string, w: DeckWord) => {
+      if (w.pool) return; // pool words show no passage indicator
       if (isDueToday(w, today)) { status.set(key, 'due'); return; }
       const isNewCard = (w.reviews ?? 0) === 0 && w.stability === undefined;
       if (isNewCard && status.get(key) !== 'due') status.set(key, 'pending');
@@ -159,10 +160,27 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
 
   const reviewWordCount = targetWords.length + passageAnchors.size;
 
+  // Count distinct vocab tokens in the current passage that have cloze blanks.
+  // This is the source of truth for LookupSummary when static passages have vocabWords:[].
+  const clozeWordCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const s of SENTENCES) {
+      for (const t of s.tokens) {
+        if (t.type === 'vocab' && dueDeckWords.has(t.text)) seen.add(t.text);
+      }
+    }
+    // Also count anchor compounds
+    passageAnchors.forEach((_, compound) => {
+      if (dueDeckWords.has(compound)) seen.add(compound);
+    });
+    return seen.size;
+  }, [SENTENCES, dueDeckWords, passageAnchors]);
+
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
-  const [peeked, setPeeked] = useState<Set<string>>(new Set());
+  const [showClozeHints, setShowClozeHints] = useState(true);
+  const [clozeGrades, setClozeGrades] = useState<Map<string, FsrsGrade>>(new Map());
   const [frResponses, setFrResponses] = useState<Record<number, FRResponse>>({});
   const [mcGrades, setMcGrades] = useState<Record<number, FsrsGrade>>({});
   const [showResults, setShowResults] = useState(false);
@@ -172,7 +190,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
   useEffect(() => {
     setActiveSentence(0);
     setPassageIdx(0);
-    setPeeked(new Set());
+    setClozeGrades(new Map());
     setFrResponses({});
     setMcGrades({});
     setShowResults(false);
@@ -189,7 +207,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
     // reload); clamp in case the cached set is smaller than when it was saved.
     const saved = readSavedPassageIdx(contentKey);
     setPassageIdx(Math.min(saved, Math.max(0, numPassagesRef.current - 1)));
-    setPeeked(new Set());
+    setClozeGrades(new Map());
     setFrResponses({});
     setMcGrades({});
     setShowResults(false);
@@ -223,7 +241,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
     if (numPassages > prevNumPassages.current) {
       setPassageIdx(numPassages - 1);
       setActiveSentence(0);
-      setPeeked(new Set());
+      setClozeGrades(new Map());
       setFrResponses({});
       setMcGrades({});
       setShowResults(false);
@@ -236,7 +254,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
   const handlePassageChange = useCallback((delta: number) => {
     setPassageIdx(prev => Math.max(0, Math.min(prev + delta, numPassages - 1)));
     setActiveSentence(0);
-    setPeeked(new Set());
+    setClozeGrades(new Map());
     setFrResponses({});
     setMcGrades({});
     setShowResults(false);
@@ -256,8 +274,8 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
     addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) });
   }, [addWord]);
 
-  const handlePeek = useCallback((word: string) => {
-    setPeeked(prev => new Set([...prev, word]));
+  const handleClozeAnswer = useCallback((word: string, correct: boolean) => {
+    setClozeGrades(prev => new Map(prev).set(word, correct ? 3 : 1));
   }, []);
 
   const handleAddToDeck = useCallback((word: DeckWord) => {
@@ -285,7 +303,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
       });
 
       const getWordGrade = (w: string): FsrsGrade => {
-        if (peeked.has(w)) return 1;
+        if (clozeGrades.has(w)) return clozeGrades.get(w)!;
         let best: FsrsGrade = 2;
         if (frUsedWords.has(w)) best = 3;
         const mcG = mcWordGrades.get(w);
@@ -293,13 +311,23 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
         return best;
       };
 
-      const rows = targetWords.map(w => {
+      // Include cloze-graded deck words even when static passages have vocabWords: []
+      const anchorCompoundSet = new Set(passageAnchors.keys());
+      const deckWordSet = new Set(deck.map(d => d.h));
+      const clozeOnlyWords = [...clozeGrades.keys()].filter(
+        w => deckWordSet.has(w) && !targetWords.includes(w) && !anchorCompoundSet.has(w)
+      );
+      const allResultWords = [...targetWords, ...clozeOnlyWords];
+
+      const rows = allResultWords.map(w => {
         const deckWord = deck.find(d => d.h === w);
         const grade = getWordGrade(w);
         const days = deckWord ? fsrsNextInterval(deckWord, grade) : 1;
         const label = fmtInterval(days);
-        if (grade === 1) {
-          return { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: `Peeked — review in ${label}` };
+        if (clozeGrades.has(w)) {
+          return grade === 3
+            ? { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: `Typed correctly — next in ${label}` }
+            : { word: w, pinyin: deckWord?.p, status: 'down' as const, msg: `Typed incorrectly — review in ${label}` };
         }
         if (grade === 3) {
           return { word: w, pinyin: deckWord?.p, status: 'up' as const, msg: `Recalled — next in ${label}` };
@@ -316,7 +344,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
       const mcKeyRecalled = (word: string) =>
         Object.entries(mcGrades).some(([qi, g]) => g >= 2 && QUESTIONS[+qi]?.key.includes(word));
       const anchorGrade = (compound: string): FsrsGrade => {
-        if (peeked.has(compound)) return 1;
+        if (clozeGrades.has(compound)) return clozeGrades.get(compound)!;
         if (frTextAll.includes(compound) || mcKeyRecalled(compound)) return 3;
         return 2;
       };
@@ -334,25 +362,29 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
         const label = fmtInterval(days);
         const tag = `${anchor.hanzi} ${anchor.pinyin}`;
         const shown = compounds.join('、');
-        if (grade === 1) return { word: shown, pinyin: anchor.pinyin, status: 'down' as const, msg: `Peeked (${tag}) — review in ${label}` };
+        const isClozeGraded = compounds.some(c => clozeGrades.has(c));
+        if (isClozeGraded) {
+          return grade === 3
+            ? { word: shown, pinyin: anchor.pinyin, status: 'up' as const, msg: `Typed correctly (${tag}) — next in ${label}` }
+            : { word: shown, pinyin: anchor.pinyin, status: 'down' as const, msg: `Typed incorrectly (${tag}) — review in ${label}` };
+        }
         if (grade === 3) return { word: shown, pinyin: anchor.pinyin, status: 'up' as const, msg: `Recalled (${tag}) — next in ${label}` };
         return { word: shown, pinyin: anchor.pinyin, status: 'stable' as const, msg: `${tag} — next in ${label}` };
       });
 
       setVocabResults([...rows, ...anchorRows]);
 
-      targetWords.forEach(w => updateWordReview(w, getWordGrade(w)));
-      byCard.forEach(({ anchor, grade }) => gradeCard(anchor.id, grade));
+      allResultWords.forEach(w => updateWordReview(w, getWordGrade(w), { minDaysOut: 1 }));
+      byCard.forEach(({ anchor, grade }) => gradeCard(anchor.id, grade, { minDaysOut: 1 }));
 
       const okCount =
         Object.values(frResponses).filter(r => r.verdict === 'ok').length +
         Object.values(mcGrades).filter(g => g >= 2).length;
-      const peekPenalty = Math.min(peeked.size * 8, 40);
-      const score = Math.round(Math.max(0, (okCount / Math.max(QUESTIONS.length, 1)) * 100 - peekPenalty));
+      const score = Math.round((okCount / Math.max(QUESTIONS.length, 1)) * 100);
       onScore(score);
     }
     setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcGrades, peeked, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
+  }, [resultsBuilt, frResponses, mcGrades, clozeGrades, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -496,6 +528,9 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
                   {loadingMore ? `generating… ${genEstShort}` : '+ new passage'}
                 </button>
               )}
+              <button style={toggleStyle(showClozeHints)} onClick={() => setShowClozeHints(v => !v)}>
+                Hints
+              </button>
               <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
                 🎧 Audio only
               </button>
@@ -506,8 +541,6 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
             sentences={SENTENCES}
             activeSentenceIdx={activeSentence}
             audioOnly={audioOnly}
-            peeked={peeked}
-            onPeek={handlePeek}
             deckWords={passageDeckWords}
             dueDeckWords={dueDeckWords}
             pendingDeckWords={pendingDeckWords}
@@ -516,12 +549,13 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
             claims={claimsStore.claims}
             onClaimVocab={claimsStore.claimVocab}
             onClaimTomorrow={claimsStore.claimTomorrow}
+            showClozeHints={showClozeHints}
+            onClozeAnswer={handleClozeAnswer}
           />
 
           <LookupSummary
-            peekedCount={peeked.size}
-            totalVocab={reviewWordCount}
-            claimedCount={0}
+            totalVocab={clozeWordCount}
+            clozeAnswered={clozeGrades.size}
           />
         </>
       )}

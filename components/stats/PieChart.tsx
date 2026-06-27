@@ -2,8 +2,9 @@
 import type { DeckWord } from '@/lib/types';
 
 function computeSegments(deck: DeckWord[]) {
-  let newW = 0, reviewed = 0, proficient = 0, mastered = 0;
+  let pool = 0, newW = 0, reviewed = 0, proficient = 0, mastered = 0;
   for (const w of deck) {
+    if (w.pool) { pool++; continue; }
     const r = w.reviews ?? 0;
     if (r === 0) newW++;
     else if (r <= 2) reviewed++;
@@ -11,10 +12,11 @@ function computeSegments(deck: DeckWord[]) {
     else mastered++;
   }
   return [
-    { label: 'New',               count: newW,       color: '#94A3B8', cls: 'new' },
-    { label: 'Reviewed · 1–2×',   count: reviewed,   color: '#EAB308', cls: 'rev' },
-    { label: 'Proficient · 3–5×', count: proficient, color: '#4ADE80', cls: 'pro' },
-    { label: 'Mastered · 6×+',    count: mastered,   color: '#2563EB', cls: 'mas' },
+    { label: 'Pool · waiting',     count: pool,      color: '#94A3B8', cls: 'pool' },
+    { label: 'New',                count: newW,       color: '#CBD5E1', cls: 'new'  },
+    { label: 'Reviewed · 1–2×',    count: reviewed,   color: '#EAB308', cls: 'rev'  },
+    { label: 'Proficient · 3–5×',  count: proficient, color: '#4ADE80', cls: 'pro'  },
+    { label: 'Mastered · 6×+',     count: mastered,   color: '#2563EB', cls: 'mas'  },
   ];
 }
 

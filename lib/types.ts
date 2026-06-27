@@ -28,6 +28,7 @@ export interface DeckWord {
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
   deck?: string;         // optional deck/group name; absent = the default deck
   leech?: boolean;       // auto-flagged after too many lapses (then auto-paused; re-suspends periodically)
+  pool?: boolean;        // staged — added to deck but not yet in circulation; excluded from all review
 }
 
 export interface PassageToken {

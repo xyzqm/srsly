@@ -19,6 +19,7 @@ export function dateInDays(days: number): string {
  * (flashcards, fill-in-blank, daily-passage word selection).
  */
 export function isActive(w: DeckWord, today: string = todayStr()): boolean {
+  if (w.pool) return false;
   if (w.paused) return false;
   if (w.snoozeUntil && w.snoozeUntil > today) return false;
   return true;

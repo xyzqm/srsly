@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -40,10 +40,8 @@ interface Props {
   activeSentenceIdx: number;
   showPinyin?: boolean;
   audioOnly: boolean;
-  peeked: Set<string>;
-  onPeek: (word: string) => void;
   deckWords: Set<string>;
-  /** Deck words whose next review is due now → dotted accent underline (review word). */
+  /** Deck words whose next review is due now → cloze blanks. */
   dueDeckWords: Set<string>;
   /** Deck words added but not yet due (new card, e.g. "due tomorrow") → green '+' badge. */
   pendingDeckWords: Set<string>;
@@ -54,6 +52,9 @@ interface Props {
   claims: Map<string, ClaimKind>;
   onClaimVocab: (word: string) => void;
   onClaimTomorrow: (word: string) => void;
+  /** Whether to show the English hint tooltip on hover over cloze blanks. */
+  showClozeHints?: boolean;
+  onClozeAnswer?: (word: string, correct: boolean) => void;
 }
 
 function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }: {
@@ -129,13 +130,142 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, peeked, onPeek, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, claims, onClaimVocab, onClaimTomorrow }: Props) {
+function ClozeBlank({ token, showHint, onGrade }: {
+  token: PassageToken;
+  showHint: boolean;
+  onGrade: (correct: boolean) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [correct, setCorrect] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const gradedRef = useRef(false);
+
+  const submit = useCallback(() => {
+    if (gradedRef.current || !value.trim()) return;
+    gradedRef.current = true;
+    const isCorrect = value.trim() === token.text;
+    setSubmitted(true);
+    setCorrect(isCorrect);
+    onGrade(isCorrect);
+  }, [value, token.text, onGrade]);
+
+  // How many leading characters of the user's input match the correct answer.
+  // Everything before this index is green; at and after is red.
+  let matchLen = 0;
+  while (matchLen < value.length && matchLen < token.text.length && value[matchLen] === token.text[matchLen]) matchLen++;
+
+  if (submitted) {
+    const color = correct ? 'var(--jade)' : 'var(--accent)';
+    return (
+      <>
+        <ruby style={{ color }}>
+          {token.text}
+          <rt>{token.pinyin}</rt>
+        </ruby>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline',
+            fontSize: '0.45em',
+            verticalAlign: 'super',
+            lineHeight: 0,
+            fontFamily: 'var(--f-ui)',
+            fontWeight: 700,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            color,
+          }}
+        >
+          {correct ? '✓' : '✗'}
+        </span>
+      </>
+    );
+  }
+
+  return (
+    <span
+      style={{ display: 'inline-block', position: 'relative', verticalAlign: 'baseline' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {showHint && hovered && token.meaning && (
+        <span
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            whiteSpace: 'nowrap',
+            fontSize: 10,
+            fontFamily: 'var(--f-mono)',
+            color: 'var(--ink-soft)',
+            background: 'var(--card)',
+            border: '1px solid var(--line)',
+            borderRadius: 5,
+            padding: '2px 6px',
+            pointerEvents: 'none',
+            zIndex: 10,
+            opacity: hovered ? 1 : 0,
+            transition: 'opacity .12s',
+          }}
+        >
+          {token.meaning}
+        </span>
+      )}
+      {/* Real-time prefix-match overlay: green for matching prefix, red for mismatches/extra */}
+      {value.length > 0 && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            fontFamily: 'var(--f-han)',
+            fontSize: '1em',
+            fontWeight: 'var(--han-weight)' as 'bold',
+            padding: '0 2px',
+            zIndex: 1,
+          }}
+        >
+          {[...value].map((char, i) => (
+            <span key={i} style={{ color: i < matchLen ? 'var(--jade)' : 'var(--accent)' }}>{char}</span>
+          ))}
+        </span>
+      )}
+      <input
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+        onBlur={submit}
+        style={{
+          width: `${Math.max(token.text.length * 1.3, 2.5)}em`,
+          fontFamily: 'var(--f-han)',
+          fontSize: '1em',
+          color: 'transparent',
+          caretColor: 'var(--ink)',
+          background: 'transparent',
+          border: 'none',
+          borderBottom: '1.5px dotted var(--accent)',
+          outline: 'none',
+          padding: '0 2px',
+          textAlign: 'center',
+          verticalAlign: 'baseline',
+          position: 'relative',
+          zIndex: 2,
+        }}
+        aria-label={`Fill in the blank${showHint && token.meaning ? `: ${token.meaning}` : ''}`}
+      />
+    </span>
+  );
+}
+
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, claims, onClaimVocab, onClaimTomorrow, showClozeHints, onClozeAnswer }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
-  // Visual state is derived from the deck's scheduling (passed in via dueDeckWords /
-  // pendingDeckWords), so it survives reloads and only flips on the real due day:
-  //   due now → review word (accent, click reveals = counts as forgotten)
-  //   pending → added but not yet due (green '+', click just shows the definition)
-  // The "learn tomorrow" preview (gold '▸') isn't in the deck, so it still rides on `claims`.
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     e.stopPropagation();
@@ -143,22 +273,21 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     // Skip true punctuation and words with no pinyin data
     if (!token.pinyin || token.type === 'punct') return;
 
+    // Review words are now cloze blanks — they handle their own interaction.
     const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
-    const isPending    = !isReviewWord && pendingDeckWords.has(token.text);
-    const isTomorrow   = !isReviewWord && !isPending && claims.get(token.text) === 'tomorrow';
-    const inDeck       = deckWords.has(token.text);
+    if (isReviewWord) return;
+
+    const isPending  = pendingDeckWords.has(token.text);
+    const isTomorrow = !isPending && claims.get(token.text) === 'tomorrow';
+    const inDeck     = deckWords.has(token.text);
 
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
-    // Only surface compound hints for single-char tokens not already tracked in the deck
     const compoundHints = (token.text.length === 1 && !inDeck && !isTomorrow) ? compounds : [];
 
-    // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
-    // dictionary's). For a polyphone, headline the reading matching this token's pinyin
-    // and list the rest under "also read as".
     let pin = entry.pinyin, mean = entry.meaning;
     let otherReadings: { p: string; m: string }[] | undefined;
     const allReadings = deckReadings?.get(token.text);
@@ -171,18 +300,14 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       }
     }
 
-    if (isReviewWord) {
-      onPeek(token.text);
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'vocab', anchorRect: rect, compounds: compoundHints, otherReadings });
-    } else if (isPending || inDeck) {
-      // Added to the deck (pending its first review, or just not due today) — definition only.
+    if (isPending || inDeck) {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings });
     } else if (isTomorrow) {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'tomorrow', anchorRect: rect, otherReadings });
     } else {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
     }
-  }, [claims, onPeek, deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
+  }, [claims, deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
@@ -259,22 +384,28 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                // due → accent (review word); else pending → green '+'; else a tomorrow
-                // preview → gold '▸'. Derived from deck scheduling so it persists across
-                // reloads and only flips to the accent review style on the real due day.
                 const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
-                const claimKind = isReviewWord ? null
-                  : pendingDeckWords.has(token.text) ? 'vocab'
+                // Due vocab words become cloze blanks — rendered separately.
+                if (isReviewWord) {
+                  return (
+                    <ClozeBlank
+                      key={ti}
+                      token={token}
+                      showHint={showClozeHints ?? true}
+                      onGrade={(correct) => onClozeAnswer?.(token.text, correct)}
+                    />
+                  );
+                }
+                const claimKind = pendingDeckWords.has(token.text) ? 'vocab'
                   : claims.get(token.text) === 'tomorrow' ? 'tomorrow'
                   : null;
-                // Detect neighboring compounds for single-char tokens
                 const compounds = findCompoundHints(token, sent, ti);
                 return (
                   <TokenEl
                     key={ti}
                     token={token}
-                    peeked={peeked.has(token.text) && isReviewWord}
-                    isReviewWord={isReviewWord}
+                    peeked={false}
+                    isReviewWord={false}
                     claimKind={claimKind}
                     compounds={compounds}
                     onClick={handleTokenClick}
