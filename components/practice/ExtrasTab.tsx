@@ -24,11 +24,13 @@ interface Props {
   /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
   studyScope: string[] | null;
   onExitStudyScope: () => void;
+  /** Mode to open in — 'flash' for review-due, 'cram' for a whole-deck drill. */
+  initialMode?: PracticeMode;
 }
 
-export default function ExtrasTab({ onScore, studyScope, onExitStudyScope }: Props) {
+export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initialMode = 'flash' }: Props) {
   const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck();
-  const [mode, setMode] = useState<PracticeMode>('flash');
+  const [mode, setMode] = useState<PracticeMode>(initialMode);
 
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when hskLevel=0

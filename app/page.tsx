@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback } from 'react';
-import type { TabId } from '@/lib/types';
+import type { TabId, PracticeMode } from '@/lib/types';
 import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
 import ThemeSheet from '@/components/ThemeSheet';
@@ -75,8 +75,12 @@ function AppShell() {
   // Vocab tab's "Study this deck" shortcut; cleared on Exit or when a focused session ends.
   // Deliberately NOT persisted — it's a temporary focus, not a saved preference.
   const [studyScope, setStudyScope] = useState<string[] | null>(null);
-  const startDeckStudy = useCallback((decks: string[]) => {
+  // Which Practice mode to open in when a focused session launches: 'flash' = review due
+  // cards, 'cram' = drill the whole deck ignoring due dates.
+  const [studyStartMode, setStudyStartMode] = useState<PracticeMode>('flash');
+  const startDeckStudy = useCallback((decks: string[], mode: PracticeMode) => {
     setStudyScope(decks.length ? decks : null);
+    setStudyStartMode(mode);
     setTab('practice');
   }, []);
   const exitDeckStudy = useCallback(() => setStudyScope(null), []);
@@ -97,7 +101,7 @@ function AppShell() {
             />
           )}
           {tab === 'practice' && (
-            <ExtrasTab onScore={recordScore} studyScope={studyScope} onExitStudyScope={exitDeckStudy} />
+            <ExtrasTab onScore={recordScore} studyScope={studyScope} onExitStudyScope={exitDeckStudy} initialMode={studyStartMode} />
           )}
           {tab === 'dash' && (
             <StatsTab onNavigateRead={() => setTab('read')} />

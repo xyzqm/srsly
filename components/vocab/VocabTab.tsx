@@ -530,8 +530,9 @@ function AddToDeckButton({ count, options, onAdd }: {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 interface VocabTabProps {
-  /** Launch a focused, session-only study session scoped to these decks (routes to Practice). */
-  onStudyDeck: (decks: string[]) => void;
+  /** Launch a focused, session-only study session scoped to these decks (routes to Practice).
+   *  'flash' reviews due cards; 'cram' drills the whole deck ignoring due dates. */
+  onStudyDeck: (decks: string[], mode: 'flash' | 'cram') => void;
 }
 
 export default function VocabTab({ onStudyDeck }: VocabTabProps) {
@@ -827,20 +828,38 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                 Delete deck
               </button>
             )}
-            {browsingDecks.length > 0 && !addingDeck && (
-              <button
-                onClick={() => onStudyDeck(browsingDecks)}
-                className="cursor-pointer transition-all duration-150"
-                title="Start a focused study session scoped to this deck"
-                style={{
-                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
-                  background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                  padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
-                }}
-              >
-                ▸ Study {singleDeck ?? `${browsingDecks.length} decks`}
-              </button>
-            )}
+            {browsingDecks.length > 0 && !addingDeck && (() => {
+              const label = singleDeck ?? `${browsingDecks.length} decks`;
+              return (
+                <>
+                  <button
+                    onClick={() => onStudyDeck(browsingDecks, 'flash')}
+                    className="cursor-pointer transition-all duration-150"
+                    title="Review this deck's due cards in a focused session"
+                    style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
+                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                      padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
+                    }}
+                  >
+                    ▸ Study {label}
+                  </button>
+                  <button
+                    onClick={() => onStudyDeck(browsingDecks, 'cram')}
+                    className="cursor-pointer transition-all duration-150"
+                    title="Drill the whole deck now, ignoring due dates (doesn't change scheduling)"
+                    style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
+                      background: 'none', color: 'var(--accent)',
+                      border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)', borderRadius: 7,
+                      padding: '6px 13px',
+                    }}
+                  >
+                    ⚡ Cram {label}
+                  </button>
+                </>
+              );
+            })()}
           </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
             {deckScoped.length} word{deckScoped.length === 1 ? '' : 's'}
