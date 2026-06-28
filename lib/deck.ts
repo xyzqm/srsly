@@ -19,6 +19,7 @@ export function dateInDays(days: number): string {
  * (flashcards, fill-in-blank, daily-passage word selection).
  */
 export function isActive(w: DeckWord, today: string = todayStr()): boolean {
+  if (w.pool) return false;
   if (w.paused) return false;
   if (w.snoozeUntil && w.snoozeUntil > today) return false;
   return true;
@@ -35,6 +36,28 @@ export function isDueToday(w: DeckWord, today: string = todayStr()): boolean {
 export function inStudyDeck(w: DeckWord, studyDeck?: string): boolean {
   if (!studyDeck) return true;
   return !!w.decks?.includes(studyDeck);
+}
+
+/**
+ * Whether a word belongs to ANY of the selected decks (multi-select). Decks are tags,
+ * so this tests the word's `decks` membership against the selection. Selection is:
+ *   null / undefined → all decks (default)
+ *   []               → no decks (explicitly deselected everything)
+ *   [...]            → only those decks (the default/untagged "deck" is the empty string '')
+ */
+export function inSelectedDecks(w: DeckWord, decks?: string[] | null): boolean {
+  if (decks == null) return true;        // all
+  if (decks.length === 0) return false;  // none
+  const tags = w.decks ?? [];
+  if (tags.length === 0) return decks.includes(''); // untagged word ↔ the '' default deck
+  return tags.some(t => decks.includes(t));
+}
+
+/** Stable cache/identity signature for a multi-deck selection ('' default → '(default)'). */
+export function decksSignature(decks?: string[] | null): string {
+  if (decks == null) return '';          // all
+  if (decks.length === 0) return 'none';
+  return [...decks].map(d => d || '(default)').sort().join('|');
 }
 
 /** Distinct deck names present across all words' tags, sorted alphabetically. */

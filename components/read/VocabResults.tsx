@@ -11,7 +11,7 @@ export default function VocabResults({ results }: Props) {
         Reading session — vocabulary updates
       </h3>
       <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginBottom: 22, lineHeight: 1.55 }}>
-        Words you recalled in your answers without peeking earn a longer interval. Words you peeked at — or kept avoiding — return sooner.
+        Words you typed correctly earn a longer interval. Words typed incorrectly or not used return sooner.
       </p>
 
       {results.length === 0 ? (

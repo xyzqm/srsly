@@ -27,7 +27,8 @@ export interface DeckWord {
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
   decks?: string[];      // deck/group memberships (tags); a word can be in several at once. absent/[] = untagged ("All" only)
-  leech?: boolean;       // auto-flagged after too many lapses (then auto-paused + starred)
+  leech?: boolean;       // auto-flagged after too many lapses (then auto-paused; re-suspends periodically)
+  pool?: boolean;        // staged — added to deck but not yet in circulation; excluded from all review
 }
 
 export interface PassageToken {
@@ -83,7 +84,10 @@ export interface UserPrefs {
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
-  studyDeck?: string;    // currently-selected deck to study; absent/'' = all decks
+  studyDeck?: string;    // Vocab-tab browse filter (single deck); absent/'' = all decks
+  // Decks selected for the learning modes (read / fill / flashcards / conversation / cram).
+  // '' represents the default (untagged) deck. Absent or empty array = all decks.
+  studyDecks?: string[];
   decks?: string[];      // explicitly-created deck names (so empty decks persist)
 }
 

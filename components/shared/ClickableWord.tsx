@@ -9,18 +9,24 @@ interface Props {
   style?: React.CSSProperties;
   /**
    * Visual claim state for this word:
-   *  'vocab'    — already in SRS deck: solid jade underline + '+' badge
+   *  'vocab'    — added this session: solid jade underline + '+' badge
    *  'tomorrow' — queued for tomorrow: solid gold underline + '▸' badge
    *  null/undefined — unknown word: dotted faint underline, no badge
    */
   claimKind?: 'vocab' | 'tomorrow' | null;
+  /**
+   * True when this is an SRS review word in the deck (and not freshly claimed): dotted
+   * accent underline, matching how review words look in the passage body. Ignored when
+   * claimKind is set.
+   */
+  isReviewWord?: boolean;
 }
 
 /**
  * A single clickable word that opens a definition popup.
  * Tokens without pinyin render as plain spans (punct / plain text).
  */
-export default function ClickableWord({ token, onOpen, style, claimKind }: Props) {
+export default function ClickableWord({ token, onOpen, style, claimKind, isReviewWord }: Props) {
   const [hovered, setHovered] = useState(false);
 
   if (!token.pinyin || token.type === 'punct') return <span style={style}>{token.text}</span>;
@@ -29,7 +35,9 @@ export default function ClickableWord({ token, onOpen, style, claimKind }: Props
     ? '1.5px solid var(--jade)'
     : claimKind === 'tomorrow'
       ? '1.5px solid var(--gold)'
-      : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
+      : isReviewWord
+        ? '1.5px dotted var(--accent)'
+        : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
 
   const badgeChar = claimKind === 'tomorrow' ? '▸' : '+';
   const badgeColor = claimKind === 'vocab'

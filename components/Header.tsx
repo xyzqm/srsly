@@ -1,11 +1,13 @@
 'use client';
+import type { ReactNode } from 'react';
 import { useSRS } from '@/hooks/useSRS';
 
 interface Props {
   onOpenTheme: () => void;
+  accountSlot?: ReactNode;
 }
 
-export default function Header({ onOpenTheme }: Props) {
+export default function Header({ onOpenTheme, accountSlot }: Props) {
   const { emoji, tip } = useSRS();
 
   return (
@@ -55,6 +57,8 @@ export default function Header({ onOpenTheme }: Props) {
           />
           Theme
         </button>
+
+        {accountSlot}
       </div>
     </header>
   );

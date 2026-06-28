@@ -5,6 +5,7 @@ import type { PopupData } from '@/components/read/WordPopup';
 import { lookupWord } from '@/lib/data/dict';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { storage } from '@/lib/storage';
+import type { ClaimsStore } from '@/hooks/useClaims';
 
 /**
  * Shared hook for word-definition popups.
@@ -14,11 +15,15 @@ import { storage } from '@/lib/storage';
  *                    When provided, a stale 'vocab' claim for a word that was
  *                    removed from the deck is treated as unclaimed — so the
  *                    "Add to vocab" / "Learn this word" buttons re-appear.
+ * @param claimsStore Optional external claim store. When provided, claims are read from
+ *                    and written to it (so the title shares state with the passage body);
+ *                    otherwise the hook keeps its own per-instance claim state.
  */
 export function useWordPopup(
   onAddVocab?: (word: string, pinyin: string, meaning: string) => void,
   deckWords?: Set<string>,
   deckReadings?: Map<string, ReadingHint[]>,
+  claimsStore?: ClaimsStore,
 ) {
   const [popup, setPopup] = useState<PopupData | null>(null);
 
@@ -42,8 +47,8 @@ export function useWordPopup(
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     const isInDeck            = deckWords !== undefined && deckWords.has(token.text);
-    const isVocabThisSession  = vocabClaimed.has(token.text);
-    const isTomorrowThisSession = tomorrowClaimed.has(token.text);
+    const isVocabThisSession  = claimsStore ? claimsStore.claims.get(token.text) === 'vocab'    : vocabClaimed.has(token.text);
+    const isTomorrowThisSession = claimsStore ? claimsStore.claims.get(token.text) === 'tomorrow' : tomorrowClaimed.has(token.text);
 
     // Popup type priority:
     //   1. Added to deck in this session → 'lookup' (show +Added badge)
@@ -71,21 +76,29 @@ export function useWordPopup(
     }
 
     setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings });
-  }, [vocabClaimed, tomorrowClaimed, deckWords, deckReadings]);
+  }, [claimsStore, vocabClaimed, tomorrowClaimed, deckWords, deckReadings]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
-    setVocabClaimed(prev => new Set([...prev, word]));
+    if (claimsStore) {
+      claimsStore.claimVocab(word);
+    } else {
+      setVocabClaimed(prev => new Set([...prev, word]));
+      const c = await storage.getClaimedWords();
+      await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
+    }
     onAddVocab?.(word, pinyin, meaning);
-    const c = await storage.getClaimedWords();
-    await storage.saveClaimedWords({ ...c, vocab: [...new Set([...c.vocab, word])] });
-  }, [onAddVocab]);
+  }, [onAddVocab, claimsStore]);
 
   const handleLearnTomorrow = useCallback(async (word: string) => {
-    setTomorrowClaimed(prev => new Set([...prev, word]));
-    const c = await storage.getClaimedWords();
-    await storage.saveClaimedWords({ ...c, tomorrow: [...new Set([...c.tomorrow, word])] });
+    if (claimsStore) {
+      claimsStore.claimTomorrow(word);
+    } else {
+      setTomorrowClaimed(prev => new Set([...prev, word]));
+      const c = await storage.getClaimedWords();
+      await storage.saveClaimedWords({ ...c, tomorrow: [...new Set([...c.tomorrow, word])] });
+    }
     closePopup();
-  }, [closePopup]);
+  }, [closePopup, claimsStore]);
 
   return { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed };
 }

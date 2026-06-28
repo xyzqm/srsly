@@ -4,7 +4,8 @@ import type { PracticeMode, ContentSection } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
-import { inStudyDeck, dateInDays } from '@/lib/deck';
+import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
+import DeckSelector from '@/components/shared/DeckSelector';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -27,14 +28,27 @@ export default function ExtrasTab({ onScore }: Props) {
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
   const [hskLevel, setHskLevel] = useState(0);
-  const [studyDeck, setStudyDeck] = useState('');
+  // Multi-deck study selection (shared across learning modes via prefs).
+  // null = all decks (default) · [] = none · [...] = specific decks.
+  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
+  const [customDecks, setCustomDecks] = useState<string[]>([]);
   useEffect(() => {
-    storage.getPrefs().then(p => { setHskLevel(p.hskLevel ?? 4); setStudyDeck(p.studyDeck ?? ''); });
+    storage.getPrefs().then(p => {
+      setHskLevel(p.hskLevel ?? 4);
+      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : null));
+      setCustomDecks(p.decks ?? []);
+    });
+  }, []);
+  const changeStudyDecks = useCallback((next: string[] | null) => {
+    setStudyDecks(next);
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next ?? undefined }));
   }, []);
 
-  // Review (flashcards) is scoped to the selected deck. Fill/conversation use the
-  // same scoped deck for their due-word checks.
-  const scopedDeck = useMemo(() => deck.filter(w => inStudyDeck(w, studyDeck)), [deck, studyDeck]);
+  // Every practice mode (flashcards / fill / conversation / cram) is scoped to the
+  // selected decks. null = all decks, [] = none.
+  const scopedDeck = useMemo(() => deck.filter(w => inSelectedDecks(w, studyDecks)), [deck, studyDecks]);
+  // Remount key so a deck-selection change rebuilds the flashcard/cram session.
+  const deckSig = decksSignature(studyDecks) || 'all';
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');
@@ -54,10 +68,12 @@ export default function ExtrasTab({ onScore }: Props) {
     () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
     [mode],
   );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyDeck, want);
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyDecks, want);
 
+  // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
+  // passage adds — you just encountered them in context, so the first review is the next day.
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
-    addWord({ h: word, p: pinyin, m: meaning });
+    addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) });
   }, [addWord]);
 
   // Stable key for the Conversation so it remounts when the turns change — include
@@ -80,14 +96,17 @@ export default function ExtrasTab({ onScore }: Props) {
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
-      {/* Mode switcher */}
-      <div className="inline-flex gap-1 p-[5px] rounded-[11px] mb-6 flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-        {MODES.map(m => (
-          <button key={m.id} onClick={() => setMode(m.id)} style={toggleStyle(mode === m.id)}>{m.label}</button>
-        ))}
+      {/* Mode switcher + deck selector */}
+      <div className="flex justify-between items-center gap-3 mb-6 flex-wrap">
+        <div className="inline-flex gap-1 p-[5px] rounded-[11px] flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+          {MODES.map(m => (
+            <button key={m.id} onClick={() => setMode(m.id)} style={toggleStyle(mode === m.id)}>{m.label}</button>
+          ))}
+        </div>
+        <DeckSelector deck={deck} customDecks={customDecks} selected={studyDecks} onChange={changeStudyDecks} />
       </div>
 
-      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
+      {mode === 'flash' && <Flashcards key={`review-${deckSig}`} deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
       {mode === 'fill'  && (
         <FillInBlank
           onDone={() => setMode('convo')}
@@ -156,7 +175,7 @@ export default function ExtrasTab({ onScore }: Props) {
               No words in this set.
             </div>
           ) : (
-            <Flashcards key={`cram-${cramScope}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
+            <Flashcards key={`cram-${cramScope}-${deckSig}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
           )}
         </div>
       )}

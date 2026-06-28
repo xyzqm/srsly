@@ -6,7 +6,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { todayStr, deckNames, inStudyDeck, isDueToday } from '@/lib/deck';
+import { todayStr, dateInDays, deckNames, inStudyDeck, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
@@ -32,6 +32,38 @@ function sdm(m: string) {
       )}
     </span>
   ));
+}
+
+function ActivatePoolBtn({ poolCount, onActivate }: { poolCount: number; onActivate: (n: number) => Promise<number> }) {
+  const [n, setN] = useState(Math.min(5, poolCount));
+  const [msg, setMsg] = useState('');
+  return msg ? (
+    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--jade)', letterSpacing: '.04em' }}>{msg}</span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5">
+      <label style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        Activate
+        <input
+          type="number"
+          value={n}
+          min={1}
+          max={poolCount}
+          onChange={e => setN(Math.max(1, Math.min(poolCount, Number(e.target.value) || 1)))}
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, background: 'transparent', border: 'none', borderBottom: '1px solid var(--line)', outline: 'none', color: 'var(--accent)', width: '3.5ch', textAlign: 'center', padding: 0 }}
+        />
+      </label>
+      <button
+        onClick={() => onActivate(Math.min(n, poolCount)).then(released => {
+          setMsg(`${released} word${released === 1 ? '' : 's'} added to today's queue`);
+          setTimeout(() => setMsg(''), 2500);
+        })}
+        className="cursor-pointer"
+        style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 11px' }}
+      >
+        Add to queue
+      </button>
+    </span>
+  );
 }
 
 function BulkBtn({ label, onClick }: { label: string; onClick: () => void }) {
@@ -284,16 +316,18 @@ interface CardManageProps {
   onReset: () => void;
   onAddDeck: (deck: string) => void;
   onRemoveDeck: (deck: string) => void;
+  onRelease?: () => void;
   onClose: () => void;
 }
 
-function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onAddDeck, onRemoveDeck, onClose }: CardManageProps) {
+function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onAddDeck, onRemoveDeck, onRelease, onClose }: CardManageProps) {
   const [addingDeck, setAddingDeck] = useState(false);
   const [deckDraft, setDeckDraft] = useState('');
   const wordDecks = word.decks ?? [];
   const snoozed = !!word.snoozeUntil && word.snoozeUntil > today;
   const status =
-    word.paused ? 'Paused'
+    word.pool ? 'In pool'
+    : word.paused ? 'Paused'
     : snoozed ? `Snoozed → ${word.snoozeUntil}`
     : word.phase === 'learning' ? 'Learning'
     : (word.reviews ?? 0) === 0 && word.stability === undefined ? 'New'
@@ -332,8 +366,9 @@ function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, o
         {word.difficulty !== undefined && stat('Difficulty', word.difficulty.toFixed(1))}
       </div>
       <div className="flex flex-wrap gap-2 items-center">
-        {word.paused ? actBtn('Resume', () => onPause(false)) : actBtn('Pause', () => onPause(true))}
-        {snoozed ? actBtn('Un-snooze', onUnsnooze) : actBtn('Snooze to tomorrow', onSnooze)}
+        {word.pool && onRelease && actBtn('Release now', onRelease)}
+        {!word.pool && (word.paused ? actBtn('Resume', () => onPause(false)) : actBtn('Pause', () => onPause(true)))}
+        {!word.pool && (snoozed ? actBtn('Un-snooze', onUnsnooze) : actBtn('Snooze to tomorrow', onSnooze))}
         <label className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '4px 8px' }}>
           Reschedule
           <input
@@ -576,13 +611,13 @@ export default function VocabTab() {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     addWordToDeck, removeWordFromDeck, addWordsToDeck,
-    resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck,
+    resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck, releaseFromPool,
   } = useVocabDeck();
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'due' | 'new' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
+  const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
   const today = todayStr();
 
@@ -750,11 +785,13 @@ export default function VocabTab() {
     () => displayDeck.filter(w => inStudyDeck(w, studyDeck)),
     [displayDeck, studyDeck],
   );
-  const isNewCard = (w: DeckWord) => (w.reviews ?? 0) === 0 && w.stability === undefined;
+  const isNewCard = (w: DeckWord) => !w.pool && (w.reviews ?? 0) === 0 && w.stability === undefined;
   const chipFiltered = useMemo(() => {
     switch (filter) {
       case 'due':       return deckScoped.filter(w => isDueToday(w, today));
+      case 'soon':      { const lim = dateInDays(7); return deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= lim && isActive(w, today)); }
       case 'new':       return deckScoped.filter(isNewCard);
+      case 'pool':      return deckScoped.filter(w => !!w.pool);
       case 'focus':     return deckScoped.filter(w => w.focus);
       case 'forgotten': return deckScoped.filter(w => (w.lapses ?? 0) > 0);
       case 'leech':     return deckScoped.filter(w => w.leech);
@@ -771,26 +808,34 @@ export default function VocabTab() {
   );
 
   // Counts for the filter chips (within the selected deck)
-  const counts = useMemo(() => ({
+  const counts = useMemo(() => {
+    const soonLim = dateInDays(7);
+    return ({
     due:       deckScoped.filter(w => isDueToday(w, today)).length,
+    soon:      deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= soonLim && isActive(w, today)).length,
     new:       deckScoped.filter(isNewCard).length,
+    pool:      deckScoped.filter(w => !!w.pool).length,
     focus:     deckScoped.filter(w => w.focus).length,
     forgotten: deckScoped.filter(w => (w.lapses ?? 0) > 0).length,
     leech:     deckScoped.filter(w => w.leech).length,
     paused:    deckScoped.filter(w => w.paused).length,
     snoozed:   deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
-  }), [deckScoped, today]);
+    });
+  }, [deckScoped, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
+  // A single word typed in by hand is due today (you added it deliberately to study now).
   function handleAdd(word: DeckWord) {
     addWord(word);
     setShowAdd(false);
   }
 
+  // Bulk imports go to the pool — words stay inactive until explicitly released into circulation.
   async function handleBulkImport(words: Array<{ h: string; p: string; m: string }>) {
-    // Tag imports into the deck you're viewing. Existing words just gain the tag (no dupes);
-    // in "All decks" (studyDeck = '') they're added untagged.
-    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m })), studyDeck || undefined);
+    // Imports are staged in the pool (inactive until released) AND tagged with the deck
+    // you're viewing. Existing words just gain the tag (no dupes); in "All decks"
+    // (studyDeck = '') they're added untagged.
+    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, pool: true })), studyDeck || undefined);
     setShowImport(false);
   }
 
@@ -953,7 +998,9 @@ export default function VocabTab() {
             {([
               ['all', `All ${deckScoped.length}`],
               ['due', `Due ${counts.due}`],
+              ['soon', `Due soon ${counts.soon}`],
               ['new', `New ${counts.new}`],
+              ['pool', `Pool ${counts.pool}`],
               ['focus', `★ Focus ${counts.focus}`],
               ['forgotten', `Forgotten ${counts.forgotten}`],
               ['leech', `Stuck ${counts.leech}`],
@@ -976,6 +1023,7 @@ export default function VocabTab() {
               </button>
             ))}
             {/* Bulk action for the active filter */}
+            {filter === 'pool'    && counts.pool    > 0 && <ActivatePoolBtn poolCount={counts.pool} onActivate={releaseFromPool} />}
             {filter === 'focus'   && counts.focus   > 0 && <BulkBtn label="Unfocus all"   onClick={unfocusAll} />}
             {filter === 'paused'  && counts.paused  > 0 && <BulkBtn label="Resume all"    onClick={resumeAll} />}
             {filter === 'snoozed' && counts.snoozed > 0 && <BulkBtn label="Un-snooze all" onClick={unsnoozeAll} />}
@@ -1009,7 +1057,7 @@ export default function VocabTab() {
                 <>
                   <div
                     className="grid items-center gap-4 py-3 px-1"
-                    style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: w.paused ? 0.55 : 1 }}
+                    style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: (w.paused || w.pool) ? 0.55 : 1 }}
                   >
                     <span style={{ fontFamily: 'var(--f-han)', fontSize: 23, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 60 }}>
                       {w.h}
@@ -1018,6 +1066,7 @@ export default function VocabTab() {
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
                       {sdm(w.m)}
                       {!studyDeck && w.decks?.map(d => <StatusChip key={d} label={d} />)}
+                      {w.pool && <StatusChip label="pool" />}
                       {w.leech && <StatusChip label="stuck" />}
                       {w.paused && <StatusChip label="paused" />}
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
@@ -1072,6 +1121,7 @@ export default function VocabTab() {
                       onReset={() => resetProgress(w.id!)}
                       onAddDeck={(d) => addWordToDeck(w.id!, d)}
                       onRemoveDeck={(d) => removeWordFromDeck(w.id!, d)}
+                      onRelease={w.pool ? () => { releaseFromPool(1); setManagingId(null); } : undefined}
                       onClose={() => setManagingId(null)}
                     />
                   )}

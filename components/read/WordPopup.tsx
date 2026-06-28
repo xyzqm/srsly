@@ -236,7 +236,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
               >
                 Add to vocab
                 <span className="block font-normal opacity-65 mt-0.5" style={{ fontSize: 9, textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>
-                  Joins your SRS deck — reviewed regularly
+                  Joins your SRS deck — reviewed regularly starting tomorrow
                 </span>
               </button>
               <button
