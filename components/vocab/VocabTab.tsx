@@ -573,6 +573,15 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
     [customDecks, deck],
   );
 
+  // Decks the Study/Cram buttons target: the explicit browse selection, or — when nothing
+  // specific is selected but the whole collection is a single deck — that one deck (so you
+  // can always Study/Cram it; the selector collapses "the only deck" to "all"). Empty when
+  // "all" is selected across multiple decks, since that's just the global queue.
+  const studyTargetDecks = browsingDecks.length ? browsingDecks
+    : allDeckNames.length === 1 ? allDeckNames
+    : [];
+  const studyTargetLabel = studyTargetDecks.length === 1 ? studyTargetDecks[0] : `${studyTargetDecks.length} decks`;
+
   // Persist the explicit deck-name list (so empty decks survive a reload) and set the local
   // browse selection. The selection itself is not persisted — it's a browse filter.
   const saveDeckState = useCallback((names: string[], selected: string[] | null) => {
@@ -828,38 +837,35 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                 Delete deck
               </button>
             )}
-            {browsingDecks.length > 0 && !addingDeck && (() => {
-              const label = singleDeck ?? `${browsingDecks.length} decks`;
-              return (
-                <>
-                  <button
-                    onClick={() => onStudyDeck(browsingDecks, 'flash')}
-                    className="cursor-pointer transition-all duration-150"
-                    title="Review this deck's due cards in a focused session"
-                    style={{
-                      fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
-                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                      padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
-                    }}
-                  >
-                    ▸ Study {label}
-                  </button>
-                  <button
-                    onClick={() => onStudyDeck(browsingDecks, 'cram')}
-                    className="cursor-pointer transition-all duration-150"
-                    title="Drill the whole deck now, ignoring due dates (doesn't change scheduling)"
-                    style={{
-                      fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
-                      background: 'none', color: 'var(--accent)',
-                      border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)', borderRadius: 7,
-                      padding: '6px 13px',
-                    }}
-                  >
-                    ⚡ Cram {label}
-                  </button>
-                </>
-              );
-            })()}
+            {studyTargetDecks.length > 0 && !addingDeck && (
+              <>
+                <button
+                  onClick={() => onStudyDeck(studyTargetDecks, 'flash')}
+                  className="cursor-pointer transition-all duration-150"
+                  title="Review this deck's due cards in a focused session"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
+                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
+                    padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
+                  }}
+                >
+                  ▸ Study {studyTargetLabel}
+                </button>
+                <button
+                  onClick={() => onStudyDeck(studyTargetDecks, 'cram')}
+                  className="cursor-pointer transition-all duration-150"
+                  title="Drill the whole deck now, ignoring due dates (doesn't change scheduling)"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
+                    background: 'none', color: 'var(--accent)',
+                    border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)', borderRadius: 7,
+                    padding: '6px 13px',
+                  }}
+                >
+                  ⚡ Cram {studyTargetLabel}
+                </button>
+              </>
+            )}
           </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
             {deckScoped.length} word{deckScoped.length === 1 ? '' : 's'}
