@@ -5,9 +5,14 @@ import { lookupWordAsync } from '@/lib/data/dict';
 import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
 import { HSK_LEVELS } from '@/lib/data/hsk-levels';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
+import { inStudyDeck } from '@/lib/deck';
 
 interface Props {
   deck: DeckWord[];
+  /** The deck being imported into ('' = the default/all-decks collection). Dedup and the
+   *  "already in deck" / HSK "N new" counts are scoped to this deck, since decks are
+   *  independent — the same word can exist in more than one deck. */
+  studyDeck: string;
   onImport: (words: Array<{ h: string; p: string; m: string }>) => void;
   onCancel: () => void;
 }
@@ -131,7 +136,7 @@ async function resolveWord(
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ImportPanel({ deck, onImport, onCancel }: Props) {
+export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Props) {
   const [mode, setMode] = useState<ImportMode>('list');
   const [text, setText] = useState('');
   const [words, setWords] = useState<ParsedWord[]>([]);
@@ -167,8 +172,12 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
     });
   }
 
-  const deckSet = new Set(deck.map(d => d.h));                    // hanzi-level — HSK mode
-  const deckIds = new Set(deck.map(d => wordIdentity(d)));        // character+meaning — list/csv/quizlet
+  // Scope "already in deck" detection to the deck we're importing into. With studyDeck=''
+  // ("All") inStudyDeck matches everything, so importing in All sees the whole collection
+  // and shows "all added" instead of creating tag-only duplicates.
+  const deckScoped = deck.filter(d => inStudyDeck(d, studyDeck));
+  const deckSet = new Set(deckScoped.map(d => d.h));                 // hanzi-level — HSK mode
+  const deckIds = new Set(deckScoped.map(d => wordIdentity(d)));     // character+meaning — list/csv/quizlet
 
   function switchMode(m: ImportMode) {
     setMode(m);

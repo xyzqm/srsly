@@ -26,7 +26,7 @@ export interface DeckWord {
   focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
-  deck?: string;         // optional deck/group name; absent = the default deck
+  decks?: string[];      // deck/group memberships (tags); a word can be in several at once. absent/[] = untagged ("All" only)
   leech?: boolean;       // auto-flagged after too many lapses (then auto-paused + starred)
 }
 

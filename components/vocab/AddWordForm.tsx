@@ -119,8 +119,8 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
     // Warn if a compound doesn't contain this character or isn't a real word
     const compWarn = await checkCompounds(h, cleanCompounds);
     if (compWarn && !window.confirm(compWarn)) return;
-    const deck = deckName.trim() || undefined;
-    onAdd({ h, p, m, ...(deck ? { deck } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
+    const deck = deckName.trim();
+    onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
   }
 
   function toggleVoice() {

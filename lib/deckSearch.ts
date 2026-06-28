@@ -49,7 +49,8 @@ function matchTerm(w: DeckWord, term: string, today: string): boolean {
   }
 
   if (term.startsWith('deck:')) {
-    return (w.deck || '').toLowerCase().includes(term.slice(5));
+    const q = term.slice(5);
+    return (w.decks ?? []).some(d => d.toLowerCase().includes(q));
   }
 
   // Plain text — hanzi / accent-insensitive pinyin / meaning.

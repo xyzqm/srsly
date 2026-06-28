@@ -30,15 +30,16 @@ export function isDueToday(w: DeckWord, today: string = todayStr()): boolean {
   return !w.dueAt || w.dueAt <= today;
 }
 
-/** Whether a word belongs to the selected study deck (empty/undefined = all decks). */
+/** Whether a word belongs to the selected study deck (empty/undefined = all decks).
+ *  Decks are tags: a word can be in several, so membership is array containment. */
 export function inStudyDeck(w: DeckWord, studyDeck?: string): boolean {
   if (!studyDeck) return true;
-  return (w.deck || '') === studyDeck;
+  return !!w.decks?.includes(studyDeck);
 }
 
-/** Distinct deck names present in the deck, sorted alphabetically. */
+/** Distinct deck names present across all words' tags, sorted alphabetically. */
 export function deckNames(deck: DeckWord[]): string[] {
   const names = new Set<string>();
-  for (const w of deck) { if (w.deck) names.add(w.deck); }
+  for (const w of deck) { for (const d of w.decks ?? []) names.add(d); }
   return [...names].sort((a, b) => a.localeCompare(b));
 }

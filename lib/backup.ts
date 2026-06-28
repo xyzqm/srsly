@@ -8,11 +8,12 @@ export interface Backup {
   prefs?: UserPrefs;
 }
 
-/** Deck → CSV (hanzi, pinyin, meaning, deck) — Anki/Pleco-friendly, re-importable. */
+/** Deck → CSV (hanzi, pinyin, meaning, decks) — Anki/Pleco-friendly, re-importable.
+ *  A word can be in several decks, so the deck column is pipe-joined ("HSK 2|Food"). */
 export function toCsv(deck: DeckWord[]): string {
   const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const head = 'hanzi,pinyin,meaning,deck';
-  const rows = deck.map(w => [w.h, w.p, w.m, w.deck ?? ''].map(x => esc(String(x ?? ''))).join(','));
+  const head = 'hanzi,pinyin,meaning,decks';
+  const rows = deck.map(w => [w.h, w.p, w.m, (w.decks ?? []).join('|')].map(x => esc(String(x ?? ''))).join(','));
   return [head, ...rows].join('\n');
 }
 
