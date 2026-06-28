@@ -9,7 +9,7 @@ export default function LookupSummary({ totalVocab, clozeAnswered }: Props) {
   const remaining = totalVocab - clozeAnswered;
 
   const msg = totalVocab === 0
-    ? (<><strong style={{ color: 'var(--ink)' }}>Other words</strong> (faint underline) — free to look up; add to your deck or schedule for tomorrow.</>)
+    ? (<><strong style={{ color: 'var(--ink)' }}>Other words</strong> (faint underline) — tap any to look it up and add it to your deck.</>)
     : clozeAnswered === 0
       ? (<><strong style={{ color: 'var(--ink)' }}>{totalVocab} review word{totalVocab === 1 ? '' : 's'}</strong> hidden as blanks — type each one to practice. Hover a blank for the English hint (toggle <strong style={{ color: 'var(--ink)' }}>Hints</strong> on/off above).</>)
       : remaining > 0

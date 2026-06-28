@@ -14,7 +14,7 @@ import ConvoReport from './ConvoReport';
  * Chat message data model.
  * Tutor messages store token arrays (not JSX) so the render function can
  * compute live claimKind on every render — fixing the stale-closure bug where
- * "Add to vocab" / "Learn this word" didn't update the underline in-chat.
+ * "Add to vocab" didn't update the underline in-chat.
  */
 interface ChatMessage {
   side: 'tutor' | 'me';
@@ -54,7 +54,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
   }, [deck]);
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
   const deckReadings = useMemo(() => groupReadings(deck), [deck]);
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
+  const { popup, openPopup, closePopup, handleAddVocab, vocabClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [turnIdx, setTurnIdx] = useState(0);
@@ -292,9 +292,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
                   style={{ fontFamily: 'var(--f-han)', fontSize: 18, lineHeight: 1.85, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)', fontWeight: 'var(--han-weight)' as 'bold' }}
                 >
                   {msg.tokens?.map((t, ti) => {
-                    const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const
-                      : tomorrowClaimed.has(t.text) ? 'tomorrow' as const
-                      : null;
+                    const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const : null;
                     return <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={ck} />;
                   })}
                 </div>
@@ -335,9 +333,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
                 }}
               >
                 {reply.tokens.map((t, ti) => {
-                  const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const
-                    : tomorrowClaimed.has(t.text) ? 'tomorrow' as const
-                    : null;
+                  const ck = (vocabClaimed.has(t.text) && deckWords.has(t.text)) ? 'vocab' as const : null;
                   return <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={ck} />;
                 })}
               </div>
@@ -402,7 +398,6 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
         data={popup}
         onClose={closePopup}
         onAddVocab={handleAddVocab}
-        onLearnTomorrow={handleLearnTomorrow}
       />
     </div>
   );

@@ -55,12 +55,10 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
 
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
   const deckReadings = useMemo(() => groupReadings(deck), [deck]);
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
+  const { popup, openPopup, closePopup, handleAddVocab, vocabClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
   // Only show the vocab badge after the user explicitly adds a word in this session
   const claimKind = (text: string) =>
-    (vocabClaimed.has(text) && deckWords.has(text)) ? 'vocab' as const
-    : tomorrowClaimed.has(text) ? 'tomorrow' as const
-    : null;
+    (vocabClaimed.has(text) && deckWords.has(text)) ? 'vocab' as const : null;
 
   if (deck.length === 0) {
     return (
@@ -305,7 +303,6 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
         data={popup}
         onClose={closePopup}
         onAddVocab={handleAddVocab}
-        onLearnTomorrow={handleLearnTomorrow}
       />
     </div>
   );

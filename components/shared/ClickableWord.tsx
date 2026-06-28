@@ -10,10 +10,9 @@ interface Props {
   /**
    * Visual claim state for this word:
    *  'vocab'    — added this session: solid jade underline + '+' badge
-   *  'tomorrow' — queued for tomorrow: solid gold underline + '▸' badge
    *  null/undefined — unknown word: dotted faint underline, no badge
    */
-  claimKind?: 'vocab' | 'tomorrow' | null;
+  claimKind?: 'vocab' | null;
   /**
    * True when this is an SRS review word in the deck (and not freshly claimed): dotted
    * accent underline, matching how review words look in the passage body. Ignored when
@@ -33,18 +32,11 @@ export default function ClickableWord({ token, onOpen, style, claimKind, isRevie
 
   const borderStyle = claimKind === 'vocab'
     ? '1.5px solid var(--jade)'
-    : claimKind === 'tomorrow'
-      ? '1.5px solid var(--gold)'
-      : isReviewWord
-        ? '1.5px dotted var(--accent)'
-        : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
+    : isReviewWord
+      ? '1.5px dotted var(--accent)'
+      : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
 
-  const badgeChar = claimKind === 'tomorrow' ? '▸' : '+';
-  const badgeColor = claimKind === 'vocab'
-    ? 'var(--jade)'
-    : claimKind === 'tomorrow'
-      ? 'var(--gold)'
-      : 'transparent';
+  const badgeColor = claimKind === 'vocab' ? 'var(--jade)' : 'transparent';
 
   return (
     <>
@@ -80,7 +72,7 @@ export default function ClickableWord({ token, onOpen, style, claimKind, isRevie
           color: badgeColor,
         }}
       >
-        {badgeChar}
+        +
       </span>
     </>
   );

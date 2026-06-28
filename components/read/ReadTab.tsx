@@ -253,8 +253,8 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
     setVocabResults([]);
   }, [numPassages]);
 
-  // One claim store shared by the title and the passage body, so adding (or queuing for
-  // tomorrow) a word in either place is reflected in the other.
+  // One claim store shared by the title and the passage body, so adding a word in either
+  // place is reflected in the other.
   const claimsStore = useClaims();
   // Words added while reading a passage are due TOMORROW — you just saw them in context,
   // so the first real review comes the next day (and they don't get re-pulled into more
@@ -444,12 +444,11 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => {
-                  // due → accent (review word); else pending → green '+'; else a tomorrow
-                  // preview → gold '▸'. Same rules as the passage body.
+                  // due → accent (review word); else pending (added, not yet due) → green '+'.
+                  // Same rules as the passage body.
                   const isReviewWord = dueDeckWords.has(t.text) && t.type === 'vocab';
                   const claimKind = isReviewWord ? null
                     : pendingDeckWords.has(t.text) ? 'vocab' as const
-                    : claimsStore.claims.get(t.text) === 'tomorrow' ? 'tomorrow' as const
                     : null;
                   return <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} claimKind={claimKind} isReviewWord={isReviewWord} />;
                 })}
@@ -537,9 +536,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
             pendingDeckWords={pendingDeckWords}
             deckReadings={deckReadings}
             onAddToDeck={handleAddToDeck}
-            claims={claimsStore.claims}
             onClaimVocab={claimsStore.claimVocab}
-            onClaimTomorrow={claimsStore.claimTomorrow}
             showClozeHints={showClozeHints}
             onClozeAnswer={handleClozeAnswer}
           />
@@ -625,7 +622,6 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
         data={titlePopup.popup}
         onClose={titlePopup.closePopup}
         onAddVocab={titlePopup.handleAddVocab}
-        onLearnTomorrow={titlePopup.handleLearnTomorrow}
       />
     </div>
   );

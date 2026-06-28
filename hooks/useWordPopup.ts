@@ -14,7 +14,7 @@ import type { ClaimsStore } from '@/hooks/useClaims';
  * @param deckWords   Optional live set of words currently in the user's deck.
  *                    When provided, a stale 'vocab' claim for a word that was
  *                    removed from the deck is treated as unclaimed — so the
- *                    "Add to vocab" / "Learn this word" buttons re-appear.
+ *                    "Add to vocab" button re-appears.
  * @param claimsStore Optional external claim store. When provided, claims are read from
  *                    and written to it (so the title shares state with the passage body);
  *                    otherwise the hook keeps its own per-instance claim state.
@@ -27,9 +27,8 @@ export function useWordPopup(
 ) {
   const [popup, setPopup] = useState<PopupData | null>(null);
 
-  // Track vocab and tomorrow claims separately so we can deck-check vocab claims.
-  const [vocabClaimed, setVocabClaimed]       = useState<Set<string>>(new Set());
-  const [tomorrowClaimed, setTomorrowClaimed] = useState<Set<string>>(new Set());
+  // Track vocab claims so we can deck-check them.
+  const [vocabClaimed, setVocabClaimed] = useState<Set<string>>(new Set());
 
   // No storage seeding — badges only show when the user explicitly acts
   // in the current session. Deck membership (deckWords) prevents "Add to vocab"
@@ -46,19 +45,13 @@ export function useWordPopup(
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    const isInDeck            = deckWords !== undefined && deckWords.has(token.text);
-    const isVocabThisSession  = claimsStore ? claimsStore.claims.get(token.text) === 'vocab'    : vocabClaimed.has(token.text);
-    const isTomorrowThisSession = claimsStore ? claimsStore.claims.get(token.text) === 'tomorrow' : tomorrowClaimed.has(token.text);
+    const isInDeck           = deckWords !== undefined && deckWords.has(token.text);
+    const isVocabThisSession = claimsStore ? claimsStore.claims.get(token.text) === 'vocab' : vocabClaimed.has(token.text);
 
     // Popup type priority:
-    //   1. Added to deck in this session → 'lookup' (show +Added badge)
-    //   2. Already in deck from a previous session → 'lookup' (no add button)
-    //   3. Marked learn-tomorrow this session → 'tomorrow'
-    //   4. Unknown word → 'free' (show Add to vocab / Learn this word)
-    let type: PopupData['type'];
-    if (isVocabThisSession || isInDeck) type = 'lookup';
-    else if (isTomorrowThisSession)     type = 'tomorrow';
-    else                                type = 'free';
+    //   1. Added to deck this session / already in deck → 'lookup' (definition, +Added badge)
+    //   2. Unknown word → 'free' (show Add to vocab)
+    const type: PopupData['type'] = (isVocabThisSession || isInDeck) ? 'lookup' : 'free';
 
     // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
     // dictionary's). For a polyphone, headline the reading matching this token's pinyin
@@ -76,7 +69,7 @@ export function useWordPopup(
     }
 
     setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings });
-  }, [claimsStore, vocabClaimed, tomorrowClaimed, deckWords, deckReadings]);
+  }, [claimsStore, vocabClaimed, deckWords, deckReadings]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     if (claimsStore) {
@@ -89,16 +82,5 @@ export function useWordPopup(
     onAddVocab?.(word, pinyin, meaning);
   }, [onAddVocab, claimsStore]);
 
-  const handleLearnTomorrow = useCallback(async (word: string) => {
-    if (claimsStore) {
-      claimsStore.claimTomorrow(word);
-    } else {
-      setTomorrowClaimed(prev => new Set([...prev, word]));
-      const c = await storage.getClaimedWords();
-      await storage.saveClaimedWords({ ...c, tomorrow: [...new Set([...c.tomorrow, word])] });
-    }
-    closePopup();
-  }, [closePopup, claimsStore]);
-
-  return { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed };
+  return { popup, openPopup, closePopup, handleAddVocab, vocabClaimed };
 }

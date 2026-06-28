@@ -5,7 +5,6 @@ import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
 import { pickReading, type ReadingHint } from '@/lib/readings';
-import type { ClaimKind } from '@/hooks/useClaims';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
 function findCompoundHints(token: PassageToken, sentence: Sentence, tokenIdx: number): CompoundHint[] {
@@ -47,11 +46,9 @@ interface Props {
   pendingDeckWords: Set<string>;
   deckReadings?: Map<string, ReadingHint[]>;
   onAddToDeck: (word: DeckWord) => void;
-  /** Shared session claim state — used only for the "learn tomorrow" preview badge now;
-   *  the added/due visuals are derived from the deck so they survive reloads. */
-  claims: Map<string, ClaimKind>;
+  /** Mark a word claimed this session (shared with the title popup); the added/due visuals
+   *  are otherwise derived from the deck so they survive reloads. */
   onClaimVocab: (word: string) => void;
-  onClaimTomorrow: (word: string) => void;
   /** Whether to show the English hint tooltip on hover over cloze blanks. */
   showClozeHints?: boolean;
   onClozeAnswer?: (word: string, correct: boolean) => void;
@@ -61,7 +58,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
-  claimKind: 'vocab' | 'tomorrow' | null;
+  claimKind: 'vocab' | null;
   compounds: CompoundHint[];
   onClick: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
@@ -70,8 +67,8 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   if (!token.pinyin || token.type === 'punct') return <span>{token.text}</span>;
 
   // Indicator character and color — empty string when none so the span is always present
-  const indicatorChar  = claimKind === 'vocab' ? '+' : claimKind === 'tomorrow' ? '▸' : (peeked && isReviewWord) ? '↺' : '';
-  const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : claimKind === 'tomorrow' ? 'var(--gold)' : 'var(--accent)';
+  const indicatorChar  = claimKind === 'vocab' ? '+' : (peeked && isReviewWord) ? '↺' : '';
+  const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : 'var(--accent)';
 
   return (
     <>
@@ -87,9 +84,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
               : '1.5px dotted var(--accent)'
             : claimKind === 'vocab'
               ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-              : claimKind === 'tomorrow'
-                ? '1.5px solid color-mix(in srgb, var(--gold) 80%, transparent)'
-                : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
+              : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
           color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
           paddingBottom: 1,
           background: hovered
@@ -264,7 +259,7 @@ function ClozeBlank({ token, showHint, onGrade }: {
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, claims, onClaimVocab, onClaimTomorrow, showClozeHints, onClozeAnswer }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, showClozeHints, onClozeAnswer }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
@@ -278,7 +273,6 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     if (isReviewWord) return;
 
     const isPending  = pendingDeckWords.has(token.text);
-    const isTomorrow = !isPending && claims.get(token.text) === 'tomorrow';
     const inDeck     = deckWords.has(token.text);
 
     const el = e.currentTarget as HTMLElement;
@@ -286,7 +280,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
-    const compoundHints = (token.text.length === 1 && !inDeck && !isTomorrow) ? compounds : [];
+    const compoundHints = (token.text.length === 1 && !inDeck) ? compounds : [];
 
     let pin = entry.pinyin, mean = entry.meaning;
     let otherReadings: { p: string; m: string }[] | undefined;
@@ -302,21 +296,15 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
 
     if (isPending || inDeck) {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings });
-    } else if (isTomorrow) {
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'tomorrow', anchorRect: rect, otherReadings });
     } else {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
     }
-  }, [claims, deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
+  }, [deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
     onAddToDeck({ h: word, p: pinyin, m: meaning });
   }, [onClaimVocab, onAddToDeck]);
-
-  const handleLearnTomorrow = useCallback((word: string) => {
-    onClaimTomorrow(word);
-  }, [onClaimTomorrow]);
 
   return (
     <div>
@@ -396,9 +384,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     />
                   );
                 }
-                const claimKind = pendingDeckWords.has(token.text) ? 'vocab'
-                  : claims.get(token.text) === 'tomorrow' ? 'tomorrow'
-                  : null;
+                const claimKind = pendingDeckWords.has(token.text) ? 'vocab' : null;
                 const compounds = findCompoundHints(token, sent, ti);
                 return (
                   <TokenEl
@@ -421,7 +407,6 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
         data={popup}
         onClose={() => setPopup(null)}
         onAddVocab={handleAddVocab}
-        onLearnTomorrow={handleLearnTomorrow}
       />
     </div>
   );

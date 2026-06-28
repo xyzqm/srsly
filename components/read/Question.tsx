@@ -35,11 +35,9 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
   const [loading, setLoading]       = useState(false);
 
-  const { popup, openPopup, closePopup, handleAddVocab, handleLearnTomorrow, vocabClaimed, tomorrowClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
+  const { popup, openPopup, closePopup, handleAddVocab, vocabClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
   const claimKind = (text: string) =>
-    (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const
-    : tomorrowClaimed.has(text) ? 'tomorrow' as const
-    : null;
+    (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const : null;
 
   const questionText = question.q.map(t => t.text).join('');
 
@@ -280,7 +278,6 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
         data={popup}
         onClose={closePopup}
         onAddVocab={handleAddVocab}
-        onLearnTomorrow={handleLearnTomorrow}
       />
     </div>
   );

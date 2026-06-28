@@ -93,7 +93,6 @@ export interface UserPrefs {
 
 export interface ClaimedWords {
   vocab: string[];     // added to SRS deck
-  tomorrow: string[];  // one-time preview
 }
 
 export type ResponseMode = 'fr' | 'mc';

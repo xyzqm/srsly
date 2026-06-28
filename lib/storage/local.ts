@@ -58,7 +58,7 @@ export class LocalStorage implements DataService {
   }
 
   async getClaimedWords(): Promise<ClaimedWords> {
-    return get<ClaimedWords>(KEYS.claimed, { vocab: [], tomorrow: [] });
+    return get<ClaimedWords>(KEYS.claimed, { vocab: [] });
   }
   async saveClaimedWords(claimed: ClaimedWords): Promise<void> {
     set(KEYS.claimed, claimed);

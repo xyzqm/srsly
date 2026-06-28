@@ -23,9 +23,9 @@ export interface PopupData {
   word: string;
   pinyin: string;
   meaning: string;
-  /** vocab = SRS word (show "revealed" warning); free = new word (show action buttons);
-   *  lookup = added to vocab deck (definition only); tomorrow = scheduled for tomorrow (definition only) */
-  type: 'vocab' | 'free' | 'lookup' | 'tomorrow';
+  /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);
+   *  lookup = added to vocab deck (definition only) */
+  type: 'vocab' | 'free' | 'lookup';
   anchorRect: DOMRect;
   /** Adjacent compound words this character belongs to (e.g. 已 → 已经) */
   compounds?: CompoundHint[];
@@ -37,10 +37,9 @@ interface Props {
   data: PopupData | null;
   onClose: () => void;
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
-  onLearnTomorrow: (word: string) => void;
 }
 
-export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }: Props) {
+export default function WordPopup({ data, onClose, onAddVocab }: Props) {
   const mounted = useIsMounted();
   const popRef = useRef<HTMLDivElement>(null);
   // Keep last data around so content stays visible during the close fade
@@ -239,16 +238,6 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
                   Joins your SRS deck — reviewed regularly starting tomorrow
                 </span>
               </button>
-              <button
-                onClick={() => { onLearnTomorrow(displayData.word); onClose(); }}
-                className="w-full text-left rounded-lg py-2 px-3 cursor-pointer transition-all duration-150"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.05em', background: 'rgba(255,255,255,.09)', border: 'none', color: 'var(--pop-fg)', lineHeight: 1.3 }}
-              >
-                Learn this word
-                <span className="block opacity-55 mt-0.5" style={{ fontSize: 9, textTransform: 'none', letterSpacing: 0 }}>
-                  Due tomorrow only — won&apos;t recur unless added
-                </span>
-              </button>
             </div>
           )}
 
@@ -258,15 +247,6 @@ export default function WordPopup({ data, onClose, onAddVocab, onLearnTomorrow }
               style={{ borderTop: '1px solid rgba(255,255,255,.1)', color: 'rgba(120,210,120,.85)', fontFamily: 'var(--f-mono)', letterSpacing: '.05em' }}
             >
               + Added to your deck
-            </div>
-          )}
-
-          {displayData.type === 'tomorrow' && (
-            <div
-              className="mt-2 pt-2 text-[11px]"
-              style={{ borderTop: '1px solid rgba(255,255,255,.1)', color: 'rgba(210,175,90,.85)', fontFamily: 'var(--f-mono)', letterSpacing: '.05em' }}
-            >
-              ▸ Due tomorrow only
             </div>
           )}
         </>
