@@ -71,6 +71,16 @@ function AppShell() {
   const { recordScore } = useSRS();
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
+  // Ephemeral, session-only study scope. null = the global due queue (default). Set by the
+  // Vocab tab's "Study this deck" shortcut; cleared on Exit or when a focused session ends.
+  // Deliberately NOT persisted — it's a temporary focus, not a saved preference.
+  const [studyScope, setStudyScope] = useState<string[] | null>(null);
+  const startDeckStudy = useCallback((decks: string[]) => {
+    setStudyScope(decks.length ? decks : null);
+    setTab('practice');
+  }, []);
+  const exitDeckStudy = useCallback(() => setStudyScope(null), []);
+
   return (
     <>
       <div className="relative z-[1]">
@@ -82,16 +92,18 @@ function AppShell() {
               onScore={recordScore}
               onNavigatePractice={() => setTab('practice')}
               onRequireSignIn={requireSignIn}
+              studyScope={studyScope}
+              onExitStudyScope={exitDeckStudy}
             />
           )}
           {tab === 'practice' && (
-            <ExtrasTab onScore={recordScore} />
+            <ExtrasTab onScore={recordScore} studyScope={studyScope} onExitStudyScope={exitDeckStudy} />
           )}
           {tab === 'dash' && (
             <StatsTab onNavigateRead={() => setTab('read')} />
           )}
           {tab === 'vocab' && (
-            <VocabTab />
+            <VocabTab onStudyDeck={startDeckStudy} />
           )}
           {tab === 'settings' && (
             <SettingsTab />

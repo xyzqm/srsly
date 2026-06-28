@@ -5,7 +5,7 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
 import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
-import DeckSelector from '@/components/shared/DeckSelector';
+import StudyScopeBanner from '@/components/shared/StudyScopeBanner';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -19,36 +19,27 @@ const MODES: { id: PracticeMode; label: string }[] = [
 
 type CramScope = 'all' | 'focus' | 'leech' | 'forgotten' | 'soon';
 
-interface Props { onScore: (score: number) => void; }
+interface Props {
+  onScore: (score: number) => void;
+  /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
+  studyScope: string[] | null;
+  onExitStudyScope: () => void;
+}
 
-export default function ExtrasTab({ onScore }: Props) {
+export default function ExtrasTab({ onScore, studyScope, onExitStudyScope }: Props) {
   const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck();
   const [mode, setMode] = useState<PracticeMode>('flash');
 
   // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
   const [hskLevel, setHskLevel] = useState(0);
-  // Multi-deck study selection (shared across learning modes via prefs).
-  // null = all decks (default) · [] = none · [...] = specific decks.
-  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
-  const [customDecks, setCustomDecks] = useState<string[]>([]);
-  useEffect(() => {
-    storage.getPrefs().then(p => {
-      setHskLevel(p.hskLevel ?? 4);
-      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : null));
-      setCustomDecks(p.decks ?? []);
-    });
-  }, []);
-  const changeStudyDecks = useCallback((next: string[] | null) => {
-    setStudyDecks(next);
-    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next ?? undefined }));
-  }, []);
+  useEffect(() => { storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4)); }, []);
 
-  // Every practice mode (flashcards / fill / conversation / cram) is scoped to the
-  // selected decks. null = all decks, [] = none.
-  const scopedDeck = useMemo(() => deck.filter(w => inSelectedDecks(w, studyDecks)), [deck, studyDecks]);
-  // Remount key so a deck-selection change rebuilds the flashcard/cram session.
-  const deckSig = decksSignature(studyDecks) || 'all';
+  // Practice pulls from the GLOBAL due queue by default; a focused "Study this deck"
+  // session (studyScope) temporarily narrows every mode to that deck. null = all.
+  const scopedDeck = useMemo(() => deck.filter(w => inSelectedDecks(w, studyScope)), [deck, studyScope]);
+  // Remount key so a scope change rebuilds the flashcard/cram session.
+  const deckSig = decksSignature(studyScope) || 'all';
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');
@@ -68,7 +59,7 @@ export default function ExtrasTab({ onScore }: Props) {
     () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
     [mode],
   );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyDecks, want);
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want);
 
   // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
   // passage adds — you just encountered them in context, so the first review is the next day.
@@ -96,16 +87,20 @@ export default function ExtrasTab({ onScore }: Props) {
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
-      {/* Mode switcher + deck selector */}
+      {/* Focused-session banner (only during a "Study this deck" session) */}
+      {studyScope && <StudyScopeBanner decks={studyScope} onExit={onExitStudyScope} />}
+
+      {/* Mode switcher */}
       <div className="flex justify-between items-center gap-3 mb-6 flex-wrap">
         <div className="inline-flex gap-1 p-[5px] rounded-[11px] flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
           {MODES.map(m => (
             <button key={m.id} onClick={() => setMode(m.id)} style={toggleStyle(mode === m.id)}>{m.label}</button>
           ))}
         </div>
-        <DeckSelector deck={deck} customDecks={customDecks} selected={studyDecks} onChange={changeStudyDecks} />
       </div>
 
+      {/* A focused "Study this deck" scope is STICKY — finishing a session flows on to
+          fill-in-the-blank (still scoped to the deck) and only the banner's Exit clears it. */}
       {mode === 'flash' && <Flashcards key={`review-${deckSig}`} deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
       {mode === 'fill'  && (
         <FillInBlank

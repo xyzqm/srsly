@@ -84,7 +84,7 @@ export interface UserPrefs {
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
-  studyDeck?: string;    // Vocab-tab browse filter (single deck); absent/'' = all decks
+  studyDeck?: string;    // LEGACY single-deck selection; migrated to studyDecks on load. absent/'' = all
   // Decks selected for the learning modes (read / fill / flashcards / conversation / cram).
   // '' represents the default (untagged) deck. Absent or empty array = all decks.
   studyDecks?: string[];

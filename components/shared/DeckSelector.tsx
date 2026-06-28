@@ -53,8 +53,9 @@ export default function DeckSelector({ deck, customDecks, selected, onChange }: 
     : arr.length === 1 ? (arr[0] || 'Default')
     : `${arr.length} decks`;
 
-  // Only one place to study from → no selector needed.
-  if (options.length <= 1) return null;
+  // Hide only when there are no real decks at all (nothing to filter by). With ≥1 named
+  // deck we always show, so deleting a deck can never trap you without a way back to "All".
+  if (named.length === 0) return null;
 
   const toggle = (key: string) => {
     // Behave like a real checkbox. "All decks" means every box is checked, so start from

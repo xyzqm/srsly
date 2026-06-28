@@ -13,7 +13,7 @@ import { groupReadings } from '@/lib/readings';
 import { dateInDays, isDueToday, todayStr } from '@/lib/deck';
 import { buildAnchorMap, type Anchor } from '@/lib/anchors';
 import ClickableWord from '@/components/shared/ClickableWord';
-import DeckSelector from '@/components/shared/DeckSelector';
+import StudyScopeBanner from '@/components/shared/StudyScopeBanner';
 import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
@@ -26,6 +26,9 @@ interface Props {
   onScore: (score: number) => void;
   onNavigatePractice: () => void;
   onRequireSignIn?: (reason?: string) => void;
+  /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
+  studyScope: string[] | null;
+  onExitStudyScope: () => void;
 }
 
 const READ_WANT: ContentSection[] = ['passage'];
@@ -42,30 +45,18 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }: Props) {
+export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, studyScope, onExitStudyScope }: Props) {
   const { signedIn } = useAuth();
   const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
 
   const [hskLevel, setHskLevel] = useState(0);
-  // Multi-deck study selection (shared across learning modes via prefs).
-  // null = all decks (default) · [] = none · [...] = specific decks.
-  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
-  const [customDecks, setCustomDecks] = useState<string[]>([]);
-  useEffect(() => {
-    storage.getPrefs().then(p => {
-      setHskLevel(p.hskLevel ?? 4);
-      setStudyDecks(p.studyDecks ?? (p.studyDeck ? [p.studyDeck] : null));
-      setCustomDecks(p.decks ?? []);
-    });
-  }, []);
-  const changeStudyDecks = useCallback((next: string[] | null) => {
-    setStudyDecks(next);
-    storage.getPrefs().then(p => storage.savePrefs({ ...p, studyDecks: next ?? undefined }));
-  }, []);
+  useEffect(() => { storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4)); }, []);
 
   const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
 
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited } = useDailyContent(hskLevel, deck, studyDecks, READ_WANT);
+  // Passages are generated from the GLOBAL due queue by default; a focused "Study this deck"
+  // session (studyScope) temporarily narrows them to that deck. null = all.
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited } = useDailyContent(hskLevel, deck, studyScope, READ_WANT);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -400,6 +391,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      {studyScope && <StudyScopeBanner decks={studyScope} onExit={onExitStudyScope} />}
       {showGuestLimit && (
         <div
           className="flex items-center justify-between gap-3 flex-wrap rounded-[11px] px-4 py-3 mb-5"
@@ -466,7 +458,6 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn }
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <DeckSelector deck={deck} customDecks={customDecks} selected={studyDecks} onChange={changeStudyDecks} />
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
             level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>HSK {hskLevel}</span> · ~{charCount} 字
           </div>
