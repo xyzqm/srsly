@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { isDueToday, isActive } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
+import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import {
@@ -69,6 +70,15 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
   const [revealed, setRevealed] = useState(false);
   // Tick increments every second when waiting, triggering countdown re-render
   const [tick, setTick] = useState(0);
+
+  // "Flip cards" / reverse study: show the meaning on the front, recall the word on the
+  // back. Persisted (localStorage prefs) so it survives across sessions/days.
+  const [reverse, setReverse] = useState(false);
+  useEffect(() => { setReverse(getReverseCards()); }, []);
+  const toggleReverse = () => {
+    setReverse(prev => { const next = !prev; setReverseCards(next); return next; });
+    setRevealed(false); // re-hide so the new orientation's answer isn't already showing
+  };
 
   // Build session queue once when deck loads
   useEffect(() => {
@@ -357,6 +367,25 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
         </div>
       </div>
 
+      {/* Flip-cards (reverse study) toggle — persists across sessions */}
+      <div className="flex justify-end mb-3">
+        <button
+          onClick={toggleReverse}
+          role="switch"
+          aria-checked={reverse}
+          className="inline-flex items-center gap-2 cursor-pointer"
+          title="Flip cards — show the meaning first and recall the word"
+          style={{ background: 'none', border: 'none', padding: 0 }}
+        >
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: reverse ? 'var(--accent)' : 'var(--ink-faint)' }}>
+            Flip cards
+          </span>
+          <span style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: reverse ? 'var(--accent)' : 'var(--line)', transition: 'background .15s', flexShrink: 0 }}>
+            <span style={{ position: 'absolute', top: 2, left: reverse ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
+          </span>
+        </button>
+      </div>
+
       {/* Card state badge — hidden in cram (no scheduling, Quizlet-style clean face) */}
       {!cram && <div className="flex justify-end mb-2 gap-2">
         {cardIsLearning ? (
@@ -384,31 +413,51 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
-          What does this mean?
+          {reverse ? "What's the word?" : 'What does this mean?'}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); void speak(speechText); }}
-          title="Play audio (R)"
-          className="absolute cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-          style={{ top: 12, right: 14, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
-        >
-          <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a9 9 0 0 1 0 14" />
-          </svg>
-        </button>
+        {/* Audio plays the word — in reverse it'd give the answer away, so hide until revealed */}
+        {(!reverse || revealed) && (
+          <button
+            onClick={(e) => { e.stopPropagation(); void speak(speechText); }}
+            title="Play audio (R)"
+            className="absolute cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
+            style={{ top: 12, right: 14, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
+          >
+            <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a9 9 0 0 1 0 14" />
+            </svg>
+          </button>
+        )}
 
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 88, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>
-          {card.h}
-        </div>
+        {/* Front: the word (normal) or its meaning (reverse) */}
+        {reverse ? (
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 34, fontWeight: 500, lineHeight: 1.3, maxWidth: '22ch' }}>
+            {sdm(card.m)}
+          </div>
+        ) : (
+          <div style={{ fontFamily: 'var(--f-han)', fontSize: 88, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>
+            {card.h}
+          </div>
+        )}
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
           {cram
             ? (revealed ? 'Did you know it?' : 'Press space or click to reveal')
-            : (revealed ? 'How well did you remember?' : 'Think of the meaning, then reveal')}
+            : (revealed ? 'How well did you remember?' : (reverse ? 'Recall the word, then reveal' : 'Think of the meaning, then reveal'))}
         </div>
 
+        {/* Back (revealed): the answer — the word + pinyin (reverse) or pinyin + meaning (normal) */}
         <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 300 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--accent)', letterSpacing: '.04em' }}>{card.p}</div>
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 6 }}>{sdm(card.m)}</div>
+          {reverse ? (
+            <>
+              <div style={{ fontFamily: 'var(--f-han)', fontSize: 56, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>{card.h}</div>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--accent)', letterSpacing: '.04em', marginTop: 12 }}>{card.p}</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--accent)', letterSpacing: '.04em' }}>{card.p}</div>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 6 }}>{sdm(card.m)}</div>
+            </>
+          )}
           {card.cn && (
             <div style={{ marginTop: 18, fontSize: 15, color: 'var(--ink-soft)', maxWidth: '34ch', lineHeight: 1.6 }}>
               <span style={{ fontFamily: 'var(--f-han)', color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: card.cn }} />
