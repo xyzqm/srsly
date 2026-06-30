@@ -177,6 +177,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   const [showResults, setShowResults] = useState(false);
   const [resultsBuilt, setResultsBuilt] = useState(false);
   const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
+  const [showNoDueDialog, setShowNoDueDialog] = useState(false);
 
   useEffect(() => {
     setActiveSentence(0);
@@ -266,7 +267,14 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   }, [addWord]);
 
   const handleClozeAnswer = useCallback((word: string, correct: boolean) => {
-    setClozeGrades(prev => new Map(prev).set(word, correct ? 3 : 1));
+    setClozeGrades(prev => {
+      const next = new Map(prev);
+      const grade: FsrsGrade = correct ? 3 : 1;
+      const existing = next.get(word);
+      // Wrong answers are never overwritten by a later correct answer.
+      next.set(word, existing !== undefined ? Math.min(existing, grade) as FsrsGrade : grade);
+      return next;
+    });
   }, []);
 
   const handleAddToDeck = useCallback((word: DeckWord) => {
@@ -313,7 +321,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       const rows = allResultWords.map(w => {
         const deckWord = deck.find(d => d.h === w);
         const grade = getWordGrade(w);
-        const days = deckWord ? fsrsNextInterval(deckWord, grade) : 1;
+        const days = deckWord ? Math.max(1, fsrsNextInterval(deckWord, grade)) : 1;
         const label = fmtInterval(days);
         if (clozeGrades.has(w)) {
           return grade === 3
@@ -349,7 +357,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       });
       const anchorRows = [...byCard.values()].map(({ anchor, compounds, grade }) => {
         const card = deck.find(d => d.id === anchor.id);
-        const days = card ? fsrsNextInterval(card, grade) : 1;
+        const days = card ? Math.max(1, fsrsNextInterval(card, grade)) : 1;
         const label = fmtInterval(days);
         const tag = `${anchor.hanzi} ${anchor.pinyin}`;
         const shown = compounds.join('、');
@@ -392,6 +400,38 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       {studyScope && <StudyScopeBanner decks={studyScope} onExit={onExitStudyScope} />}
+      {showNoDueDialog && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(20,18,16,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div
+            onClick={e => e.stopPropagation()}
+            className="animate-rise"
+            style={{ width: 380, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '26px 24px', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}
+          >
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, fontWeight: 500, letterSpacing: '-.01em' }}>
+              All caught up
+            </div>
+            <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '8px 0 22px' }}>
+              {dueDeckWords.size === 0
+                ? "You have no words due for review today. New passages won't have any focus vocabulary."
+                : "You've already covered all your due words in today's passages. Generating another won't introduce new review words."}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                onClick={() => { setShowNoDueDialog(false); loadMore(); }}
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 16px', cursor: 'pointer', boxShadow: '0 2px 0 var(--accent-deep)' }}
+              >
+                Generate anyway
+              </button>
+              <button
+                onClick={() => setShowNoDueDialog(false)}
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--ink-soft)', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showGuestLimit && (
         <div
           className="flex items-center justify-between gap-3 flex-wrap rounded-[11px] px-4 py-3 mb-5"
@@ -506,7 +546,12 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
             <div className="ml-auto flex gap-2 items-center flex-wrap">
               {(dailyStatus === 'ready' || dailyStatus === 'error') && (
                 <button
-                  onClick={loadMore}
+                  onClick={() => {
+                    const covered = new Set(dailyContent?.passages.flatMap(p => p.vocabWords) ?? []);
+                    const hasUncovered = [...dueDeckWords].some(w => !covered.has(w));
+                    if (!hasUncovered) { setShowNoDueDialog(true); return; }
+                    loadMore();
+                  }}
                   disabled={loadingMore}
                   className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
                   style={{
@@ -592,11 +637,15 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
             <button
               onClick={toggleResults}
-              className="flex items-center gap-2 cursor-pointer transition-all duration-150"
+              disabled={!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount}
+              title={!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount ? `Fill in all ${clozeWordCount} blank${clozeWordCount === 1 ? '' : 's'} first` : undefined}
+              className="flex items-center gap-2 transition-all duration-150"
               style={{
                 fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
                 background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
                 padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+                cursor: (!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount) ? 'not-allowed' : 'pointer',
+                opacity: (!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount) ? 0.45 : 1,
               }}
             >
               {showResults ? 'Hide vocabulary results' : 'Finish & see vocabulary results'}

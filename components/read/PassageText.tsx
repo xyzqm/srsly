@@ -136,8 +136,9 @@ function ClozeBlank({ token, showHint, onGrade }: {
   const [hovered, setHovered] = useState(false);
   const gradedRef = useRef(false);
 
-  const submit = useCallback(() => {
-    if (gradedRef.current || !value.trim()) return;
+  const submit = useCallback((opts?: { force?: boolean }) => {
+    if (gradedRef.current) return;
+    if (!value.trim() && !opts?.force) return;
     gradedRef.current = true;
     const isCorrect = value.trim() === token.text;
     setSubmitted(true);
@@ -235,8 +236,8 @@ function ClozeBlank({ token, showHint, onGrade }: {
         type="text"
         value={value}
         onChange={e => setValue(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-        onBlur={submit}
+        onKeyDown={e => { if (e.key === 'Enter') submit({ force: true }); }}
+        onBlur={() => submit()}
         style={{
           width: `${Math.max(token.text.length * 1.3, 2.5)}em`,
           fontFamily: 'var(--f-han)',
