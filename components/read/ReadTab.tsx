@@ -40,8 +40,8 @@ const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for un
 // identity, so a new day / deck still starts fresh.
 const passageIdxKey = (contentKey: string) => `srsly-read-pidx|${contentKey}`;
 function readSavedPassageIdx(contentKey: string): number {
-  if (!contentKey || typeof sessionStorage === 'undefined') return 0;
-  const n = parseInt(sessionStorage.getItem(passageIdxKey(contentKey)) ?? '', 10);
+  if (!contentKey || typeof localStorage === 'undefined') return 0;
+  const n = parseInt(localStorage.getItem(passageIdxKey(contentKey)) ?? '', 10);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
@@ -218,7 +218,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   useEffect(() => {
     if (!contentKey) return;
     if (lastIdxKey.current === contentKey) {
-      try { sessionStorage.setItem(passageIdxKey(contentKey), String(passageIdx)); } catch { /* ignore */ }
+      try { localStorage.setItem(passageIdxKey(contentKey), String(passageIdx)); } catch { /* ignore */ }
     } else {
       lastIdxKey.current = contentKey;
     }
@@ -229,7 +229,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   useEffect(() => {
     if (!passageFinishedKey) return;
     try {
-      const done = !!sessionStorage.getItem(passageFinishedKey);
+      const done = !!localStorage.getItem(passageFinishedKey);
       setAlreadyFinished(done);
       if (done) setShowResults(true);
     } catch { /* ignore */ }
@@ -399,7 +399,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       }
 
       if (passageFinishedKey) {
-        try { sessionStorage.setItem(passageFinishedKey, '1'); } catch { /* ignore */ }
+        try { localStorage.setItem(passageFinishedKey, '1'); } catch { /* ignore */ }
       }
       setAlreadyFinished(true);
     }

@@ -70,11 +70,18 @@ export class LocalStorage implements DataService {
   }
   async saveDailyContent(content: DailyContent): Promise<void> {
     set(dailyKey(content.hskLevel, content.deck, content.date), content);
-    // Prune any cached daily content from previous days (across all level/deck scopes).
+    // Prune stale per-day localStorage entries: daily content, passage index, and
+    // passage-finished flags. All keyed with the date so we can compare against today.
     const today = content.date;
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
-      if (k && k.startsWith('srsly-daily-') && !k.endsWith(today)) localStorage.removeItem(k);
+      if (!k) continue;
+      if (k.startsWith('srsly-daily-') && !k.endsWith(today)) { localStorage.removeItem(k); continue; }
+      // srsly-read-pidx|{date}|... and srsly-done|{date}|... — date is the second segment
+      if (k.startsWith('srsly-read-pidx|') || k.startsWith('srsly-done|')) {
+        const date = k.split('|')[1];
+        if (date && date !== today) localStorage.removeItem(k);
+      }
     }
   }
 }

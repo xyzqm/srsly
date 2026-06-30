@@ -9,9 +9,16 @@ interface UserDataRow {
   srs_state: SRSState | null;
 }
 
-/** Dedup key for merging decks: stable id when present, else character + meaning. */
-function wordKey(w: DeckWord): string {
-  return w.id ?? `${w.h}|${(w.m ?? '').trim()}`;
+/** Semantic identity: same character + same meaning = same card, regardless of id. */
+function semanticKey(w: DeckWord): string {
+  return `${w.h}|${(w.m ?? '').trim()}`;
+}
+
+/** Remove semantic duplicates from a deck, keeping the last occurrence (cloud wins when iterating cloud after local). */
+function deduplicateDeck(deck: DeckWord[]): DeckWord[] {
+  const seen = new Map<string, DeckWord>();
+  for (const w of deck) seen.set(semanticKey(w), w);
+  return [...seen.values()];
 }
 
 /**
@@ -39,7 +46,11 @@ export class SupabaseStorage implements DataService {
 
   async getVocabDeck(): Promise<DeckWord[]> {
     const r = await this.row();
-    if (r?.deck) { await this.local.saveVocabDeck(r.deck); return r.deck; }
+    if (r?.deck) {
+      const deck = deduplicateDeck(r.deck);
+      await this.local.saveVocabDeck(deck);
+      return deck;
+    }
     return this.local.getVocabDeck();
   }
   async saveVocabDeck(deck: DeckWord[]): Promise<void> { await this.local.saveVocabDeck(deck); await this.patch({ deck }); }
@@ -87,8 +98,8 @@ export async function migrateLocalToCloud(sb: SupabaseClient, userId: string): P
 
   if (cloudDeck && cloudDeck.length) {
     const byKey = new Map<string, DeckWord>();
-    for (const w of localDeck) byKey.set(wordKey(w), w);
-    for (const w of cloudDeck) byKey.set(wordKey(w), w); // cloud wins
+    for (const w of localDeck) byKey.set(semanticKey(w), w);
+    for (const w of cloudDeck) byKey.set(semanticKey(w), w); // cloud wins
     deck = [...byKey.values()];
     prefs = cloud?.prefs ?? localPrefs;
     srs = cloud?.srs_state ?? localSrs;
