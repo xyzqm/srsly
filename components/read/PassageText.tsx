@@ -4,6 +4,8 @@ import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
+import { lookupReading } from '@/lib/data/lookup';
+import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
@@ -63,8 +65,8 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   onClick: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  // Non-interactive when there's no pinyin or the token is punctuation
-  if (!token.pinyin || token.type === 'punct') return <span>{token.text}</span>;
+  // Non-interactive when there's no reading or the token is punctuation
+  if (!token.reading || token.type === 'punct') return <span>{token.text}</span>;
 
   // Indicator character and color — empty string when none so the span is always present
   const indicatorChar  = claimKind === 'vocab' ? '+' : (peeked && isReviewWord) ? '↺' : '';
@@ -96,7 +98,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
         }}
       >
         {token.text}
-        <rt>{token.pinyin}</rt>
+        <rt>{token.reading}</rt>
       </ruby>
       {/*
         Always-rendered inline sibling — only `color` changes between states.
@@ -157,7 +159,7 @@ function ClozeBlank({ token, showHint, onGrade }: {
       <>
         <ruby style={{ color }}>
           {token.text}
-          <rt>{token.pinyin}</rt>
+          <rt>{token.reading}</rt>
         </ruby>
         <span
           aria-hidden="true"
@@ -262,12 +264,13 @@ function ClozeBlank({ token, showHint, onGrade }: {
 
 export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, showClozeHints, onClozeAnswer }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
+  const language = useLanguage();
 
   const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
-    // Skip true punctuation and words with no pinyin data
-    if (!token.pinyin || token.type === 'punct') return;
+    // Skip true punctuation and words with no reading data
+    if (!token.reading || token.type === 'punct') return;
 
     // Review words are now cloze blanks — they handle their own interaction.
     const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
@@ -280,15 +283,15 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    const entry = lookupWord(token.text, token.pinyin || '', token.meaning || '');
+    const entry = lookupReading(language, token.text, token.reading || '', token.meaning || '');
     const compoundHints = (token.text.length === 1 && !inDeck) ? compounds : [];
 
-    let pin = entry.pinyin, mean = entry.meaning;
+    let pin = entry.reading, mean = entry.meaning;
     let otherReadings: { p: string; m: string }[] | undefined;
     const allReadings = deckReadings?.get(token.text);
     if (allReadings && allReadings.length >= 1) {
-      const matched = pickReading(allReadings, token.pinyin || '') ?? allReadings[0];
-      pin = matched.p || entry.pinyin;
+      const matched = pickReading(allReadings, token.reading || '') ?? allReadings[0];
+      pin = matched.p || entry.reading;
       mean = matched.m || entry.meaning;
       if (allReadings.length > 1) {
         otherReadings = allReadings.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
@@ -300,7 +303,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     } else {
       setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
     }
-  }, [deckWords, dueDeckWords, pendingDeckWords, deckReadings]);
+  }, [deckWords, dueDeckWords, pendingDeckWords, deckReadings, language]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
@@ -386,7 +389,9 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                   );
                 }
                 const claimKind = pendingDeckWords.has(token.text) ? 'vocab' : null;
-                const compounds = findCompoundHints(token, sent, ti);
+                // Compound hints are a Chinese single-character feature; Japanese tokens
+                // already arrive as whole words.
+                const compounds = language === 'zh' ? findCompoundHints(token, sent, ti) : [];
                 return (
                   <TokenEl
                     key={ti}

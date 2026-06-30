@@ -1,13 +1,14 @@
-import type { PassageToken, Sentence, Question, FillItem, ConvoTurn } from '@/lib/types';
+import type { PassageToken, Sentence, Question, FillItem, ConvoTurn, LanguageCode } from '@/lib/types';
 import { STATIC_CONVOS } from './staticConvos';
+import { getJaPassageData } from './jlpt-passages';
 
 type RawToken = [string] | [string, string] | [string, string, string];
 
 function rawToToken(raw: RawToken, freeDict: Record<string, string>): PassageToken {
-  if (raw.length === 3) return { text: raw[0], pinyin: raw[1], meaning: raw[2], type: 'vocab' };
+  if (raw.length === 3) return { text: raw[0], reading: raw[1], meaning: raw[2], type: 'vocab' };
   if (raw.length === 2) {
     const meaning = freeDict[raw[0]];
-    return { text: raw[0], pinyin: raw[1], meaning, type: meaning ? 'free' : undefined };
+    return { text: raw[0], reading: raw[1], meaning, type: meaning ? 'free' : undefined };
   }
   return { text: raw[0], type: 'punct' };
 }
@@ -27,8 +28,8 @@ function buildSentences(raw: RawToken[], freeDict: Record<string, string>): Sent
   return out;
 }
 
-function pt(text: string, pinyin?: string): PassageToken {
-  return pinyin ? { text, pinyin } : { text, type: 'punct' };
+function pt(text: string, reading?: string): PassageToken {
+  return reading ? { text, reading } : { text, type: 'punct' };
 }
 
 export interface PassageData {
@@ -1133,43 +1134,49 @@ function buildPassage(
 
 export const PASSAGES: PassageData[] = [
   buildPassage(1, '我的家', [
-    { text: '我', pinyin: 'wǒ', meaning: 'I · me' },
-    { text: '的', pinyin: 'de', meaning: '(modifier particle)' },
-    { text: '家', pinyin: 'jiā', meaning: 'home · family' },
+    { text: '我', reading: 'wǒ', meaning: 'I · me' },
+    { text: '的', reading: 'de', meaning: '(modifier particle)' },
+    { text: '家', reading: 'jiā', meaning: 'home · family' },
   ], HSK1_RAW, HSK1_FREE, HSK1_QUESTIONS, HSK1_FILL, 125),
 
   buildPassage(2, '周末去公园', [
-    { text: '周末', pinyin: 'zhōumò', meaning: 'weekend' },
-    { text: '去', pinyin: 'qù', meaning: 'to go' },
-    { text: '公园', pinyin: 'gōngyuán', meaning: 'park' },
+    { text: '周末', reading: 'zhōumò', meaning: 'weekend' },
+    { text: '去', reading: 'qù', meaning: 'to go' },
+    { text: '公园', reading: 'gōngyuán', meaning: 'park' },
   ], HSK2_RAW, HSK2_FREE, HSK2_QUESTIONS, HSK2_FILL, 155),
 
   buildPassage(3, '学中文', [
-    { text: '学', pinyin: 'xué', meaning: 'to study · to learn' },
-    { text: '中文', pinyin: 'zhōngwén', meaning: 'Chinese (language)' },
+    { text: '学', reading: 'xué', meaning: 'to study · to learn' },
+    { text: '中文', reading: 'zhōngwén', meaning: 'Chinese (language)' },
   ], HSK3_RAW, HSK3_FREE, HSK3_QUESTIONS, HSK3_FILL, 185),
 
   buildPassage(4, '城市里的环境', [
-    { text: '城市', pinyin: 'chéngshì', meaning: 'city; town' },
-    { text: '里', pinyin: 'lǐ', meaning: 'inside; within' },
-    { text: '的', pinyin: 'de', meaning: '(modifier / possessive particle)' },
-    { text: '环境', pinyin: 'huánjìng', meaning: 'environment; surroundings' },
+    { text: '城市', reading: 'chéngshì', meaning: 'city; town' },
+    { text: '里', reading: 'lǐ', meaning: 'inside; within' },
+    { text: '的', reading: 'de', meaning: '(modifier / possessive particle)' },
+    { text: '环境', reading: 'huánjìng', meaning: 'environment; surroundings' },
   ], HSK4_RAW, HSK4_FREE, HSK4_QUESTIONS, HSK4_FILL, 200),
 
   buildPassage(5, '网络与生活', [
-    { text: '网络', pinyin: 'wǎngluò', meaning: 'the internet · network' },
-    { text: '与', pinyin: 'yǔ', meaning: 'and · with' },
-    { text: '生活', pinyin: 'shēnghuó', meaning: 'life · to live' },
+    { text: '网络', reading: 'wǎngluò', meaning: 'the internet · network' },
+    { text: '与', reading: 'yǔ', meaning: 'and · with' },
+    { text: '生活', reading: 'shēnghuó', meaning: 'life · to live' },
   ], HSK5_RAW, HSK5_FREE, HSK5_QUESTIONS, HSK5_FILL, 250),
 
   buildPassage(6, '传统文化的传承', [
-    { text: '传统', pinyin: 'chuántǒng', meaning: 'traditional · tradition' },
-    { text: '文化', pinyin: 'wénhuà', meaning: 'culture · civilization' },
-    { text: '的', pinyin: 'de', meaning: '(modifier particle)' },
-    { text: '传承', pinyin: 'chuánchéng', meaning: 'inheritance · to pass on' },
+    { text: '传统', reading: 'chuántǒng', meaning: 'traditional · tradition' },
+    { text: '文化', reading: 'wénhuà', meaning: 'culture · civilization' },
+    { text: '的', reading: 'de', meaning: '(modifier particle)' },
+    { text: '传承', reading: 'chuánchéng', meaning: 'inheritance · to pass on' },
   ], HSK6_RAW, HSK6_FREE, HSK6_QUESTIONS, HSK6_FILL, 305),
 ];
 
 export function getPassageData(hskLevel: number): PassageData {
   return PASSAGES.find(p => p.level === hskLevel) ?? PASSAGES[3]; // default HSK 4
+}
+
+/** Language-aware static passage lookup. Chinese uses HSK levels; Japanese uses JLPT. */
+export function getPassageDataForLanguage(lang: LanguageCode, level: number): PassageData {
+  if (lang === 'ja') return getJaPassageData(level);
+  return getPassageData(level);
 }

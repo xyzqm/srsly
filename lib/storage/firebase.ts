@@ -12,7 +12,7 @@
 // import { initializeApp } from 'firebase/app';
 // import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
 
 // const firebaseConfig = {
 //   apiKey: '...',
@@ -26,10 +26,10 @@ export class FirebaseStorage implements DataService {
   // Replace 'user_id' with actual auth uid once auth is wired up
   private uid = 'user_id';
 
-  async getVocabDeck(): Promise<DeckWord[]> {
+  async getVocabDeck(_lang: LanguageCode): Promise<DeckWord[]> {
     throw new Error('FirebaseStorage not yet configured — see lib/storage/firebase.ts');
   }
-  async saveVocabDeck(_deck: DeckWord[]): Promise<void> {
+  async saveVocabDeck(_lang: LanguageCode, _deck: DeckWord[]): Promise<void> {
     throw new Error('FirebaseStorage not yet configured');
   }
   async getSRSState(): Promise<SRSState> {
@@ -50,7 +50,7 @@ export class FirebaseStorage implements DataService {
   async saveClaimedWords(_claimed: ClaimedWords): Promise<void> {
     throw new Error('FirebaseStorage not yet configured');
   }
-  async getDailyContent(_hskLevel: number, _deck?: string): Promise<DailyContent | null> {
+  async getDailyContent(_lang: LanguageCode, _level: number, _deck?: string): Promise<DailyContent | null> {
     throw new Error('FirebaseStorage not yet configured');
   }
   async saveDailyContent(_content: DailyContent): Promise<void> {

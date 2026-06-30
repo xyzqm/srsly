@@ -1,11 +1,21 @@
 'use client';
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
-import type { DeckWord } from '@/lib/types';
-import { lookupWordAsync } from '@/lib/data/dict';
+import type { DeckWord, LanguageCode } from '@/lib/types';
+import { lookupReadingAsync } from '@/lib/data/lookup';
 import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
 import { HSK_LEVELS } from '@/lib/data/hsk-levels';
+import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
+import { JLPT_LEVELS } from '@/lib/data/jlpt-levels';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
+import { useLanguage } from '@/lib/LanguageContext';
 import { inStudyDeck } from '@/lib/deck';
+
+// Characters that count as "word characters" per language — used by the paste parsers.
+// Chinese: Han only. Japanese: Han + hiragana + katakana.
+const WORDCHAR_RE: Record<LanguageCode, RegExp> = {
+  zh: /[一-鿿]/,
+  ja: /[一-鿿぀-ヿ]/,
+};
 
 interface Props {
   deck: DeckWord[];
@@ -73,23 +83,23 @@ function parseWordList(text: string): Array<{ h: string; p: string; m: string }>
   return text.split(/[\n,，]+/).map(l => l.trim()).filter(Boolean).map(l => ({ h: l, p: '', m: '' }));
 }
 
-function parseQuizletText(text: string): Array<{ h: string; p: string; m: string }> {
+function parseQuizletText(text: string, wordRe: RegExp): Array<{ h: string; p: string; m: string }> {
   return text.split(/\n+/).map(l => l.trim()).filter(Boolean).flatMap(line => {
     const parts = line.split(/\t/);
     if (parts.length < 2) return [];
     const term = parts[0].trim(), def = parts[1].trim();
     if (!term) return [];
-    if (/[一-鿿]/.test(term)) return [{ h: term, p: '', m: def }];
-    if (/[一-鿿]/.test(def))  return [{ h: def,  p: '', m: term }];
+    if (wordRe.test(term)) return [{ h: term, p: '', m: def }];
+    if (wordRe.test(def))  return [{ h: def,  p: '', m: term }];
     return [];
   });
 }
 
-function parseCsv(text: string): Array<{ h: string; p: string; m: string }> {
+function parseCsv(text: string, wordRe: RegExp): Array<{ h: string; p: string; m: string }> {
   return text.split(/\n+/).map(l => l.trim()).filter(Boolean).flatMap(line => {
     const parts = line.split(/,|\t/).map(p => p.trim().replace(/^["']|["']$/g, ''));
     const [h, second, third] = parts;
-    if (!h || !/[一-鿿]/.test(h)) return [];
+    if (!h || !wordRe.test(h)) return [];
     if (third) return [{ h, p: second || '', m: third }];
     if (second) return [{ h, p: '', m: second }];
     return [{ h, p: '', m: '' }];
@@ -107,25 +117,27 @@ function wordIdentity(w: { h: string; m: string }): string {
 async function resolveWord(
   w: { h: string; p: string; m: string },
   deckIds: Set<string>,
+  lang: LanguageCode,
 ): Promise<ParsedWord> {
   let p = w.p, m = w.m;
   // Pull a leading reading out of the definition so polyphones keep distinct pinyin
-  // ("háng - a row" → pinyin "háng", meaning "a row"). Only when no pinyin was given.
-  if (!p) {
+  // ("háng - a row" → pinyin "háng", meaning "a row"). Chinese only — Japanese readings
+  // are hiragana and aren't space-prefixed in glosses.
+  if (!p && lang === 'zh') {
     const split = splitLeadingPinyin(m);
     if (split) { p = split.pinyin; m = split.meaning; }
   }
   let status: ParsedWord['status'];
   if (p && m) {
-    p = /[1-5]/.test(p) ? toneNumToMark(p) : p;
+    p = lang === 'zh' && /[1-5]/.test(p) ? toneNumToMark(p) : p;
     status = 'ready';
   } else {
-    const found = await lookupWordAsync(w.h, '', m);
-    p = found.pinyin || p;
+    const found = await lookupReadingAsync(lang, w.h, '', m);
+    p = found.reading || p;
     // Prefer the pasted meaning: it's what distinguishes two readings of one character
     // (行 "to walk" vs "a row"); the dictionary returns a single merged gloss.
     m = m || found.meaning;
-    status = (m || found.meaning || found.pinyin) ? 'ready' : 'not-found';
+    status = (m || found.meaning || found.reading) ? 'ready' : 'not-found';
   }
   // In-deck only when the same character AND meaning already exist.
   if (deckIds.has(wordIdentity({ h: w.h, m }))) {
@@ -137,6 +149,14 @@ async function resolveWord(
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Props) {
+  const language = useLanguage();
+  const wordRe = WORDCHAR_RE[language];
+  const isJa = language === 'ja';
+  // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1).
+  const levelVocab = isJa ? JLPT_VOCAB : HSK_VOCAB;
+  const levelWords = isJa ? JLPT_LEVELS : HSK_LEVELS;
+  const levelList = isJa ? [5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6];
+  const levelLabel = (lvl: number) => isJa ? `JLPT N${lvl}` : `HSK ${lvl}`;
   const [mode, setMode] = useState<ImportMode>('list');
   const [text, setText] = useState('');
   const [words, setWords] = useState<ParsedWord[]>([]);
@@ -209,8 +229,8 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
 
     let raw: Array<{ h: string; p: string; m: string }> = [];
     if (mode === 'list')    raw = parseWordList(text);
-    if (mode === 'csv')     raw = parseCsv(text);
-    if (mode === 'quizlet') raw = parseQuizletText(text);
+    if (mode === 'csv')     raw = parseCsv(text, wordRe);
+    if (mode === 'quizlet') raw = parseQuizletText(text, wordRe);
 
     // How many input items were attempted — lets us report any that couldn't be parsed.
     const inputCount = (mode === 'list' ? text.split(/[\n,，]+/) : text.split(/\n+/))
@@ -225,13 +245,13 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
     setWords(raw.map(w => ({ ...w, status: 'loading', selected: false })));
     setLookupDone(false);
 
-    Promise.all(raw.map(w => resolveWord(w, deckIds))).then(results => {
+    Promise.all(raw.map(w => resolveWord(w, deckIds, language))).then(results => {
       if (abortRef.current !== run) return;
       setWords(results);
       setLookupDone(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, mode]);
+  }, [text, mode, language]);
 
   const toggleWord = useCallback((i: number) => {
     setWords(prev => prev.map((w, j) => j === i ? { ...w, selected: !w.selected } : w));
@@ -246,10 +266,13 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   // ── HSK level mode ──────────────────────────────────────────────────────────
 
   function addHskLevel(level: number) {
-    const hanziList = HSK_LEVELS[level] ?? [];
-    const toAdd = hanziList
+    const wordList = levelWords[level] ?? [];
+    const toAdd = wordList
       .filter(h => !deckSet.has(h))
-      .map(h => { const v = HSK_VOCAB[h]; return { h, p: v?.pinyin ?? '', m: v?.meaning ?? '' }; });
+      .map(h => {
+        const v = levelVocab[h] as { pinyin?: string; reading?: string; meaning: string } | undefined;
+        return { h, p: v?.pinyin ?? v?.reading ?? '', m: v?.meaning ?? '' };
+      });
     if (toAdd.length > 0) onImport(toAdd);
   }
 
@@ -277,7 +300,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       <div className="inline-flex gap-1 p-[5px] rounded-[11px] mb-5 flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
         {(Object.keys(MODE_LABELS) as ImportMode[]).map(m => (
           <button key={m} onClick={() => switchMode(m)} style={tabBtn(mode === m)}>
-            {MODE_LABELS[m]}
+            {m === 'hsk' ? (isJa ? 'JLPT levels' : 'HSK levels') : MODE_LABELS[m]}
           </button>
         ))}
       </div>
@@ -286,18 +309,18 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       {mode === 'hsk' && (
         <div>
           <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 18 }}>
-            Add all vocabulary words from a specific HSK level. Words already in your deck are skipped.
+            Add all vocabulary words from a specific {isJa ? 'JLPT' : 'HSK'} level. Words already in your deck are skipped.
           </p>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
-            {[1, 2, 3, 4, 5, 6].map(level => {
-              const all    = HSK_LEVELS[level]?.length ?? 0;
-              const inDeck = (HSK_LEVELS[level] ?? []).filter(h => deckSet.has(h)).length;
+            {levelList.map(level => {
+              const all    = levelWords[level]?.length ?? 0;
+              const inDeck = (levelWords[level] ?? []).filter(h => deckSet.has(h)).length;
               const toAdd  = all - inDeck;
               return (
                 <button key={level} onClick={() => addHskLevel(level)} disabled={toAdd === 0}
                   className="transition-all duration-150 hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-default cursor-pointer"
                   style={{ background: 'var(--card)', border: '1px solid var(--line)', borderBottom: '2px solid var(--accent)', borderRadius: 12, padding: '16px 18px', textAlign: 'left' }}>
-                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 600 }}>HSK {level}</div>
+                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 600 }}>{levelLabel(level)}</div>
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>
                     {toAdd > 0 ? `+ ${toAdd} new` : 'all added'}
                     <span style={{ color: 'var(--ink-faint)', marginLeft: 6 }}>/ {all} total</span>

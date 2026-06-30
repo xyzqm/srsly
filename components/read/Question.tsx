@@ -6,6 +6,7 @@ import { speak } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { useLanguage } from '@/lib/LanguageContext';
 import type { ReadingHint } from '@/lib/readings';
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, onMcGrade }: Props) {
+  const language = useLanguage();
   // MC state
   const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
   const [mcDone, setMcDone]             = useState(false);
@@ -83,6 +85,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
           key: question.key,
           response: text,
           hskLevel,
+          language,
         }),
       });
       const data = await res.json();

@@ -1,8 +1,9 @@
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
 
 export interface DataService {
-  getVocabDeck(): Promise<DeckWord[]>;
-  saveVocabDeck(deck: DeckWord[]): Promise<void>;
+  // Vocab decks are per-language (a Chinese deck and a Japanese deck are independent).
+  getVocabDeck(lang: LanguageCode): Promise<DeckWord[]>;
+  saveVocabDeck(lang: LanguageCode, deck: DeckWord[]): Promise<void>;
 
   getSRSState(): Promise<SRSState>;
   saveSRSState(state: SRSState): Promise<void>;
@@ -13,6 +14,7 @@ export interface DataService {
   getClaimedWords(): Promise<ClaimedWords>;
   saveClaimedWords(claimed: ClaimedWords): Promise<void>;
 
-  getDailyContent(hskLevel: number, deck?: string): Promise<DailyContent | null>;
+  // Daily content is cached per language + level + deck + day.
+  getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null>;
   saveDailyContent(content: DailyContent): Promise<void>;
 }

@@ -1,11 +1,14 @@
 'use client';
 import { useState, useRef, useCallback } from 'react';
+import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SR = any;
 
 export function useMic(onResult: (text: string) => void) {
   const [listening, setListening] = useState(false);
+  const language = useLanguage();
   const recRef = useRef<SR | null>(null);
   const lastFinalRef = useRef('');
 
@@ -21,7 +24,7 @@ export function useMic(onResult: (text: string) => void) {
 
     lastFinalRef.current = currentInput.trim();
     const rec = new SR();
-    rec.lang = 'zh-CN';
+    rec.lang = getLanguageConfig(language).bcp47;
     rec.interimResults = true;
     rec.maxAlternatives = 1;
     recRef.current = rec;
@@ -48,7 +51,7 @@ export function useMic(onResult: (text: string) => void) {
     };
 
     try { rec.start(); } catch { /* already started */ }
-  }, [listening, onResult]);
+  }, [listening, onResult, language]);
 
   const supported = typeof window !== 'undefined' &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

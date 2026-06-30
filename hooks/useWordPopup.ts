@@ -2,7 +2,8 @@
 import { useState, useCallback } from 'react';
 import type { PassageToken } from '@/lib/types';
 import type { PopupData } from '@/components/read/WordPopup';
-import { lookupWord } from '@/lib/data/dict';
+import { lookupReading } from '@/lib/data/lookup';
+import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { storage } from '@/lib/storage';
 import type { ClaimsStore } from '@/hooks/useClaims';
@@ -26,6 +27,7 @@ export function useWordPopup(
   claimsStore?: ClaimsStore,
 ) {
   const [popup, setPopup] = useState<PopupData | null>(null);
+  const language = useLanguage();
 
   // Track vocab claims so we can deck-check them.
   const [vocabClaimed, setVocabClaimed] = useState<Set<string>>(new Set());
@@ -37,10 +39,10 @@ export function useWordPopup(
   const closePopup = useCallback(() => setPopup(null), []);
 
   const openPopup = useCallback((e: React.MouseEvent, token: PassageToken) => {
-    if (!token.pinyin) return;
+    if (!token.reading) return;
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
-    const entry = lookupWord(token.text, token.pinyin, token.meaning || '');
+    const entry = lookupReading(language, token.text, token.reading, token.meaning || '');
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
@@ -56,12 +58,12 @@ export function useWordPopup(
     // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
     // dictionary's). For a polyphone, headline the reading matching this token's pinyin
     // and list the rest under "also read as".
-    let pinyin = entry.pinyin, meaning = entry.meaning;
+    let pinyin = entry.reading, meaning = entry.meaning;
     let otherReadings: { p: string; m: string }[] | undefined;
     const all = deckReadings?.get(token.text);
     if (all && all.length >= 1) {
-      const matched = pickReading(all, token.pinyin) ?? all[0];
-      pinyin = matched.p || entry.pinyin;
+      const matched = pickReading(all, token.reading) ?? all[0];
+      pinyin = matched.p || entry.reading;
       meaning = matched.m || entry.meaning;
       if (all.length > 1) {
         otherReadings = all.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
@@ -69,7 +71,7 @@ export function useWordPopup(
     }
 
     setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings });
-  }, [claimsStore, vocabClaimed, deckWords, deckReadings]);
+  }, [claimsStore, vocabClaimed, deckWords, deckReadings, language]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     if (claimsStore) {

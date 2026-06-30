@@ -25,7 +25,23 @@ const VOICE_PRIORITY = [
 
 let cachedVoice: SpeechSynthesisVoice | null | undefined = undefined; // undefined = not yet resolved
 
+// Active TTS locale (BCP-47). Set once by the app when the study language changes; the
+// TTS API route auto-detects from the text, so this only drives browser-voice selection.
+let currentLocale = 'zh-CN';
+/** Set the speech locale (e.g. 'zh-CN' or 'ja-JP'). Clears the cached voice so the next
+ *  utterance re-resolves the best voice for the new language. */
+export function setSpeechLang(bcp47: string): void {
+  if (bcp47 === currentLocale) return;
+  currentLocale = bcp47;
+  cachedVoice = undefined;
+}
+
 function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (currentLocale.startsWith('ja')) {
+    const ja = voices.filter(v => /ja|Japanese/i.test(v.lang + ' ' + v.name));
+    if (ja.length === 0) return null;
+    return ja.find(v => v.lang === 'ja-JP') ?? ja[0];
+  }
   const zh = voices.filter(v => /zh|cmn|Chinese|Mandarin/i.test(v.lang + ' ' + v.name));
   if (zh.length === 0) return null;
 
@@ -148,7 +164,7 @@ async function speakBrowser(
   if (gen !== currentGen) return;
 
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'zh-CN';
+  u.lang = currentLocale;
   u.rate = 0.82;    // Slightly slower → clearer tones
   u.pitch = 1.0;
   if (voice) u.voice = voice;
@@ -201,7 +217,7 @@ export function speakSequence(
     if (gen !== currentGen) return;
 
     const u = new SpeechSynthesisUtterance(texts[idx]);
-    u.lang = 'zh-CN';
+    u.lang = currentLocale;
     u.rate = 0.82;
     u.pitch = 1.0;
     if (voice) u.voice = voice;

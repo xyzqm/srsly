@@ -3,16 +3,9 @@ import { useState, useEffect, useRef } from 'react';
 import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
+import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig, levelFor } from '@/lib/languageConfig';
 import SignInModal from '@/components/auth/SignInModal';
-
-const HSK_LEVELS = [
-  { level: 1, label: 'HSK 1', desc: 'Absolute beginner · ~150 words · greetings, numbers, basic nouns' },
-  { level: 2, label: 'HSK 2', desc: 'Beginner · ~300 words · simple daily conversations' },
-  { level: 3, label: 'HSK 3', desc: 'Elementary · ~600 words · familiar topics, travel, shopping' },
-  { level: 4, label: 'HSK 4', desc: 'Intermediate · ~1,200 words · wide range of topics with fluency' },
-  { level: 5, label: 'HSK 5', desc: 'Upper-intermediate · ~2,500 words · newspapers, TV, literature' },
-  { level: 6, label: 'HSK 6', desc: 'Advanced · ~5,000 words · near-native comprehension' },
-];
 
 const RETENTION_PRESETS = [
   { value: 0.70, label: '70%', desc: 'Relaxed — longer intervals, more forgetting accepted' },
@@ -31,9 +24,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function SettingsTab() {
   const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
+  const language = useLanguage();
+  const langConfig = getLanguageConfig(language);
   const [signInOpen, setSignInOpen] = useState(false);
   const [hasDismissed, setHasDismissed] = useState(false); // New state to safely track local dismissal
-  const [hskLevel,   setHskLevel]   = useState(3);
+  const [level,      setLevel]      = useState(langConfig.defaultLevel);
   const [retention,  setRetention]  = useState(0.90);
   const [maxDays,    setMaxDays]    = useState(365);
   const [maxDaysRaw, setMaxDaysRaw] = useState('365');
@@ -45,7 +40,7 @@ export default function SettingsTab() {
 
   useEffect(() => {
     storage.getPrefs().then(p => {
-      setHskLevel(p.hskLevel ?? 3);
+      setLevel(levelFor(language, p));
       const r = p.srsRetention ?? 0.90;
       setRetention(r);
       const md = p.srsMaxDays ?? 365;
@@ -56,18 +51,18 @@ export default function SettingsTab() {
       const rpd = p.srsReviewsPerDay ?? 200;
       setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
     });
-  }, []);
+  }, [language]);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   }
 
-  async function handleSelectLevel(level: number) {
-    setHskLevel(level);
-    await savePrefs({ hskLevel: level });
+  async function handleSelectLevel(newLevel: number) {
+    setLevel(newLevel);
+    await savePrefs({ [langConfig.levelPrefKey]: newLevel });
   }
 
   async function handleRetention(value: number) {
@@ -91,7 +86,7 @@ export default function SettingsTab() {
 
   async function handleExport(format: 'json' | 'csv') {
     const date = new Date().toISOString().slice(0, 10);
-    const deck = await storage.getVocabDeck();
+    const deck = await storage.getVocabDeck(language);
     if (format === 'csv') {
       downloadFile(`srsly-deck-${date}.csv`, toCsv(deck), 'text/csv;charset=utf-8');
       return;
@@ -107,9 +102,9 @@ export default function SettingsTab() {
     if (!file) return;
     try {
       const backup = parseBackup(await file.text());
-      const cur = await storage.getVocabDeck();
-      if (!window.confirm(`Restore ${backup.deck.length} word${backup.deck.length === 1 ? '' : 's'} from this backup? This replaces your current deck of ${cur.length}.`)) return;
-      await storage.saveVocabDeck(backup.deck);
+      const cur = await storage.getVocabDeck(language);
+      if (!window.confirm(`Restore ${backup.deck.length} word${backup.deck.length === 1 ? '' : 's'} from this backup? This replaces your current ${langConfig.name} deck of ${cur.length}.`)) return;
+      await storage.saveVocabDeck(language, backup.deck);
       if (backup.prefs) await storage.savePrefs(backup.prefs);
       window.location.reload();
     } catch (err) {
@@ -142,7 +137,7 @@ export default function SettingsTab() {
         Your preferences
       </div>
       <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '48ch', lineHeight: 1.55, marginBottom: 32 }}>
-        Adjust your HSK level and spaced-repetition schedule.
+        Adjust your {langConfig.name} proficiency level and spaced-repetition schedule.
       </p>
 
       {/* ── Account ───────────────────────────────────────────────────────── */}
@@ -183,15 +178,15 @@ export default function SettingsTab() {
         </>
       )}
 
-      {/* ── HSK Level ─────────────────────────────────────────────────────── */}
-      <SectionLabel>HSK level</SectionLabel>
+      {/* ── Proficiency Level ─────────────────────────────────────────────── */}
+      <SectionLabel>{language === 'ja' ? 'JLPT level' : 'HSK level'}</SectionLabel>
       <div className="flex flex-col gap-2.5 mb-10" style={{ maxWidth: 540 }}>
-        {HSK_LEVELS.map(({ level, label, desc }) => {
-          const active = hskLevel === level;
+        {langConfig.levels.map(({ level: lvl, label, desc }) => {
+          const active = level === lvl;
           return (
             <button
-              key={level}
-              onClick={() => handleSelectLevel(level)}
+              key={lvl}
+              onClick={() => handleSelectLevel(lvl)}
               className="text-left cursor-pointer transition-all duration-150 rounded-[11px] px-5 py-4"
               style={{
                 background: active
@@ -206,7 +201,7 @@ export default function SettingsTab() {
                   className="shrink-0 flex items-center justify-center rounded-full"
                   style={{ width: 28, height: 28, background: active ? 'var(--accent)' : 'var(--line-soft)', color: active ? '#fff' : 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 11, fontWeight: 600, transition: 'all .15s' }}
                 >
-                  {level}
+                  {language === 'ja' ? `N${lvl}` : lvl}
                 </div>
                 <div>
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', color: active ? 'var(--accent)' : 'var(--ink)' }}>

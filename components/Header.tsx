@@ -1,13 +1,16 @@
 'use client';
 import type { ReactNode } from 'react';
+import type { LanguageCode } from '@/lib/types';
 import { useSRS } from '@/hooks/useSRS';
 
 interface Props {
   onOpenTheme: () => void;
   accountSlot?: ReactNode;
+  language: LanguageCode;
+  onLanguageChange: (lang: LanguageCode) => void;
 }
 
-export default function Header({ onOpenTheme, accountSlot }: Props) {
+export default function Header({ onOpenTheme, accountSlot, language, onLanguageChange }: Props) {
   const { emoji, tip } = useSRS();
 
   return (
@@ -28,17 +31,18 @@ export default function Header({ onOpenTheme, accountSlot }: Props) {
         <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ink-soft)' }}>
           Studying
           <select
+            value={language}
+            onChange={e => onLanguageChange(e.target.value as LanguageCode)}
             style={{
               fontFamily: 'var(--f-ui)', fontSize: 13, color: 'var(--ink)',
               background: 'var(--card)', border: '1px solid var(--line)',
               borderRadius: 7, padding: '7px 11px', cursor: 'pointer', fontWeight: 500,
             }}
           >
-            <option>中文 · Chinese</option>
-            <option>日本語 · Japanese</option>
-            <option>한국어 · Korean</option>
-            <option>Español · Spanish</option>
-            <option>+ add a language</option>
+            <option value="zh">中文 · Chinese</option>
+            <option value="ja">日本語 · Japanese</option>
+            <option value="ko" disabled>한국어 · Korean (soon)</option>
+            <option value="es" disabled>Español · Spanish (soon)</option>
           </select>
         </label>
 

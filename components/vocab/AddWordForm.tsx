@@ -3,8 +3,11 @@ import { useState, useRef, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { autoFillPinyin, toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
+import { lookupJa } from '@/lib/data/jadict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
+import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 
 interface Props {
   onAdd: (word: DeckWord) => void;
@@ -14,10 +17,12 @@ interface Props {
 }
 
 export default function AddWordForm({ onAdd, onCancel, deckOptions = [], defaultDeck = '' }: Props) {
+  const language = useLanguage();
+  const isJa = language === 'ja';
   const [hanzi, setHanzi] = useState('');
   const [deckName, setDeckName] = useState(defaultDeck);
   const [pinyin, setPinyin] = useState('');
-  const [pinHint, setPinHint] = useState('type with tone numbers e.g. shui3bei1');
+  const [pinHint, setPinHint] = useState(isJa ? 'type the reading in hiragana' : 'type with tone numbers e.g. shui3bei1');
   const [defs, setDefs] = useState<string[]>(['']);
   // Compound words that carry the chosen reading — surfaced in generated passages
   // for readings that don't stand alone (行 háng → 银行, 行业).
@@ -41,8 +46,20 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
 
     if (!trimmed) {
       setPinyin('');
-      setPinHint('type with tone numbers e.g. shui3bei1');
+      setPinHint(isJa ? 'type the reading in hiragana' : 'type with tone numbers e.g. shui3bei1');
       setDefs(['']);
+      return;
+    }
+
+    // Japanese: no polyphone/tone machinery — look the word up in JMdict for furigana + meaning.
+    if (isJa) {
+      const e = lookupJa(trimmed);
+      if (e.reading) { setPinyin(e.reading); setPinHint('auto-filled — tap to edit'); }
+      else { setPinyin(''); setPinHint('type the reading in hiragana'); }
+      if (e.meaning) {
+        const parts = e.meaning.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
+        setDefs(parts.length > 0 ? parts : [e.meaning]);
+      }
       return;
     }
 
@@ -86,7 +103,8 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
   }
 
   function handlePinyinBlur(val: string) {
-    if (/[1-5]/.test(val)) setPinyin(toneNumToMark(val));
+    // Tone-number → diacritic conversion is Chinese-only; Japanese readings are kana.
+    if (!isJa && /[1-5]/.test(val)) setPinyin(toneNumToMark(val));
   }
 
   function addDef() { setDefs(d => [...d, '']); }
@@ -111,16 +129,20 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
     const m = defs.map(d => d.trim()).filter(Boolean).join('; ');
     if (!h || !m) return;
     const p = pinyin.trim();
-    // Warn if the pinyin looks wrong for this character (invalid, or not a known reading)
-    const known = [lookupWord(h).pinyin, ...(POLYPHONES[h]?.map(r => r.p) ?? [])].filter(Boolean);
-    const warn = checkPinyin(p, h, known);
-    if (warn && !window.confirm(warn)) return;
-    const cleanCompounds = compounds.map(c => c.trim()).filter(Boolean);
-    // Warn if a compound doesn't contain this character or isn't a real word
-    const compWarn = await checkCompounds(h, cleanCompounds);
-    if (compWarn && !window.confirm(compWarn)) return;
+    if (!isJa) {
+      // Chinese-only validation: warn on a wrong reading, and check compound sanity.
+      const known = [lookupWord(h).pinyin, ...(POLYPHONES[h]?.map(r => r.p) ?? [])].filter(Boolean);
+      const warn = checkPinyin(p, h, known);
+      if (warn && !window.confirm(warn)) return;
+      const cleanCompounds = compounds.map(c => c.trim()).filter(Boolean);
+      const compWarn = await checkCompounds(h, cleanCompounds);
+      if (compWarn && !window.confirm(compWarn)) return;
+      const deck = deckName.trim();
+      onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
+      return;
+    }
     const deck = deckName.trim();
-    onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
+    onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}) });
   }
 
   function toggleVoice() {
@@ -136,7 +158,7 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = new SR() as any;
-    r.lang = 'zh-CN';
+    r.lang = getLanguageConfig(language).bcp47;
     r.continuous = false;
     r.interimResults = false;
     r.maxAlternatives = 1;
@@ -171,11 +193,11 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
       <div className="grid gap-3.5 mb-3.5" style={{ gridTemplateColumns: '100px 1fr' }}>
         {/* Hanzi + mic button */}
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>Hanzi</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>{isJa ? 'Word' : 'Hanzi'}</div>
           <input
             value={hanzi}
             onChange={e => handleHanziChange(e.target.value)}
-            placeholder="垃圾"
+            placeholder={isJa ? '言葉' : '垃圾'}
             style={{ ...inputStyle, fontSize: 26, textAlign: 'center' }}
             onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.background = 'var(--card)'; }}
             onBlur={e => { e.target.style.borderColor = 'var(--line)'; e.target.style.background = 'var(--paper-2)'; }}
@@ -210,9 +232,9 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
         <div>
           <div className="flex justify-between items-baseline mb-1.5">
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-              Pinyin{' '}
+              {isJa ? 'Reading' : 'Pinyin'}{' '}
               <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)', fontFamily: 'var(--f-ui)', fontSize: 10 }}>
-                (lv4 for lǜ · no number = neutral tone e.g. le)
+                {isJa ? '(hiragana / katakana)' : '(lv4 for lǜ · no number = neutral tone e.g. le)'}
               </span>
             </div>
             <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, color: 'var(--ink-faint)', letterSpacing: '.04em' }}>{pinHint}</span>

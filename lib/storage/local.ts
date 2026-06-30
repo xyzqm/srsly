@@ -1,12 +1,17 @@
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
 
 const KEYS = {
-  vocab: 'srsly-vocab-deck',
+  vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
   srs: 'srsly-srs-state',
   prefs: 'srsly-prefs',
   claimed: 'srsly-claimed-words',
 } as const;
+
+/** Per-language vocab deck key, e.g. 'zh' → 'srsly-vocab-deck-zh'. */
+function vocabKey(lang: LanguageCode): string {
+  return `srsly-vocab-deck-${lang}`;
+}
 
 function get<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -23,18 +28,28 @@ function set(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/** Cache key for daily content, scoped by HSK level + study deck + date. */
-function dailyKey(hskLevel: number, deck: string | undefined, date: string): string {
+/** Cache key for daily content, scoped by language + proficiency level + study deck + date. */
+function dailyKey(lang: LanguageCode, level: number, deck: string | undefined, date: string): string {
   const d = deck && deck.trim() ? deck.trim() : 'all';
-  return `srsly-daily-${hskLevel}-${d}-${date}`;
+  return `srsly-daily-${lang}-${level}-${d}-${date}`;
 }
 
 export class LocalStorage implements DataService {
-  async getVocabDeck(): Promise<DeckWord[]> {
-    return get<DeckWord[]>(KEYS.vocab, []);
+  async getVocabDeck(lang: LanguageCode): Promise<DeckWord[]> {
+    const key = vocabKey(lang);
+    // One-time migration: the original single-deck key holds Chinese vocab. Move it under
+    // the language-namespaced 'zh' key the first time it's requested, then drop the legacy key.
+    if (lang === 'zh' && typeof window !== 'undefined' && localStorage.getItem(key) === null) {
+      const legacy = localStorage.getItem(KEYS.vocabLegacy);
+      if (legacy !== null) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(KEYS.vocabLegacy);
+      }
+    }
+    return get<DeckWord[]>(key, []);
   }
-  async saveVocabDeck(deck: DeckWord[]): Promise<void> {
-    set(KEYS.vocab, deck);
+  async saveVocabDeck(lang: LanguageCode, deck: DeckWord[]): Promise<void> {
+    set(vocabKey(lang), deck);
   }
 
   async getSRSState(): Promise<SRSState> {
@@ -64,12 +79,12 @@ export class LocalStorage implements DataService {
     set(KEYS.claimed, claimed);
   }
 
-  async getDailyContent(hskLevel: number, deck?: string): Promise<DailyContent | null> {
+  async getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null> {
     const today = new Date().toISOString().slice(0, 10);
-    return get<DailyContent | null>(dailyKey(hskLevel, deck, today), null);
+    return get<DailyContent | null>(dailyKey(lang, level, deck, today), null);
   }
   async saveDailyContent(content: DailyContent): Promise<void> {
-    set(dailyKey(content.hskLevel, content.deck, content.date), content);
+    set(dailyKey(content.language ?? 'zh', content.hskLevel, content.deck, content.date), content);
     // Prune stale per-day localStorage entries: daily content, passage index, and
     // passage-finished flags. All keyed with the date so we can compare against today.
     const today = content.date;

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { isAnonymousGuest } from '@/lib/supabase/server';
+import type { LanguageCode } from '@/lib/types';
+import { getLanguageConfig } from '@/lib/languageConfig';
 
 /** Keyword-match fallback — used when no API key or Claude fails. */
-function keywordFallback(response: string, key: string[]): {
+function keywordFallback(response: string, key: string[], langName: string): {
   verdict: 'ok' | 'partial' | 'miss';
   message: string;
   wordsHit: string[];
@@ -11,7 +13,7 @@ function keywordFallback(response: string, key: string[]): {
   const wordsHit = key.filter(k => response.includes(k));
   const ratio = wordsHit.length / Math.max(key.length, 1);
   if (response.trim().length < 4) {
-    return { verdict: 'miss', message: 'Too short — write a full sentence in Chinese.', wordsHit: [] };
+    return { verdict: 'miss', message: `Too short — write a full sentence in ${langName}.`, wordsHit: [] };
   }
   if (ratio >= 0.66) {
     return { verdict: 'ok', message: `Good — you included the key ideas (${wordsHit.join('、')}).`, wordsHit };
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest) {
   let key: string[];
   let response: string;
   let hskLevel: number;
+  let language: LanguageCode;
 
   try {
     const body = await req.json();
@@ -38,10 +41,15 @@ export async function POST(req: NextRequest) {
     model     = String(body.model    ?? '');
     key       = Array.isArray(body.key) ? body.key : [];
     response  = String(body.response ?? '');
+    language  = body.language === 'ja' ? 'ja' : 'zh';
     hskLevel  = Number(body.hskLevel) || 4;
   } catch {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
+
+  const config = getLanguageConfig(language);
+  const langName = config.name;
+  const levelName = language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`;
 
   if (!question || !response) {
     return NextResponse.json({ error: 'question and response are required' }, { status: 400 });
@@ -50,21 +58,24 @@ export async function POST(req: NextRequest) {
   // No API key, or an anonymous guest → free keyword grading (reserve AI grading for
   // signed-in accounts; no AI cost for guests, and no impact on the passage budget).
   if (!apiKey || apiKey === 'your-api-key-here' || await isAnonymousGuest()) {
-    return NextResponse.json(keywordFallback(response, key));
+    return NextResponse.json(keywordFallback(response, key, langName));
   }
 
   const client = new Anthropic({ apiKey });
 
-  const levelDesc = hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced';
+  // HSK: higher = harder. JLPT: higher number = easier.
+  const levelDesc = language === 'ja'
+    ? (hskLevel >= 4 ? 'beginner' : hskLevel >= 2 ? 'intermediate' : 'advanced')
+    : (hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced');
   const keyList = key.length > 0 ? key.join(', ') : '(none specified)';
 
-  const prompt = `You are grading a Chinese language student's free-response reading comprehension answer.
+  const prompt = `You are grading a ${langName} language student's free-response reading comprehension answer.
 
-QUESTION (Chinese): ${question}
+QUESTION (${langName}): ${question}
 CORRECT ANSWER (English model): ${model}
 KEY VOCABULARY (reference only): ${keyList}
 STUDENT'S ANSWER: ${response}
-HSK LEVEL: ${hskLevel} (${levelDesc})
+LEVEL: ${levelName} (${levelDesc})
 
 PRIMARY criterion — COMPREHENSION:
 Does the student's answer correctly address what the question asks? Judge this against the model answer.
@@ -74,11 +85,11 @@ SECONDARY criterion — VOCABULARY (bonus signal only):
 Did the student use any of the key vocabulary words correctly in context? This is a positive signal but NOT required.
 
 Verdict rules (comprehension is what matters):
-- "ok"      : Correctly and clearly answers the question in Chinese — regardless of which words they used
+- "ok"      : Correctly and clearly answers the question in ${langName} — regardless of which words they used
 - "partial" : Shows some understanding but incomplete, imprecise, or misses part of the answer — OR answer is correct but very brief
 - "miss"    : Does not address the question, shows fundamental misunderstanding, too vague to evaluate, or written in English
 
-The answer MUST be in Chinese script to receive "ok" or "partial".
+${config.answerScriptNote}
 
 Return ONLY valid JSON, no other text:
 {"verdict":"ok","message":"feedback here","wordsHit":["word1"]}
@@ -102,7 +113,7 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
       json = JSON.parse(cleaned);
     } catch {
       console.error('[grade-response] JSON parse failed:', cleaned);
-      return NextResponse.json(keywordFallback(response, key));
+      return NextResponse.json(keywordFallback(response, key, langName));
     }
 
     const verdict = json.verdict === 'ok' || json.verdict === 'partial' ? json.verdict : 'miss';
@@ -111,11 +122,11 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
       : 'Review the passage and try again.';
     const wordsHit = Array.isArray(json.wordsHit)
       ? (json.wordsHit as unknown[]).filter((w): w is string => typeof w === 'string' && key.includes(w))
-      : keywordFallback(response, key).wordsHit;
+      : keywordFallback(response, key, langName).wordsHit;
 
     return NextResponse.json({ verdict, message, wordsHit });
   } catch (err) {
     console.error('[grade-response] Claude error:', err);
-    return NextResponse.json(keywordFallback(response, key));
+    return NextResponse.json(keywordFallback(response, key, langName));
   }
 }

@@ -1,7 +1,7 @@
 import type { FillItem } from '@/lib/types';
 
-function t(text: string, pinyin?: string) {
-  return pinyin ? { text, pinyin } : { text, type: 'punct' as const };
+function t(text: string, reading?: string) {
+  return reading ? { text, reading } : { text, type: 'punct' as const };
 }
 
 export const FILL_ITEMS: FillItem[] = [

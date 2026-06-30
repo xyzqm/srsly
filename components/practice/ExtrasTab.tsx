@@ -4,6 +4,8 @@ import type { PracticeMode, ContentSection } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
+import { useLanguage } from '@/lib/LanguageContext';
+import { levelFor } from '@/lib/languageConfig';
 import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
 import StudyScopeBanner from '@/components/shared/StudyScopeBanner';
 import Flashcards from './Flashcards';
@@ -29,13 +31,14 @@ interface Props {
 }
 
 export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initialMode = 'flash' }: Props) {
-  const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck();
+  const language = useLanguage();
+  const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck(language);
   const [mode, setMode] = useState<PracticeMode>(initialMode);
 
-  // HSK level — start at 0 (same as ReadTab) so we don't load the wrong
-  // level's cache before prefs arrive; useDailyContent skips when hskLevel=0
+  // Proficiency level — start at 0 (same as ReadTab) so we don't load the wrong
+  // level's cache before prefs arrive; useDailyContent skips when level=0
   const [hskLevel, setHskLevel] = useState(0);
-  useEffect(() => { storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4)); }, []);
+  useEffect(() => { storage.getPrefs().then(p => setHskLevel(levelFor(language, p))); }, [language]);
 
   // Practice pulls from the GLOBAL due queue by default; a focused "Study this deck"
   // session (studyScope) temporarily narrows every mode to that deck. null = all.
@@ -61,7 +64,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
     () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
     [mode],
   );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want);
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want, language);
 
   // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
   // passage adds — you just encountered them in context, so the first review is the next day.
@@ -120,7 +123,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
         // static first turn.
         generating.has('convo') ? (
           <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>话</div>
+            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{language === 'ja' ? '話' : '话'}</div>
             <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
               Generating a conversation for your due words…
             </p>

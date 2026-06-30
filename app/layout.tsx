@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh" className="h-full">
+    <html lang="zh" className="h-full" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -18,8 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-full" data-theme="paper" data-font="editorial-warm" suppressHydrationWarning>
-        {/* Blocking script: reads saved prefs before first paint to prevent theme/font flash */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);}catch(e){}})();` }} />
+        {/* Blocking script: reads saved prefs before first paint to prevent theme/font flash
+            and to set <html lang> for the active study language. */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);if(p.language==='ja')document.documentElement.setAttribute('lang','ja');}catch(e){}})();` }} />
         {children}
       </body>
     </html>

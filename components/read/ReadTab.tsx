@@ -2,8 +2,10 @@
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ResponseMode, FRResponse, DeckWord, ContentSection } from '@/lib/types';
-import { getPassageData } from '@/lib/data/allPassages';
+import { getPassageDataForLanguage } from '@/lib/data/allPassages';
 import { storage } from '@/lib/storage';
+import { useLanguage } from '@/lib/LanguageContext';
+import { levelFor } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -47,16 +49,18 @@ function readSavedPassageIdx(contentKey: string): number {
 
 export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, studyScope, onExitStudyScope }: Props) {
   const { signedIn } = useAuth();
-  const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck();
+  const language = useLanguage();
+  const { deck, addWord, updateWordReview, gradeCard } = useVocabDeck(language);
 
+  // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
   const [hskLevel, setHskLevel] = useState(0);
-  useEffect(() => { storage.getPrefs().then(p => setHskLevel(p.hskLevel ?? 4)); }, []);
+  useEffect(() => { storage.getPrefs().then(p => setHskLevel(levelFor(language, p))); }, [language]);
 
-  const passageData = useMemo(() => getPassageData(hskLevel), [hskLevel]);
+  const passageData = useMemo(() => getPassageDataForLanguage(language, hskLevel), [language, hskLevel]);
 
   // Passages are generated from the GLOBAL due queue by default; a focused "Study this deck"
   // session (studyScope) temporarily narrows them to that deck. null = all.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, studyScope, READ_WANT);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, studyScope, READ_WANT, language);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -519,7 +523,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
         </div>
         <div className="flex flex-col items-end gap-2">
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-            level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>HSK {hskLevel}</span> · ~{charCount} 字
+            level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`}</span> · ~{charCount} 字
           </div>
         </div>
       </div>

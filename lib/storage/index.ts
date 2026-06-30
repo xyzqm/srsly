@@ -1,5 +1,5 @@
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
 import { LocalStorage } from './local';
 
 /**
@@ -14,15 +14,15 @@ class StorageFacade implements DataService {
   setBackend(impl: DataService) { this.impl = impl; }
   resetToLocal() { this.impl = new LocalStorage(); }
 
-  getVocabDeck() { return this.impl.getVocabDeck(); }
-  saveVocabDeck(deck: DeckWord[]) { return this.impl.saveVocabDeck(deck); }
+  getVocabDeck(lang: LanguageCode) { return this.impl.getVocabDeck(lang); }
+  saveVocabDeck(lang: LanguageCode, deck: DeckWord[]) { return this.impl.saveVocabDeck(lang, deck); }
   getSRSState() { return this.impl.getSRSState(); }
   saveSRSState(state: SRSState) { return this.impl.saveSRSState(state); }
   getPrefs() { return this.impl.getPrefs(); }
   savePrefs(prefs: UserPrefs) { return this.impl.savePrefs(prefs); }
   getClaimedWords() { return this.impl.getClaimedWords(); }
   saveClaimedWords(claimed: ClaimedWords) { return this.impl.saveClaimedWords(claimed); }
-  getDailyContent(hskLevel: number, deck?: string) { return this.impl.getDailyContent(hskLevel, deck); }
+  getDailyContent(lang: LanguageCode, level: number, deck?: string) { return this.impl.getDailyContent(lang, level, deck); }
   saveDailyContent(content: DailyContent) { return this.impl.saveDailyContent(content); }
 }
 

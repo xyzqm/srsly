@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { DeckWord } from '@/lib/types';
+import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { dateInDays, todayStr } from '@/lib/deck';
 import { fsrsSchedule, getSrsSettings, LEECH_THRESHOLD, type FsrsGrade } from '@/lib/fsrs';
@@ -48,7 +48,7 @@ function identity(w: { h: string; m: string }): string {
   return w.h + '\u001f' + w.m.trim();
 }
 
-export function useVocabDeck() {
+export function useVocabDeck(language: LanguageCode = 'zh') {
   const [deck, setDeck] = useState<DeckWord[]>([]);
   const [deckLoaded, setDeckLoaded] = useState(false);
 
@@ -60,11 +60,12 @@ export function useVocabDeck() {
   const commit = useCallback((next: DeckWord[]) => {
     deckRef.current = next;
     setDeck(next);
-    return storage.saveVocabDeck(next);
-  }, []);
+    return storage.saveVocabDeck(language, next);
+  }, [language]);
 
   useEffect(() => {
-    storage.getVocabDeck().then(d => {
+    setDeckLoaded(false);
+    storage.getVocabDeck(language).then(d => {
       let changed = false;
       const migrated = d.map(w => {
         let nw = w;
@@ -82,9 +83,9 @@ export function useVocabDeck() {
       deckRef.current = migrated;
       setDeck(migrated);
       setDeckLoaded(true);
-      if (changed) storage.saveVocabDeck(migrated);
+      if (changed) storage.saveVocabDeck(language, migrated);
     });
-  }, []);
+  }, [language]);
 
   // Merge a deck tag into a word's `decks`, returning a new array (or the same ref if
   // already present / no tag to add).

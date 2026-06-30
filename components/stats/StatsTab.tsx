@@ -1,12 +1,14 @@
 'use client';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
+import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
 
 interface Props { onNavigateRead: () => void; }
 
 export default function StatsTab({ onNavigateRead }: Props) {
-  const { deck } = useVocabDeck();
+  const language = useLanguage();
+  const { deck } = useVocabDeck(language);
   const { streak, sessions } = useSRS();
 
   return (

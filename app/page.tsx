@@ -1,6 +1,10 @@
 'use client';
-import { useState, useCallback } from 'react';
-import type { TabId, PracticeMode } from '@/lib/types';
+import { useState, useCallback, useEffect } from 'react';
+import type { TabId, PracticeMode, LanguageCode } from '@/lib/types';
+import { LanguageProvider } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
+import { setSpeechLang } from '@/lib/speech';
+import { storage } from '@/lib/storage';
 import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
 import ThemeSheet from '@/components/ThemeSheet';
@@ -71,6 +75,25 @@ function AppShell() {
   const { recordScore } = useSRS();
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
+  // Active study language. Persisted in prefs; drives deck namespacing, dictionary
+  // lookups, proficiency labels and TTS locale via LanguageProvider below.
+  const [language, setLanguage] = useState<LanguageCode>('zh');
+  useEffect(() => {
+    storage.getPrefs().then(p => {
+      const lang = p.language ?? 'zh';
+      setLanguage(lang);
+      setSpeechLang(getLanguageConfig(lang).bcp47);
+    });
+  }, []);
+  const handleLanguageChange = useCallback(async (lang: LanguageCode) => {
+    setLanguage(lang);
+    const cfg = getLanguageConfig(lang);
+    document.documentElement.setAttribute('lang', cfg.htmlLang);
+    setSpeechLang(cfg.bcp47);
+    const prefs = await storage.getPrefs();
+    await storage.savePrefs({ ...prefs, language: lang });
+  }, []);
+
   // Ephemeral, session-only study scope. null = the global due queue (default). Set by the
   // Vocab tab's "Study this deck" shortcut; cleared on Exit or when a focused session ends.
   // Deliberately NOT persisted — it's a temporary focus, not a saved preference.
@@ -86,9 +109,14 @@ function AppShell() {
   const exitDeckStudy = useCallback(() => setStudyScope(null), []);
 
   return (
-    <>
+    <LanguageProvider value={language}>
       <div className="relative z-[1]">
-        <Header onOpenTheme={() => setSheetOpen(true)} accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} />} />
+        <Header
+          onOpenTheme={() => setSheetOpen(true)}
+          accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} />}
+          language={language}
+          onLanguageChange={handleLanguageChange}
+        />
         <TabNav active={tab} onChange={setTab} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
           {tab === 'read' && (
@@ -122,6 +150,6 @@ function AppShell() {
       
       {/* FIXED: Removed "|| !signedIn" so it respects your click state perfectly */}
       <SignInModal open={signIn.open} reason={signIn.reason} onClose={() => setSignIn({ open: false })} />
-    </>
+    </LanguageProvider>
   );
 }

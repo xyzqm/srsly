@@ -1,7 +1,7 @@
 import type { Question, PassageToken } from '@/lib/types';
 
-function t(text: string, pinyin?: string): PassageToken {
-  return pinyin ? { text, pinyin } : { text, type: 'punct' };
+function t(text: string, reading?: string): PassageToken {
+  return reading ? { text, reading } : { text, type: 'punct' };
 }
 
 export const QUESTIONS: Question[] = [

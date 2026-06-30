@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { consumeAiCredit } from '@/lib/supabase/server';
+import type { LanguageCode } from '@/lib/types';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
@@ -10,6 +11,10 @@ const BATCH_SIZE = 5;
 /** Sentences per passage by HSK level — longer passages = better comprehension questions */
 const SENTENCES_PER_PASSAGE: Record<number, number> = {
   1: 7, 2: 8, 3: 9, 4: 10, 5: 12, 6: 14,
+};
+/** Sentences per passage by JLPT level (5 = N5 easiest … 1 = N1 hardest). */
+const SENTENCES_PER_PASSAGE_JA: Record<number, number> = {
+  5: 6, 4: 8, 3: 10, 2: 12, 1: 14,
 };
 
 /** How many times to ask the model before giving up (handles occasional bad JSON). */
@@ -155,11 +160,13 @@ export async function POST(req: NextRequest) {
   let themeOffset: number;
   let sections: Section[];
   let passageText: string;
+  let language: LanguageCode;
 
   try {
     const body = await req.json();
     words = body.words ?? [];
-    hskLevel = body.hskLevel ?? 4;
+    language = body.language === 'ja' ? 'ja' : 'zh';
+    hskLevel = body.hskLevel ?? (language === 'ja' ? 4 : 4);
     themeOffset = body.themeOffset ?? 0;
     passageText = typeof body.passageText === 'string' ? body.passageText : '';
     // `sections` selects which blocks to generate. Back-compat: `passageOnly` → passage only.
@@ -194,8 +201,13 @@ export async function POST(req: NextRequest) {
     if (!inputMap.has(w.h)) inputMap.set(w.h, { p: w.p, m: w.m });
   }
 
-  const levelDesc = hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced';
-  const sentenceCount = SENTENCES_PER_PASSAGE[hskLevel] ?? 7;
+  // HSK: higher number = harder. JLPT: higher number = easier (N5 easiest, N1 hardest).
+  const levelDesc = language === 'ja'
+    ? (hskLevel >= 4 ? 'beginner' : hskLevel >= 2 ? 'intermediate' : 'advanced')
+    : (hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced');
+  const sentenceCount = (language === 'ja' ? SENTENCES_PER_PASSAGE_JA[hskLevel] : SENTENCES_PER_PASSAGE[hskLevel]) ?? 7;
+  const langName = language === 'ja' ? 'Japanese' : 'Chinese';
+  const levelName = language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`;
 
   // Pick a daily theme so passages vary across days even with the same vocab words
   const DAILY_THEMES = [
@@ -239,14 +251,15 @@ export async function POST(req: NextRequest) {
       ).join('\n')}\n`
     : '';
 
-  const readingNotes = compoundNote + polyphoneNote;
+  // Compound/polyphone notes are Chinese-specific; Japanese passages don't use them.
+  const readingNotes = language === 'ja' ? '' : compoundNote + polyphoneNote;
   const wordList = words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
-  const difficultyNote = hskLevel <= 2 ? 'simple grammar, short sentences'
-    : hskLevel <= 4 ? 'varied patterns, moderate complexity'
-    : 'complex grammar, literary or abstract vocabulary';
+  const difficultyByLevel = (beginner: string, intermediate: string, advanced: string) =>
+    levelDesc === 'beginner' ? beginner : levelDesc === 'intermediate' ? intermediate : advanced;
+  const difficultyNote = difficultyByLevel('simple grammar, short sentences', 'varied patterns, moderate complexity', 'complex grammar, literary or abstract vocabulary');
 
   // Shared pipe-format rules injected into every prompt variant
-  const PIPE_RULES = `
+  const PIPE_RULES_ZH = `
 OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
 Every field marked "WORDS" below MUST be a SINGLE STRING in which you place a | (vertical bar)
 between EVERY word and EVERY punctuation mark. Do NOT write an ordinary sentence — you MUST
@@ -268,15 +281,50 @@ PROPER NAMES: list EVERY person/place name you used in the separate "names" arra
 giving its pinyin and a short English gloss. The pipe strings stay pure hanzi; names get their
 reading from this list.`.trim();
 
-  // Side-channel for proper-name readings — keeps the pipe stream pure hanzi.
-  const NAMES_SCHEMA = `NAME = {"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}
+  // Japanese: same pipe stream, but each token that contains kanji is annotated INLINE with
+  // its hiragana reading as surface::furigana, since the dictionary can't reliably resolve
+  // furigana for inflected/ambiguous forms. Kana-only words and punctuation stay bare.
+  const PIPE_RULES_JA = `
+OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
+Every field marked "WORDS" below MUST be a SINGLE STRING with a | (vertical bar) between EVERY
+word and EVERY punctuation mark. A sentence with no | bars is INVALID output.
+
+Within the bars, FURIGANA RULE:
+  - Any token that contains kanji MUST be written as  surface::furigana  where furigana is the
+    token's reading in hiragana (covering the WHOLE token, including any kana okurigana).
+  - Tokens written only in hiragana/katakana, and punctuation, are written bare (no ::).
+
+  CORRECT:  "私::わたし|は|毎朝::まいあさ|コーヒー|を|飲みます::のみます|。"
+  WRONG:    "私は毎朝コーヒーを飲みます。"            ← no bars = INVALID
+  WRONG:    "私|は|毎朝|コーヒー|を|飲みます|。"      ← kanji tokens missing ::furigana = INVALID
+
+Rules for the tokens between the bars:
+  - Segment into natural words: keep a word + its inflection together as ONE token
+    (食べました::たべました, 行って::いって, 新しい::あたらしい) — never split okurigana off.
+  - Particles (は を が に で へ と も の) and punctuation are their OWN bare tokens.
+  - Each punctuation mark (。 、 ！ ？ …) is its OWN token between bars.
+  - NEVER output an empty token. Furigana must be hiragana only (katakana for loanword kanji).
+
+PROPER NAMES: also list every person/place name in the "names" array (see schema).`.trim();
+
+  const PIPE_RULES = language === 'ja' ? PIPE_RULES_JA : PIPE_RULES_ZH;
+
+  // Side-channel for proper-name readings.
+  const NAMES_SCHEMA = language === 'ja'
+    ? `NAME = {"h": "田中", "p": "たなか", "m": "(name) Tanaka"}
+  "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.`
+    : `NAME = {"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}
   "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.`;
 
   // ── Prompt builders (one per section) ──────────────────────────────────────
 
-  const passagePrompt = `You are a Chinese language teacher generating a reading passage.
+  const exampleSentence = language === 'ja'
+    ? '私::わたし|は|町::まち|の|図書館::としょかん|で|本::ほん|を|借りました::かりました|。'
+    : '城市|的|经济|发展|离不开|科技|的|进步|。';
 
-HSK LEVEL: ${hskLevel} (${levelDesc})
+  const passagePrompt = `You are a ${langName} language teacher generating a reading passage.
+
+LEVEL: ${levelName} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
 ${words.length > 0 ? `\nWORDS TO USE:\n${wordList}${readingNotes}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
 
@@ -292,7 +340,7 @@ PASSAGE = {
   "sentences": ["WORDS", "WORDS", ...]
 }
 Example of a single correctly-formatted sentence string (note the | between every token):
-  "城市|的|经济|发展|离不开|科技|的|进步|。"
+  "${exampleSentence}"
   ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
 
 ${PIPE_RULES}
@@ -302,11 +350,11 @@ ${NAMES_SCHEMA}
 REQUIREMENTS:
 1. Exactly 1 passage in the "passages" array.
 2. ${sentenceCount}–${sentenceCount + 2} sentences.
-3. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+3. Difficulty appropriate for ${levelName}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  const questionsPrompt = `You are a Chinese language teacher. Given the following Chinese reading passage at HSK ${hskLevel} (${levelDesc}) level, generate exactly 5 reading comprehension questions.
+  const questionsPrompt = `You are a ${langName} language teacher. Given the following ${langName} reading passage at ${levelName} (${levelDesc}) level, generate exactly 5 reading comprehension questions.
 
 PASSAGE:
 ${passageText}
@@ -333,18 +381,24 @@ QUESTION = {
     {"tokens": "WORDS", "correct": false}
   ]
 }
-The "key" array must contain the specific hanzi words from the passage whose meaning is tested.
+The "key" array must contain the specific words from the passage whose meaning is tested.
 Include exactly 5 questions testing both passage understanding AND vocabulary meaning.
 Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect.
-Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+Difficulty appropriate for ${levelName}: ${difficultyNote}.
 
 ${NAMES_SCHEMA}
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  const fillPrompt = `You are a Chinese language teacher generating fill-in-the-blank practice.
+  // For the "answer"/"key" fields the model emits the bare surface form (the word itself,
+  // including kanji for Japanese). The blank's reading is resolved from the practiced words.
+  const answerNote = language === 'ja'
+    ? '"answer" is the bare surface form of the word (kanji/kana as written) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong words (bare surface form), same part of speech as the answer.'
+    : '"answer" is a SINGLE word (bare hanzi) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong bare-hanzi words, same part of speech as the answer.';
 
-HSK LEVEL: ${hskLevel} (${levelDesc})
+  const fillPrompt = `You are a ${langName} language teacher generating fill-in-the-blank practice.
+
+LEVEL: ${levelName} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — fill items must revolve around this theme.
 
 WORDS (each is the answer to one fill item):
@@ -360,24 +414,23 @@ ${PIPE_RULES}
 
 FILL_ITEM = {
   "before": "WORDS",
-  "answer": "hanzi",
+  "answer": "word",
   "after": "WORDS",
-  "distractors": ["hanzi", "hanzi", "hanzi"]
+  "distractors": ["word", "word", "word"]
 }
-  "answer" is a SINGLE word (bare hanzi) and MUST be one of the WORDS above.
-  "distractors" are three plausible-but-wrong bare-hanzi words, same part of speech as the answer.
+  ${answerNote}
 
 ${NAMES_SCHEMA}
 
 REQUIREMENTS:
 1. "fill": 5–8 items, one per answer word from WORDS.
-2. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+2. Difficulty appropriate for ${levelName}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  const convoPrompt = `You are a Chinese language teacher generating conversation practice.
+  const convoPrompt = `You are a ${langName} language teacher generating conversation practice.
 
-HSK LEVEL: ${hskLevel} (${levelDesc})
+LEVEL: ${levelName} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the conversation must revolve around this theme.
 
 WORDS (practice these in a realistic dialogue):
@@ -392,7 +445,7 @@ Generate a JSON object with EXACTLY this structure:
 ${PIPE_RULES}
 
 CONVO_TURN = {
-  "key": ["hanzi", ...],
+  "key": ["word", ...],
   "tutor": "WORDS",
   "suggestions": ["WORDS", "WORDS"]
 }
@@ -402,7 +455,7 @@ ${NAMES_SCHEMA}
 
 REQUIREMENTS:
 1. "convo": 4–5 turns practicing the WORDS; last turn has "suggestions": [].
-2. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+2. Difficulty appropriate for ${levelName}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 

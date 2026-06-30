@@ -28,7 +28,7 @@ interface Props {
 export default function ClickableWord({ token, onOpen, style, claimKind, isReviewWord }: Props) {
   const [hovered, setHovered] = useState(false);
 
-  if (!token.pinyin || token.type === 'punct') return <span style={style}>{token.text}</span>;
+  if (!token.reading || token.type === 'punct') return <span style={style}>{token.text}</span>;
 
   const borderStyle = claimKind === 'vocab'
     ? '1.5px solid var(--jade)'
@@ -55,7 +55,7 @@ export default function ClickableWord({ token, onOpen, style, claimKind, isRevie
         }}
       >
         {token.text}
-        <rt>{token.pinyin}</rt>
+        <rt>{token.reading}</rt>
       </ruby>
       {/* Badge indicator */}
       <span

@@ -101,11 +101,11 @@ export const FREE_DICT: Record<string, string> = {
 
 function rawToToken(raw: RawToken): PassageToken {
   if (raw.length === 3) {
-    return { text: raw[0], pinyin: raw[1], meaning: raw[2], type: 'vocab' };
+    return { text: raw[0], reading: raw[1], meaning: raw[2], type: 'vocab' };
   }
   if (raw.length === 2) {
     const meaning = FREE_DICT[raw[0]];
-    return { text: raw[0], pinyin: raw[1], meaning, type: meaning ? 'free' : undefined };
+    return { text: raw[0], reading: raw[1], meaning, type: meaning ? 'free' : undefined };
   }
   return { text: raw[0], type: 'punct' };
 }

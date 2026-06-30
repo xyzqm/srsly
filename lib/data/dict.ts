@@ -9,26 +9,26 @@ const DICT: Record<string, DictEntry> = {};
 for (const passage of PASSAGES) {
   // Title tokens
   for (const token of passage.titleTokens) {
-    if (!token.pinyin || DICT[token.text]) continue;
-    DICT[token.text] = { pinyin: token.pinyin, meaning: token.meaning || '' };
+    if (!token.reading || DICT[token.text]) continue;
+    DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
   }
   // Sentence tokens
   for (const sentence of passage.sentences) {
     for (const token of sentence.tokens) {
-      if (!token.pinyin || DICT[token.text]) continue;
-      DICT[token.text] = { pinyin: token.pinyin, meaning: token.meaning || '' };
+      if (!token.reading || DICT[token.text]) continue;
+      DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
     }
   }
   // Question tokens (pinyin, usually no meaning – fills at least the pinyin slot)
   for (const question of passage.questions) {
     for (const token of question.q) {
-      if (!token.pinyin || DICT[token.text]) continue;
-      DICT[token.text] = { pinyin: token.pinyin, meaning: token.meaning || '' };
+      if (!token.reading || DICT[token.text]) continue;
+      DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
     }
     for (const opt of question.options) {
       for (const token of opt.tokens) {
-        if (!token.pinyin || DICT[token.text]) continue;
-        DICT[token.text] = { pinyin: token.pinyin, meaning: token.meaning || '' };
+        if (!token.reading || DICT[token.text]) continue;
+        DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
       }
     }
   }

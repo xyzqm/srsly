@@ -1,6 +1,9 @@
 export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
+/** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese. */
+export type LanguageCode = 'zh' | 'ja';
+
 export interface DeckWord {
   id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
   h: string;     // hanzi
@@ -33,7 +36,7 @@ export interface DeckWord {
 
 export interface PassageToken {
   text: string;
-  pinyin?: string;
+  reading?: string; // pinyin (zh) or hiragana furigana (ja)
   meaning?: string; // only on vocab/free words
   type?: 'vocab' | 'free' | 'punct';
 }
@@ -57,9 +60,9 @@ export interface Question {
 
 export interface FillItem {
   before: PassageToken[];
-  answer: [string, string]; // [hanzi, pinyin]
+  answer: [string, string]; // [text, reading]
   after: PassageToken[];
-  options: Array<[string, string, boolean]>; // [hanzi, pinyin, isCorrect]
+  options: Array<[string, string, boolean]>; // [text, reading, isCorrect]
 }
 
 export interface ConvoTurn {
@@ -79,7 +82,9 @@ export interface SRSState {
 export interface UserPrefs {
   theme: Theme;
   font: Font;
-  hskLevel?: number;
+  language?: LanguageCode;   // active study language; absent = 'zh' (backward compat)
+  hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
+  jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')
   srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
@@ -111,7 +116,8 @@ export interface DailyPassage {
 /** AI-generated daily practice content, cached in localStorage per day+level. */
 export interface DailyContent {
   date: string;           // YYYY-MM-DD
-  hskLevel: number;
+  language?: LanguageCode; // study language; absent = 'zh' (backward compat)
+  hskLevel: number;       // proficiency level in the active language (HSK 1–6 for zh, JLPT 1–5 for ja)
   passages: DailyPassage[];  // one per batch of ~5 due words
   fillItems: FillItem[];
   conversation: ConvoTurn[];

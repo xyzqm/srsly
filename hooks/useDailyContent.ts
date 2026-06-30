@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord, ContentSection } from '@/lib/types';
+import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord, ContentSection, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
-import { getPassageData } from '@/lib/data/allPassages';
-import { lookupWord, preloadCedict } from '@/lib/data/dict';
+import { getPassageDataForLanguage } from '@/lib/data/allPassages';
+import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, inSelectedDecks, decksSignature } from '@/lib/deck';
@@ -25,20 +25,22 @@ function isPunct(text: string): boolean {
   return false;
 }
 
-function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): PassageToken {
-  const [text, rawPinyin, meaning] = arr as [string, string?, string?];
+function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): PassageToken {
+  const [text, rawReading, meaning] = arr as [string, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
-  const pinyin = rawPinyin || lookupWord(text).pinyin || '';
-  if (!pinyin) {
-    const cjkCount = (text.match(/[一-鿿㐀-䶿]/g) ?? []).length;
-    return cjkCount >= 2 ? { text } : { text, type: 'punct' };
+  const reading = rawReading || lookupReading(lang, text).reading || '';
+  if (!reading) {
+    // No reading resolved. For Chinese a 2+ Han-char run is still a word; for Japanese
+    // (where the AI segments + annotates) any multi-char run is treated as a word too.
+    const isWordLike = lang === 'ja' ? text.length >= 2 : (text.match(/[一-鿿㐀-䶿]/g) ?? []).length >= 2;
+    return isWordLike ? { text } : { text, type: 'punct' };
   }
-  const dictEntry = lookupWord(text, pinyin, '');
-  const resolvedMeaning = meaning || pickReading(deckReadings.get(text), pinyin)?.m || dictEntry.meaning || '';
+  const dictEntry = lookupReading(lang, text, reading, '');
+  const resolvedMeaning = meaning || pickReading(deckReadings.get(text), reading)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
-    return { text, pinyin, meaning: resolvedMeaning, type: 'vocab' };
+    return { text, reading, meaning: resolvedMeaning, type: 'vocab' };
   }
-  return { text, pinyin };
+  return { text, reading };
 }
 
 // Structural / aspect / modal particles that are almost always standalone grammar words.
@@ -48,11 +50,16 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
 // never reach this single-char merge path.
 const NON_MERGING_PARTICLES = new Set(['的', '了', '着', '地', '吗', '呢', '吧', '啊', '呀', '嘛']);
 
+// Greedy single-character compound merge — a Chinese-only concern (the model emits bare
+// hanzi that may form compounds). Japanese arrives pre-segmented from the AI, so this is a
+// no-op there.
 function mergeCompoundTokens(
   tokens: PassageToken[],
   dueWords: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
+  lang: LanguageCode,
 ): PassageToken[] {
+  if (lang === 'ja') return tokens;
   const result: PassageToken[] = [];
   let i = 0;
   const isSingleCJK = (t: PassageToken | undefined): t is PassageToken =>
@@ -66,10 +73,10 @@ function mergeCompoundTokens(
     if (isSingleCJK(curr) && isSingleCJK(next) && isSingleCJK(next2)
         && !NON_MERGING_PARTICLES.has(next.text) && !NON_MERGING_PARTICLES.has(next2.text)) {
       const tri = curr.text + next.text + next2.text;
-      const e3  = lookupWord(tri);
-      if (e3.pinyin) {
-        const meaning = pickReading(deckReadings.get(tri), e3.pinyin)?.m || e3.meaning;
-        result.push({ text: tri, pinyin: e3.pinyin, meaning: meaning || undefined, type: (dueWords.has(tri) || meaning) ? 'vocab' : undefined });
+      const e3  = lookupReading(lang, tri);
+      if (e3.reading) {
+        const meaning = pickReading(deckReadings.get(tri), e3.reading)?.m || e3.meaning;
+        result.push({ text: tri, reading: e3.reading, meaning: meaning || undefined, type: (dueWords.has(tri) || meaning) ? 'vocab' : undefined });
         i += 3;
         continue;
       }
@@ -77,10 +84,10 @@ function mergeCompoundTokens(
 
     if (isSingleCJK(curr) && isSingleCJK(next) && !NON_MERGING_PARTICLES.has(next.text)) {
       const bi = curr.text + next.text;
-      const e2 = lookupWord(bi);
-      if (e2.pinyin) {
-        const meaning = pickReading(deckReadings.get(bi), e2.pinyin)?.m || e2.meaning;
-        result.push({ text: bi, pinyin: e2.pinyin, meaning: meaning || undefined, type: (dueWords.has(bi) || meaning) ? 'vocab' : undefined });
+      const e2 = lookupReading(lang, bi);
+      if (e2.reading) {
+        const meaning = pickReading(deckReadings.get(bi), e2.reading)?.m || e2.meaning;
+        result.push({ text: bi, reading: e2.reading, meaning: meaning || undefined, type: (dueWords.has(bi) || meaning) ? 'vocab' : undefined });
         i += 2;
         continue;
       }
@@ -94,22 +101,27 @@ function mergeCompoundTokens(
 
 const CJK_RE = /[一-鿿㐀-䶿]/;
 
+// Split oversized / mis-grouped runs back into characters, then re-merge real compounds.
+// This whole dance exists because the Chinese model emits bare hanzi; Japanese tokens come
+// from the AI already correctly segmented with furigana, so we pass them through untouched.
 function degroupOversized(
   tokens: PassageToken[],
   dueWords: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
+  lang: LanguageCode,
 ): PassageToken[] {
+  if (lang === 'ja') return tokens;
   const exploded: PassageToken[] = [];
 
   function explodeToken(t: PassageToken) {
     for (const ch of t.text) {
       if (CJK_RE.test(ch)) {
-        const entry = lookupWord(ch);
+        const entry = lookupReading(lang, ch);
         exploded.push({
           text: ch,
-          pinyin: entry.pinyin || undefined,
+          reading: entry.reading || undefined,
           meaning: entry.meaning || undefined,
-          type: entry.pinyin ? 'vocab' : undefined,
+          type: entry.reading ? 'vocab' : undefined,
         });
       } else {
         exploded.push({ text: ch, type: isPunct(ch) ? 'punct' : undefined });
@@ -130,28 +142,28 @@ function degroupOversized(
       continue;
     }
 
-    const entry = lookupWord(t.text);
-    if (entry.pinyin || dueWords.has(t.text) || deckReadings.has(t.text) || t.type === 'vocab') {
+    const entry = lookupReading(lang, t.text);
+    if (entry.reading || dueWords.has(t.text) || deckReadings.has(t.text) || t.type === 'vocab') {
       exploded.push(t);
     } else {
       explodeToken(t);
     }
   }
 
-  return mergeCompoundTokens(exploded, dueWords, deckReadings);
+  return mergeCompoundTokens(exploded, dueWords, deckReadings, lang);
 }
 
-function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): Sentence[] {
+function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): Sentence[] {
   return rawRows.map(row => {
     const raw = row
       .filter(r => r[0] !== '' && r[0] !== 'punctuation')
-      .map(r => rawToToken(r, dueWords, deckReadings));
-    const tokens = degroupOversized(raw, dueWords, deckReadings);
+      .map(r => rawToToken(r, dueWords, deckReadings, lang));
+    const tokens = degroupOversized(raw, dueWords, deckReadings, lang);
     return { tokens, plainText: tokens.map(t => t.text).join('') };
   });
 }
 
-function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): FillItem[] {
+function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): FillItem[] {
   return (rawFills as {
     before: RawTok[];
     answer: [string, string];
@@ -159,10 +171,10 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings
     distractors: string[][];
   }[]).map(f => {
     const options: FillItem['options'] = [
-      [f.answer[0], f.answer[1] || lookupWord(f.answer[0]).pinyin || '', true],
+      [f.answer[0], f.answer[1] || lookupReading(lang, f.answer[0]).reading || '', true],
       ...f.distractors.map(d => {
         const h = d[0];
-        return [h, d[1] || lookupWord(h).pinyin || '', false] as [string, string, boolean];
+        return [h, d[1] || lookupReading(lang, h).reading || '', false] as [string, string, boolean];
       }),
     ];
     for (let i = options.length - 1; i > 0; i--) {
@@ -171,8 +183,8 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings
     }
     const build = (arr: RawTok[]) =>
       degroupOversized(
-        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings)),
-        dueWords, deckReadings,
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings, lang)),
+        dueWords, deckReadings, lang,
       );
     return {
       before: build(f.before),
@@ -183,26 +195,26 @@ function buildFillItems(rawFills: unknown[], dueWords: Set<string>, deckReadings
   });
 }
 
-function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): ConvoTurn[] {
+function buildConvo(rawTurns: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): ConvoTurn[] {
   return (rawTurns as {
     key: string[];
     tutor: RawTok[];
     suggestions: RawTok[][];
   }[]).map(t => ({
     key: t.key,
-    tokens: t.tutor.map(r => rawToToken(r, dueWords, deckReadings)),
-    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords, deckReadings))),
+    tokens: t.tutor.map(r => rawToToken(r, dueWords, deckReadings, lang)),
+    suggestions: t.suggestions.map(sug => sug.map(r => rawToToken(r, dueWords, deckReadings, lang))),
   }));
 }
 
-function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): PassageToken[] {
+function buildTitleTokens(rawTitle: RawTok[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): PassageToken[] {
   const raw = rawTitle
     .filter(r => r[0] !== '' && r[0] !== 'punctuation')
-    .map(r => rawToToken(r, dueWords, deckReadings));
-  return degroupOversized(raw, dueWords, deckReadings);
+    .map(r => rawToToken(r, dueWords, deckReadings, lang));
+  return degroupOversized(raw, dueWords, deckReadings, lang);
 }
 
-function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>): Question[] {
+function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): Question[] {
   return (rawQuestions as {
     q: RawTok[];
     model: string;
@@ -211,8 +223,8 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckRead
   }[]).map(q => {
     const buildToks = (arr: RawTok[]) =>
       degroupOversized(
-        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings)),
-        dueWords, deckReadings,
+        arr.filter(r => r[0] !== '' && r[0] !== 'punctuation').map(r => rawToToken(r, dueWords, deckReadings, lang)),
+        dueWords, deckReadings, lang,
       );
     const options: MCOption[] = q.options.map(opt => ({
       tokens: buildToks(opt.tokens),
@@ -253,31 +265,32 @@ function buildPassage(
   vocabWords: string[],
   dueSet: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
+  lang: LanguageCode,
 ): DailyPassage {
   const rawQs = Array.isArray(rawPassage.questions) ? rawPassage.questions : [];
-  const aiQs = rawQs.length >= 1 ? buildQuestions(rawQs, dueSet, deckReadings) : undefined;
+  const aiQs = rawQs.length >= 1 ? buildQuestions(rawQs, dueSet, deckReadings, lang) : undefined;
   return {
-    titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckReadings),
-    sentences: buildSentences(rawPassage.sentences, dueSet, deckReadings),
+    titleTokens: buildTitleTokens(rawPassage.title, dueSet, deckReadings, lang),
+    sentences: buildSentences(rawPassage.sentences, dueSet, deckReadings, lang),
     vocabWords,
     questions: aiQs,
   };
 }
 
-function sanitizeCachedContent(content: DailyContent): void {
+function sanitizeCachedContent(content: DailyContent, lang: LanguageCode): void {
   const emptyDue = new Set<string>();
   const emptyMeanings = new Map<string, ReadingHint[]>();
 
   function fixToken(t: PassageToken) {
-    if (t.pinyin && isPunct(t.text)) {
-      (t as unknown as Record<string, unknown>).pinyin = undefined;
+    if (t.reading && isPunct(t.text)) {
+      (t as unknown as Record<string, unknown>).reading = undefined;
       t.type = 'punct';
     }
   }
 
   function fixAndDegroup(tokens: PassageToken[]): PassageToken[] {
     tokens.forEach(fixToken);
-    return degroupOversized(tokens, emptyDue, emptyMeanings);
+    return degroupOversized(tokens, emptyDue, emptyMeanings, lang);
   }
 
   content.passages.forEach(p => {
@@ -312,6 +325,7 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
   if (!raw.sentences || !raw.titleTokens) return null;
   return {
     date: raw.date as string,
+    language: raw.language as LanguageCode | undefined,
     hskLevel: raw.hskLevel as number,
     passages: [{
       titleTokens: raw.titleTokens as PassageToken[],
@@ -387,6 +401,7 @@ export function useDailyContent(
   deck: DeckWord[],
   studyDecks: string[] | null = null,
   want: ContentSection[] = ALL_SECTIONS,
+  language: LanguageCode = 'zh',
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
@@ -415,14 +430,15 @@ export function useDailyContent(
 
     async function load() {
       setStatus(prev => (prev === 'ready' ? prev : 'loading'));
-      await preloadCedict().catch(() => {});
+      await preloadDict(language).catch(() => {});
       if (cancelled) return;
 
-      const passageData = getPassageData(hskLevel);
+      const passageData = getPassageDataForLanguage(language, hskLevel);
       const today = new Date().toISOString().slice(0, 10);
 
       const staticContent = (): DailyContent => ({
         date: today,
+        language,
         hskLevel,
         deck: deckKey || undefined,
         passages: [{
@@ -449,13 +465,13 @@ export function useDailyContent(
       // Restore the FULL cached set of passages — every one the user generated today via
       // "+ new passage" persists across reloads and tab switches (the cache is date-keyed,
       // so a new day still starts fresh). Don't truncate; that's what was erasing extras.
-      const cached = await storage.getDailyContent(hskLevel, deckKey);
+      const cached = await storage.getDailyContent(language, hskLevel, deckKey);
       if (cancelled) return;
       let base: DailyContent | null = null;
       if (cached) {
         const migrated = migrateContent(cached as unknown as Record<string, unknown>);
         if (migrated) {
-          sanitizeCachedContent(migrated);
+          sanitizeCachedContent(migrated, language);
           base = migrated;
         }
       }
@@ -490,6 +506,7 @@ export function useDailyContent(
             body: JSON.stringify({
               words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
               hskLevel,
+              language,
               sections: [section],
             }),
           });
@@ -531,6 +548,7 @@ export function useDailyContent(
                 batches[pi] ?? [],
                 buildSet,
                 deckReadings,
+                language,
               );
               passage.vocabWords = collectVocabWords(passage, dueSet, anchorCompounds);
               return passage;
@@ -540,12 +558,12 @@ export function useDailyContent(
             built = passages;
             done = !fellBack && complete?.passage !== false;
           } else if (section === 'fill') {
-            const builtFill = data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckReadings) : [];
+            const builtFill = data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckReadings, language) : [];
             const fellBack = builtFill.length < 1;
             built = fellBack ? passageData.fillItems : builtFill;
             done = !fellBack && complete?.fill !== false;
           } else {
-            const builtConvo = data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings) : [];
+            const builtConvo = data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings, language) : [];
             const fellBack = builtConvo.length < 2;
             built = fellBack ? passageData.conversation : builtConvo;
             done = !fellBack && complete?.convo !== false;
@@ -553,11 +571,11 @@ export function useDailyContent(
 
           if (cancelled) return;
 
-          const disk = await storage.getDailyContent(hskLevel, deckKey);
+          const disk = await storage.getDailyContent(language, hskLevel, deckKey);
           if (cancelled) return;
           const diskBase = disk ? (migrateContent(disk as unknown as Record<string, unknown>) ?? content) : content;
           const merged = mergeSection(
-            { ...diskBase, date: today, hskLevel, deck: deckKey || undefined },
+            { ...diskBase, date: today, language, hskLevel, deck: deckKey || undefined },
             section, built, done,
           );
           await storage.saveDailyContent(merged);
@@ -582,7 +600,7 @@ export function useDailyContent(
 
     load();
     return () => { cancelled = true; };
-  }, [hskLevel, deckKey, wantKey]);
+  }, [hskLevel, deckKey, wantKey, language]);
 
   const loadMore = useCallback(async () => {
     if (!dailyContent || loadingMore || hskLevel === 0) return;
@@ -616,6 +634,7 @@ export function useDailyContent(
         body: JSON.stringify({
           words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,
+          language,
           themeOffset: dailyContent.passages.length,
           sections: ['passage'],
         }),
@@ -642,6 +661,7 @@ export function useDailyContent(
         batches[0] ?? [],
         new Set([...dueSetWords, ...anchorCompounds]),
         dueSet,
+        language,
       );
       newPassage.vocabWords = collectVocabWords(newPassage, dueSetWords, anchorCompounds);
 
@@ -656,7 +676,7 @@ export function useDailyContent(
     } finally {
       setLoadingMore(false);
     }
-  }, [dailyContent, loadingMore, hskLevel]);
+  }, [dailyContent, loadingMore, hskLevel, language]);
 
   const generateQuestionsForPassage = useCallback(async (passageIdx: number) => {
     const passage = dailyContent?.passages[passageIdx];
@@ -673,6 +693,7 @@ export function useDailyContent(
         body: JSON.stringify({
           words: vocabWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,
+          language,
           sections: ['questions'],
           passageText,
         }),
@@ -696,7 +717,7 @@ export function useDailyContent(
     } finally {
       setLoadingQuestions(false);
     }
-  }, [dailyContent, loadingQuestions, hskLevel]);
+  }, [dailyContent, loadingQuestions, hskLevel, language]);
 
   return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions };
 }

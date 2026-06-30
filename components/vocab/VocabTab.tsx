@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { useLanguage } from '@/lib/LanguageContext';
 import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
@@ -536,12 +537,13 @@ interface VocabTabProps {
 }
 
 export default function VocabTab({ onStudyDeck }: VocabTabProps) {
+  const language = useLanguage();
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     addWordToDeck, removeWordFromDeck, addWordsToDeck,
     resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck, releaseFromPool,
-  } = useVocabDeck();
+  } = useVocabDeck(language);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
