@@ -16,7 +16,7 @@ const SENTENCES_PER_PASSAGE: Record<number, number> = {
 const MAX_GEN_ATTEMPTS = 2;
 
 /** Independently-generated content blocks. */
-type Section = 'passage' | 'fill' | 'convo';
+type Section = 'passage' | 'fill' | 'convo' | 'questions';
 
 // ─── Token wire format ───────────────────────────────────────────────────────
 // The model emits each token-list as a single pipe-delimited string of bare hanzi
@@ -154,16 +154,18 @@ export async function POST(req: NextRequest) {
   let hskLevel: number;
   let themeOffset: number;
   let sections: Section[];
+  let passageText: string;
 
   try {
     const body = await req.json();
     words = body.words ?? [];
     hskLevel = body.hskLevel ?? 4;
     themeOffset = body.themeOffset ?? 0;
+    passageText = typeof body.passageText === 'string' ? body.passageText : '';
     // `sections` selects which blocks to generate. Back-compat: `passageOnly` → passage only.
     if (Array.isArray(body.sections) && body.sections.length > 0) {
       sections = body.sections.filter((s: unknown): s is Section =>
-        s === 'passage' || s === 'fill' || s === 'convo');
+        s === 'passage' || s === 'fill' || s === 'convo' || s === 'questions');
     } else if (body.passageOnly) {
       sections = ['passage'];
     } else {
@@ -287,15 +289,36 @@ Generate a JSON object with EXACTLY this structure:
 
 PASSAGE = {
   "title": "WORDS",
-  "sentences": ["WORDS", "WORDS", ...],
-  "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION]
+  "sentences": ["WORDS", "WORDS", ...]
 }
 Example of a single correctly-formatted sentence string (note the | between every token):
   "城市|的|经济|发展|离不开|科技|的|进步|。"
   ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
-  Include exactly 5 comprehension questions testing both passage understanding AND vocabulary meaning.
-  Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect questions.
-  The "key" array must contain the specific hanzi words from the passage whose meaning is tested by that question.
+
+${PIPE_RULES}
+
+${NAMES_SCHEMA}
+
+REQUIREMENTS:
+1. Exactly 1 passage in the "passages" array.
+2. ${sentenceCount}–${sentenceCount + 2} sentences.
+3. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
+
+Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
+
+  const questionsPrompt = `You are a Chinese language teacher. Given the following Chinese reading passage at HSK ${hskLevel} (${levelDesc}) level, generate exactly 5 reading comprehension questions.
+
+PASSAGE:
+${passageText}
+
+${words.length > 0 ? `VOCABULARY WORDS IN THE PASSAGE:\n${wordList}` : ''}
+
+Generate a JSON object with EXACTLY this structure:
+
+{
+  "questions": [QUESTION, QUESTION, QUESTION, QUESTION, QUESTION],
+  "names": [NAME, ...]
+}
 
 ${PIPE_RULES}
 
@@ -310,13 +333,12 @@ QUESTION = {
     {"tokens": "WORDS", "correct": false}
   ]
 }
+The "key" array must contain the specific hanzi words from the passage whose meaning is tested.
+Include exactly 5 questions testing both passage understanding AND vocabulary meaning.
+Question variety: mix factual recall (who/what/when), inference, vocabulary-in-context, and cause-effect.
+Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
 
 ${NAMES_SCHEMA}
-
-REQUIREMENTS:
-1. Exactly 1 passage in the "passages" array.
-2. ${sentenceCount}–${sentenceCount + 2} sentences, exactly 5 questions.
-3. Difficulty appropriate for HSK ${hskLevel}: ${difficultyNote}.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
@@ -391,6 +413,8 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     Array.isArray(j.fill) && j.fill.length >= 1;
   const convoComplete = (j: Record<string, unknown>): boolean =>
     Array.isArray(j.convo) && j.convo.length >= 2;
+  const questionsComplete = (j: Record<string, unknown>): boolean =>
+    Array.isArray(j.questions) && j.questions.length >= 1;
 
   // Build the per-section resolve map: practiced words (authoritative) plus the model's
   // proper-name list. parseTokenString consults this so names get their reading from a
@@ -471,6 +495,27 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
         : [];
       return ['fill', { complete: json !== null, out: fill }];
     }
+    if (section === 'questions') {
+      const { json, best } = await generateJson(client, questionsPrompt, questionsComplete, 'questions');
+      const j = json ?? best;
+      const map = resolveMap(j);
+      const qs = Array.isArray((j as { questions?: unknown })?.questions)
+        ? ((j as { questions: Record<string, unknown>[] }).questions).map(q => {
+            const qq = q as Record<string, unknown>;
+            const opts = Array.isArray(qq.options) ? qq.options : [];
+            return {
+              q: parseTokenString(qq.q, map),
+              model: qq.model,
+              key: qq.key,
+              options: opts.map(o => {
+                const oo = o as Record<string, unknown>;
+                return { tokens: parseTokenString(oo.tokens, map), correct: oo.correct };
+              }),
+            };
+          })
+        : [];
+      return ['questions', { complete: json !== null, out: qs }];
+    }
     const { json, best } = await generateJson(client, convoPrompt, convoComplete, 'convo');
     const j = json ?? best;
     const map = resolveMap(j);
@@ -491,11 +536,12 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     }
   }
 
-  const data: { passages?: unknown; fill?: unknown; convo?: unknown } = {};
+  const data: { passages?: unknown; fill?: unknown; convo?: unknown; questions?: unknown } = {};
   const complete: { passage?: boolean; fill?: boolean; convo?: boolean } = {};
-  if (bySection.has('passage')) { data.passages = bySection.get('passage')!.out; complete.passage = bySection.get('passage')!.complete; }
-  if (bySection.has('fill'))    { data.fill     = bySection.get('fill')!.out;    complete.fill    = bySection.get('fill')!.complete; }
-  if (bySection.has('convo'))   { data.convo    = bySection.get('convo')!.out;   complete.convo   = bySection.get('convo')!.complete; }
+  if (bySection.has('passage'))   { data.passages  = bySection.get('passage')!.out;   complete.passage = bySection.get('passage')!.complete; }
+  if (bySection.has('fill'))      { data.fill      = bySection.get('fill')!.out;       complete.fill    = bySection.get('fill')!.complete; }
+  if (bySection.has('convo'))     { data.convo     = bySection.get('convo')!.out;      complete.convo   = bySection.get('convo')!.complete; }
+  if (bySection.has('questions')) { data.questions = bySection.get('questions')!.out; }
 
   return NextResponse.json({
     ok: true,

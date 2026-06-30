@@ -351,6 +351,8 @@ export interface UseDailyContentResult {
   loadMore: () => Promise<void>;
   loadingMore: boolean;
   guestLimited: boolean;
+  generateQuestionsForPassage: (passageIdx: number) => Promise<void>;
+  loadingQuestions: boolean;
 }
 
 function sectionFlags(c: DailyContent): { passage?: boolean; fill?: boolean; convo?: boolean } {
@@ -391,6 +393,7 @@ export function useDailyContent(
   const [errorMsg, setErrorMsg] = useState('');
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [guestLimited, setGuestLimited] = useState(false);
 
   const deckRef = useRef(deck);
@@ -655,5 +658,45 @@ export function useDailyContent(
     }
   }, [dailyContent, loadingMore, hskLevel]);
 
-  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited };
+  const generateQuestionsForPassage = useCallback(async (passageIdx: number) => {
+    const passage = dailyContent?.passages[passageIdx];
+    if (!passage || loadingQuestions) return;
+
+    setLoadingQuestions(true);
+    try {
+      const passageText = passage.sentences.map(s => s.plainText).join('');
+      const vocabWords = deckRef.current.filter(w => passage.vocabWords.includes(w.h));
+
+      const res = await fetch('/api/daily-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          words: vocabWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
+          hskLevel,
+          sections: ['questions'],
+          passageText,
+        }),
+      });
+
+      if (!res.ok) return;
+      const payload = await res.json() as { data: { questions?: unknown[] } };
+      const questions = Array.isArray(payload.data?.questions) ? payload.data.questions : [];
+      if (questions.length === 0) return;
+
+      setDailyContent(prev => {
+        if (!prev) return prev;
+        const passages = [...prev.passages];
+        passages[passageIdx] = { ...passages[passageIdx], questions: questions as import('@/lib/types').Question[] };
+        const updated = { ...prev, passages };
+        storage.saveDailyContent(updated);
+        return updated;
+      });
+    } catch (err) {
+      console.error('[generateQuestionsForPassage]', err);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }, [dailyContent, loadingQuestions, hskLevel]);
+
+  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions };
 }

@@ -789,7 +789,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
 
   const btnGhost: React.CSSProperties = {
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
-    background: 'none', border: '1px solid var(--line)', color: 'var(--ink-faint)',
+    background: 'none', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--line)', color: 'var(--ink-faint)',
     borderRadius: 7, padding: '5px 11px', cursor: 'pointer',
   };
 

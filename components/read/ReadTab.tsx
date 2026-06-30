@@ -56,7 +56,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
 
   // Passages are generated from the GLOBAL due queue by default; a focused "Study this deck"
   // session (studyScope) temporarily narrows them to that deck. null = all.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited } = useDailyContent(hskLevel, deck, studyScope, READ_WANT);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, studyScope, READ_WANT);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -80,9 +80,12 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
 
   const SENTENCES    = currentPassage?.sentences    ?? passageData.sentences;
   const TITLE_TOKENS = currentPassage?.titleTokens  ?? passageData.titleTokens;
-  const QUESTIONS    = (currentPassage?.questions && currentPassage.questions.length >= 1)
-    ? currentPassage.questions
-    : passageData.questions;
+  // AI passages start with no questions; they're generated lazily on demand.
+  // Static fallback passages always have questions pre-baked.
+  const QUESTIONS = useMemo(
+    () => currentPassage ? (currentPassage.questions ?? []) : passageData.questions,
+    [currentPassage, passageData.questions],
+  );
   const charCount    = currentPassage
     ? currentPassage.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
     : passageData.charCount;
@@ -178,6 +181,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   const [resultsBuilt, setResultsBuilt] = useState(false);
   const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
   const [showNoDueDialog, setShowNoDueDialog] = useState(false);
+  const [alreadyFinished, setAlreadyFinished] = useState(false);
 
   useEffect(() => {
     setActiveSentence(0);
@@ -219,6 +223,17 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       lastIdxKey.current = contentKey;
     }
   }, [passageIdx, contentKey]);
+
+  // Persist / restore the "already finished" state per passage across tab switches and reloads.
+  const passageFinishedKey = contentKey ? `srsly-done|${contentKey}|${passageIdx}` : '';
+  useEffect(() => {
+    if (!passageFinishedKey) return;
+    try {
+      const done = !!sessionStorage.getItem(passageFinishedKey);
+      setAlreadyFinished(done);
+      if (done) setShowResults(true);
+    } catch { /* ignore */ }
+  }, [passageFinishedKey]);
 
   // Jump to a passage the user just generated with "+ new passage" — but NOT when content
   // first hydrates from cache (reload / tab switch back), so restoring honors the saved
@@ -376,14 +391,20 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       allResultWords.forEach(w => updateWordReview(w, getWordGrade(w), { minDaysOut: 1 }));
       byCard.forEach(({ anchor, grade }) => gradeCard(anchor.id, grade, { minDaysOut: 1 }));
 
-      const okCount =
-        Object.values(frResponses).filter(r => r.verdict === 'ok').length +
-        Object.values(mcGrades).filter(g => g >= 2).length;
-      const score = Math.round((okCount / Math.max(QUESTIONS.length, 1)) * 100);
-      onScore(score);
+      if (QUESTIONS.length > 0) {
+        const okCount =
+          Object.values(frResponses).filter(r => r.verdict === 'ok').length +
+          Object.values(mcGrades).filter(g => g >= 2).length;
+        onScore(Math.round((okCount / QUESTIONS.length) * 100));
+      }
+
+      if (passageFinishedKey) {
+        try { sessionStorage.setItem(passageFinishedKey, '1'); } catch { /* ignore */ }
+      }
+      setAlreadyFinished(true);
     }
-    setShowResults(v => !v);
-  }, [resultsBuilt, frResponses, mcGrades, clozeGrades, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
+    if (!alreadyFinished) setShowResults(v => !v);
+  }, [resultsBuilt, alreadyFinished, passageFinishedKey, frResponses, mcGrades, clozeGrades, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -606,50 +627,83 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
         <>
           <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
-          <div className="flex justify-between items-center flex-wrap gap-2.5 mb-4">
-            <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-              Reading comprehension · {QUESTIONS.length} questions
-            </span>
-            <div className="flex gap-1.5">
-              <button style={toggleStyle(responseMode === 'fr')} onClick={() => setResponseMode('fr')}>Free response</button>
-              <button style={toggleStyle(responseMode === 'mc')} onClick={() => setResponseMode('mc')}>Multiple choice</button>
+          {QUESTIONS.length === 0 && currentPassage ? (
+            <div className="flex justify-center py-2 mb-4">
+              {loadingQuestions ? (
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', letterSpacing: '.06em' }}>
+                  Generating questions…
+                </div>
+              ) : (
+                <button
+                  onClick={() => generateQuestionsForPassage(passageIdx)}
+                  className="cursor-pointer transition-all duration-150"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
+                    background: 'none', borderWidth: '1px', borderStyle: 'solid', borderColor: 'var(--line)',
+                    borderRadius: 8, padding: '10px 18px', color: 'var(--ink-soft)', cursor: 'pointer',
+                  }}
+                >
+                  + Generate reading comprehension questions
+                </button>
+              )}
             </div>
-          </div>
-
-          <div>
-            {QUESTIONS.map((q, i) => (
-              <Question
-                key={`${hskLevel}-${passageIdx}-${i}-${responseMode}`}
-                question={q}
-                index={i}
-                mode={responseMode}
-                hskLevel={hskLevel}
-                savedResponse={frResponses[i]}
-                onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
-                onAddVocab={handleAddVocabQuestion}
-                deckWords={deckWords}
-                deckReadings={deckReadings}
-                onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
-              />
-            ))}
-          </div>
+          ) : QUESTIONS.length > 0 ? (
+            <>
+              <div className="flex justify-between items-center flex-wrap gap-2.5 mb-4">
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                  Reading comprehension · {QUESTIONS.length} questions
+                </span>
+                <div className="flex gap-1.5">
+                  <button style={toggleStyle(responseMode === 'fr')} onClick={() => setResponseMode('fr')}>Free response</button>
+                  <button style={toggleStyle(responseMode === 'mc')} onClick={() => setResponseMode('mc')}>Multiple choice</button>
+                </div>
+              </div>
+              <div>
+                {QUESTIONS.map((q, i) => (
+                  <Question
+                    key={`${hskLevel}-${passageIdx}-${i}-${responseMode}`}
+                    question={q}
+                    index={i}
+                    mode={responseMode}
+                    hskLevel={hskLevel}
+                    savedResponse={frResponses[i]}
+                    onSave={r => setFrResponses(prev => ({ ...prev, [i]: r }))}
+                    onAddVocab={handleAddVocabQuestion}
+                    deckWords={deckWords}
+                    deckReadings={deckReadings}
+                    onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
 
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
-            <button
-              onClick={toggleResults}
-              disabled={!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount}
-              title={!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount ? `Fill in all ${clozeWordCount} blank${clozeWordCount === 1 ? '' : 's'} first` : undefined}
-              className="flex items-center gap-2 transition-all duration-150"
-              style={{
-                fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-                padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
-                cursor: (!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount) ? 'not-allowed' : 'pointer',
-                opacity: (!showResults && clozeWordCount > 0 && clozeGrades.size < clozeWordCount) ? 0.45 : 1,
-              }}
-            >
-              {showResults ? 'Hide vocabulary results' : 'Finish & see vocabulary results'}
-            </button>
+            {(() => {
+              const clozeIncomplete = clozeWordCount > 0 && clozeGrades.size < clozeWordCount;
+              const isDisabled = alreadyFinished || clozeIncomplete;
+              const label = alreadyFinished
+                ? 'Already finished!'
+                : clozeIncomplete
+                  ? `${clozeGrades.size}/${clozeWordCount} blanks filled in`
+                  : 'Finish & see vocabulary results';
+              return (
+                <button
+                  onClick={toggleResults}
+                  disabled={isDisabled}
+                  className="flex items-center gap-2 transition-all duration-150"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                    padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
+                    opacity: isDisabled ? 0.45 : 1,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })()}
             <button
               onClick={onNavigatePractice}
               className="flex items-center gap-2 cursor-pointer transition-all duration-150"
