@@ -23,9 +23,12 @@ export interface PopupData {
   word: string;
   pinyin: string;
   meaning: string;
+  /** Dictionary (base) form when the word was resolved via deinflection (ja only). */
+  baseForm?: string;
+  baseReading?: string;
   /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);
-   *  lookup = added to vocab deck (definition only) */
-  type: 'vocab' | 'free' | 'lookup';
+   *  lookup = added to vocab deck (definition only); pool = staged but not yet in play */
+  type: 'vocab' | 'free' | 'lookup' | 'pool';
   anchorRect: DOMRect;
   /** Adjacent compound words this character belongs to (e.g. 已 → 已经) */
   compounds?: CompoundHint[];
@@ -37,9 +40,10 @@ interface Props {
   data: PopupData | null;
   onClose: () => void;
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+  onReleaseFromPool?: (word: string) => void;
 }
 
-export default function WordPopup({ data, onClose, onAddVocab }: Props) {
+export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool }: Props) {
   const mounted = useIsMounted();
   const popRef = useRef<HTMLDivElement>(null);
   // Keep last data around so content stays visible during the close fade
@@ -160,12 +164,12 @@ export default function WordPopup({ data, onClose, onAddVocab }: Props) {
 
       {displayData && (
         <>
-          <div className="flex items-baseline gap-2 pr-5">
+          <div className="flex items-baseline gap-2 pr-5 flex-wrap">
             <span style={{ fontFamily: 'var(--f-han)', fontSize: 22, fontWeight: 'var(--han-weight)' as 'bold' }}>
-              {displayData.word}
+              {displayData.baseForm ?? displayData.word}
             </span>
             <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--pop-pin)', marginLeft: 6 }}>
-              {displayData.pinyin}
+              {displayData.baseReading ?? displayData.pinyin}
             </span>
           </div>
           <div style={{ fontSize: 13.5, marginTop: 5, lineHeight: 1.5 }}>
@@ -229,7 +233,7 @@ export default function WordPopup({ data, onClose, onAddVocab }: Props) {
           {displayData.type === 'free' && (
             <div className="flex flex-col gap-1.5 mt-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
               <button
-                onClick={() => { onAddVocab(displayData.word, displayData.pinyin, displayData.meaning); onClose(); }}
+                onClick={() => { onAddVocab(displayData.baseForm ?? displayData.word, displayData.baseReading ?? displayData.pinyin, displayData.meaning); onClose(); }}
                 className="w-full text-left rounded-lg py-2 px-3 cursor-pointer transition-all duration-150"
                 style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.05em', background: 'var(--jade)', border: 'none', color: '#fff', lineHeight: 1.3, fontWeight: 600 }}
               >
@@ -247,6 +251,28 @@ export default function WordPopup({ data, onClose, onAddVocab }: Props) {
               style={{ borderTop: '1px solid rgba(255,255,255,.1)', color: 'rgba(120,210,120,.85)', fontFamily: 'var(--f-mono)', letterSpacing: '.05em' }}
             >
               + Added to your deck
+            </div>
+          )}
+
+          {displayData.type === 'pool' && (
+            <div className="flex flex-col gap-1.5 mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(180,180,255,.65)' }}>
+                In pool — staged, not yet in play
+              </div>
+              {onReleaseFromPool && (
+                <button
+                  onClick={() => { onReleaseFromPool(displayData.word); onClose(); }}
+                  className="w-full text-left rounded-lg py-2 px-3 cursor-pointer transition-all duration-150"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.05em', background: 'rgba(120,120,220,.25)', border: '1px solid rgba(150,150,255,.3)', color: 'rgba(200,200,255,.9)', lineHeight: 1.3, fontWeight: 600 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(120,120,220,.4)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(120,120,220,.25)')}
+                >
+                  Add into play
+                  <span className="block font-normal opacity-65 mt-0.5" style={{ fontSize: 9, textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>
+                    Enters your review queue starting tomorrow
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </>

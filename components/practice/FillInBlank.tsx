@@ -189,7 +189,12 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
                     minWidth: 54,
                     borderBottom: `2px solid ${blankColor}`,
                     color: state?.resolved ? blankColor : 'var(--ink-faint)',
+                    cursor: state?.resolved ? 'pointer' : undefined,
+                    borderRadius: state?.resolved ? 3 : undefined,
                   }}
+                  onClick={state?.resolved
+                    ? (e) => openPopup(e, { text: item.answer[0], reading: item.answer[1] })
+                    : undefined}
                 >
                   {state?.resolved ? item.answer[0] : '＿＿'}
                 </span>

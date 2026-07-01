@@ -39,6 +39,9 @@ export interface PassageToken {
   reading?: string; // pinyin (zh) or hiragana furigana (ja)
   meaning?: string; // only on vocab/free words
   type?: 'vocab' | 'free' | 'punct';
+  /** Japanese only: dictionary (lemma) form when `text` is a conjugated verb/adj that
+   *  matches a due vocab word. Used for cloze blank detection and grade attribution. */
+  baseForm?: string;
 }
 
 export interface Sentence {
@@ -144,3 +147,7 @@ export interface FRResponse {
   message: string;
   wordsHit: string[];
 }
+
+export interface ClozeGradeEntry { word: string; grade: number }
+/** Per-passage cloze state keyed by occurrence ID "${sentenceIdx}-${tokenIdx}". */
+export type ClozeOccurrenceMap = Record<string, ClozeGradeEntry>;

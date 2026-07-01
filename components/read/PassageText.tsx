@@ -1,10 +1,10 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
-import type { PassageToken, DeckWord, Sentence } from '@/lib/types';
+import type { PassageToken, DeckWord, Sentence, ClozeGradeEntry } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
-import { lookupReading } from '@/lib/data/lookup';
+import { lookupReadingAsync } from '@/lib/data/lookup';
 import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 
@@ -51,9 +51,14 @@ interface Props {
   /** Mark a word claimed this session (shared with the title popup); the added/due visuals
    *  are otherwise derived from the deck so they survive reloads. */
   onClaimVocab: (word: string) => void;
+  /** Deck words staged but not yet in play (pool). */
+  poolWords?: Set<string>;
+  onReleaseFromPool?: (word: string) => void;
   /** Whether to show the English hint tooltip on hover over cloze blanks. */
   showClozeHints?: boolean;
-  onClozeAnswer?: (word: string, correct: boolean) => void;
+  onClozeAnswer?: (occurrenceId: string, word: string, correct: boolean) => void;
+  /** Restored cloze grades keyed by occurrenceId ("${si}-${ti}") — pre-fills already-answered blanks. */
+  restoredClozeGrades?: Map<string, ClozeGradeEntry>;
 }
 
 function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }: {
@@ -127,16 +132,17 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   );
 }
 
-function ClozeBlank({ token, showHint, onGrade }: {
+function ClozeBlank({ token, showHint, onGrade, initialGrade }: {
   token: PassageToken;
   showHint: boolean;
   onGrade: (correct: boolean) => void;
+  initialGrade?: { correct: boolean };
 }) {
   const [value, setValue] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const [correct, setCorrect] = useState(false);
+  const [submitted, setSubmitted] = useState(!!initialGrade);
+  const [correct, setCorrect] = useState(initialGrade?.correct ?? false);
   const [hovered, setHovered] = useState(false);
-  const gradedRef = useRef(false);
+  const gradedRef = useRef(!!initialGrade);
 
   const submit = useCallback((opts?: { force?: boolean }) => {
     if (gradedRef.current) return;
@@ -262,7 +268,7 @@ function ClozeBlank({ token, showHint, onGrade }: {
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, showClozeHints, onClozeAnswer }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
 
@@ -276,34 +282,42 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
     if (isReviewWord) return;
 
-    const isPending  = pendingDeckWords.has(token.text);
-    const inDeck     = deckWords.has(token.text);
-
+    // Capture rect synchronously before the async lookup.
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    const entry = lookupReading(language, token.text, token.reading || '', token.meaning || '');
-    const compoundHints = (token.text.length === 1 && !inDeck) ? compounds : [];
+    void lookupReadingAsync(language, token.text, token.reading || '', token.meaning || '').then(entry => {
+      // Use the dictionary base form (e.g. 渡す for 渡します) as the canonical key
+      // for deck checks so conjugated forms don't show "Add to vocab" when the base is in deck.
+      const canonicalWord = entry.baseForm ?? token.text;
 
-    let pin = entry.reading, mean = entry.meaning;
-    let otherReadings: { p: string; m: string }[] | undefined;
-    const allReadings = deckReadings?.get(token.text);
-    if (allReadings && allReadings.length >= 1) {
-      const matched = pickReading(allReadings, token.reading || '') ?? allReadings[0];
-      pin = matched.p || entry.reading;
-      mean = matched.m || entry.meaning;
-      if (allReadings.length > 1) {
-        otherReadings = allReadings.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+      const isPending  = pendingDeckWords.has(token.text) || pendingDeckWords.has(canonicalWord);
+      const inDeck     = deckWords.has(token.text) || deckWords.has(canonicalWord);
+      const isInPool   = inDeck && !!(poolWords?.has(token.text) || poolWords?.has(canonicalWord));
+      const compoundHints = (token.text.length === 1 && !inDeck) ? compounds : [];
+
+      let pin = entry.reading, mean = entry.meaning;
+      let otherReadings: { p: string; m: string }[] | undefined;
+      const allReadings = deckReadings?.get(canonicalWord) ?? deckReadings?.get(token.text);
+      if (allReadings && allReadings.length >= 1) {
+        const matched = pickReading(allReadings, entry.baseReading ?? token.reading ?? '') ?? allReadings[0];
+        pin = matched.p || entry.reading;
+        mean = matched.m || entry.meaning;
+        if (allReadings.length > 1) {
+          otherReadings = allReadings.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+        }
       }
-    }
 
-    if (isPending || inDeck) {
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings });
-    } else {
-      setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings });
-    }
-  }, [deckWords, dueDeckWords, pendingDeckWords, deckReadings, language]);
+      if (isInPool) {
+        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'pool', anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
+      } else if (isPending || inDeck) {
+        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
+      } else {
+        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
+      }
+    });
+  }, [deckWords, dueDeckWords, pendingDeckWords, poolWords, deckReadings, language]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
@@ -376,15 +390,21 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
+                // Due vocab words become cloze blanks. A conjugated Japanese token is
+                // a review word if its base form (not surface form) is in dueDeckWords.
+                const reviewKey = token.baseForm && dueDeckWords.has(token.baseForm) ? token.baseForm : token.text;
+                const isReviewWord = dueDeckWords.has(reviewKey) && token.type === 'vocab';
                 // Due vocab words become cloze blanks — rendered separately.
                 if (isReviewWord) {
+                  const occurrenceId = `${si}-${ti}`;
+                  const storedEntry = restoredClozeGrades?.get(occurrenceId);
                   return (
                     <ClozeBlank
-                      key={ti}
+                      key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}
                       token={token}
                       showHint={showClozeHints ?? true}
-                      onGrade={(correct) => onClozeAnswer?.(token.text, correct)}
+                      onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
+                      initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
                     />
                   );
                 }
@@ -413,6 +433,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
         data={popup}
         onClose={() => setPopup(null)}
         onAddVocab={handleAddVocab}
+        onReleaseFromPool={onReleaseFromPool}
       />
     </div>
   );

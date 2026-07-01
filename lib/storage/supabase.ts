@@ -1,17 +1,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 import { LocalStorage } from './local';
 
 // Multi-language support stores per-language decks in a `decks jsonb` column:
 //   alter table user_data add column if not exists decks jsonb;
 // `decks` is shaped { zh: DeckWord[], ja: DeckWord[] }. The legacy single `deck` column
 // is treated as the Chinese deck and folded into `decks.zh` on read/migration.
+//
+// Cloze blank progress requires:
+//   alter table user_data add column if not exists passage_state jsonb;
+// `passage_state` is shaped { "${contentKey}|${passageIdx}": ClozeOccurrenceMap }.
+// Only today's entries are kept; stale ones are pruned on each write.
 interface UserDataRow {
   deck: DeckWord[] | null;                              // legacy single deck (= Chinese)
   decks: Partial<Record<LanguageCode, DeckWord[]>> | null;
   prefs: UserPrefs | null;
   srs_state: SRSState | null;
+  passage_state: Record<string, ClozeOccurrenceMap> | null;
 }
 
 const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja'];
@@ -96,6 +102,33 @@ export class SupabaseStorage implements DataService {
   saveClaimedWords(claimed: ClaimedWords): Promise<void> { return this.local.saveClaimedWords(claimed); }
   getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null> { return this.local.getDailyContent(lang, level, deck); }
   saveDailyContent(content: DailyContent): Promise<void> { return this.local.saveDailyContent(content); }
+
+  async getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null> {
+    // Fast path: local cache (same device, reload)
+    const cached = await this.local.getPassageState(contentKey, passageIdx);
+    if (cached) return cached;
+    // Slow path: fetch from cloud (new device sign-in)
+    const r = await this.row();
+    const key = `${contentKey}|${passageIdx}`;
+    const state = r?.passage_state?.[key];
+    if (state) { await this.local.savePassageState(contentKey, passageIdx, state); return state; }
+    return null;
+  }
+
+  async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
+    await this.local.savePassageState(contentKey, passageIdx, state);
+    const r = await this.row();
+    const today = new Date().toISOString().slice(0, 10);
+    // Prune stale entries (different dates) and write the updated state.
+    // Key format: "${date}|{level}|{deck}|{passageIdx}" — date is the first segment.
+    const pruned: Record<string, ClozeOccurrenceMap> = {};
+    for (const [k, v] of Object.entries(r?.passage_state ?? {})) {
+      const date = k.split('|')[0];
+      if (date === today) pruned[k] = v;
+    }
+    pruned[`${contentKey}|${passageIdx}`] = state;
+    await this.patch({ passage_state: pruned });
+  }
 }
 
 /**

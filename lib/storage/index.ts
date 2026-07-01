@@ -1,5 +1,5 @@
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 import { LocalStorage } from './local';
 
 /**
@@ -24,6 +24,8 @@ class StorageFacade implements DataService {
   saveClaimedWords(claimed: ClaimedWords) { return this.impl.saveClaimedWords(claimed); }
   getDailyContent(lang: LanguageCode, level: number, deck?: string) { return this.impl.getDailyContent(lang, level, deck); }
   saveDailyContent(content: DailyContent) { return this.impl.saveDailyContent(content); }
+  getPassageState(contentKey: string, passageIdx: number) { return this.impl.getPassageState(contentKey, passageIdx); }
+  savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap) { return this.impl.savePassageState(contentKey, passageIdx, state); }
 }
 
 export const storage = new StorageFacade();

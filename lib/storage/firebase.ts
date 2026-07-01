@@ -12,7 +12,7 @@
 // import { initializeApp } from 'firebase/app';
 // import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 
 // const firebaseConfig = {
 //   apiKey: '...',
@@ -54,6 +54,12 @@ export class FirebaseStorage implements DataService {
     throw new Error('FirebaseStorage not yet configured');
   }
   async saveDailyContent(_content: DailyContent): Promise<void> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async getPassageState(_contentKey: string, _passageIdx: number): Promise<ClozeOccurrenceMap | null> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async savePassageState(_contentKey: string, _passageIdx: number, _state: ClozeOccurrenceMap): Promise<void> {
     throw new Error('FirebaseStorage not yet configured');
   }
 }

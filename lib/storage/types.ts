@@ -1,4 +1,4 @@
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 
 export interface DataService {
   // Vocab decks are per-language (a Chinese deck and a Japanese deck are independent).
@@ -17,4 +17,8 @@ export interface DataService {
   // Daily content is cached per language + level + deck + day.
   getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null>;
   saveDailyContent(content: DailyContent): Promise<void>;
+
+  // Per-passage cloze blank progress. contentKey = "${date}|${level}|${deck}".
+  getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null>;
+  savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void>;
 }

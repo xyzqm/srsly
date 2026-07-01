@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import type { PassageToken } from '@/lib/types';
 import type { PopupData } from '@/components/read/WordPopup';
-import { lookupReading } from '@/lib/data/lookup';
+import { lookupReadingAsync } from '@/lib/data/lookup';
 import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { storage } from '@/lib/storage';
@@ -25,6 +25,8 @@ export function useWordPopup(
   deckWords?: Set<string>,
   deckReadings?: Map<string, ReadingHint[]>,
   claimsStore?: ClaimsStore,
+  poolWords?: Set<string>,
+  onReleaseFromPool?: (word: string) => void,
 ) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
@@ -42,36 +44,49 @@ export function useWordPopup(
     if (!token.reading) return;
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
-    const entry = lookupReading(language, token.text, token.reading, token.meaning || '');
+    // Capture the anchor rect synchronously before anything async happens.
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    const isInDeck           = deckWords !== undefined && deckWords.has(token.text);
-    const isVocabThisSession = claimsStore ? claimsStore.claims.get(token.text) === 'vocab' : vocabClaimed.has(token.text);
+    // Use async lookup so JMdict is always loaded — this ensures deinflection (e.g.
+    // 忘れました → 忘れる) works even if jmdictCache was reset by HMR or first open.
+    // After the first load the cache is in memory, so subsequent calls resolve instantly.
+    void lookupReadingAsync(language, token.text, token.reading, token.meaning || '').then(entry => {
+      // For Japanese conjugated forms, use the base/dictionary form as the canonical key
+      // for deck membership checks to avoid adding duplicates (e.g. 渡します when 渡す is in deck).
+      const canonicalWord = entry.baseForm ?? token.text;
 
-    // Popup type priority:
-    //   1. Added to deck this session / already in deck → 'lookup' (definition, +Added badge)
-    //   2. Unknown word → 'free' (show Add to vocab)
-    const type: PopupData['type'] = (isVocabThisSession || isInDeck) ? 'lookup' : 'free';
+      const isInDeck           = deckWords !== undefined && (deckWords.has(token.text) || deckWords.has(canonicalWord));
+      const isInPool           = isInDeck && poolWords !== undefined && (poolWords.has(token.text) || poolWords.has(canonicalWord));
+      const isVocabThisSession = claimsStore
+        ? (claimsStore.claims.get(token.text) === 'vocab' || claimsStore.claims.get(canonicalWord) === 'vocab')
+        : (vocabClaimed.has(token.text) || vocabClaimed.has(canonicalWord));
 
-    // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
-    // dictionary's). For a polyphone, headline the reading matching this token's pinyin
-    // and list the rest under "also read as".
-    let pinyin = entry.reading, meaning = entry.meaning;
-    let otherReadings: { p: string; m: string }[] | undefined;
-    const all = deckReadings?.get(token.text);
-    if (all && all.length >= 1) {
-      const matched = pickReading(all, token.reading) ?? all[0];
-      pinyin = matched.p || entry.reading;
-      meaning = matched.m || entry.meaning;
-      if (all.length > 1) {
-        otherReadings = all.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+      // Popup type priority:
+      //   1. In pool (staged, not yet in play) → 'pool' (definition, release button)
+      //   2. Added to deck this session / already in deck → 'lookup' (definition, +Added badge)
+      //   3. Unknown word → 'free' (show Add to vocab)
+      const type: PopupData['type'] = isInPool ? 'pool' : (isVocabThisSession || isInDeck) ? 'lookup' : 'free';
+
+      // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
+      // dictionary's). For a polyphone, headline the reading matching this token's pinyin
+      // and list the rest under "also read as".
+      let pinyin = entry.reading, meaning = entry.meaning;
+      let otherReadings: { p: string; m: string }[] | undefined;
+      const all = deckReadings?.get(canonicalWord) ?? deckReadings?.get(token.text);
+      if (all && all.length >= 1) {
+        const matched = pickReading(all, entry.baseReading ?? token.reading ?? '') ?? all[0];
+        pinyin = matched.p || entry.reading;
+        meaning = matched.m || entry.meaning;
+        if (all.length > 1) {
+          otherReadings = all.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
+        }
       }
-    }
 
-    setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings });
-  }, [claimsStore, vocabClaimed, deckWords, deckReadings, language]);
+      setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
+    });
+  }, [claimsStore, vocabClaimed, deckWords, deckReadings, language, poolWords]);
 
   const handleAddVocab = useCallback(async (word: string, pinyin: string, meaning: string) => {
     if (claimsStore) {
@@ -84,5 +99,5 @@ export function useWordPopup(
     onAddVocab?.(word, pinyin, meaning);
   }, [onAddVocab, claimsStore]);
 
-  return { popup, openPopup, closePopup, handleAddVocab, vocabClaimed };
+  return { popup, openPopup, closePopup, handleAddVocab, vocabClaimed, onReleaseFromPool };
 }

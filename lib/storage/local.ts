@@ -1,5 +1,5 @@
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 
 const KEYS = {
   vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
@@ -32,6 +32,11 @@ function set(key: string, value: unknown): void {
 function dailyKey(lang: LanguageCode, level: number, deck: string | undefined, date: string): string {
   const d = deck && deck.trim() ? deck.trim() : 'all';
   return `srsly-daily-${lang}-${level}-${d}-${date}`;
+}
+
+/** Storage key for per-passage cloze state. contentKey = "${date}|${level}|${deck}". */
+function clozeStateKey(contentKey: string, passageIdx: number): string {
+  return `srsly-cloze|${contentKey}|${passageIdx}`;
 }
 
 export class LocalStorage implements DataService {
@@ -85,18 +90,26 @@ export class LocalStorage implements DataService {
   }
   async saveDailyContent(content: DailyContent): Promise<void> {
     set(dailyKey(content.language ?? 'zh', content.hskLevel, content.deck, content.date), content);
-    // Prune stale per-day localStorage entries: daily content, passage index, and
-    // passage-finished flags. All keyed with the date so we can compare against today.
+    // Prune stale per-day localStorage entries: daily content, passage index, passage-finished
+    // flags, and cloze state. All keyed with the date so we can compare against today.
     const today = content.date;
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
       if (!k) continue;
       if (k.startsWith('srsly-daily-') && !k.endsWith(today)) { localStorage.removeItem(k); continue; }
-      // srsly-read-pidx|{date}|... and srsly-done|{date}|... — date is the second segment
-      if (k.startsWith('srsly-read-pidx|') || k.startsWith('srsly-done|')) {
+      // srsly-read-pidx|{date}|..., srsly-done|{date}|..., srsly-cloze|{date}|... — date is 2nd segment
+      if (k.startsWith('srsly-read-pidx|') || k.startsWith('srsly-done|') || k.startsWith('srsly-cloze|')) {
         const date = k.split('|')[1];
         if (date && date !== today) localStorage.removeItem(k);
       }
     }
+  }
+
+  async getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null> {
+    return get<ClozeOccurrenceMap | null>(clozeStateKey(contentKey, passageIdx), null);
+  }
+
+  async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
+    set(clozeStateKey(contentKey, passageIdx), state);
   }
 }

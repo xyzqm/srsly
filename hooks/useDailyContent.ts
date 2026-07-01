@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord, ContentSection, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getPassageDataForLanguage } from '@/lib/data/allPassages';
-import { lookupReading, preloadDict } from '@/lib/data/lookup';
+import { lookupReading, preloadDict, deinflectWord } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, inSelectedDecks, decksSignature } from '@/lib/deck';
@@ -38,6 +38,12 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
   const dictEntry = lookupReading(lang, text, reading, '');
   const resolvedMeaning = meaning || pickReading(deckReadings.get(text), reading)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
+    // Japanese: check if this is a conjugated form of a due vocab word so cloze blanks
+    // and grade attribution use the correct base-form card.
+    if (lang === 'ja' && !dueWords.has(text)) {
+      const baseForm = deinflectWord(lang, text).find(c => dueWords.has(c));
+      if (baseForm) return { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm };
+    }
     return { text, reading, meaning: resolvedMeaning, type: 'vocab' };
   }
   return { text, reading };
@@ -252,7 +258,9 @@ function collectVocabWords(
   const scan = (toks: PassageToken[]) => {
     for (const t of toks) {
       if (t.type === 'punct') continue;
-      if (dueSet.has(t.text) || anchorCompounds.has(t.text)) present.add(t.text);
+      if (dueSet.has(t.text) || anchorCompounds.has(t.text)) { present.add(t.text); continue; }
+      // Conjugated Japanese token — attribute to the base form.
+      if (t.baseForm && dueSet.has(t.baseForm)) present.add(t.baseForm);
     }
   };
   passage.sentences.forEach(s => scan(s.tokens));
