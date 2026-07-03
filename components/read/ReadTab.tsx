@@ -197,6 +197,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       }),
     [vocabResults, deck],
   );
+  const [sessionAddedWords, setSessionAddedWords] = useState<{ h: string; p: string; m: string }[]>([]);
   const [showNoDueDialog, setShowNoDueDialog] = useState(false);
   const [alreadyFinished, setAlreadyFinished] = useState(false);
 
@@ -219,6 +220,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
+    setSessionAddedWords([]);
   }, [hskLevel]);
 
   const contentKey = dailyContent
@@ -236,6 +238,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
     setShowResults(false);
     setResultsBuilt(false);
     setVocabResults([]);
+    setSessionAddedWords([]);
   }, [contentKey]);
 
   // Persist the current passage index so it can be restored above. Skip the render right
@@ -285,6 +288,24 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
     storage.savePassageState(contentKey, passageIdx, state);
   }, [clozeGrades, contentKey, passageIdx]);
 
+  // Restore words added during this session so they survive reloads.
+  useEffect(() => {
+    if (!contentKey) return;
+    try {
+      const raw = localStorage.getItem(`srsly-added-words|${contentKey}|${passageIdx}`);
+      setSessionAddedWords(raw ? JSON.parse(raw) : []);
+    } catch { /* ignore */ }
+  }, [contentKey, passageIdx]);
+
+  // Persist session-added words whenever the list changes.
+  useEffect(() => {
+    if (!contentKey) return;
+    try {
+      if (sessionAddedWords.length === 0) return;
+      localStorage.setItem(`srsly-added-words|${contentKey}|${passageIdx}`, JSON.stringify(sessionAddedWords));
+    } catch { /* ignore */ }
+  }, [sessionAddedWords, contentKey, passageIdx]);
+
   // Jump to a passage the user just generated with "+ new passage" — but NOT when content
   // first hydrates from cache (reload / tab switch back), so restoring honors the saved
   // passage instead of leaping to the last one.
@@ -325,11 +346,19 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   // Words added while reading a passage are due TOMORROW — you just saw them in context,
   // so the first real review comes the next day (and they don't get re-pulled into more
   // passages you generate today).
-  const titlePopup = useWordPopup((word, pinyin, meaning) => addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) }), deckWords, deckReadings, claimsStore, poolWords, releaseWordFromPool);
+  const trackAdded = useCallback((h: string, p: string, m: string) => {
+    setSessionAddedWords(prev => prev.some(w => w.h === h) ? prev : [...prev, { h, p, m }]);
+  }, []);
+
+  const titlePopup = useWordPopup((word, pinyin, meaning) => {
+    addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) });
+    trackAdded(word, pinyin, meaning);
+  }, deckWords, deckReadings, claimsStore, poolWords, releaseWordFromPool);
 
   const handleAddVocabQuestion = useCallback((word: string, pinyin: string, meaning: string) => {
     addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) });
-  }, [addWord]);
+    trackAdded(word, pinyin, meaning);
+  }, [addWord, trackAdded]);
 
   const handleClozeAnswer = useCallback((occurrenceId: string, word: string, correct: boolean) => {
     setClozeGrades(prev => {
@@ -342,7 +371,8 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
 
   const handleAddToDeck = useCallback((word: DeckWord) => {
     addWord({ ...word, dueAt: word.dueAt ?? dateInDays(1) });
-  }, [addWord]);
+    trackAdded(word.h, word.p ?? '', word.m ?? '');
+  }, [addWord, trackAdded]);
 
   const toggleResults = useCallback(() => {
     if (!resultsBuilt) {
@@ -483,9 +513,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
               All caught up
             </div>
             <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '8px 0 22px' }}>
-              {dueDeckWords.size === 0
-                ? "You have no words due for review today. New passages won't have any focus vocabulary."
-                : "You've already covered all your due words in today's passages. Generating another won't introduce new review words."}
+              You have no words due for review today. New passages won&apos;t have any focus vocabulary.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button
@@ -619,9 +647,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
               {(dailyStatus === 'ready' || dailyStatus === 'error') && (
                 <button
                   onClick={() => {
-                    const covered = new Set(dailyContent?.passages.flatMap(p => p.vocabWords) ?? []);
-                    const hasUncovered = [...dueDeckWords].some(w => !covered.has(w));
-                    if (!hasUncovered) { setShowNoDueDialog(true); return; }
+                    if (dueDeckWords.size === 0) { setShowNoDueDialog(true); return; }
                     loadMore();
                   }}
                   disabled={loadingMore}
@@ -772,7 +798,12 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
           </div>
 
           {showResults && <VocabResults results={vocabResults} />}
-          {showResults && <MissedWordReview words={missedWords} language={language} level={hskLevel} />}
+          {showResults && (() => {
+            const missedSet = new Set(missedWords.map(w => w.h));
+            const reviewWords = [...missedWords, ...sessionAddedWords.filter(w => !missedSet.has(w.h))];
+            const cacheKey = contentKey ? `srsly-missed-sentences|${contentKey}|${passageIdx}` : undefined;
+            return <MissedWordReview words={reviewWords} missedCount={missedWords.length} cacheKey={cacheKey} language={language} level={hskLevel} />;
+          })()}
         </>
       )}
 

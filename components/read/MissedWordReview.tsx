@@ -1,11 +1,13 @@
 'use client';
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { LanguageCode } from '@/lib/types';
 
 export interface MissedWord { h: string; p: string; m: string; }
 
 interface Props {
   words: MissedWord[];
+  missedCount?: number;
+  cacheKey?: string;
   language: LanguageCode;
   level: number;
 }
@@ -118,11 +120,23 @@ function WordSection({ word, sentences }: { word: MissedWord; sentences: string[
   );
 }
 
-export default function MissedWordReview({ words, language, level }: Props) {
+export default function MissedWordReview({ words, missedCount = 0, cacheKey, language, level }: Props) {
   const [open, setOpen] = useState(false);
   const [sentences, setSentences] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+
+  // Restore cached sentences so we never regenerate for the same passage.
+  useEffect(() => {
+    if (!cacheKey) return;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        setSentences(JSON.parse(raw));
+        setFetched(true);
+      }
+    } catch { /* ignore */ }
+  }, [cacheKey]);
 
   if (words.length === 0) return null;
 
@@ -136,8 +150,12 @@ export default function MissedWordReview({ words, language, level }: Props) {
           body: JSON.stringify({ words, language, level }),
         });
         const data = await res.json();
-        setSentences(data.sentences ?? {});
+        const s = data.sentences ?? {};
+        setSentences(s);
         setFetched(true);
+        if (cacheKey) {
+          try { localStorage.setItem(cacheKey, JSON.stringify(s)); } catch { /* ignore */ }
+        }
       } catch { /* show empty state */ }
       setLoading(false);
     }
@@ -149,7 +167,12 @@ export default function MissedWordReview({ words, language, level }: Props) {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginBottom: 4 }}>
-            Missed {words.length} word{words.length !== 1 ? 's' : ''}
+            {(() => {
+              const newCount = words.length - missedCount;
+              if (missedCount > 0 && newCount > 0) return `${missedCount} missed · ${newCount} new`;
+              if (missedCount > 0) return `Missed ${missedCount} word${missedCount !== 1 ? 's' : ''}`;
+              return `${newCount} new word${newCount !== 1 ? 's' : ''} added`;
+            })()}
           </h3>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, lineHeight: 1.55 }}>
             Practice typing {words.length === 1 ? 'it' : 'them'} in context — no effect on review timing.
@@ -157,21 +180,22 @@ export default function MissedWordReview({ words, language, level }: Props) {
         </div>
         <button
           onClick={fetchAndOpen}
-          className="cursor-pointer transition-all duration-150"
+          disabled={loading}
+          className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500,
             background: open ? 'var(--accent)' : 'none',
-            color: open ? '#fff' : 'var(--ink)',
+            color: open ? '#fff' : loading ? 'var(--ink-faint)' : 'var(--ink)',
             border: '1px solid',
             borderColor: open ? 'var(--accent)' : 'var(--line)',
             borderRadius: 8, padding: '10px 18px',
             whiteSpace: 'nowrap',
             transition: 'all .15s',
           }}
-          onMouseEnter={e => { if (!open) { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; } }}
-          onMouseLeave={e => { if (!open) { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--line)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink)'; } }}
+          onMouseEnter={e => { if (!open && !loading) { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; } }}
+          onMouseLeave={e => { if (!open && !loading) { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--line)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink)'; } }}
         >
-          {open ? 'Hide review' : 'Review missed words'}
+          {loading ? 'Generating…' : open ? 'Hide review' : 'Review new/missed words'}
         </button>
       </div>
 

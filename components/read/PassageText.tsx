@@ -133,11 +133,12 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
   );
 }
 
-function ClozeBlank({ token, showHint, onGrade, initialGrade }: {
+function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
   token: PassageToken;
   showHint: boolean;
   onGrade: (correct: boolean) => void;
   initialGrade?: { correct: boolean };
+  onWordClick?: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
   const [value, setValue] = useState('');
   const [submitted, setSubmitted] = useState(!!initialGrade);
@@ -164,7 +165,10 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade }: {
     const color = correct ? 'var(--jade)' : 'var(--accent)';
     return (
       <>
-        <ruby style={{ color }}>
+        <ruby
+          style={{ color, cursor: onWordClick ? 'pointer' : undefined }}
+          onClick={onWordClick ? (e) => onWordClick(e, token, []) : undefined}
+        >
           {token.text}
           <rt>{token.reading}</rt>
         </ruby>
@@ -273,26 +277,14 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
 
-  const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
-    e.stopPropagation();
-    e.nativeEvent.stopImmediatePropagation();
-    // Skip true punctuation and words with no reading data
+  const openTokenPopup = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     if (!token.reading || token.type === 'punct') return;
-
-    // Review words are now cloze blanks — they handle their own interaction.
-    const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
-    if (isReviewWord) return;
-
-    // Capture rect synchronously before the async lookup.
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
     void lookupReadingAsync(language, token.text, token.reading || '', token.meaning || '').then(entry => {
-      // Use the dictionary base form (e.g. 渡す for 渡します) as the canonical key
-      // for deck checks so conjugated forms don't show "Add to vocab" when the base is in deck.
       const canonicalWord = entry.baseForm ?? token.text;
-
       const isPending  = pendingDeckWords.has(token.text) || pendingDeckWords.has(canonicalWord);
       const inDeck     = deckWords.has(token.text) || deckWords.has(canonicalWord);
       const isInPool   = inDeck && !!(poolWords?.has(token.text) || poolWords?.has(canonicalWord));
@@ -318,7 +310,16 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
         setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
       }
     });
-  }, [deckWords, dueDeckWords, pendingDeckWords, poolWords, deckReadings, language]);
+  }, [deckWords, pendingDeckWords, poolWords, deckReadings, language]);
+
+  const handleTokenClick = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+    // Review words are cloze blanks — they handle their own interaction.
+    const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
+    if (isReviewWord) return;
+    openTokenPopup(e, token, compounds);
+  }, [dueDeckWords, openTokenPopup]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
@@ -406,6 +407,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                       showHint={showClozeHints ?? true}
                       onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
                       initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
+                      onWordClick={openTokenPopup}
                     />
                   );
                 }

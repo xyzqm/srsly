@@ -121,19 +121,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     setHiddenByLimit(hidden);
   }, [deck, deckLoaded, queue, cram]);
 
-  // Countdown timer — fires when the next learning card becomes ready
-  useEffect(() => {
-    if (!queue) return;
-    const nowMs = Date.now();
-    const futureMsList = queue
-      .filter(c => c.dueAtMs && c.dueAtMs > nowMs)
-      .map(c => c.dueAtMs!);
-    if (futureMsList.length === 0) return;
-    const nextMs = Math.min(...futureMsList);
-    const delay  = Math.max(250, Math.min(nextMs - nowMs, 1000));
-    const timer  = setTimeout(() => setTick(t => t + 1), delay);
-    return () => clearTimeout(timer);
-  }, [queue, tick]);
+  // (No countdown timer needed — learning cards are shown immediately regardless of dueAtMs)
 
   // Keyboard shortcuts: Space/Enter reveals the answer, then grades Good; 1–4 pick a
   // grade directly. A single listener reads live handlers from a ref so it always
@@ -192,9 +180,8 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     );
   }
 
-  const nowMs = Date.now();
-  const readyCards  = queue.filter(c => !c.dueAtMs || c.dueAtMs <= nowMs);
-  const futureCards = queue.filter(c => c.dueAtMs  && c.dueAtMs  > nowMs);
+  const readyCards  = queue;
+  const futureCards: typeof queue = [];
 
   // All caught up — no cards were due today
   if (queue.length === 0 && results.length === 0) {
@@ -262,30 +249,9 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     );
   }
 
-  // Waiting — all remaining cards have a future dueAtMs
-  if (readyCards.length === 0 && futureCards.length > 0) {
-    const nextMs    = Math.min(...futureCards.map(c => c.dueAtMs!));
-    const waitMs    = Math.max(0, nextMs - Date.now());
-    const waitMin   = Math.floor(waitMs / 60_000);
-    const waitSec   = Math.ceil((waitMs % 60_000) / 1000);
-    const waitLabel = waitMin > 0
-      ? `${waitMin} min${waitSec > 0 ? ` ${waitSec} sec` : ''}`
-      : `${waitSec} sec`;
-    return (
-      <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>等</div>
-        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>
-          Next card in {waitLabel}
-        </h3>
-        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', lineHeight: 1.6 }}>
-          {futureCards.length} learning card{futureCards.length !== 1 ? 's' : ''} waiting
-        </p>
-      </div>
-    );
-  }
 
   const card          = readyCards[0];
-  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length + futureCards.length)) * 100)) : 0;
+  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length)) * 100)) : 0;
   const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
 

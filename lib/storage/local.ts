@@ -98,7 +98,7 @@ export class LocalStorage implements DataService {
       if (!k) continue;
       if (k.startsWith('srsly-daily-') && !k.endsWith(today)) { localStorage.removeItem(k); continue; }
       // srsly-read-pidx|{date}|..., srsly-done|{date}|..., srsly-cloze|{date}|... — date is 2nd segment
-      if (k.startsWith('srsly-read-pidx|') || k.startsWith('srsly-done|') || k.startsWith('srsly-cloze|')) {
+      if (k.startsWith('srsly-read-pidx|') || k.startsWith('srsly-done|') || k.startsWith('srsly-cloze|') || k.startsWith('srsly-added-words|') || k.startsWith('srsly-missed-sentences|')) {
         const date = k.split('|')[1];
         if (date && date !== today) localStorage.removeItem(k);
       }
