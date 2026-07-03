@@ -60,14 +60,17 @@ interface Props {
   onClozeAnswer?: (occurrenceId: string, word: string, correct: boolean) => void;
   /** Restored cloze grades keyed by occurrenceId ("${si}-${ti}") — pre-fills already-answered blanks. */
   restoredClozeGrades?: Map<string, ClozeGradeEntry>;
+  /** When false, hides underlines and collapses inter-word spacing so the user practices word segmentation. */
+  showWordBoundaries?: boolean;
 }
 
-function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBoundaries, onClick }: {
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
   claimKind: 'vocab' | null;
   compounds: CompoundHint[];
+  showWordBoundaries: boolean;
   onClick: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -86,13 +89,15 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
         onMouseLeave={() => setHovered(false)}
         className="cursor-pointer"
         style={{
-          borderBottom: isReviewWord
-            ? peeked
-              ? '1.5px solid var(--accent)'
-              : '1.5px dotted var(--accent)'
-            : claimKind === 'vocab'
-              ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-              : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)',
+          borderBottom: showWordBoundaries
+            ? isReviewWord
+              ? peeked
+                ? '1.5px solid var(--accent)'
+                : '1.5px dotted var(--accent)'
+              : claimKind === 'vocab'
+                ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
+                : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)'
+            : undefined,
           color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
           paddingBottom: 1,
           background: hovered
@@ -106,29 +111,24 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, onClick }:
         {token.text}
         <rt>{token.reading}</rt>
       </ruby>
-      {/*
-        Always-rendered inline sibling — only `color` changes between states.
-        Natural (non-zero) width keeps it in flow AFTER the character so it
-        never overlaps the next character. verticalAlign:'super' raises it to
-        the standard superscript position (clear of the ruby base text).
-        lineHeight:0 prevents it from expanding the parent line-height.
-      */}
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'inline',
-          fontSize: '0.45em',
-          verticalAlign: 'super',
-          lineHeight: 0,
-          fontFamily: 'var(--f-ui)',
-          fontWeight: 700,
-          pointerEvents: 'none',
-          userSelect: 'none',
-          color: indicatorChar ? indicatorColor : 'transparent',
-        }}
-      >
-        {indicatorChar || '+'}
-      </span>
+      {showWordBoundaries && (
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline',
+            fontSize: '0.45em',
+            verticalAlign: 'super',
+            lineHeight: 0,
+            fontFamily: 'var(--f-ui)',
+            fontWeight: 700,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            color: indicatorChar ? indicatorColor : 'transparent',
+          }}
+        >
+          {indicatorChar || '+'}
+        </span>
+      )}
     </>
   );
 }
@@ -273,7 +273,7 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
 
@@ -426,6 +426,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     isReviewWord={false}
                     claimKind={claimKind}
                     compounds={compounds}
+                    showWordBoundaries={showWordBoundaries}
                     onClick={handleTokenClick}
                   />
                 );

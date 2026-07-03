@@ -181,6 +181,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   const [audioOnly, setAudioOnly] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
   const [showClozeHints, setShowClozeHints] = useState(true);
+  const [showWordBoundaries, setShowWordBoundaries] = useState(true);
   // Occurrence-based: keyed by "${sentenceIdx}-${tokenIdx}", value tracks word + grade.
   const [clozeGrades, setClozeGrades] = useState<Map<string, { word: string; grade: FsrsGrade }>>(new Map());
   const [frResponses, setFrResponses] = useState<Record<number, FRResponse>>({});
@@ -664,6 +665,9 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
               <button style={toggleStyle(showClozeHints)} onClick={() => setShowClozeHints(v => !v)}>
                 Hints
               </button>
+              <button style={toggleStyle(showWordBoundaries)} onClick={() => setShowWordBoundaries(v => !v)}>
+                Boundaries
+              </button>
               <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
                 🎧 Audio only
               </button>
@@ -685,6 +689,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
             showClozeHints={showClozeHints}
             onClozeAnswer={handleClozeAnswer}
             restoredClozeGrades={clozeGrades}
+            showWordBoundaries={showWordBoundaries}
           />
 
           <LookupSummary
