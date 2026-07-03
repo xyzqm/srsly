@@ -23,6 +23,7 @@ import PassageSkeleton from './PassageSkeleton';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
+import MissedWordReview from './MissedWordReview';
 
 interface Props {
   onScore: (score: number) => void;
@@ -187,6 +188,15 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
   const [showResults, setShowResults] = useState(false);
   const [resultsBuilt, setResultsBuilt] = useState(false);
   const [vocabResults, setVocabResults] = useState<{ word: string; pinyin?: string; status: 'up' | 'down' | 'stable'; msg: string }[]>([]);
+  const missedWords = useMemo(
+    () => vocabResults
+      .filter(r => r.status === 'down')
+      .map(r => {
+        const card = deck.find(d => d.h === r.word);
+        return { h: r.word, p: r.pinyin ?? card?.p ?? '', m: card?.m ?? '' };
+      }),
+    [vocabResults, deck],
+  );
   const [showNoDueDialog, setShowNoDueDialog] = useState(false);
   const [alreadyFinished, setAlreadyFinished] = useState(false);
 
@@ -248,7 +258,11 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
     try {
       const done = !!localStorage.getItem(passageFinishedKey);
       setAlreadyFinished(done);
-      if (done) setShowResults(true);
+      if (done) {
+        setShowResults(true);
+        const saved = localStorage.getItem(passageFinishedKey + '|results');
+        if (saved) setVocabResults(JSON.parse(saved));
+      }
     } catch { /* ignore */ }
   }, [passageFinishedKey]);
 
@@ -433,7 +447,10 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
       }
 
       if (passageFinishedKey) {
-        try { localStorage.setItem(passageFinishedKey, '1'); } catch { /* ignore */ }
+        try {
+          localStorage.setItem(passageFinishedKey, '1');
+          localStorage.setItem(passageFinishedKey + '|results', JSON.stringify([...rows, ...anchorRows]));
+        } catch { /* ignore */ }
       }
       setAlreadyFinished(true);
     }
@@ -755,6 +772,7 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
           </div>
 
           {showResults && <VocabResults results={vocabResults} />}
+          {showResults && <MissedWordReview words={missedWords} language={language} level={hskLevel} />}
         </>
       )}
 

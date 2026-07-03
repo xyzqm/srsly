@@ -5,6 +5,7 @@ import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
 import { lookupReadingAsync } from '@/lib/data/lookup';
+import { deinflect } from '@/lib/data/jadict';
 import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 
@@ -408,7 +409,10 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     />
                   );
                 }
-                const claimKind = pendingDeckWords.has(token.text) ? 'vocab' : null;
+                const claimKind = (
+                  pendingDeckWords.has(token.text) ||
+                  (language === 'ja' && deinflect(token.text).some(c => pendingDeckWords.has(c)))
+                ) ? 'vocab' : null;
                 // Compound hints are a Chinese single-character feature; Japanese tokens
                 // already arrive as whole words.
                 const compounds = language === 'zh' ? findCompoundHints(token, sent, ti) : [];

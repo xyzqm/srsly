@@ -16,6 +16,26 @@ import DeckSelector from '@/components/shared/DeckSelector';
 
 const UNDO_DURATION_MS = 5000;
 
+/** Sort key: due-now → future dates → paused/snoozed → pool */
+function dueSortKey(w: DeckWord, today: string): string {
+  if (w.pool)                                        return '\xff\xff';
+  if (w.paused)                                      return '\xfe\xfe';
+  if (!!w.snoozeUntil && w.snoozeUntil > today)      return '\xfd' + (w.snoozeUntil ?? '');
+  if (!w.dueAt || w.dueAt <= today)                  return '';
+  return w.dueAt;
+}
+
+/** Human label for time to next review, shown inline in the word row. */
+function dueLabel(w: DeckWord, today: string): string | null {
+  if (w.pool || w.paused)                            return null;
+  if (!!w.snoozeUntil && w.snoozeUntil > today)      return null;
+  if (!w.dueAt || w.dueAt <= today)                  return 'now';
+  // Days difference between dueAt and today
+  const ms = new Date(w.dueAt).getTime() - new Date(today).getTime();
+  const days = Math.round(ms / 86_400_000);
+  return `${days}d`;
+}
+
 // ─── Pending-undo union type ──────────────────────────────────────────────────
 
 type PendingUndo =
@@ -748,10 +768,10 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   }, [deckScoped, filter, today]);
 
   // The text box narrows further (plain text; power-user operators still parse).
-  const visibleDeck = useMemo(
-    () => (query.trim() ? chipFiltered.filter(w => matchesSearch(w, query, today)) : chipFiltered),
-    [chipFiltered, query, today],
-  );
+  const visibleDeck = useMemo(() => {
+    const filtered = query.trim() ? chipFiltered.filter(w => matchesSearch(w, query, today)) : chipFiltered;
+    return [...filtered].sort((a, b) => dueSortKey(a, today).localeCompare(dueSortKey(b, today)));
+  }, [chipFiltered, query, today]);
 
   // Counts for the filter chips (within the selected deck)
   const counts = useMemo(() => {
@@ -1049,6 +1069,11 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
                     </span>
                     <div className="flex gap-1.5 items-center">
+                      {(() => { const lbl = dueLabel(w, today); return lbl ? (
+                        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', color: lbl === 'now' ? 'var(--accent)' : 'var(--ink-faint)', minWidth: 24, textAlign: 'right' }}>
+                          {lbl}
+                        </span>
+                      ) : null; })()}
                       <button
                         onClick={() => w.id && toggleFocus(w.id)}
                         title={w.focus ? 'Remove focus' : 'Mark as focus'}

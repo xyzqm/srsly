@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 function useIsMounted() {
@@ -50,6 +50,18 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
   const lastDataRef = useRef<PopupData | null>(null);
   if (data) lastDataRef.current = data;
   const displayData = data ?? lastDataRef.current;
+
+  // Track pool-release confirmation so the popup stays open with a success message.
+  const [released, setReleased] = useState(false);
+  // Reset when a new word is opened.
+  const prevWord = useRef<string | null>(null);
+  if (data && data.word !== prevWord.current) { prevWord.current = data.word; setReleased(false); }
+
+  const handleRelease = useCallback(() => {
+    if (!displayData || !onReleaseFromPool) return;
+    onReleaseFromPool(displayData.baseForm ?? displayData.word);
+    setReleased(true);
+  }, [displayData, onReleaseFromPool]);
 
   // Track whether we're fully positioned (avoid seeing popup at (0,0) before rAF)
   const [ready, setReady] = useState(false);
@@ -259,9 +271,16 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
               <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(180,180,255,.65)' }}>
                 In pool — staged, not yet in play
               </div>
-              {onReleaseFromPool && (
+              {released ? (
+                <div
+                  className="mt-1 text-[11px]"
+                  style={{ fontFamily: 'var(--f-mono)', letterSpacing: '.05em', color: 'rgba(120,210,120,.85)' }}
+                >
+                  ✓ Added into play — due tomorrow
+                </div>
+              ) : onReleaseFromPool && (
                 <button
-                  onClick={() => { onReleaseFromPool(displayData.word); onClose(); }}
+                  onClick={handleRelease}
                   className="w-full text-left rounded-lg py-2 px-3 cursor-pointer transition-all duration-150"
                   style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.05em', background: 'rgba(120,120,220,.25)', border: '1px solid rgba(150,150,255,.3)', color: 'rgba(200,200,255,.9)', lineHeight: 1.3, fontWeight: 600 }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(120,120,220,.4)')}
