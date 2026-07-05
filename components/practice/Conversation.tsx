@@ -6,6 +6,7 @@ import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
 import { useWordPopup } from '@/hooks/useWordPopup';
 import { groupReadings } from '@/lib/readings';
+import { todayStr } from '@/lib/deck';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import ConvoReport from './ConvoReport';
@@ -49,7 +50,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
 
   // Only show today's SRS-due words in the scorecard
   const TARGET_WORDS = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     return deck.filter(w => !w.dueAt || w.dueAt <= today).map(d => d.h);
   }, [deck]);
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);

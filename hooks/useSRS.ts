@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
+import { todayStr, dateInDays } from '@/lib/deck';
 
 interface EmojiState { emoji: string; tip: string }
 
@@ -21,9 +22,7 @@ function pickEmoji(streak: number, daysSince: number, todayScore: number, scoreF
 }
 
 function yesterday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return dateInDays(-1);
 }
 
 export function useSRS() {
@@ -32,7 +31,7 @@ export function useSRS() {
   const [sessions, setSessions] = useState(0);
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     const yest = yesterday();
 
     storage.getSRSState().then(state => {
@@ -72,7 +71,7 @@ export function useSRS() {
   }, []);
 
   const recordScore = useCallback(async (score: number) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     const yest = yesterday();
     const state = await storage.getSRSState();
 

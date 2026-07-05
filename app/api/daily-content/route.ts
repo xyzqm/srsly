@@ -301,6 +301,10 @@ Within the bars, FURIGANA RULE:
 Rules for the tokens between the bars:
   - Segment into natural words: keep a word + its inflection together as ONE token
     (食べました::たべました, 行って::いって, 新しい::あたらしい) — never split okurigana off.
+  - This means a conjugated verb/adjective is ALWAYS one token, never the dictionary form
+    followed by a separate bare conjugation ending:
+    CORRECT: "変わりました::かわりました"
+    WRONG:   "変わる::かわる|ました"    ← dictionary form + orphaned ました = ungrammatical
   - Particles (は を が に で へ と も の) and punctuation are their OWN bare tokens.
   - Each punctuation mark (。 、 ！ ？ …) is its OWN token between bars.
   - NEVER output an empty token. Furigana must be hiragana only (katakana for loanword kanji).
@@ -459,9 +463,28 @@ REQUIREMENTS:
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
+  // A handful of bound conjugation endings that must NEVER appear as their own bare
+  // "|"-delimited segment — per PIPE_RULES_JA they're always fused onto the preceding
+  // stem as one token (食べました, not 食べる|ました). When the model drops this rule it
+  // produces ungrammatical text (e.g. 変わる|ました instead of 変わりました), so we detect
+  // the orphaned suffix and let the existing retry loop ask the model to try again.
+  const ORPHAN_CONJ_JA = new Set(['ました', 'ませんでした', 'ません', 'ます', 'なかった', 'ない', 'ましょう']);
+  const hasOrphanedConjugation = (sentences: unknown[]): boolean =>
+    sentences.some(s =>
+      typeof s === 'string' && s.split('|').some(seg => ORPHAN_CONJ_JA.has(seg.trim())),
+    );
+
   // ── Completeness checks ────────────────────────────────────────────────────
-  const passageComplete = (j: Record<string, unknown>): boolean =>
-    Array.isArray(j.passages) && j.passages.length > 0;
+  const passageComplete = (j: Record<string, unknown>): boolean => {
+    if (!Array.isArray(j.passages) || j.passages.length === 0) return false;
+    if (language === 'ja') {
+      return j.passages.every(p => {
+        const pp = p as Record<string, unknown>;
+        return !hasOrphanedConjugation(Array.isArray(pp.sentences) ? pp.sentences : []);
+      });
+    }
+    return true;
+  };
   const fillComplete = (j: Record<string, unknown>): boolean =>
     Array.isArray(j.fill) && j.fill.length >= 1;
   const convoComplete = (j: Record<string, unknown>): boolean =>

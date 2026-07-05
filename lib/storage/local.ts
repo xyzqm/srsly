@@ -1,5 +1,6 @@
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
+import { todayStr } from '@/lib/deck';
 
 const KEYS = {
   vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
@@ -85,7 +86,7 @@ export class LocalStorage implements DataService {
   }
 
   async getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null> {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     return get<DailyContent | null>(dailyKey(lang, level, deck, today), null);
   }
   async saveDailyContent(content: DailyContent): Promise<void> {

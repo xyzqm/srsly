@@ -288,6 +288,36 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
     storage.savePassageState(contentKey, passageIdx, state);
   }, [clozeGrades, contentKey, passageIdx]);
 
+  // "+ New passage" must stay disabled until EVERY generated passage today is fully filled
+  // in, not just the one currently being viewed — otherwise navigating back to an already-
+  // finished earlier passage re-enables the button while a later, unfinished one is left
+  // behind, and its due words get wrongly treated as reviewed.
+  const [allPassagesComplete, setAllPassagesComplete] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      if (!dailyContent || !contentKey) { if (!cancelled) setAllPassagesComplete(true); return; }
+      const results = await Promise.all(dailyContent.passages.map(async (passage, idx) => {
+        let needed = 0;
+        for (const s of passage.sentences) {
+          for (const t of s.tokens) {
+            if (t.type !== 'vocab') continue;
+            const key = (t.baseForm && dueDeckWords.has(t.baseForm)) ? t.baseForm : t.text;
+            if (dueDeckWords.has(key)) needed++;
+          }
+        }
+        if (needed === 0) return true;
+        const graded = idx === passageIdx
+          ? clozeGrades.size
+          : Object.keys((await storage.getPassageState(contentKey, idx)) ?? {}).length;
+        return graded >= needed;
+      }));
+      if (!cancelled) setAllPassagesComplete(results.every(Boolean));
+    }
+    check();
+    return () => { cancelled = true; };
+  }, [dailyContent, contentKey, passageIdx, clozeGrades, dueDeckWords]);
+
   // Restore words added during this session so they survive reloads.
   useEffect(() => {
     if (!contentKey) return;
@@ -754,8 +784,9 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
                 : clozeIncomplete
                   ? `${clozeGrades.size}/${clozeWordCount} blanks filled in`
                   : 'Finish & see vocabulary results';
-              // A new passage can only be generated once every blank in the current one is filled in.
-              const newPassageDisabled = clozeIncomplete || loadingMore;
+              // A new passage can only be generated once every blank in EVERY generated
+              // passage today is filled in — not just the one currently being viewed.
+              const newPassageDisabled = clozeIncomplete || loadingMore || !allPassagesComplete;
               return (
                 <>
                   <button
@@ -778,7 +809,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
                       loadMore();
                     }}
                     disabled={newPassageDisabled}
-                    title={clozeIncomplete ? 'Fill in every blank to unlock a new passage' : undefined}
+                    title={newPassageDisabled && !loadingMore ? 'Fill in every blank in every passage to unlock a new one' : undefined}
                     className="flex items-center gap-2 transition-all duration-150"
                     style={{
                       fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,

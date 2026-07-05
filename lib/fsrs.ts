@@ -11,6 +11,7 @@
  * Retrievability: R(t, S) = (1 + FACTOR * t/S)^DECAY  where R=0.9 at t=S.
  */
 import type { DeckWord } from './types';
+import { todayStr, dateInDays } from './deck';
 
 export type FsrsGrade = 1 | 2 | 3 | 4; // 1=Again 2=Hard 3=Good 4=Easy
 
@@ -126,12 +127,6 @@ const HARD_MIN = 5; // Hard in learning is always 5 min regardless of step
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
-function addDays(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
 function daysBetween(a: string, b: string): number {
   return Math.max(0, Math.round(
     (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000,
@@ -151,7 +146,7 @@ export function fsrsSchedule(
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
   opts: { fuzz?: boolean } = {},
 ): Partial<DeckWord> {
-  const today  = new Date().toISOString().slice(0, 10);
+  const today  = todayStr();
   const nowMs  = Date.now();
   const step   = word.learningStep ?? 0;
   const lapses = word.lapses ?? 0;
@@ -170,7 +165,7 @@ export function fsrsSchedule(
         stability: s, difficulty: d, lapses,
         reviews: (word.reviews ?? 0) + 1,
         phase: 'review', learningStep: undefined, dueAtMs: undefined,
-        dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
+        dueAt: dateInDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
         lastReview: today,
       };
     }
@@ -204,7 +199,7 @@ export function fsrsSchedule(
         stability: s, difficulty: d, lapses,
         reviews: (word.reviews ?? 0) + 1,
         phase: 'review', learningStep: undefined, dueAtMs: undefined,
-        dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
+        dueAt: dateInDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
         lastReview: today,
       };
     }
@@ -238,7 +233,7 @@ export function fsrsSchedule(
       stability: s, difficulty: initDifficulty(grade),
       lapses: grade === 1 ? 1 : 0, reviews: 1,
       phase: 'review',
-      dueAt: addDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
+      dueAt: dateInDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
       lastReview: today,
     };
   }
@@ -266,7 +261,7 @@ export function fsrsSchedule(
     stability: newS, difficulty: newD,
     lapses, reviews: (word.reviews ?? 0) + 1,
     phase: 'review', dueAtMs: undefined,
-    dueAt: addDays(fz(nextInterval(newS, settings.desiredRetention, settings.maxIntervalDays))),
+    dueAt: dateInDays(fz(nextInterval(newS, settings.desiredRetention, settings.maxIntervalDays))),
     lastReview: today,
   };
 }
@@ -284,7 +279,7 @@ export function fsrsNextInterval(
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
 ): number {
   const result = fsrsSchedule(word, grade, settings);
-  const today  = new Date().toISOString().slice(0, 10);
+  const today  = todayStr();
 
   if (result.phase !== 'review' && result.dueAtMs !== undefined) {
     const msFromNow = (result.dueAtMs as number) - Date.now();

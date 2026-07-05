@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
-import { isDueToday, isActive } from '@/lib/deck';
+import { isDueToday, isActive, todayStr } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
 import { speak, prefetchAudio } from '@/lib/speech';
@@ -93,7 +93,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
       setHiddenByLimit(0);
       return;
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     const due = deck
       .filter(w => isDueToday(w, today))
       .sort((a, b) => {

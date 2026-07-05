@@ -1,15 +1,37 @@
 import type { DeckWord } from './types';
 
-/** Today as YYYY-MM-DD (UTC day, matching the rest of the app's date handling). */
-export function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Formats a Date as YYYY-MM-DD using its local calendar day (not UTC). */
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-/** N days from today as YYYY-MM-DD. */
+/**
+ * Today as YYYY-MM-DD in the user's local timezone. Using UTC here would roll the
+ * date over mid-evening for anyone west of UTC, scheduling reviews a day later than
+ * expected — so every "what day is it" check in the app must go through this helper.
+ */
+export function todayStr(): string {
+  return localDateStr(new Date());
+}
+
+/** N days from today (local calendar day) as YYYY-MM-DD. */
 export function dateInDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
+}
+
+/** Fisher-Yates shuffle; returns a new array, does not mutate the input. */
+export function shuffle<T>(arr: T[]): T[] {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
 /**

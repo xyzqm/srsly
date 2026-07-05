@@ -6,7 +6,7 @@ import { getPassageDataForLanguage } from '@/lib/data/allPassages';
 import { lookupReading, preloadDict, deinflectWord } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
-import { isDueToday, inSelectedDecks, decksSignature } from '@/lib/deck';
+import { isDueToday, inSelectedDecks, decksSignature, todayStr, shuffle } from '@/lib/deck';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 
 type RawTok = [string] | [string, string] | [string, string, string];
@@ -442,7 +442,7 @@ export function useDailyContent(
       if (cancelled) return;
 
       const passageData = getPassageDataForLanguage(language, hskLevel);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayStr();
 
       const staticContent = (): DailyContent => ({
         date: today,
@@ -461,12 +461,15 @@ export function useDailyContent(
       });
 
       const currentDeck = deckRef.current;
-      const dueWords = currentDeck
-        .filter(w => isDueToday(w, today) && inSelectedDecks(w, studyDecksRef.current))
-        .sort((a, b) => {
-          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
-          return (a.reviews ?? 0) - (b.reviews ?? 0);
-        });
+      // Shuffle before the priority sort (stable) so words tied on due date don't always
+      // land in the same top-MAX_WORDS group — otherwise the same overdue words keep
+      // getting bundled into every passage together.
+      const dueWords = shuffle(
+        currentDeck.filter(w => isDueToday(w, today) && inSelectedDecks(w, studyDecksRef.current)),
+      ).sort((a, b) => {
+        if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+        return 0;
+      });
       const selectedWords = dueWords.slice(0, MAX_WORDS);
       const hasDueWords = selectedWords.length > 0;
 
@@ -616,24 +619,35 @@ export function useDailyContent(
     setLoadingMore(true);
 
     try {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const today = todayStr();
       const currentDeck = deckRef.current;
 
-      const coveredWords = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
+      // A due word only counts as "covered" once its cloze blank has actually been graded —
+      // merely appearing in an earlier passage's text isn't enough (that passage's blank may
+      // still be sitting unanswered). Read each passage's persisted grades to find out which
+      // due words were genuinely reviewed today.
+      const contentKey = `${dailyContent.date}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`;
+      const passageStates = await Promise.all(
+        dailyContent.passages.map((_, idx) => storage.getPassageState(contentKey, idx)),
+      );
+      const coveredWords = new Set<string>();
+      for (const state of passageStates) {
+        if (!state) continue;
+        for (const entry of Object.values(state)) coveredWords.add(entry.word);
+      }
       const inScope = currentDeck.filter(w => inSelectedDecks(w, studyDecksRef.current));
-      const dueWords = inScope
-        .filter(w => isDueToday(w, todayStr))
-        .sort((a, b) => {
-          if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
-          return (a.reviews ?? 0) - (b.reviews ?? 0);
-        });
+      const dueWords = shuffle(inScope.filter(w => isDueToday(w, today))).sort((a, b) => {
+        if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
+        return 0;
+      });
       const notCovered = (ws: DeckWord[]) => ws.filter(w => !coveredWords.has(w.h));
       // Only target words that are actually due. Never pull in words scheduled for a future
       // day (e.g. ones just added as "due tomorrow") — prefer due words not yet covered today,
-      // then re-use due words; if nothing is due, generate a generic passage (no forced vocab).
-      const pool =
-        notCovered(dueWords).length ? notCovered(dueWords) :
-        dueWords;
+      // then top up remaining slots by re-using already-covered due words; if nothing is due,
+      // generate a generic passage (no forced vocab).
+      const fresh = notCovered(dueWords);
+      const reused = dueWords.filter(w => coveredWords.has(w.h));
+      const pool = [...fresh, ...reused];
       const selectedWords = pool.slice(0, MAX_WORDS);
 
       const res = await fetch('/api/daily-content', {

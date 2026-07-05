@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
 import { LocalStorage } from './local';
+import { todayStr } from '@/lib/deck';
 
 // Multi-language support stores per-language decks in a `decks jsonb` column:
 //   alter table user_data add column if not exists decks jsonb;
@@ -118,7 +119,7 @@ export class SupabaseStorage implements DataService {
   async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
     await this.local.savePassageState(contentKey, passageIdx, state);
     const r = await this.row();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     // Prune stale entries (different dates) and write the updated state.
     // Key format: "${date}|{level}|{deck}|{passageIdx}" — date is the first segment.
     const pruned: Record<string, ClozeOccurrenceMap> = {};

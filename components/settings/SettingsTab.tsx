@@ -5,6 +5,7 @@ import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor } from '@/lib/languageConfig';
+import { todayStr } from '@/lib/deck';
 import SignInModal from '@/components/auth/SignInModal';
 
 const RETENTION_PRESETS = [
@@ -85,7 +86,7 @@ export default function SettingsTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleExport(format: 'json' | 'csv') {
-    const date = new Date().toISOString().slice(0, 10);
+    const date = todayStr();
     const deck = await storage.getVocabDeck(language);
     if (format === 'csv') {
       downloadFile(`srsly-deck-${date}.csv`, toCsv(deck), 'text/csv;charset=utf-8');

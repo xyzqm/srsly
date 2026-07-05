@@ -2,6 +2,8 @@
  * Per-day study counters used to enforce the new-cards/day and reviews/day limits
  * across sessions. Stored in localStorage and reset automatically at the day rollover.
  */
+import { todayStr } from './deck';
+
 const KEY = 'srsly-review-counts';
 
 export interface ReviewCounts {
@@ -11,7 +13,7 @@ export interface ReviewCounts {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayStr();
 }
 
 /** Today's counts, resetting to zero if the stored date is stale. */
