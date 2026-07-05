@@ -122,7 +122,6 @@ function AppShell() {
           {tab === 'read' && (
             <ReadTab
               onScore={recordScore}
-              onNavigatePractice={() => setTab('practice')}
               onRequireSignIn={requireSignIn}
               studyScope={studyScope}
               onExitStudyScope={exitDeckStudy}

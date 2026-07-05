@@ -27,7 +27,6 @@ import MissedWordReview from './MissedWordReview';
 
 interface Props {
   onScore: (score: number) => void;
-  onNavigatePractice: () => void;
   onRequireSignIn?: (reason?: string) => void;
   /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
   studyScope: string[] | null;
@@ -48,7 +47,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, studyScope, onExitStudyScope }: Props) {
+export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitStudyScope }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const { deck, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
@@ -645,23 +644,6 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
           <div className="flex gap-2 items-center mb-4 flex-wrap">
             <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
             <div className="ml-auto flex gap-2 items-center flex-wrap">
-              {(dailyStatus === 'ready' || dailyStatus === 'error') && (
-                <button
-                  onClick={() => {
-                    if (dueDeckWords.size === 0) { setShowNoDueDialog(true); return; }
-                    loadMore();
-                  }}
-                  disabled={loadingMore}
-                  className="cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-default"
-                  style={{
-                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
-                    background: 'none', border: '1px solid var(--line)', borderRadius: 8,
-                    padding: '9px 15px', color: loadingMore ? 'var(--ink-faint)' : 'var(--ink-soft)',
-                  }}
-                >
-                  {loadingMore ? `generating… ${genEstShort}` : '+ new passage'}
-                </button>
-              )}
               <button style={toggleStyle(showClozeHints)} onClick={() => setShowClozeHints(v => !v)}>
                 Hints
               </button>
@@ -772,34 +754,45 @@ export default function ReadTab({ onScore, onNavigatePractice, onRequireSignIn, 
                 : clozeIncomplete
                   ? `${clozeGrades.size}/${clozeWordCount} blanks filled in`
                   : 'Finish & see vocabulary results';
+              // A new passage can only be generated once every blank in the current one is filled in.
+              const newPassageDisabled = clozeIncomplete || loadingMore;
               return (
-                <button
-                  onClick={toggleResults}
-                  disabled={isDisabled}
-                  className="flex items-center gap-2 transition-all duration-150"
-                  style={{
-                    fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-                    padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
-                    cursor: isDisabled ? 'not-allowed' : 'pointer',
-                    opacity: isDisabled ? 0.45 : 1,
-                  }}
-                >
-                  {label}
-                </button>
+                <>
+                  <button
+                    onClick={toggleResults}
+                    disabled={isDisabled}
+                    className="flex items-center gap-2 transition-all duration-150"
+                    style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                      padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+                      cursor: isDisabled ? 'not-allowed' : 'pointer',
+                      opacity: isDisabled ? 0.45 : 1,
+                    }}
+                  >
+                    {label}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (dueDeckWords.size === 0) { setShowNoDueDialog(true); return; }
+                      loadMore();
+                    }}
+                    disabled={newPassageDisabled}
+                    title={clozeIncomplete ? 'Fill in every blank to unlock a new passage' : undefined}
+                    className="flex items-center gap-2 transition-all duration-150"
+                    style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                      background: 'none', color: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
+                      padding: '12px 20px',
+                      cursor: newPassageDisabled ? 'not-allowed' : 'pointer',
+                      opacity: newPassageDisabled ? 0.45 : 1,
+                    }}
+                  >
+                    {loadingMore ? `Generating… ${genEstShort}` : '+ New passage'}
+                  </button>
+                </>
               );
             })()}
-            <button
-              onClick={onNavigatePractice}
-              className="flex items-center gap-2 cursor-pointer transition-all duration-150"
-              style={{
-                fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-                background: 'none', color: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
-                padding: '12px 20px',
-              }}
-            >
-              Continue practicing
-            </button>
           </div>
 
           {showResults && <VocabResults results={vocabResults} />}

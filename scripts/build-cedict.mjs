@@ -100,6 +100,41 @@ function fetch(url) {
   });
 }
 
+// ─── Variant resolution ──────────────────────────────────────────────────────
+// CEDICT glosses like "old variant of 個|个[ge4]" carry no real meaning of their
+// own. When the entire gloss is just such a pointer, swap in the target word's
+// actual definition (following chains of variants, but not the pinyin).
+
+const VARIANT_RE = /^(?:\([^)]*\)\s*)?(?:[A-Za-z]+\s+)*variant of\s+([^[\s]+)\[[^\]]+\]$/i;
+
+function simplifiedForm(raw) {
+  // CEDICT writes cross-references as "Traditional|Simplified" when they differ.
+  return raw.includes('|') ? raw.split('|')[1] : raw;
+}
+
+function resolveVariants(dict) {
+  let resolved = 0;
+  for (const key of Object.keys(dict)) {
+    const seen = new Set([key]);
+    let cur = key;
+    let entry = dict[cur];
+    for (;;) {
+      const m = VARIANT_RE.exec(entry.m);
+      if (!m) break;
+      const target = simplifiedForm(m[1]);
+      if (seen.has(target) || !dict[target]) break;
+      seen.add(target);
+      cur = target;
+      entry = dict[cur];
+    }
+    if (cur !== key && !VARIANT_RE.test(entry.m)) {
+      dict[key] = { p: dict[key].p, m: entry.m };
+      resolved++;
+    }
+  }
+  return resolved;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -121,6 +156,9 @@ async function main() {
 
   const count = Object.keys(dict).length;
   console.log(`  ${count.toLocaleString()} entries, ${skipped.toLocaleString()} skipped`);
+
+  const resolved = resolveVariants(dict);
+  console.log(`  ${resolved.toLocaleString()} "variant of" glosses resolved to their target's definition`);
 
   const json = JSON.stringify(dict);
   await writeFile(OUTPUT, json, 'utf8');
