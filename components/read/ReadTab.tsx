@@ -785,8 +785,9 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
                   ? `${clozeGrades.size}/${clozeWordCount} blanks filled in`
                   : 'Finish & see vocabulary results';
               // A new passage can only be generated once every blank in EVERY generated
-              // passage today is filled in — not just the one currently being viewed.
-              const newPassageDisabled = clozeIncomplete || loadingMore || !allPassagesComplete;
+              // passage today is filled in — not just the one currently being viewed —
+              // AND the current passage has been explicitly finished via the Finish button.
+              const newPassageDisabled = !alreadyFinished || clozeIncomplete || loadingMore || !allPassagesComplete;
               return (
                 <>
                   <button

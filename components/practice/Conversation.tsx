@@ -375,7 +375,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
         <input
           value={inputVal}
           onChange={e => setInputVal(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') sendTyped(); }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) sendTyped(); }}
           placeholder={listening ? 'Edit or press Send →' : 'Type your reply in Chinese…'}
           className="flex-1 rounded-[10px] px-4 py-3 transition-all duration-150"
           style={{

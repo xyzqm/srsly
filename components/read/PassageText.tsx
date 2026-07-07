@@ -249,7 +249,7 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
         type="text"
         value={value}
         onChange={e => setValue(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') submit({ force: true }); }}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit({ force: true }); }}
         onBlur={() => submit()}
         style={{
           width: `${Math.max(token.text.length * 1.3, 2.5)}em`,

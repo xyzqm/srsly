@@ -42,7 +42,7 @@ function ClozeSentence({ sentence, targetWord }: { sentence: string; targetWord:
             ref={inputRef}
             value={value}
             onChange={e => { if (!submitted) setValue(e.target.value); }}
-            onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(); }}
             placeholder="　"
             style={{
               width: inputWidth,

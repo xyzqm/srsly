@@ -148,8 +148,13 @@ async function main() {
   for (const line of lines) {
     const entry = parseLine(line);
     if (!entry) { skipped++; continue; }
-    // Keep first entry per simplified form (alphabetical order in cedict = most common first)
-    if (!dict[entry.simplified]) {
+    // Keep first entry per simplified form (alphabetical order in cedict = most common first),
+    // but if that entry is just a "variant of" pointer and a later entry (from a different
+    // traditional headword that collapses to the same simplified form) has a real definition,
+    // prefer the real one — otherwise resolveVariants() below can't tell a genuine circular
+    // reference apart from a same-key self-reference caused by this dedup discarding the target.
+    const existing = dict[entry.simplified];
+    if (!existing || (VARIANT_RE.test(existing.m) && !VARIANT_RE.test(entry.meaning))) {
       dict[entry.simplified] = { p: entry.pinyin, m: entry.meaning };
     }
   }
