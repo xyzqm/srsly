@@ -14,7 +14,7 @@ No test suite exists yet.
 
 ## Environment
 
-AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it, the app falls back to static passages and the ReadTab shows a "no API key" warning.
+AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it (or once a guest exhausts their free-generation budget), the ReadTab shows a "no API key" / limit-reached warning with no passage underneath — there is no static fallback content.
 
 ## Architecture
 
@@ -26,15 +26,13 @@ AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it, t
 
 ### Token format
 
-The core data primitive is `PassageToken` (`lib/types.ts`): `{ text, pinyin?, meaning?, type? }`. Raw content is authored as compact tuple arrays (`RawToken = [hanzi] | [hanzi, pinyin] | [hanzi, pinyin, meaning]`) and normalized at load time. A three-element tuple marks a **vocab** word; a two-element tuple is a regular word; a single-element tuple is punctuation.
-
-### Static content
-
-`lib/data/allPassages.ts` contains all six HSK-level passages (HSK 1–6) hardcoded as raw token arrays, questions, fill-in-the-blank items, and conversation turns. `getPassageData(hskLevel)` returns the corresponding `PassageData`. This is always used as fallback when AI content is unavailable.
+The core data primitive is `PassageToken` (`lib/types.ts`): `{ text, reading?, meaning?, type?, baseForm? }`. The API route emits compact tuple arrays (`RawTok = [text] | [text, reading] | [text, reading, meaning] | [text, reading, meaning, baseForm]`), normalized into `PassageToken`s client-side in `hooks/useDailyContent.ts`. A single-element tuple is punctuation; a 3-or-4-element tuple marks a **vocab** word; the optional 4th element (Japanese only) carries the dictionary/base form of a conjugated word, resolved server-side by kuromoji.
 
 ### AI-generated daily content
 
-`app/api/daily-content/route.ts` is a Next.js API route that calls `claude-3-5-haiku-20241022` with the user's due vocab words, returning a JSON blob of passage, fill items, and conversation keyed to those words. The hook `hooks/useDailyContent.ts` handles caching (localStorage keyed by `srsly-daily-{hskLevel}-{date}`), calls the API route, parses the raw JSON into typed structures, and falls back to static data if generation fails. Daily content is regenerated once per day per HSK level.
+`app/api/daily-content/route.ts` is a Next.js API route that calls `claude-haiku-4-5-20251001` with the user's due vocab words, returning a JSON blob of passage, fill items, and conversation keyed to those words. The hook `hooks/useDailyContent.ts` handles caching (localStorage keyed by `srsly-daily-{hskLevel}-{date}`), calls the API route, and parses the raw JSON into typed structures. There is no static fallback content for either language — a failed or incomplete generation surfaces as an error state rather than silently substituting sample content. Daily content is regenerated once per day per HSK/JLPT level.
+
+For Japanese, the model writes plain sentence text (no self-segmentation); `app/api/daily-content/route.ts` segments it server-side via `lib/server/kuromojiSegmenter.ts`, which wraps the `kuromoji` morphological analyzer with a fusion pass that re-merges its morpheme-level output into whole conjugated words (kuromoji alone would split e.g. `使っています` into 4 pieces), then resolves meanings from `public/jmdict.json`/`lib/data/jlpt-vocab.ts` keyed by the resolved dictionary (base) form. Chinese still uses the model's own pipe-delimited (`|`) segmentation, parsed client-side.
 
 ### Storage abstraction
 
@@ -70,7 +68,3 @@ The Practice tab (`components/practice/ExtrasTab.tsx`) offers three modes select
 - **convo** — `Conversation.tsx` — guided dialogue practice
 
 Reading comprehension (`ReadTab`) supports two response modes: free-response (`fr`) graded by Claude at `/api/daily-content` or multiple-choice (`mc`).
-
-### Adding a new HSK passage
-
-Add a `HSKn_RAW`, `HSKn_FREE`, `HSKn_QUESTIONS`, `HSKn_FILL` block in `lib/data/allPassages.ts`, then add a `buildPassage(...)` call to the `PASSAGES` array and a matching entry in `STATIC_CONVOS` in `lib/data/staticConvos.ts`.

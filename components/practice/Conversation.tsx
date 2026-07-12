@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { DeckWord, ConvoTurn, PassageToken } from '@/lib/types';
-import { CONVO } from '@/lib/data/conversation';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -31,7 +30,7 @@ interface Props {
   deck: DeckWord[];
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
   onGrade?: (hanzi: string, grade: number) => void;
-  /** Daily AI-generated conversation turns. Falls back to CONVO. */
+  /** Daily AI-generated conversation turns. */
   turns?: ConvoTurn[];
 }
 
@@ -42,7 +41,7 @@ const SpeakerIcon = () => (
 );
 
 export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns }: Props) {
-  const ACTIVE_CONVO = turns ?? CONVO;
+  const ACTIVE_CONVO = turns ?? [];
   // Use a ref so showTutor always reads the current conversation without
   // needing to be recreated whenever ACTIVE_CONVO reference changes.
   const activeConvoRef = useRef(ACTIVE_CONVO);
@@ -165,6 +164,18 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
           Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        </p>
+      </div>
+    );
+  }
+
+  // Nothing generated yet (or generation failed) — no static fallback to show instead.
+  if (ACTIVE_CONVO.length === 0) {
+    return (
+      <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
+          No conversation generated yet.
         </p>
       </div>
     );

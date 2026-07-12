@@ -125,6 +125,7 @@ function AppShell() {
               onRequireSignIn={requireSignIn}
               studyScope={studyScope}
               onExitStudyScope={exitDeckStudy}
+              onNavigateVocab={() => setTab('vocab')}
             />
           )}
           {tab === 'practice' && (

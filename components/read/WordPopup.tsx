@@ -23,7 +23,7 @@ export interface PopupData {
   word: string;
   pinyin: string;
   meaning: string;
-  /** Dictionary (base) form when the word was resolved via deinflection (ja only). */
+  /** Dictionary (base) form when the word is a conjugated verb/adjective (ja only). */
   baseForm?: string;
   baseReading?: string;
   /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);

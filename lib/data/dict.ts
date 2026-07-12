@@ -1,42 +1,11 @@
-import { PASSAGES } from './allPassages';
 import { HSK_VOCAB } from './hsk-vocab';
 
 export interface DictEntry { pinyin: string; meaning: string; }
 
 const DICT: Record<string, DictEntry> = {};
 
-// ─── Build from all passage token sources ────────────────────────────────────
-for (const passage of PASSAGES) {
-  // Title tokens
-  for (const token of passage.titleTokens) {
-    if (!token.reading || DICT[token.text]) continue;
-    DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
-  }
-  // Sentence tokens
-  for (const sentence of passage.sentences) {
-    for (const token of sentence.tokens) {
-      if (!token.reading || DICT[token.text]) continue;
-      DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
-    }
-  }
-  // Question tokens (pinyin, usually no meaning – fills at least the pinyin slot)
-  for (const question of passage.questions) {
-    for (const token of question.q) {
-      if (!token.reading || DICT[token.text]) continue;
-      DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
-    }
-    for (const opt of question.options) {
-      for (const token of opt.tokens) {
-        if (!token.reading || DICT[token.text]) continue;
-        DICT[token.text] = { pinyin: token.reading, meaning: token.meaning || '' };
-      }
-    }
-  }
-}
-
 // ─── Common-words supplement ─────────────────────────────────────────────────
-// Covers high-frequency words that may not appear in any passage token but
-// DO appear in question prompts, options, or new AI-generated content.
+// High-frequency words that appear in question prompts, options, or AI-generated content.
 const COMMON: Record<string, DictEntry> = {
   // Question words
   '什么':    { pinyin: 'shénme',       meaning: 'what' },
@@ -640,10 +609,9 @@ const COMMON: Record<string, DictEntry> = {
   '各个方面':    { pinyin: 'gège fāngmiàn',          meaning: 'every aspect; all aspects' },
 };
 
-// Merge: passage tokens take priority IF they have a meaning.
-// If a passage entry has an empty meaning, COMMON / HSK_VOCAB fills it in.
+// Merge: COMMON takes priority; HSK_VOCAB fills in anything COMMON doesn't have.
 for (const [text, entry] of Object.entries(COMMON)) {
-  if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
+  DICT[text] = entry;
 }
 for (const [text, entry] of Object.entries(HSK_VOCAB)) {
   if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;

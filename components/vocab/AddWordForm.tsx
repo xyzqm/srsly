@@ -142,7 +142,24 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
       return;
     }
     const deck = deckName.trim();
-    onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}) });
+    // Convert a conjugated surface form (e.g. 食べました) to its dictionary form (食べる) via
+    // the same kuromoji pipeline generated passages use, so the deck stores a consistent
+    // canonical form. Falls back to the raw typed text on any failure or non-single-word input.
+    let canonicalH = h;
+    try {
+      const res = await fetch('/api/ja-word-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: h }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.single && data.baseForm) canonicalH = data.baseForm;
+      }
+    } catch {
+      // Network hiccup — keep the raw typed text.
+    }
+    onAdd({ h: canonicalH, p, m, ...(deck ? { decks: [deck] } : {}) });
   }
 
   function toggleVoice() {

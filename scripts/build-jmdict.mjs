@@ -100,6 +100,15 @@ ${lvLines}
   return vocab;
 }
 
+// Some kana-only surface forms are ambiguous between an unrelated common noun and a
+// much more frequent grammatical particle (や, "and/such as", vs. 矢 "arrow"). JMdict's
+// "common" flag doesn't rank by actual usage frequency, so `put()`'s priority picking
+// can surface the rare noun sense instead. Force these known collisions to the reading
+// learners will actually run into in passages.
+const OVERRIDES = {
+  'や': { p: 'や', m: 'and (used when listing a few examples among others); such things as' },
+};
+
 // ─── JMdict common → public/jmdict.json ──────────────────────────────────────
 async function buildJmdict(workdir, jlptVocab) {
   const jsonPath = path.join(workdir, 'jmdict.json');
@@ -141,6 +150,8 @@ async function buildJmdict(workdir, jlptVocab) {
   for (const [surface, v] of Object.entries(jlptVocab)) {
     if (!map[surface] && v.reading) { map[surface] = { p: v.reading, m: v.meaning }; added++; }
   }
+
+  for (const [surface, entry] of Object.entries(OVERRIDES)) map[surface] = entry;
 
   const out = path.join(ROOT, 'public', 'jmdict.json');
   const json = JSON.stringify(map);
