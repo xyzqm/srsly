@@ -38,7 +38,13 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
   // Proficiency level — start at 0 (same as ReadTab) so we don't load the wrong
   // level's cache before prefs arrive; useDailyContent skips when level=0
   const [hskLevel, setHskLevel] = useState(0);
-  useEffect(() => { storage.getPrefs().then(p => setHskLevel(levelFor(language, p))); }, [language]);
+  const [wordsPerPassage, setWordsPerPassage] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    storage.getPrefs().then(p => {
+      setHskLevel(levelFor(language, p));
+      setWordsPerPassage(p.wordsPerPassage);
+    });
+  }, [language]);
 
   // Practice pulls from the GLOBAL due queue by default; a focused "Study this deck"
   // session (studyScope) temporarily narrows every mode to that deck. null = all.
@@ -64,7 +70,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
     () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
     [mode],
   );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want, language);
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want, language, wordsPerPassage);
 
   // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
   // passage adds — you just encountered them in context, so the first review is the next day.

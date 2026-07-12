@@ -68,6 +68,50 @@ export const JA_CONFIG: LanguageConfig = {
   answerScriptNote: 'The answer MUST be written in Japanese (hiragana, katakana, or kanji).',
 };
 
+/** Sentence count and recommended vocab-word range per level — longer/harder passages can
+ *  carry more simultaneous vocab words without overwhelming the reader. Shared by the daily-
+ *  content generator (sentence count) and the Settings UI (recommended words-per-passage). */
+interface LevelShape { sentences: number; wordsMin: number; wordsMax: number }
+
+const ZH_LEVEL_SHAPE: Record<number, LevelShape> = {
+  1: { sentences: 7,  wordsMin: 3, wordsMax: 4 },
+  2: { sentences: 8,  wordsMin: 3, wordsMax: 5 },
+  3: { sentences: 9,  wordsMin: 4, wordsMax: 5 },
+  4: { sentences: 10, wordsMin: 4, wordsMax: 6 },
+  5: { sentences: 12, wordsMin: 5, wordsMax: 7 },
+  6: { sentences: 14, wordsMin: 6, wordsMax: 8 },
+};
+/** JLPT: 5 = N5 easiest … 1 = N1 hardest. */
+const JA_LEVEL_SHAPE: Record<number, LevelShape> = {
+  5: { sentences: 6,  wordsMin: 3, wordsMax: 4 },
+  4: { sentences: 8,  wordsMin: 4, wordsMax: 5 },
+  3: { sentences: 10, wordsMin: 4, wordsMax: 6 },
+  2: { sentences: 12, wordsMin: 5, wordsMax: 7 },
+  1: { sentences: 14, wordsMin: 6, wordsMax: 8 },
+};
+
+function levelShape(lang: LanguageCode | undefined, level: number): LevelShape {
+  const table = getLanguageConfig(lang).code === 'ja' ? JA_LEVEL_SHAPE : ZH_LEVEL_SHAPE;
+  return table[level] ?? { sentences: 7, wordsMin: 4, wordsMax: 6 };
+}
+
+/** Sentences per passage for a level (used to size AI generation prompts). */
+export function sentenceCountForLevel(lang: LanguageCode | undefined, level: number): number {
+  return levelShape(lang, level).sentences;
+}
+
+/** Recommended [min, max] vocab words per passage for a level. */
+export function recommendedWordsPerPassage(lang: LanguageCode | undefined, level: number): [number, number] {
+  const { wordsMin, wordsMax } = levelShape(lang, level);
+  return [wordsMin, wordsMax];
+}
+
+/** Default words-per-passage when the user hasn't set one — the midpoint of the recommended range. */
+export function defaultWordsPerPassage(lang: LanguageCode | undefined, level: number): number {
+  const [min, max] = recommendedWordsPerPassage(lang, level);
+  return Math.round((min + max) / 2);
+}
+
 export const LANGUAGE_CONFIGS: Record<LanguageCode, LanguageConfig> = {
   zh: ZH_CONFIG,
   ja: JA_CONFIG,

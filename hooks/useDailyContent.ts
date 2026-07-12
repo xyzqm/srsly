@@ -2,14 +2,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord, ContentSection, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
-import { getPassageDataForLanguage } from '@/lib/data/allPassages';
-import { lookupReading, preloadDict, deinflectWord } from '@/lib/data/lookup';
+import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, inSelectedDecks, decksSignature, todayStr, shuffle } from '@/lib/deck';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
+import { defaultWordsPerPassage } from '@/lib/languageConfig';
 
-type RawTok = [string] | [string, string] | [string, string, string];
+type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
 
 const PUNCT_CHARS = new Set([
   '。','！','？','，','、','—','…','·','「','」','『','』',
@@ -26,25 +26,29 @@ function isPunct(text: string): boolean {
 }
 
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): PassageToken {
-  const [text, rawReading, meaning] = arr as [string, string?, string?];
+  const [text, rawReading, meaning, rawBaseForm] = arr as [string, string?, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
   const reading = rawReading || lookupReading(lang, text).reading || '';
   if (!reading) {
     // No reading resolved. For Chinese a 2+ Han-char run is still a word; for Japanese
-    // (where the AI segments + annotates) any multi-char run is treated as a word too.
+    // (already segmented server-side, either by the AI's pipe format or kuromoji) any
+    // multi-char run is treated as a word too.
     const isWordLike = lang === 'ja' ? text.length >= 2 : (text.match(/[一-鿿㐀-䶿]/g) ?? []).length >= 2;
     return isWordLike ? { text } : { text, type: 'punct' };
   }
   const dictEntry = lookupReading(lang, text, reading, '');
   const resolvedMeaning = meaning || pickReading(deckReadings.get(text), reading)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
-    // Japanese: check if this is a conjugated form of a due vocab word so cloze blanks
-    // and grade attribution use the correct base-form card.
-    if (lang === 'ja' && !dueWords.has(text)) {
-      const baseForm = deinflectWord(lang, text).find(c => dueWords.has(c));
-      if (baseForm) return { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm };
-    }
-    return { text, reading, meaning: resolvedMeaning, type: 'vocab' };
+    // Japanese conjugated verbs/adjectives carry their dictionary (base) form as the 4th
+    // RawTok element (resolved server-side by kuromoji). Keep it on EVERY such token — not
+    // only due words — so the lookup popup headlines the base form (する, not しています) and
+    // "Add to vocab" stores/dedupes against the base-form card. Cloze-blank detection and
+    // grade attribution in PassageText still gate on whether the base form is actually a due
+    // word, so surfacing it here never turns a non-due word into a blank.
+    const baseForm = lang === 'ja' && rawBaseForm && rawBaseForm !== text ? rawBaseForm : undefined;
+    return baseForm
+      ? { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm }
+      : { text, reading, meaning: resolvedMeaning, type: 'vocab' };
   }
   return { text, reading };
 }
@@ -346,7 +350,6 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
   };
 }
 
-const MAX_WORDS = 5;
 const ALL_SECTIONS: ContentSection[] = ['passage', 'fill', 'convo'];
 
 /**
@@ -410,6 +413,7 @@ export function useDailyContent(
   studyDecks: string[] | null = null,
   want: ContentSection[] = ALL_SECTIONS,
   language: LanguageCode = 'zh',
+  wordsPerPassage?: number,
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
@@ -428,6 +432,13 @@ export function useDailyContent(
   const studyDecksRef = useRef(studyDecks);
   studyDecksRef.current = studyDecks;
 
+  // How many due words to build each passage/fill/convo batch around. Falls back to a
+  // level-scaled recommendation (harder levels support longer passages, so more words fit
+  // without overwhelming the reader) when the user hasn't set an explicit preference.
+  const effectiveWordsPerPassage = wordsPerPassage ?? defaultWordsPerPassage(language, hskLevel);
+  const wordsPerPassageRef = useRef(effectiveWordsPerPassage);
+  wordsPerPassageRef.current = effectiveWordsPerPassage;
+
   const wantKey = [...want].sort().join(',');
 
   useEffect(() => {
@@ -441,36 +452,33 @@ export function useDailyContent(
       await preloadDict(language).catch(() => {});
       if (cancelled) return;
 
-      const passageData = getPassageDataForLanguage(language, hskLevel);
       const today = todayStr();
 
-      const staticContent = (): DailyContent => ({
+      // A passage is always either a real AI passage built around due words, or no passage
+      // at all — there's no static sample content to fall back to.
+      const emptyContent = (): DailyContent => ({
         date: today,
         language,
         hskLevel,
         deck: deckKey || undefined,
-        passages: [{
-          titleTokens: passageData.titleTokens,
-          sentences: passageData.sentences,
-          vocabWords: [],
-          questions: passageData.questions,
-        }],
-        fillItems: passageData.fillItems,
-        conversation: passageData.conversation,
+        passages: [],
+        fillItems: [],
+        conversation: [],
         sections: {},
       });
 
       const currentDeck = deckRef.current;
+      const wordsPerPassageNow = wordsPerPassageRef.current;
       // Shuffle before the priority sort (stable) so words tied on due date don't always
-      // land in the same top-MAX_WORDS group — otherwise the same overdue words keep
-      // getting bundled into every passage together.
+      // land in the same top group — otherwise the same overdue words keep getting bundled
+      // into every passage together.
       const dueWords = shuffle(
         currentDeck.filter(w => isDueToday(w, today) && inSelectedDecks(w, studyDecksRef.current)),
       ).sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
       });
-      const selectedWords = dueWords.slice(0, MAX_WORDS);
+      const selectedWords = dueWords.slice(0, wordsPerPassageNow);
       const hasDueWords = selectedWords.length > 0;
 
       // Restore the FULL cached set of passages — every one the user generated today via
@@ -486,22 +494,23 @@ export function useDailyContent(
           base = migrated;
         }
       }
-      const content = base ?? staticContent();
+      const content = base ?? emptyContent();
       setDailyContent(content);
 
       const flags = sectionFlags(content);
-      // Auto-generate a passage only on the day's first load. On a later HSK-level / deck
-      // switch (when other content already exists today), show this scope's cache or the
-      // static fallback instead — the user gets a fresh AI passage via "+ new passage".
+      // Auto-generate a passage only on the day's first load, and only when there are due
+      // words to build it around — never a generic vocab-less passage. On a later HSK-level
+      // / deck switch (when other content already exists today), show this scope's cache
+      // (or nothing) instead — the user gets a fresh AI passage via "+ new passage".
       const firstLoadToday = !hasAnyDailyContentToday(today);
       const needed: ContentSection[] = [];
-      if (wantSet.has('passage') && !flags.passage && firstLoadToday) needed.push('passage');
+      if (wantSet.has('passage') && !flags.passage && firstLoadToday && hasDueWords) needed.push('passage');
       if (wantSet.has('fill')    && hasDueWords && !flags.fill)  needed.push('fill');
       if (wantSet.has('convo')   && hasDueWords && !flags.convo) needed.push('convo');
 
       // If a fresh passage is being generated (none cached yet), stay in 'loading' so the
-      // user sees the skeleton — not the static fallback wearing an "✦ AI" badge — until
-      // the real passage lands. When an AI passage is already cached, show it immediately.
+      // user sees the skeleton until the real passage lands. When an AI passage is already
+      // cached, show it immediately.
       setStatus(needed.includes('passage') ? 'loading' : 'ready');
 
       if (needed.length === 0) return;
@@ -519,15 +528,19 @@ export function useDailyContent(
               hskLevel,
               language,
               sections: [section],
+              wordsPerPassage: wordsPerPassageNow,
             }),
           });
           if (cancelled) return;
 
-          if (res.status === 503) { setStatus('no-key'); break; }
+          if (res.status === 503) {
+            setStatus('no-key');
+            break;
+          }
           if (res.status === 402) {
             markGuestAiExhausted();
             setGuestLimited(true);
-            setStatus('ready'); // guest over budget — show the static fallback we already have
+            setStatus('ready');
             break;
           }
           if (!res.ok) {
@@ -553,7 +566,7 @@ export function useDailyContent(
           if (section === 'passage') {
             const buildSet = new Set([...dueSet, ...anchorCompounds]);
             const rawPassages = Array.isArray(data.passages) ? data.passages : [];
-            let passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) => {
+            const passages: DailyPassage[] = rawPassages.map((p: unknown, pi: number) => {
               const passage = buildPassage(
                 p as { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
                 batches[pi] ?? [],
@@ -564,20 +577,30 @@ export function useDailyContent(
               passage.vocabWords = collectVocabWords(passage, dueSet, anchorCompounds);
               return passage;
             });
-            const fellBack = passages.length === 0 || passages[0].sentences.length < 2;
-            if (fellBack) passages = staticContent().passages;
+            // No static-passage fallback here — a malformed/empty AI response is a real
+            // failure, surfaced as an error so the user can retry rather than silently
+            // getting a generic sample passage.
+            if (passages.length === 0 || passages[0].sentences.length < 2) {
+              throw new Error('Passage generation returned incomplete content');
+            }
             built = passages;
-            done = !fellBack && complete?.passage !== false;
+            done = complete?.passage !== false;
           } else if (section === 'fill') {
             const builtFill = data.fill ? buildFillItems(data.fill as unknown[], dueSet, deckReadings, language) : [];
-            const fellBack = builtFill.length < 1;
-            built = fellBack ? passageData.fillItems : builtFill;
-            done = !fellBack && complete?.fill !== false;
+            // No static fallback — a malformed/empty AI response is a real failure, surfaced
+            // as an error so the user can retry, matching the passage section above.
+            if (builtFill.length < 1) {
+              throw new Error('Fill-in-blank generation returned incomplete content');
+            }
+            built = builtFill;
+            done = complete?.fill !== false;
           } else {
             const builtConvo = data.convo ? buildConvo(data.convo as unknown[], dueSet, deckReadings, language) : [];
-            const fellBack = builtConvo.length < 2;
-            built = fellBack ? passageData.conversation : builtConvo;
-            done = !fellBack && complete?.convo !== false;
+            if (builtConvo.length < 2) {
+              throw new Error('Conversation generation returned incomplete content');
+            }
+            built = builtConvo;
+            done = complete?.convo !== false;
           }
 
           if (cancelled) return;
@@ -626,7 +649,7 @@ export function useDailyContent(
       // merely appearing in an earlier passage's text isn't enough (that passage's blank may
       // still be sitting unanswered). Read each passage's persisted grades to find out which
       // due words were genuinely reviewed today.
-      const contentKey = `${dailyContent.date}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`;
+      const contentKey = `${dailyContent.date}|${dailyContent.language ?? 'zh'}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`;
       const passageStates = await Promise.all(
         dailyContent.passages.map((_, idx) => storage.getPassageState(contentKey, idx)),
       );
@@ -643,12 +666,14 @@ export function useDailyContent(
       const notCovered = (ws: DeckWord[]) => ws.filter(w => !coveredWords.has(w.h));
       // Only target words that are actually due. Never pull in words scheduled for a future
       // day (e.g. ones just added as "due tomorrow") — prefer due words not yet covered today,
-      // then top up remaining slots by re-using already-covered due words; if nothing is due,
-      // generate a generic passage (no forced vocab).
+      // then top up remaining slots by re-using already-covered due words.
       const fresh = notCovered(dueWords);
       const reused = dueWords.filter(w => coveredWords.has(w.h));
       const pool = [...fresh, ...reused];
-      const selectedWords = pool.slice(0, MAX_WORDS);
+      const selectedWords = pool.slice(0, wordsPerPassageRef.current);
+      // Never generate a generic, vocab-less passage — the caller (the "+ New passage"
+      // button) is disabled whenever there are no due words, but guard here too.
+      if (selectedWords.length === 0) return;
 
       const res = await fetch('/api/daily-content', {
         method: 'POST',
@@ -659,6 +684,7 @@ export function useDailyContent(
           language,
           themeOffset: dailyContent.passages.length,
           sections: ['passage'],
+          wordsPerPassage: wordsPerPassageRef.current,
         }),
       });
 

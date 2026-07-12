@@ -5,7 +5,6 @@ import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
 import { lookupReadingAsync } from '@/lib/data/lookup';
-import { deinflect } from '@/lib/data/jadict';
 import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 
@@ -283,32 +282,40 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    void lookupReadingAsync(language, token.text, token.reading || '', token.meaning || '').then(entry => {
-      const canonicalWord = entry.baseForm ?? token.text;
+    // A conjugated Japanese verb/adjective carries its dictionary (base) form in
+    // token.baseForm (resolved server-side by kuromoji). Look up — and headline, and add to
+    // vocab — by that base form so しています resolves to する, not the surface form (JMdict is
+    // keyed by dictionary form, and this dedupes conjugations against the base-form card).
+    const lookupKey = token.baseForm ?? token.text;
+    void lookupReadingAsync(language, lookupKey, token.baseForm ? '' : (token.reading || ''), token.meaning || '').then(entry => {
+      const canonicalWord = token.baseForm ?? token.text;
       const isPending  = pendingDeckWords.has(token.text) || pendingDeckWords.has(canonicalWord);
       const inDeck     = deckWords.has(token.text) || deckWords.has(canonicalWord);
       const isInPool   = inDeck && !!(poolWords?.has(token.text) || poolWords?.has(canonicalWord));
       const compoundHints = (token.text.length === 1 && !inDeck) ? compounds : [];
 
-      let pin = entry.reading, mean = entry.meaning;
+      // The token's own reading/meaning (server-resolved) take priority; the fresh lookup is
+      // the source for the base form's own dictionary reading (entry was looked up by the base
+      // form when present, so entry.reading is する's reading, not the surface form's).
+      let pin = token.reading || entry.reading, mean = token.meaning || entry.meaning;
       let otherReadings: { p: string; m: string }[] | undefined;
       const allReadings = deckReadings?.get(canonicalWord) ?? deckReadings?.get(token.text);
       if (allReadings && allReadings.length >= 1) {
-        const matched = pickReading(allReadings, entry.baseReading ?? token.reading ?? '') ?? allReadings[0];
-        pin = matched.p || entry.reading;
-        mean = matched.m || entry.meaning;
+        const matched = pickReading(allReadings, token.reading ?? '') ?? allReadings[0];
+        pin = matched.p || pin;
+        mean = matched.m || mean;
         if (allReadings.length > 1) {
           otherReadings = allReadings.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
         }
       }
 
-      if (isInPool) {
-        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'pool', anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
-      } else if (isPending || inDeck) {
-        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'lookup', anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
-      } else {
-        setPopup({ word: token.text, pinyin: pin, meaning: mean, type: 'free', anchorRect: rect, compounds: compoundHints, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
-      }
+      const baseReading = token.baseForm ? entry.reading : undefined;
+      const type: PopupData['type'] = isInPool ? 'pool' : (isPending || inDeck) ? 'lookup' : 'free';
+      setPopup({
+        word: token.text, pinyin: pin, meaning: mean, type, anchorRect: rect, otherReadings,
+        baseForm: token.baseForm, baseReading,
+        ...(type === 'free' ? { compounds: compoundHints } : {}),
+      });
     });
   }, [deckWords, pendingDeckWords, poolWords, deckReadings, language]);
 
@@ -413,7 +420,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                 }
                 const claimKind = (
                   pendingDeckWords.has(token.text) ||
-                  (language === 'ja' && deinflect(token.text).some(c => pendingDeckWords.has(c)))
+                  (language === 'ja' && !!token.baseForm && pendingDeckWords.has(token.baseForm))
                 ) ? 'vocab' : null;
                 // Compound hints are a Chinese single-character feature; Japanese tokens
                 // already arrive as whole words.

@@ -2,7 +2,6 @@
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
-import { getPassageDataForLanguage } from '@/lib/data/allPassages';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
 import { levelFor } from '@/lib/languageConfig';
@@ -31,6 +30,7 @@ interface Props {
   /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
   studyScope: string[] | null;
   onExitStudyScope: () => void;
+  onNavigateVocab?: () => void;
 }
 
 const READ_WANT: ContentSection[] = ['passage'];
@@ -47,20 +47,24 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitStudyScope }: Props) {
+export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitStudyScope, onNavigateVocab }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const { deck, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
 
   // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
   const [hskLevel, setHskLevel] = useState(0);
-  useEffect(() => { storage.getPrefs().then(p => setHskLevel(levelFor(language, p))); }, [language]);
-
-  const passageData = useMemo(() => getPassageDataForLanguage(language, hskLevel), [language, hskLevel]);
+  const [wordsPerPassage, setWordsPerPassage] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    storage.getPrefs().then(p => {
+      setHskLevel(levelFor(language, p));
+      setWordsPerPassage(p.wordsPerPassage);
+    });
+  }, [language]);
 
   // Passages are generated from the GLOBAL due queue by default; a focused "Study this deck"
   // session (studyScope) temporarily narrows them to that deck. null = all.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, studyScope, READ_WANT, language);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, studyScope, READ_WANT, language, wordsPerPassage);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -82,24 +86,20 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
 
   const currentPassage = dailyContent?.passages[passageIdx];
 
-  const SENTENCES    = currentPassage?.sentences    ?? passageData.sentences;
-  const TITLE_TOKENS = currentPassage?.titleTokens  ?? passageData.titleTokens;
+  const SENTENCES    = useMemo(() => currentPassage?.sentences ?? [], [currentPassage]);
+  const TITLE_TOKENS = useMemo(() => currentPassage?.titleTokens ?? [], [currentPassage]);
   // AI passages start with no questions; they're generated lazily on demand.
-  // Static fallback passages always have questions pre-baked.
-  const QUESTIONS = useMemo(
-    () => currentPassage ? (currentPassage.questions ?? []) : passageData.questions,
-    [currentPassage, passageData.questions],
-  );
-  const charCount    = currentPassage
+  const QUESTIONS = useMemo(() => currentPassage?.questions ?? [], [currentPassage]);
+  const charCount = currentPassage
     ? currentPassage.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
-    : passageData.charCount;
+    : 0;
 
   const genEstShort = hskLevel <= 3 ? '~15–25s' : '~20–35s';
   const genEstLong  = hskLevel <= 3 ? 'about 15–25 seconds' : 'about 20–35 seconds';
 
   const PASSAGE_VOCAB_SET = useMemo(
-    () => currentPassage ? new Set(currentPassage.vocabWords) : passageData.vocabSet,
-    [currentPassage, passageData.vocabSet]
+    () => new Set(currentPassage?.vocabWords ?? []),
+    [currentPassage]
   );
 
   const totalReviewWordCount = useMemo(() => {
@@ -198,7 +198,6 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
     [vocabResults, deck],
   );
   const [sessionAddedWords, setSessionAddedWords] = useState<{ h: string; p: string; m: string }[]>([]);
-  const [showNoDueDialog, setShowNoDueDialog] = useState(false);
   const [alreadyFinished, setAlreadyFinished] = useState(false);
 
   // Per-word grade derived from occurrence map: worst grade across all occurrences of that word.
@@ -224,7 +223,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
   }, [hskLevel]);
 
   const contentKey = dailyContent
-    ? `${dailyContent.date}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`
+    ? `${dailyContent.date}|${dailyContent.language ?? 'zh'}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`
     : '';
   useEffect(() => {
     setActiveSentence(0);
@@ -532,36 +531,6 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       {studyScope && <StudyScopeBanner decks={studyScope} onExit={onExitStudyScope} />}
-      {showNoDueDialog && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(20,18,16,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div
-            onClick={e => e.stopPropagation()}
-            className="animate-rise"
-            style={{ width: 380, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '26px 24px', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}
-          >
-            <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, fontWeight: 500, letterSpacing: '-.01em' }}>
-              All caught up
-            </div>
-            <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '8px 0 22px' }}>
-              You have no words due for review today. New passages won&apos;t have any focus vocabulary.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button
-                onClick={() => { setShowNoDueDialog(false); loadMore(); }}
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 16px', cursor: 'pointer', boxShadow: '0 2px 0 var(--accent-deep)' }}
-              >
-                Generate anyway
-              </button>
-              <button
-                onClick={() => setShowNoDueDialog(false)}
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 16px', color: 'var(--ink-soft)', cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {showGuestLimit && (
         <div
           className="flex items-center justify-between gap-3 flex-wrap rounded-[11px] px-4 py-3 mb-5"
@@ -669,6 +638,45 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
           )}
           <PassageSkeleton />
         </>
+      ) : !currentPassage ? (
+        <div className="flex flex-col items-center text-center py-16 px-6">
+          {dueDeckWords.size === 0 ? (
+            <>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
+                All caught up
+              </div>
+              <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
+                You have no words due for review today. Add new words to your deck to get a fresh passage built around them.
+              </p>
+              <button
+                onClick={onNavigateVocab}
+                className="cursor-pointer transition-all duration-150"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+              >
+                Add words in Vocab
+              </button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
+                {dailyStatus === 'error' ? "Couldn't generate a passage" : 'No passage yet'}
+              </div>
+              <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
+                {dailyStatus === 'error'
+                  ? 'Something went wrong generating today’s passage. Try again.'
+                  : 'Generate a passage built around your due words.'}
+              </p>
+              <button
+                onClick={() => loadMore()}
+                disabled={loadingMore}
+                className="cursor-pointer transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+              >
+                {loadingMore ? `Generating… ${genEstShort}` : 'Generate passage'}
+              </button>
+            </>
+          )}
+        </div>
       ) : (
         <>
           <div className="flex gap-2 items-center mb-4 flex-wrap">
@@ -720,7 +728,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
         </div>
       )}
 
-      {dailyStatus !== 'loading' && (
+      {dailyStatus !== 'loading' && currentPassage && (
         <>
           <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
@@ -787,7 +795,9 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
               // A new passage can only be generated once every blank in EVERY generated
               // passage today is filled in — not just the one currently being viewed —
               // AND the current passage has been explicitly finished via the Finish button.
-              const newPassageDisabled = !alreadyFinished || clozeIncomplete || loadingMore || !allPassagesComplete;
+              // It also requires due words: a passage is always built around due vocab now,
+              // never a generic vocab-less one.
+              const newPassageDisabled = !alreadyFinished || clozeIncomplete || loadingMore || !allPassagesComplete || dueDeckWords.size === 0;
               return (
                 <>
                   <button
@@ -805,12 +815,15 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
                     {label}
                   </button>
                   <button
-                    onClick={() => {
-                      if (dueDeckWords.size === 0) { setShowNoDueDialog(true); return; }
-                      loadMore();
-                    }}
+                    onClick={() => loadMore()}
                     disabled={newPassageDisabled}
-                    title={newPassageDisabled && !loadingMore ? 'Fill in every blank in every passage to unlock a new one' : undefined}
+                    title={
+                      newPassageDisabled && !loadingMore
+                        ? dueDeckWords.size === 0
+                          ? 'No words due for review — add more in Vocab to unlock a new passage'
+                          : 'Fill in every blank in every passage to unlock a new one'
+                        : undefined
+                    }
                     className="flex items-center gap-2 transition-all duration-150"
                     style={{
                       fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,

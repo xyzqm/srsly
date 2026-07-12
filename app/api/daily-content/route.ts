@@ -2,20 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { consumeAiCredit } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
+import { sentenceCountForLevel } from '@/lib/languageConfig';
+import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
-/** Batch size: words per reading passage */
-const BATCH_SIZE = 5;
-
-/** Sentences per passage by HSK level — longer passages = better comprehension questions */
-const SENTENCES_PER_PASSAGE: Record<number, number> = {
-  1: 7, 2: 8, 3: 9, 4: 10, 5: 12, 6: 14,
-};
-/** Sentences per passage by JLPT level (5 = N5 easiest … 1 = N1 hardest). */
-const SENTENCES_PER_PASSAGE_JA: Record<number, number> = {
-  5: 6, 4: 8, 3: 10, 2: 12, 1: 14,
-};
+/** Fallback batch size when the client doesn't specify one. */
+const DEFAULT_BATCH_SIZE = 5;
+/** Hard bounds on the client-configurable words-per-passage batch size. */
+const MIN_BATCH_SIZE = 2;
+const MAX_BATCH_SIZE = 12;
 
 /** How many times to ask the model before giving up (handles occasional bad JSON). */
 const MAX_GEN_ATTEMPTS = 2;
@@ -24,13 +20,16 @@ const MAX_GEN_ATTEMPTS = 2;
 type Section = 'passage' | 'fill' | 'convo' | 'questions';
 
 // ─── Token wire format ───────────────────────────────────────────────────────
-// The model emits each token-list as a single pipe-delimited string of bare hanzi
+// Chinese: the model emits each token-list as a single pipe-delimited string of bare hanzi
 // (no pinyin/meaning) — e.g. "我|住|在|城市|。". We resolve pinyin/meaning from the
 // dictionary on the client. Proper names are the one exception: the model tags them
 // "~汉字::pīnyīn::gloss" since the dictionary won't cover them. We expand these strings
 // back into the RawTok arrays the client parser already consumes.
-
-type RawTok = [string] | [string, string] | [string, string, string];
+//
+// Japanese: the model just writes plain sentence text (see PIPE_RULES_JA below) — no pipes,
+// no inline furigana. Segmentation, fusion of conjugated forms, and meaning resolution all
+// happen server-side via kuromoji (lib/server/kuromojiSegmenter.ts) instead of relying on the
+// model to self-segment, which it didn't always do correctly (e.g. splitting 使っています).
 
 /** Longest known-name/word a greedy merge will reconstruct from split segments. */
 const MAX_NAME_MERGE = 4;
@@ -161,6 +160,7 @@ export async function POST(req: NextRequest) {
   let sections: Section[];
   let passageText: string;
   let language: LanguageCode;
+  let batchSize: number;
 
   try {
     const body = await req.json();
@@ -168,6 +168,7 @@ export async function POST(req: NextRequest) {
     language = body.language === 'ja' ? 'ja' : 'zh';
     hskLevel = body.hskLevel ?? (language === 'ja' ? 4 : 4);
     themeOffset = body.themeOffset ?? 0;
+    batchSize = Math.min(Math.max(parseInt(body.wordsPerPassage, 10) || DEFAULT_BATCH_SIZE, MIN_BATCH_SIZE), MAX_BATCH_SIZE);
     passageText = typeof body.passageText === 'string' ? body.passageText : '';
     // `sections` selects which blocks to generate. Back-compat: `passageOnly` → passage only.
     if (Array.isArray(body.sections) && body.sections.length > 0) {
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest) {
   const levelDesc = language === 'ja'
     ? (hskLevel >= 4 ? 'beginner' : hskLevel >= 2 ? 'intermediate' : 'advanced')
     : (hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced');
-  const sentenceCount = (language === 'ja' ? SENTENCES_PER_PASSAGE_JA[hskLevel] : SENTENCES_PER_PASSAGE[hskLevel]) ?? 7;
+  const sentenceCount = sentenceCountForLevel(language, hskLevel);
   const langName = language === 'ja' ? 'Japanese' : 'Chinese';
   const levelName = language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`;
 
@@ -221,10 +222,11 @@ export async function POST(req: NextRequest) {
   const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
   const dailyTheme = DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length];
 
-  // Split words into batches of BATCH_SIZE — each batch gets its own passage
+  // Split words into batches of batchSize (the user's configured words-per-passage) —
+  // each batch gets its own passage.
   const batches: typeof words[] = [];
-  for (let i = 0; i < words.length; i += BATCH_SIZE) {
-    batches.push(words.slice(i, i + BATCH_SIZE));
+  for (let i = 0; i < words.length; i += batchSize) {
+    batches.push(words.slice(i, i + batchSize));
   }
 
   // Words whose reading must be surfaced through a compound (e.g. 行 háng → 银行).
@@ -281,35 +283,23 @@ PROPER NAMES: list EVERY person/place name you used in the separate "names" arra
 giving its pinyin and a short English gloss. The pipe strings stay pure hanzi; names get their
 reading from this list.`.trim();
 
-  // Japanese: same pipe stream, but each token that contains kanji is annotated INLINE with
-  // its hiragana reading as surface::furigana, since the dictionary can't reliably resolve
-  // furigana for inflected/ambiguous forms. Kana-only words and punctuation stay bare.
+  // Japanese: unlike Chinese, the model does NOT segment or annotate anything — it just
+  // writes plain, natural Japanese sentence text. Segmentation, conjugation fusion, and
+  // furigana/meaning resolution all happen server-side via kuromoji (a real morphological
+  // analyzer) after generation, which is deterministic where prompt-based self-segmentation
+  // wasn't (the model would occasionally split inflected forms, e.g. 使っています → 使 + っています).
   const PIPE_RULES_JA = `
-OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
-Every field marked "WORDS" below MUST be a SINGLE STRING with a | (vertical bar) between EVERY
-word and EVERY punctuation mark. A sentence with no | bars is INVALID output.
+OUTPUT FORMAT:
+Every field marked "WORDS" below is a SINGLE STRING of plain, natural, grammatically correct
+Japanese — normal sentence text, exactly as it would appear in real writing. Do NOT insert any
+"|" bars, "::" furigana annotations, or other markup — write it the way a native speaker would.
 
-Within the bars, FURIGANA RULE:
-  - Any token that contains kanji MUST be written as  surface::furigana  where furigana is the
-    token's reading in hiragana (covering the WHOLE token, including any kana okurigana).
-  - Tokens written only in hiragana/katakana, and punctuation, are written bare (no ::).
+  CORRECT:  "私は毎朝コーヒーを飲みます。"
+  WRONG:    "私|は|毎朝|コーヒー|を|飲みます|。"   ← do not add bars or segment it yourself
+  WRONG:    "私::わたし|は|..."                    ← do not add furigana yourself
 
-  CORRECT:  "私::わたし|は|毎朝::まいあさ|コーヒー|を|飲みます::のみます|。"
-  WRONG:    "私は毎朝コーヒーを飲みます。"            ← no bars = INVALID
-  WRONG:    "私|は|毎朝|コーヒー|を|飲みます|。"      ← kanji tokens missing ::furigana = INVALID
-
-Rules for the tokens between the bars:
-  - Segment into natural words: keep a word + its inflection together as ONE token
-    (食べました::たべました, 行って::いって, 新しい::あたらしい) — never split okurigana off.
-  - This means a conjugated verb/adjective is ALWAYS one token, never the dictionary form
-    followed by a separate bare conjugation ending:
-    CORRECT: "変わりました::かわりました"
-    WRONG:   "変わる::かわる|ました"    ← dictionary form + orphaned ました = ungrammatical
-  - Particles (は を が に で へ と も の) and punctuation are their OWN bare tokens.
-  - Each punctuation mark (。 、 ！ ？ …) is its OWN token between bars.
-  - NEVER output an empty token. Furigana must be hiragana only (katakana for loanword kanji).
-
-PROPER NAMES: also list every person/place name in the "names" array (see schema).`.trim();
+PROPER NAMES: list every person/place name in the "names" array (see schema) with its reading —
+kuromoji's dictionary coverage of proper nouns is incomplete, so this is still needed for names.`.trim();
 
   const PIPE_RULES = language === 'ja' ? PIPE_RULES_JA : PIPE_RULES_ZH;
 
@@ -323,7 +313,7 @@ PROPER NAMES: also list every person/place name in the "names" array (see schema
   // ── Prompt builders (one per section) ──────────────────────────────────────
 
   const exampleSentence = language === 'ja'
-    ? '私::わたし|は|町::まち|の|図書館::としょかん|で|本::ほん|を|借りました::かりました|。'
+    ? '私は町の図書館で本を借りました。'
     : '城市|的|经济|发展|离不开|科技|的|进步|。';
 
   const passagePrompt = `You are a ${langName} language teacher generating a reading passage.
@@ -343,7 +333,7 @@ PASSAGE = {
   "title": "WORDS",
   "sentences": ["WORDS", "WORDS", ...]
 }
-Example of a single correctly-formatted sentence string (note the | between every token):
+Example of a single correctly-formatted sentence string:
   "${exampleSentence}"
   ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
 
@@ -463,28 +453,12 @@ REQUIREMENTS:
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
-  // A handful of bound conjugation endings that must NEVER appear as their own bare
-  // "|"-delimited segment — per PIPE_RULES_JA they're always fused onto the preceding
-  // stem as one token (食べました, not 食べる|ました). When the model drops this rule it
-  // produces ungrammatical text (e.g. 変わる|ました instead of 変わりました), so we detect
-  // the orphaned suffix and let the existing retry loop ask the model to try again.
-  const ORPHAN_CONJ_JA = new Set(['ました', 'ませんでした', 'ません', 'ます', 'なかった', 'ない', 'ましょう']);
-  const hasOrphanedConjugation = (sentences: unknown[]): boolean =>
-    sentences.some(s =>
-      typeof s === 'string' && s.split('|').some(seg => ORPHAN_CONJ_JA.has(seg.trim())),
-    );
-
   // ── Completeness checks ────────────────────────────────────────────────────
-  const passageComplete = (j: Record<string, unknown>): boolean => {
-    if (!Array.isArray(j.passages) || j.passages.length === 0) return false;
-    if (language === 'ja') {
-      return j.passages.every(p => {
-        const pp = p as Record<string, unknown>;
-        return !hasOrphanedConjugation(Array.isArray(pp.sentences) ? pp.sentences : []);
-      });
-    }
-    return true;
-  };
+  // Japanese no longer needs an orphaned-conjugation check here — kuromoji segments and
+  // fuses conjugated forms deterministically after generation, so there's nothing left for
+  // the model to get wrong at the segmentation level.
+  const passageComplete = (j: Record<string, unknown>): boolean =>
+    Array.isArray(j.passages) && j.passages.length > 0;
   const fillComplete = (j: Record<string, unknown>): boolean =>
     Array.isArray(j.fill) && j.fill.length >= 1;
   const convoComplete = (j: Record<string, unknown>): boolean =>
@@ -507,47 +481,74 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     return map;
   }
 
-  // ── Expanders: model JSON (pipe strings) → RawTok shapes the client consumes ─
-  function expandPassage(p: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+  // ── Expanders: model JSON → RawTok shapes the client consumes ────────────────
+  // Chinese: parses the model's own pipe-delimited segmentation. Japanese: the model wrote
+  // plain text (see PIPE_RULES_JA), so this is where segmentation actually happens — via
+  // kuromoji, logged alongside the model's raw sentence so segmentation quality is easy to
+  // eyeball during testing (temporary, per explicit request — safe to remove later).
+  async function expandTokens(s: unknown, map: Map<string, { p: string; m: string }>): Promise<RawTok[]> {
+    if (language !== 'ja') return parseTokenString(s, map);
+    if (typeof s !== 'string' || !s.trim()) return [];
+    const tokens = await segmentJa(s, map);
+    console.log('[kuromoji-debug] LLM sentence:', s);
+    console.log('[kuromoji-debug] segmented:', tokens.map(t => t[0]));
+    return tokens;
+  }
+
+  // Resolve a fill-item answer/distractor word: for Japanese, segment it and prefer the
+  // resulting base form when it matches a due word — more robust than trusting the model's
+  // bare "answer" string as-is (which today has zero validation against the WORDS list).
+  async function resolveWord(raw: unknown, map: Map<string, { p: string; m: string }>): Promise<[string, string]> {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    if (language !== 'ja') return [trimmed, map.get(trimmed)?.p ?? ''];
+    const tok = (await segmentJa(trimmed, map))[0];
+    if (!tok) return [trimmed, map.get(trimmed)?.p ?? ''];
+    const baseForm = tok.length === 4 ? tok[3] : undefined;
+    const canonical = baseForm && map.has(baseForm) ? baseForm : trimmed;
+    return [canonical, map.get(canonical)?.p ?? tok[1] ?? ''];
+  }
+
+  async function expandPassage(p: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
     const qs = Array.isArray(p.questions) ? p.questions : [];
     return {
-      title: parseTokenString(p.title, map),
-      sentences: (Array.isArray(p.sentences) ? p.sentences : []).map(s => parseTokenString(s, map)),
-      questions: qs.map(q => {
+      title: await expandTokens(p.title, map),
+      sentences: await Promise.all((Array.isArray(p.sentences) ? p.sentences : []).map(s => expandTokens(s, map))),
+      questions: await Promise.all(qs.map(async q => {
         const qq = q as Record<string, unknown>;
         const opts = Array.isArray(qq.options) ? qq.options : [];
         return {
-          q: parseTokenString(qq.q, map),
+          q: await expandTokens(qq.q, map),
           model: qq.model,
           key: qq.key,
-          options: opts.map(o => {
+          options: await Promise.all(opts.map(async o => {
             const oo = o as Record<string, unknown>;
-            return { tokens: parseTokenString(oo.tokens, map), correct: oo.correct };
-          }),
+            return { tokens: await expandTokens(oo.tokens, map), correct: oo.correct };
+          })),
         };
-      }),
+      })),
     };
   }
 
-  function expandFill(f: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
-    const ansH = typeof f.answer === 'string' ? f.answer.trim() : '';
-    const ansP = map.get(ansH)?.p ?? '';
+  async function expandFill(f: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+    const [ansH, ansP] = await resolveWord(f.answer, map);
     const distractors = Array.isArray(f.distractors) ? f.distractors : [];
     return {
-      before: parseTokenString(f.before, map),
+      before: await expandTokens(f.before, map),
       answer: [ansH, ansP] as [string, string],
-      after: parseTokenString(f.after, map),
-      // Bare hanzi — the client resolves distractor pinyin from the dictionary.
-      distractors: distractors.map(d => [String(d).trim()] as [string]),
+      after: await expandTokens(f.after, map),
+      distractors: await Promise.all(distractors.map(async d => {
+        const [h, p] = await resolveWord(d, map);
+        return (language === 'ja' ? [h, p] : [h]) as [string] | [string, string];
+      })),
     };
   }
 
-  function expandConvo(t: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
+  async function expandConvo(t: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
     const sugg = Array.isArray(t.suggestions) ? t.suggestions : [];
     return {
       key: t.key,
-      tutor: parseTokenString(t.tutor, map),
-      suggestions: sugg.map(s => parseTokenString(s, map)),
+      tutor: await expandTokens(t.tutor, map),
+      suggestions: await Promise.all(sugg.map(s => expandTokens(s, map))),
     };
   }
 
@@ -558,7 +559,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       const j = json ?? best;
       const map = resolveMap(j);
       const passages = Array.isArray((j as { passages?: unknown })?.passages)
-        ? ((j as { passages: Record<string, unknown>[] }).passages).map(p => expandPassage(p, map))
+        ? await Promise.all(((j as { passages: Record<string, unknown>[] }).passages).map(p => expandPassage(p, map)))
         : [];
       return ['passage', { complete: json !== null, out: passages }];
     }
@@ -567,7 +568,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       const j = json ?? best;
       const map = resolveMap(j);
       const fill = Array.isArray((j as { fill?: unknown })?.fill)
-        ? ((j as { fill: Record<string, unknown>[] }).fill).map(f => expandFill(f, map))
+        ? await Promise.all(((j as { fill: Record<string, unknown>[] }).fill).map(f => expandFill(f, map)))
         : [];
       return ['fill', { complete: json !== null, out: fill }];
     }
@@ -575,28 +576,29 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       const { json, best } = await generateJson(client, questionsPrompt, questionsComplete, 'questions');
       const j = json ?? best;
       const map = resolveMap(j);
-      const qs = Array.isArray((j as { questions?: unknown })?.questions)
-        ? ((j as { questions: Record<string, unknown>[] }).questions).map(q => {
-            const qq = q as Record<string, unknown>;
-            const opts = Array.isArray(qq.options) ? qq.options : [];
-            return {
-              q: parseTokenString(qq.q, map),
-              model: qq.model,
-              key: qq.key,
-              options: opts.map(o => {
-                const oo = o as Record<string, unknown>;
-                return { tokens: parseTokenString(oo.tokens, map), correct: oo.correct };
-              }),
-            };
-          })
+      const qsRaw = Array.isArray((j as { questions?: unknown })?.questions)
+        ? (j as { questions: Record<string, unknown>[] }).questions
         : [];
+      const qs = await Promise.all(qsRaw.map(async q => {
+        const qq = q as Record<string, unknown>;
+        const opts = Array.isArray(qq.options) ? qq.options : [];
+        return {
+          q: await expandTokens(qq.q, map),
+          model: qq.model,
+          key: qq.key,
+          options: await Promise.all(opts.map(async o => {
+            const oo = o as Record<string, unknown>;
+            return { tokens: await expandTokens(oo.tokens, map), correct: oo.correct };
+          })),
+        };
+      }));
       return ['questions', { complete: json !== null, out: qs }];
     }
     const { json, best } = await generateJson(client, convoPrompt, convoComplete, 'convo');
     const j = json ?? best;
     const map = resolveMap(j);
     const convo = Array.isArray((j as { convo?: unknown })?.convo)
-      ? ((j as { convo: Record<string, unknown>[] }).convo).map(t => expandConvo(t, map))
+      ? await Promise.all(((j as { convo: Record<string, unknown>[] }).convo).map(t => expandConvo(t, map)))
       : [];
     return ['convo', { complete: json !== null, out: convo }];
   });

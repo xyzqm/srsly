@@ -35,7 +35,7 @@ function dailyKey(lang: LanguageCode, level: number, deck: string | undefined, d
   return `srsly-daily-${lang}-${level}-${d}-${date}`;
 }
 
-/** Storage key for per-passage cloze state. contentKey = "${date}|${level}|${deck}". */
+/** Storage key for per-passage cloze state. contentKey = "${date}|${language}|${level}|${deck}". */
 function clozeStateKey(contentKey: string, passageIdx: number): string {
   return `srsly-cloze|${contentKey}|${passageIdx}`;
 }

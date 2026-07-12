@@ -49,13 +49,15 @@ export function useWordPopup(
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
 
-    // Use async lookup so JMdict is always loaded — this ensures deinflection (e.g.
-    // 忘れました → 忘れる) works even if jmdictCache was reset by HMR or first open.
-    // After the first load the cache is in memory, so subsequent calls resolve instantly.
-    void lookupReadingAsync(language, token.text, token.reading, token.meaning || '').then(entry => {
+    // Look up by the token's base form when it has one (a conjugated word — kuromoji already
+    // resolved this server-side, see PassageToken.baseForm) since JMdict is keyed by
+    // dictionary form, not surface form. Use async lookup so JMdict is always loaded, even if
+    // jmdictCache was reset by HMR or first open — after the first load it resolves instantly.
+    const lookupKey = token.baseForm ?? token.text;
+    void lookupReadingAsync(language, lookupKey, token.reading, token.meaning || '').then(entry => {
       // For Japanese conjugated forms, use the base/dictionary form as the canonical key
       // for deck membership checks to avoid adding duplicates (e.g. 渡します when 渡す is in deck).
-      const canonicalWord = entry.baseForm ?? token.text;
+      const canonicalWord = token.baseForm ?? token.text;
 
       const isInDeck           = deckWords !== undefined && (deckWords.has(token.text) || deckWords.has(canonicalWord));
       const isInPool           = isInDeck && poolWords !== undefined && (poolWords.has(token.text) || poolWords.has(canonicalWord));
@@ -71,20 +73,26 @@ export function useWordPopup(
 
       // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
       // dictionary's). For a polyphone, headline the reading matching this token's pinyin
-      // and list the rest under "also read as".
-      let pinyin = entry.reading, meaning = entry.meaning;
+      // and list the rest under "also read as". The token's own reading/meaning (already
+      // resolved server-side) take priority; the fresh lookup is mainly a fallback for
+      // stale content and the source for the base form's own reading (entry was looked up
+      // by baseForm when present, so entry.reading is the dictionary form's reading).
+      let pinyin = token.reading || entry.reading, meaning = token.meaning || entry.meaning;
       let otherReadings: { p: string; m: string }[] | undefined;
       const all = deckReadings?.get(canonicalWord) ?? deckReadings?.get(token.text);
       if (all && all.length >= 1) {
-        const matched = pickReading(all, entry.baseReading ?? token.reading ?? '') ?? all[0];
-        pinyin = matched.p || entry.reading;
-        meaning = matched.m || entry.meaning;
+        const matched = pickReading(all, token.reading || '') ?? all[0];
+        pinyin = matched.p || pinyin;
+        meaning = matched.m || meaning;
         if (all.length > 1) {
           otherReadings = all.filter(r => r !== matched).map(r => ({ p: r.p, m: r.m }));
         }
       }
 
-      setPopup({ word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings, baseForm: entry.baseForm, baseReading: entry.baseReading });
+      setPopup({
+        word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings,
+        baseForm: token.baseForm, baseReading: token.baseForm ? entry.reading : undefined,
+      });
     });
   }, [claimsStore, vocabClaimed, deckWords, deckReadings, language, poolWords]);
 

@@ -4,7 +4,7 @@ import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
-import { getLanguageConfig, levelFor } from '@/lib/languageConfig';
+import { getLanguageConfig, levelFor, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
 import { todayStr } from '@/lib/deck';
 import SignInModal from '@/components/auth/SignInModal';
 
@@ -37,6 +37,8 @@ export default function SettingsTab() {
   const [newPerDayRaw,  setNewPerDayRaw]  = useState('20');
   const [revPerDay,     setRevPerDay]     = useState(200);
   const [revPerDayRaw,  setRevPerDayRaw]  = useState('200');
+  const [wordsPerPassage,    setWordsPerPassage]    = useState(defaultWordsPerPassage(language, langConfig.defaultLevel));
+  const [wordsPerPassageRaw, setWordsPerPassageRaw]  = useState(String(wordsPerPassage));
   const [saved,      setSaved]      = useState(false);
 
   useEffect(() => {
@@ -51,10 +53,12 @@ export default function SettingsTab() {
       setNewPerDay(npd); setNewPerDayRaw(String(npd));
       const rpd = p.srsReviewsPerDay ?? 200;
       setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
+      const wpp = p.wordsPerPassage ?? defaultWordsPerPassage(language, levelFor(language, p));
+      setWordsPerPassage(wpp); setWordsPerPassageRaw(String(wpp));
     });
   }, [language]);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; wordsPerPassage: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -80,6 +84,18 @@ export default function SettingsTab() {
       await savePrefs({ srsMaxDays: clamped });
     } else {
       setMaxDaysRaw(String(maxDays)); // reset to last valid
+    }
+  }
+
+  async function handleWordsPerPassageBlur() {
+    const v = parseInt(wordsPerPassageRaw, 10);
+    if (!isNaN(v)) {
+      const clamped = Math.min(Math.max(v, 2), 12);
+      setWordsPerPassage(clamped);
+      setWordsPerPassageRaw(String(clamped));
+      await savePrefs({ wordsPerPassage: clamped });
+    } else {
+      setWordsPerPassageRaw(String(wordsPerPassage)); // reset to last valid
     }
   }
 
@@ -216,6 +232,55 @@ export default function SettingsTab() {
             </button>
           );
         })}
+      </div>
+
+      {/* ── Words per passage ─────────────────────────────────────────────── */}
+      <SectionLabel>Words per passage</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
+        How many due vocab words each AI-generated passage is built around. Fewer words keep
+        a passage focused; more give it more to review at once.
+      </p>
+      <div className="flex items-center gap-3 mb-2" style={{ maxWidth: 320 }}>
+        <input
+          type="number"
+          min={2}
+          max={12}
+          value={wordsPerPassageRaw}
+          onChange={e => setWordsPerPassageRaw(e.target.value)}
+          onBlur={handleWordsPerPassageBlur}
+          onKeyDown={e => e.key === 'Enter' && handleWordsPerPassageBlur()}
+          className="rounded-[9px] px-4 py-2.5 transition-all duration-150"
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 14, width: 100,
+            background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)',
+            outline: 'none',
+          }}
+          onFocus={e => { e.target.style.borderColor = 'var(--accent)'; }}
+          onBlurCapture={e => { e.target.style.borderColor = 'var(--line)'; }}
+        />
+        <span style={{ fontSize: 13.5, color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)' }}>words</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
+        {(() => {
+          const [min, max] = recommendedWordsPerPassage(language, level);
+          const levelLabel = langConfig.levels.find(l => l.level === level)?.label
+            ?? (language === 'ja' ? `JLPT N${level}` : `HSK ${level}`);
+          return `For ${levelLabel}, we recommend studying between ${min}-${max} words per passage.`;
+        })()}
+      </div>
+      <div className="flex gap-2 flex-wrap mb-10">
+        {(() => {
+          const [min, max] = recommendedWordsPerPassage(language, level);
+          return (
+            <button
+              onClick={() => { const mid = Math.round((min + max) / 2); setWordsPerPassage(mid); setWordsPerPassageRaw(String(mid)); savePrefs({ wordsPerPassage: mid }); }}
+              className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
+            >
+              Use recommended
+            </button>
+          );
+        })()}
       </div>
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}

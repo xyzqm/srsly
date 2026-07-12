@@ -2,7 +2,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import type { FillItem } from '@/lib/types';
-import { FILL_ITEMS } from '@/lib/data/fill';
 import { speak, speakWithBlank } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
@@ -15,7 +14,7 @@ interface Props {
   deck: DeckWord[];
   onAddVocab: (word: string, pinyin: string, meaning: string) => void;
   onGrade?: (hanzi: string, grade: number) => void;
-  /** Override items — supplied by daily AI content. Falls back to FILL_ITEMS. */
+  /** Fill items supplied by daily AI content. */
   items?: FillItem[];
   /** True while the AI fill block is being generated for the deck's due words. */
   loading?: boolean;
@@ -34,7 +33,7 @@ interface ItemState {
 }
 
 export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, loading }: Props) {
-  const activeItems = items ?? FILL_ITEMS;
+  const activeItems = items ?? [];
   const itemsKey = activeItems.map(it => it.answer[0]).join(',');
 
   // Shuffle options once per item set (at render time, not parse time)
@@ -93,6 +92,18 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
         <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>填</div>
         <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
           Generating fill-in-the-blank for your due words…
+        </p>
+      </div>
+    );
+  }
+
+  // Nothing generated yet (or generation failed) — no static fallback to show instead.
+  if (activeItems.length === 0) {
+    return (
+      <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
+          No fill-in-the-blank items yet.
         </p>
       </div>
     );

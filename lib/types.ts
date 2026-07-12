@@ -92,6 +92,7 @@ export interface UserPrefs {
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
+  wordsPerPassage?: number;  // vocab words to build each AI passage around; absent = level-based recommendation
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
   studyDeck?: string;    // LEGACY single-deck selection; migrated to studyDecks on load. absent/'' = all
   // Decks selected for the learning modes (read / fill / flashcards / conversation / cram).
