@@ -1,79 +1,105 @@
 <script lang="ts">
-  import type { PassageToken } from '$lib/types';
-  import { getDeckStore } from '$lib/stores/deck.svelte';
-  import { getDailyStore } from '$lib/stores/daily.svelte';
-  import { isDueToday, dayOffset } from '$lib/deck';
-  import { isNew } from '$lib/srs';
+  import { onMount } from 'svelte';
+  import type { PassageToken, DeckWord } from '$lib/types';
+  import type { StoredDaily } from '$lib/tokens';
+  import { buildTokens } from '$lib/tokens';
+  import { groupReadings } from '$lib/readings';
+  import { preloadDict } from '$lib/data/lookup';
+  import { isDueToday } from '$lib/deck';
+  import { isNew, type FsrsGrade } from '$lib/srs';
+  import { addWord, generatePassage, gradeCloze } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
+  import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
 
-  // Condensed port of components/read/ReadTab.tsx — the core Read → vocab loop:
-  // render the AI passage, click a word to look it up / add it to the deck, and reflect
-  // each deck word's due/pending scheduling state back onto the passage.
+  // Reading tab. Data comes from load() via props; mutations go through form actions. Due deck
+  // words in the passage are inline cloze blanks — you fill them in as you read, then Finish
+  // grades them through ts-fsrs. Raw tokens from Supabase are normalized here with the client dict.
   interface Props {
+    deck: DeckWord[];
+    daily: StoredDaily | null;
     hskLevel: number;
     onNavigateVocab: () => void;
   }
-  let { hskLevel, onNavigateVocab }: Props = $props();
+  let { deck, daily, hskLevel, onNavigateVocab }: Props = $props();
 
-  const deckStore = getDeckStore();
-  const daily = getDailyStore();
-
+  let dictReady = $state(false);
+  let generating = $state(false);
+  let genError = $state('');
   let popup = $state<PopupData | null>(null);
-  let addedThisSession = $state<Set<string>>(new Set());
+  // Cloze answers this session, keyed by "${sentenceIdx}-${tokenIdx}".
+  let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
-  const passage = $derived(daily.content?.passages[0]);
-  const titleTokens = $derived(passage?.titleTokens ?? []);
-  const sentences = $derived(passage?.sentences ?? []);
+  onMount(async () => { await preloadDict('zh'); dictReady = true; });
 
-  const deckWords = $derived(new Set(deckStore.deck.map((d) => d.h)));
-  const charCount = $derived(
-    passage
-      ? passage.sentences.flatMap((s) => s.tokens).filter((t) => /[一-鿿]/.test(t.text)).length
-      : 0,
-  );
-
-  // Visual state per word, derived from SCHEDULING (survives reloads):
-  //   due now → accent underline; pending (new, not yet due) → green '+'.
+  const deckWords = $derived(new Set(deck.map((d) => d.h)));
   const status = $derived.by(() => {
     const due = new Set<string>();
     const pending = new Set<string>();
-    for (const w of deckStore.deck) {
-      if (isDueToday(w)) { due.add(w.h); continue; }
-      if (isNew(w)) pending.add(w.h); // added, not yet due
+    for (const w of deck) {
+      if (isDueToday(w)) due.add(w.h);
+      else if (isNew(w)) pending.add(w.h);
     }
     return { due, pending };
   });
 
+  const passage = $derived.by(() => {
+    const raw = daily?.passages[0];
+    if (!raw || !dictReady) return null;
+    const readings = groupReadings(deck);
+    return {
+      title: buildTokens(raw.title, status.due, readings),
+      sentences: raw.sentences.map((s) => buildTokens(s, status.due, readings)),
+    };
+  });
+
+  const isBlank = (t: PassageToken) => t.type === 'vocab' && status.due.has(t.text);
+  const blankCount = $derived(passage ? passage.sentences.flat().filter(isBlank).length : 0);
+  const charCount = $derived(passage ? passage.sentences.flat().filter((t) => /[一-鿿]/.test(t.text)).length : 0);
+
+  // Reset cloze answers when the passage content changes (a newly generated passage), but keep
+  // them across the same-content reload that follows grading (so the summary survives).
+  const passageKey = $derived(daily?.passages[0] ? JSON.stringify(daily.passages[0].title) : '');
+  let lastKey = '';
+  $effect(() => { if (passageKey !== lastKey) { lastKey = passageKey; clozeAnswers = new Map(); } });
+
+  function onCloze(occId: string, word: string, correct: boolean) {
+    clozeAnswers = new Map(clozeAnswers).set(occId, { word, correct });
+  }
+
+  const summary = $derived.by(() => {
+    let correct = 0;
+    for (const a of clozeAnswers.values()) if (a.correct) correct++;
+    return { correct, total: clozeAnswers.size };
+  });
+
+  async function finish() {
+    // Worst grade per word (a word may appear in several blanks): correct → Good (3), miss → Again (1).
+    const grades: Record<string, FsrsGrade> = {};
+    for (const { word, correct } of clozeAnswers.values()) {
+      const g: FsrsGrade = correct ? 3 : 1;
+      grades[word] = grades[word] === undefined ? g : (Math.min(grades[word], g) as FsrsGrade);
+    }
+    await gradeCloze({ grades });
+  }
+
   function openPopup(e: MouseEvent, token: PassageToken) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const inDeck = deckWords.has(token.text);
-    const isDue = status.due.has(token.text);
-    const type: PopupData['type'] = isDue ? 'vocab' : inDeck ? 'lookup' : 'free';
-    popup = {
-      word: token.text,
-      pinyin: token.reading ?? '',
-      meaning: token.meaning ?? '',
-      type,
-      anchorRect: rect,
-    };
+    const type: PopupData['type'] = deckWords.has(token.text) ? 'lookup' : 'free';
+    popup = { word: token.text, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect };
   }
-
-  function addVocab(word: string, pinyin: string, meaning: string) {
-    // Added while reading → due tomorrow (you just saw it in context).
-    deckStore.addWord({ h: word, p: pinyin, m: meaning, due: dayOffset(1) });
-    addedThisSession = new Set([...addedThisSession, word]);
+  async function addVocab(word: string, pinyin: string, meaning: string) {
+    await addWord({ h: word, p: pinyin, m: meaning, dueInDays: 1 });
   }
-
-  function claimKindFor(t: PassageToken): 'vocab' | null {
-    if (t.type !== 'vocab') return null;
-    if (status.due.has(t.text)) return null; // review words use accent underline, not badge
-    if (status.pending.has(t.text) || addedThisSession.has(t.text)) return 'vocab';
-    return null;
-  }
+  const claimKindFor = (t: PassageToken): 'vocab' | null =>
+    t.type === 'vocab' && !status.due.has(t.text) && status.pending.has(t.text) ? 'vocab' : null;
 
   async function generate() {
-    await daily.generate(hskLevel, deckStore.deck, 'zh', Math.floor(Math.random() * 12));
+    generating = true;
+    genError = '';
+    const r = await generatePassage();
+    generating = false;
+    if (r?.error) genError = r.error;
   }
 </script>
 
@@ -86,83 +112,90 @@
     <div>
       <div style="font-family:var(--f-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint); display:flex; align-items:center; gap:8px;">
         Today's passage
-        {#if daily.status === 'ready' && daily.content?.sections?.passage}
-          <span style="font-size:9px; letter-spacing:.06em; background:var(--jade-soft); color:var(--jade); border:1px solid color-mix(in srgb, var(--jade) 30%, transparent); border-radius:4px; padding:1px 5px;">
-            ✦ AI · {daily.content.date}
-          </span>
-        {/if}
-        {#if daily.status === 'loading'}
-          <span style="font-size:9px; letter-spacing:.06em; color:var(--ink-faint); opacity:.6;">generating… ~20–35s</span>
-        {/if}
-        {#if daily.status === 'no-key'}
-          <span style="font-size:9px; letter-spacing:.06em; color:var(--accent); font-family:var(--f-mono);">⚠ no API key</span>
-        {/if}
-        {#if daily.status === 'error'}
-          <span style="font-size:9px; letter-spacing:.06em; color:var(--accent); font-family:var(--f-mono);">⚠ generation failed</span>
+        {#if passage}
+          <span style="font-size:9px; letter-spacing:.06em; background:var(--jade-soft); color:var(--jade); border:1px solid color-mix(in srgb, var(--jade) 30%, transparent); border-radius:4px; padding:1px 5px;">✦ AI · {daily?.date}</span>
         {/if}
       </div>
-      {#if daily.status === 'ready' && titleTokens.length}
+      {#if passage}
         <div style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
-          {#each titleTokens as t, i (i)}
+          {#each passage.title as t, i (i)}
             <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} isReviewWord={status.due.has(t.text) && t.type === 'vocab'} />
           {/each}
         </div>
       {/if}
     </div>
     <div style="font-family:var(--f-mono); font-size:11px; color:var(--ink-faint); letter-spacing:.05em;">
-      level <span style="color:var(--jade); font-weight:500;">HSK {hskLevel}</span> · ~{charCount} 字
+      level <span style="color:var(--jade); font-weight:500;">HSK {hskLevel}</span>{#if passage} · ~{charCount} 字{/if}
     </div>
   </div>
 
-  {#if daily.status === 'loading'}
-    <p style="font-family:var(--f-mono); font-size:12.5px; color:var(--ink-faint); line-height:1.5; margin-bottom:16px;">
+  {#if generating}
+    <p style="font-family:var(--f-mono); font-size:12.5px; color:var(--ink-faint); line-height:1.5; margin:12px 0 16px;">
       Writing today's passage around your due words — this usually takes about 20–35 seconds.
     </p>
     <div class="shimmer" style="height:16px; border-radius:4px; margin-bottom:10px;"></div>
     <div class="shimmer" style="height:16px; width:92%; border-radius:4px; margin-bottom:10px;"></div>
     <div class="shimmer" style="height:16px; width:85%; border-radius:4px;"></div>
-  {:else if daily.status === 'no-key'}
-    <div style="text-align:center; padding:56px 24px;">
-      <div style="font-family:var(--f-display); font-size:20px; font-weight:500;">No API key configured</div>
-      <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6; margin:10px auto 0; max-width:380px;">
-        Set <code style="font-family:var(--f-mono);">SRSLY_API_KEY</code> (or <code style="font-family:var(--f-mono);">ANTHROPIC_API_KEY</code>) in
-        <code style="font-family:var(--f-mono);">svelte-poc/.env</code> to generate passages.
+  {:else if passage}
+    {#if blankCount > 0}
+      <p style="font-family:var(--f-mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.04em; margin:10px 0 4px;">
+        Fill in the underlined review words as you read — type the characters, then press Enter.
       </p>
-    </div>
-  {:else if daily.status === 'ready' && passage}
-    <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:12px;" class="show-pinyin">
-      {#each sentences as s, si (si)}
+    {/if}
+    <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:12px;">
+      {#each passage.sentences as s, si (si)}
         <span>
-          {#each s.tokens as t, ti (ti)}
-            <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} isReviewWord={status.due.has(t.text) && t.type === 'vocab'} />
+          {#each s as t, ti (ti)}
+            {#if isBlank(t)}
+              {@const occId = `${si}-${ti}`}
+              <ClozeBlank token={t} showHint={true} onGrade={(c) => onCloze(occId, t.text, c)} />
+            {:else}
+              <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} isReviewWord={false} />
+            {/if}
           {/each}
         </span>
       {/each}
     </div>
-    <div style="margin-top:28px; padding-top:20px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-      <button
-        onclick={generate}
-        style="font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
-          background:none; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:12px 20px; cursor:pointer;"
-      >+ New passage</button>
+
+    <div style="margin-top:28px; padding-top:20px; border-top:1px solid var(--line); display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap;">
+      {#if blankCount > 0}
+        {@const done = clozeAnswers.size >= blankCount}
+        <button onclick={finish} disabled={!done}
+          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
+            background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 20px; box-shadow:0 2px 0 var(--accent-deep);
+            cursor:{done ? 'pointer' : 'not-allowed'}; opacity:{done ? 1 : 0.45};">
+          {done ? 'Finish & grade review words' : `${clozeAnswers.size}/${blankCount} blanks filled`}
+        </button>
+      {:else}
+        {#if summary.total > 0}
+          <span style="font-family:var(--f-mono); font-size:12px; color:var(--jade); letter-spacing:.04em;">
+            ✓ Reviewed {summary.total} word{summary.total === 1 ? '' : 's'} · {summary.correct} correct
+          </span>
+        {/if}
+        <button onclick={generate}
+          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
+            background:none; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:12px 20px; cursor:pointer;">
+          + New passage
+        </button>
+      {/if}
     </div>
   {:else}
     <div style="text-align:center; padding:56px 24px;">
-      <div style="font-family:var(--f-display); font-size:22px; font-weight:500;">No passage yet</div>
-      <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6; margin:10px auto 24px; max-width:380px;">
-        Generate a passage built around your due words. Words you've added to your deck are woven in and marked for review.
+      <div style="font-family:var(--f-display); font-size:22px; font-weight:500;">{genError ? "Couldn't generate a passage" : 'No passage yet'}</div>
+      <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6; margin:10px auto 24px; max-width:400px;">
+        {#if genError}
+          {genError.includes('no-api-key') ? 'No API key configured (set SRSLY_API_KEY in svelte-poc/.env).' : 'Something went wrong. Try again.'}
+        {:else if deck.length === 0}
+          Add a few words in Vocab, then generate a passage built around them.
+        {:else}
+          Generate a passage built around your due words — they'll appear as blanks to fill in as you read.
+        {/if}
       </p>
-      <button
-        onclick={generate}
+      <button onclick={deck.length === 0 ? onNavigateVocab : generate}
         style="font-family:var(--f-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:500;
-          background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 20px; cursor:pointer; box-shadow:0 2px 0 var(--accent-deep);"
-      >Generate passage</button>
-      <div style="margin-top:16px;">
-        <button
-          onclick={onNavigateVocab}
-          style="font-family:var(--f-mono); font-size:11px; letter-spacing:.06em; background:none; border:none; color:var(--ink-faint); cursor:pointer; text-decoration:underline;"
-        >or add words in Vocab first →</button>
-      </div>
+          background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 20px; cursor:pointer; box-shadow:0 2px 0 var(--accent-deep);">
+        {deck.length === 0 ? 'Add words in Vocab' : 'Generate passage'}
+      </button>
     </div>
   {/if}
 </div>

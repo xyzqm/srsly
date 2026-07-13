@@ -68,8 +68,8 @@ export function reviveCard(raw: DeckWord): DeckWord {
   base.lapses = (r.lapses as number) ?? 0;
   base.learning_steps = (r.learningStep as number) ?? 0;
   base.state = r.phase === 'review' ? State.Review : r.phase === 'learning' ? State.Learning : base.state;
-  const { h, p, m, id, compounds, cn, en, focus, paused, snoozeUntil, decks, leech, pool } = raw;
-  return { ...base, h, p, m, id, compounds, cn, en, focus, paused, snoozeUntil, decks, leech, pool };
+  const { h, p, m, pool } = raw;
+  return { ...base, h, p, m, pool };
 }
 
 /** Has this card never been reviewed? */

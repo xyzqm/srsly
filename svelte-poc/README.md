@@ -6,38 +6,54 @@ evaluate Svelte for this codebase before committing to a full port — it is **C
 covers the essential loop, not every feature.
 
 SRS scheduling uses the **[`ts-fsrs`](https://github.com/open-spaced-repetition/ts-fsrs)**
-library rather than a hand-rolled implementation (see `src/lib/srs.ts`).
+library rather than a hand-rolled implementation (see `src/lib/srs.ts`). All storage is
+**Supabase** — there are no client stores and no `+page.server.ts`; data loading and mutations
+are **SvelteKit remote functions** (`src/lib/data.remote.ts`).
 
 ## Run
 
 ```bash
 cd svelte-poc
 npm install
-# Provide an API key (already copied from ../.env.local if you set one there):
-#   echo "SRSLY_API_KEY=sk-ant-..." > .env
+# 1. One-time: create the PoC's table — paste supabase-setup.sql into the Supabase SQL editor.
+# 2. Env (.env): PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY (copied from ../.env.local),
+#    and SRSLY_API_KEY for AI generation.
 npm run dev        # http://localhost:5173
 npm run check      # svelte-check (0 errors / 0 warnings)
 ```
 
-Without a key, `/api/daily-content` returns 503 and the Read tab shows a "no API key" state —
-the same behavior as the React app.
+Signed out, the whole app is replaced by a login gate (magic link / Google / **guest**). Without
+an API key, "Generate passage" surfaces a "no API key" state.
+
+## Architecture
+
+- **Auth + storage: Supabase.** `hooks.server.ts` creates a cookie-backed server client and
+  `safeGetSession`; `+layout.ts` provides the isomorphic **browser** client (`data.supabase`)
+  used only by the login gate for auth. All app data lives in one row of `poc_user_data`
+  (`deck` / `prefs` / `daily` jsonb).
+- **Data via remote functions.** `src/lib/data.remote.ts` exports a `getData` **query** and
+  `addWord` / `removeWord` / `gradeCloze` / `generatePassage` / `saveTheme` / `saveLevel` /
+  `seedDemo` / `clearDeck` **commands**. Each reads the request-scoped Supabase client via
+  `getRequestEvent().locals`, and mutations call `getData().refresh()` (single-flight), so the
+  page's `const app = $derived(await getData())` updates reactively — no stores, no `action()` glue.
+- **The `supabase`-from-layout gotcha:** remote functions run on the server and use
+  `locals.supabase` (server client). The *browser* client needed for `signIn*` calls only exists
+  in `+layout.ts` → so `LoginGate` gets it from `data.supabase`, never through a remote function.
 
 ## What's ported (and how it maps to the React app)
 
 | React (Next.js)                         | Svelte (this PoC)                          |
 |-----------------------------------------|--------------------------------------------|
-| `app/api/daily-content/route.ts`        | `src/routes/api/daily-content/+server.ts`  |
-| `hooks/useDailyContent.ts` (parse)      | `src/lib/tokens.ts` + `stores/daily.svelte.ts` |
-| `hooks/useVocabDeck.ts`                 | `src/lib/stores/deck.svelte.ts`            |
-| `hooks/useTheme.ts`                     | `src/lib/stores/theme.svelte.ts`           |
-| `lib/storage/local.ts`                  | `src/lib/storage.ts`                        |
-| `components/read/ReadTab.tsx`           | `src/lib/components/ReadTab.svelte`         |
+| `app/api/daily-content/route.ts`        | `src/lib/server/generate.ts` (called by a command) |
+| `hooks/useDailyContent.ts` (parse)      | `src/lib/tokens.ts` (client normalize)     |
+| `hooks/useVocabDeck.ts` + storage       | `src/lib/data.remote.ts` + `src/lib/server/data.ts` |
+| `lib/storage/supabase.ts`               | `src/lib/server/data.ts` (`poc_user_data`) |
+| `components/read/ReadTab.tsx`           | `src/lib/components/ReadTab.svelte`        |
+| `components/read/PassageText.tsx` (cloze) | `src/lib/components/ClozeBlank.svelte`    |
 | `components/vocab/VocabTab.tsx`         | `src/lib/components/VocabTab.svelte`        |
-| `components/shared/ClickableWord.tsx`   | `src/lib/components/ClickableWord.svelte`   |
-| `components/read/WordPopup.tsx`         | `src/lib/components/WordPopup.svelte`       |
 | `lib/fsrs.ts` (hand-rolled FSRS-4.5)    | `src/lib/srs.ts` (thin wrapper over `ts-fsrs`) |
+| `lib/auth/AuthProvider.tsx`             | `LoginGate.svelte` + `hooks.server.ts` + `+layout.*` |
 | `app/page.tsx` (tab shell)              | `src/routes/+page.svelte`                   |
-| `app/globals.css` (theme tokens)        | `src/app.css`                               |
 
 Copied **verbatim** (framework-agnostic): `types.ts`, `deck.ts`, `languageConfig.ts`,
 `readings.ts`, `data/dict.ts`, `data/hsk-vocab.ts`, and `static/cedict.json` (CC-CEDICT).
@@ -69,32 +85,25 @@ Verified: legacy decks migrate on load; a new card graded Good → `Learning` (s
 second Good → graduates to `Review` (`due` 2 days out) — identical scheduling to before, zero
 conversion code.
 
+### Reading with cloze blanks
+
+Due deck words in the generated passage render as inline **cloze blanks** (`ClozeBlank.svelte`):
+you type the hanzi, typed characters colour green (correct prefix) / red (mismatch) live, and on
+submit (Enter, or blur — the IME-safe path) the word reveals with ✓/✗. "Finish" grades every
+answered word through ts-fsrs (`gradeCloze` command, worst grade per word: correct → Good (3),
+miss → Again (1)).
+
 ## Verified working
 
-AI passage generation → CC-CEDICT pinyin/meaning resolution → clickable word lookup popup →
-add-to-vocab → deck persists to `localStorage` (same keys as the React app) → deck scheduling
-state (ts-fsrs) reactively re-marks passage words as **due** (accent underline) or **new** (jade
-badge) → survives reload. Six themes and HSK level persist too.
+Login gate (signed out) → **guest** sign-in → tabs. Seed/add words → `getData()` refreshes
+reactively (persisted to Supabase) → generate a passage → due words appear as cloze blanks →
+fill them (green ✓ / red ✗) → Finish grades through ts-fsrs. Theme + HSK level persist. All
+mutations are remote commands; `svelte-check` and `npm run build` are clean.
 
-## Debugging: simulating due words
-
-In dev, `window.__srsly` is exposed (see `src/lib/dev/seed.ts`) as a console helper:
-
-| Call | What it does |
-|---|---|
-| `__srsly.seedDue(n)` | Add `n` demo words all due **today** (pulled into the next passage). |
-| `__srsly.seedMixed()` | Add words across every state: overdue, due-today, not-yet-due, reviewed. |
-| `__srsly.grade(hanzi, 1‒4)` | Grade a word through ts-fsrs and persist (1=Again…4=Easy). |
-| `__srsly.regen()` | Regenerate today's passage around the current due words. |
-| `__srsly.dump()` | `console.table` the deck's scheduling state. |
-| `__srsly.clear()` | Empty the deck. |
-
-Typical loop: `await __srsly.seedMixed(); await __srsly.regen();`. Under the hood a word is
-"due" whenever `dueAt` is absent or `≤ today` (`isDueToday` in `lib/deck.ts`); the deck lives in
-`localStorage` under `srsly-vocab-deck-zh`, so you can also hand-edit `dueAt` there directly.
+To seed due words for testing: **Settings → Seed demo words** (five words due today).
 
 ## Deliberately out of scope for the PoC
 
-Japanese/kuromoji, Supabase auth + guest AI budget, the fill / conversation / flashcards
-practice modes, reading-comprehension questions, in-passage cloze grading, multi-passage nav,
-and the Stats tab. The React app remains the source of truth for all of these.
+Japanese/kuromoji, the guest AI budget/metering, the conversation / flashcards practice modes,
+reading-comprehension questions, multi-passage nav, and the Stats tab. The React app remains the
+source of truth for all of these.

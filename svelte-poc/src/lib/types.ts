@@ -18,17 +18,6 @@ export interface DeckWord extends Card {
   h: string;     // hanzi
   p: string;     // pinyin
   m: string;     // meaning (comma-separated if multiple)
-  compounds?: string[]; // words carrying THIS reading (e.g. 行 háng → 银行, 行业); used to
-                        // surface a reading that isn't natural standalone, in generated passages
-  cn?: string;   // example sentence (HTML)
-  en?: string;   // example translation
-  // Card-management state — srsly's take on Anki's flag/suspend/bury. Kept separate from FSRS
-  // scheduling. snoozeUntil stays a YYYY-MM-DD string: it's an app "bury", not FSRS state.
-  focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
-  paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
-  snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
-  decks?: string[];      // deck/group memberships (tags); a word can be in several at once. absent/[] = untagged ("All" only)
-  leech?: boolean;       // auto-flagged after too many lapses (then auto-paused; re-suspends periodically)
   pool?: boolean;        // staged — added to deck but not yet in circulation; excluded from all review
 }
 

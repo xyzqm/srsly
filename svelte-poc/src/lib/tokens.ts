@@ -1,4 +1,4 @@
-import type { PassageToken, Sentence, LanguageCode } from './types';
+import type { PassageToken, LanguageCode } from './types';
 import { lookupReading } from './data/lookup';
 import { pickReading, type ReadingHint } from './readings';
 
@@ -7,6 +7,11 @@ import { pickReading, type ReadingHint } from './readings';
 // re-merge single characters into real compounds, and split over-grouped runs.
 
 export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
+
+// Compact, raw (un-normalized) content as generated on the server and stored in Supabase.
+// The client resolves pinyin/meaning from CC-CEDICT at render time, so storage stays small.
+export interface RawPassage { title: RawTok[]; sentences: RawTok[][] }
+export interface StoredDaily { date: string; passages: RawPassage[] }
 
 const PUNCT_CHARS = new Set([
   '。', '！', '？', '，', '、', '—', '…', '·', '「', '」', '『', '』',
@@ -111,14 +116,6 @@ function degroupOversized(tokens: PassageToken[], dueWords: Set<string>, deckRea
 function keepTok(r: RawTok): boolean {
   const t = r[0];
   return t !== '' && t !== 'punctuation' && !/^[_＿＿‗﹍-﹏\s]+$/.test(t);
-}
-
-export function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode = 'zh'): Sentence[] {
-  return rawRows.map((row) => {
-    const raw = row.filter(keepTok).map((r) => rawToToken(r, dueWords, deckReadings, lang));
-    const tokens = degroupOversized(raw, dueWords, deckReadings, lang);
-    return { tokens, plainText: tokens.map((t) => t.text).join('') };
-  });
 }
 
 export function buildTokens(row: RawTok[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode = 'zh'): PassageToken[] {
