@@ -61,11 +61,18 @@
   // them across the same-content reload that follows grading (so the summary survives).
   const passageKey = $derived(daily?.passages[0] ? JSON.stringify(daily.passages[0].title) : '');
   let lastKey = '';
-  $effect(() => { if (passageKey !== lastKey) { lastKey = passageKey; clozeAnswers = new Map(); } });
+  let finished = $state(false);
+  $effect(() => { if (passageKey !== lastKey) { lastKey = passageKey; clozeAnswers = new Map(); finished = false; } });
 
   function onCloze(occId: string, word: string, correct: boolean) {
     clozeAnswers = new Map(clozeAnswers).set(occId, { word, correct });
   }
+
+  // Grade automatically the moment every blank is filled, so there's nothing to click.
+  // `finished` guards against re-firing if blanks/answers are still around (unchanged) after
+  // grading — e.g. a word graded "Again" that's still due today.
+  const allFilled = $derived(blankCount > 0 && clozeAnswers.size >= blankCount);
+  $effect(() => { if (allFilled && !finished) { finished = true; finish(); } });
 
   const summary = $derived.by(() => {
     let correct = 0;
@@ -80,7 +87,8 @@
       const g: FsrsGrade = correct ? 3 : 1;
       grades[word] = grades[word] === undefined ? g : (Math.min(grades[word], g) as FsrsGrade);
     }
-    await gradeCloze({ grades });
+    console.log(grades);
+    gradeCloze({ grades });
   }
 
   function openPopup(e: MouseEvent, token: PassageToken) {
@@ -158,14 +166,10 @@
     </div>
 
     <div style="margin-top:28px; padding-top:20px; border-top:1px solid var(--line); display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap;">
-      {#if blankCount > 0}
-        {@const done = clozeAnswers.size >= blankCount}
-        <button onclick={finish} disabled={!done}
-          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
-            background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 20px; box-shadow:0 2px 0 var(--accent-deep);
-            cursor:{done ? 'pointer' : 'not-allowed'}; opacity:{done ? 1 : 0.45};">
-          {done ? 'Finish & grade review words' : `${clozeAnswers.size}/${blankCount} blanks filled`}
-        </button>
+      {#if !finished}
+        <span style="font-family:var(--f-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint);">
+          {clozeAnswers.size}/{blankCount} blanks filled
+        </span>
       {:else}
         {#if summary.total > 0}
           <span style="font-family:var(--f-mono); font-size:12px; color:var(--jade); letter-spacing:.04em;">
