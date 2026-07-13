@@ -1,17 +1,16 @@
 import { query, command, getRequestEvent } from '$app/server';
 import { error } from '@sveltejs/kit';
 import type { DeckWord, Theme } from '$lib/types';
-import { loadUserData, saveDeck, savePrefs, saveDaily } from '$lib/server/data';
+import { loadUserData, saveDeck, savePrefs, saveDaily, type UserData } from '$lib/server/data';
 import { generatePassage as genPassage, type Word } from '$lib/server/generate';
 import { newCard, gradeWord, type FsrsGrade } from '$lib/srs';
-import { isDueToday, localDateStr, dayOffset } from '$lib/deck';
+import { isDueToday, localDateStr, dayOffset, identity } from '$lib/deck';
 
 // All page data + mutations as SvelteKit remote functions (replacing +page.server.ts load /
 // actions). Each runs on the server via getRequestEvent().locals — which carries the
 // cookie-backed Supabase client from hooks.server.ts. Mutations refresh getData() server-side
 // (single-flight), so callers just `await addWord(...)` and the query updates.
 
-const identity = (w: { h: string; m: string }) => `${w.h}${w.m.trim()}`;
 const todayStr = () => localDateStr(new Date());
 const dueWords = (deck: DeckWord[]): Word[] => deck.filter((w) => isDueToday(w)).map((w) => ({ h: w.h, p: w.p, m: w.m }));
 
@@ -36,7 +35,7 @@ const DEMO: Word[] = [
 export const getData = query(async () => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
-  if (!user) return { deck: [] as DeckWord[], prefs: { theme: 'paper' as Theme, hskLevel: 3 }, daily: null };
+  if (!user) return { deck: [] as DeckWord[], prefs: { theme: 'paper' as Theme, hskLevel: 3 }, daily: null } as UserData;
   return loadUserData(supabase, user.id);
 });
 
@@ -50,15 +49,15 @@ export const addWord = command(
     if (!deck.some((w) => identity(w) === identity({ h, m }))) {
       await saveDeck(supabase, user.id, [newCard({ h, p, m, due: dayOffset(dueInDays) }), ...deck]);
     }
-    await getData().refresh();
+    getData().refresh();
   },
 );
 
 export const removeWord = command('unchecked', async ({ id }: { id: string }) => {
   const { user, supabase } = await ctx();
   const { deck } = await loadUserData(supabase, user.id);
-  await saveDeck(supabase, user.id, deck.filter((w) => w.id !== id));
-  await getData().refresh();
+  await saveDeck(supabase, user.id, deck.filter((w) => identity(w) !== id));
+  getData().refresh();
 });
 
 // Grade cloze blanks. `grades` maps hanzi → worst rating (computed client-side).

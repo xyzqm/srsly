@@ -10,7 +10,7 @@
   let { data } = $props();
   // getData() is called unconditionally (it returns empty data when logged out). The layout's
   // auth listener calls getData().refresh() on sign in/out, which reactively updates `app` here.
-  const app = await getData();
+  const app = $derived(await getData());
 
   type Tab = 'read' | 'vocab' | 'settings';
   const TABS: { id: Tab; label: string }[] = [

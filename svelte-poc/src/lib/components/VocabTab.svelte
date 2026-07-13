@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { DeckWord } from '$lib/types';
   import { lookupReadingAsync } from '$lib/data/lookup';
-  import { isDueToday, localDateStr } from '$lib/deck';
+  import { identity, isDueToday, localDateStr } from '$lib/deck';
   import { isNew } from '$lib/srs';
   import { addWord, removeWord } from '$lib/data.remote';
 
@@ -77,7 +77,7 @@
           <span style="flex:1; font-size:13.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{w.m || '—'}</span>
           <span style="font-family:var(--f-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:{st.color};">{st.label}</span>
           <button
-            onclick={() => removeWord({ id: w.id ?? '' })}
+            onclick={() => removeWord({id: identity(w)})}
             aria-label="Remove"
             style="background:none; border:1px solid var(--line); border-radius:6px; color:var(--ink-faint); cursor:pointer; padding:4px 9px; font-size:13px;"
           >×</button>

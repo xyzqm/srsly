@@ -14,7 +14,6 @@ import type { Card } from 'ts-fsrs';
  * memory and ISO strings in localStorage; the deck store revives them on load.
  */
 export interface DeckWord extends Card {
-  id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
   h: string;     // hanzi
   p: string;     // pinyin
   m: string;     // meaning (comma-separated if multiple)
