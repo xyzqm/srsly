@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { DeckWord } from '$lib/types';
   import { lookupReadingAsync } from '$lib/data/lookup';
-  import { identity, isDueToday, localDateStr } from '$lib/deck';
+  import { isDueToday, localDateStr } from '$lib/deck';
   import { isNew } from '$lib/srs';
   import { addWord, removeWord } from '$lib/data.remote';
 
-  // Vocab deck. Data via props (getData query), mutations via remote commands. Adding resolves
+  // Vocab deck. Data via props (getDeck query), mutations via remote commands. Adding resolves
   // pinyin/meaning from CC-CEDICT client-side, then persists to Supabase.
   let { deck }: { deck: DeckWord[] } = $props();
 
@@ -69,7 +69,7 @@
     </div>
   {:else}
     <div style="margin-top:12px; display:flex; flex-direction:column;">
-      {#each deck as w (w.h)}
+      {#each deck as w (w.id)}
         {@const st = statusOf(w)}
         <div style="display:flex; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--line-soft);">
           <span style="font-family:var(--f-han); font-size:22px; font-weight:500; min-width:2.5em;">{w.h}</span>
@@ -77,7 +77,7 @@
           <span style="flex:1; font-size:13.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{w.m || '—'}</span>
           <span style="font-family:var(--f-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:{st.color};">{st.label}</span>
           <button
-            onclick={() => removeWord({id: identity(w)})}
+            onclick={() => removeWord({id: w.id})}
             aria-label="Remove"
             style="background:none; border:1px solid var(--line); border-radius:6px; color:var(--ink-faint); cursor:pointer; padding:4px 9px; font-size:13px;"
           >×</button>

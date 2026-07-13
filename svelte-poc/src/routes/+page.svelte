@@ -1,16 +1,19 @@
 <script lang="ts">
   import type { Theme } from '$lib/types';
-  import { getData, saveTheme, saveLevel, seedDemo, clearDeck } from '$lib/data.remote';
+  import { getDeck, getPrefs, getDaily, saveTheme, saveLevel, seedDemo, clearDeck } from '$lib/data.remote';
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
 
   // `data` comes from +layout.ts (the browser Supabase client + session/user, used for the
-  // login gate and auth). App data (deck/prefs/daily) comes from the getData() remote query.
+  // login gate and auth). App data comes from three independent remote queries — deck, prefs,
+  // daily — so e.g. adding a word doesn't invalidate prefs or today's passage.
   let { data } = $props();
-  // getData() is called unconditionally (it returns empty data when logged out). The layout's
-  // auth listener calls getData().refresh() on sign in/out, which reactively updates `app` here.
-  const app = $derived(await getData());
+  // Each query is called unconditionally (it returns empty data when logged out). The layout's
+  // auth listener calls .refresh() on all three on sign in/out, which reactively updates these.
+  const deck = $derived(await getDeck());
+  const prefs = $derived(await getPrefs());
+  const daily = $derived(await getDaily());
 
   type Tab = 'read' | 'vocab' | 'settings';
   const TABS: { id: Tab; label: string }[] = [
@@ -22,7 +25,7 @@
 
   const THEMES: Theme[] = ['paper', 'ink', 'tea', 'slate', 'bone', 'dusk'];
 
-  const theme = $derived(app.prefs.theme ?? 'paper');
+  const theme = $derived(prefs.theme ?? 'paper');
   $effect(() => { document.documentElement.setAttribute('data-theme', theme); });
   function setTheme(t: Theme) {
     document.documentElement.setAttribute('data-theme', t); // optimistic
@@ -69,9 +72,9 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={app.deck} daily={app.daily} hskLevel={app.prefs.hskLevel} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} daily={daily} hskLevel={prefs.hskLevel} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
-        <VocabTab deck={app.deck} />
+        <VocabTab deck={deck} />
       {:else}
         <div class="animate-rise" style="background:var(--card); border:1px solid var(--line); border-radius:0 12px 12px 12px; padding:32px 36px;">
           <div style="font-family:var(--f-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint);">Settings</div>
@@ -81,9 +84,9 @@
               {#each [1, 2, 3, 4, 5, 6] as n (n)}
                 <button onclick={() => saveLevel({ hskLevel: n })}
                   style="font-family:var(--f-mono); font-size:12px; padding:8px 14px; border-radius:7px; cursor:pointer;
-                    border:1px solid {app.prefs.hskLevel === n ? 'var(--ink)' : 'var(--line)'};
-                    background:{app.prefs.hskLevel === n ? 'var(--ink)' : 'var(--card)'};
-                    color:{app.prefs.hskLevel === n ? 'var(--paper)' : 'var(--ink-soft)'};">{n}</button>
+                    border:1px solid {prefs.hskLevel === n ? 'var(--ink)' : 'var(--line)'};
+                    background:{prefs.hskLevel === n ? 'var(--ink)' : 'var(--card)'};
+                    color:{prefs.hskLevel === n ? 'var(--paper)' : 'var(--ink-soft)'};">{n}</button>
               {/each}
             </div>
             <div style="display:flex; gap:8px; margin-top:24px; flex-wrap:wrap;">
@@ -93,7 +96,7 @@
                 style="font-family:var(--f-mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; background:none; border:1px solid var(--line); border-radius:7px; padding:9px 14px; color:var(--ink-soft); cursor:pointer;">Clear deck</button>
             </div>
             <p style="font-size:12.5px; color:var(--ink-faint); margin-top:16px; line-height:1.5;">
-              Deck, prefs, and today's content persist to Supabase (table <code style="font-family:var(--f-mono);">poc_user_data</code>), loaded via SvelteKit <strong>remote functions</strong> (<code style="font-family:var(--f-mono);">src/lib/data.remote.ts</code>). No client stores, no <code style="font-family:var(--f-mono);">+page.server.ts</code>.
+              Deck words live one-per-row in <code style="font-family:var(--f-mono);">deck_words</code>; prefs and today's content persist as jsonb on <code style="font-family:var(--f-mono);">poc_user_data</code>. Both are loaded via SvelteKit <strong>remote functions</strong> (<code style="font-family:var(--f-mono);">src/lib/data.remote.ts</code>). No client stores, no <code style="font-family:var(--f-mono);">+page.server.ts</code>.
             </p>
           </div>
         </div>

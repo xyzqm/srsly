@@ -11,9 +11,13 @@ import type { Card } from 'ts-fsrs';
  * `due` (Date), `stability`, `difficulty`, `reps`, `lapses`, `state`, `learning_steps`,
  * `last_review` (Date). Because DeckWord *is* a Card, the ts-fsrs scheduler consumes and
  * returns DeckWords directly — no field mapping. `due`/`last_review` are Date objects in
- * memory and ISO strings in localStorage; the deck store revives them on load.
+ * memory and ISO strings over the wire; `reviveCard` revives them on load.
+ *
+ * `id` is the `deck_words` row's primary key (DB-generated on insert) — absent on a freshly
+ * created, not-yet-persisted card (see `newCard`).
  */
 export interface DeckWord extends Card {
+  id: string;
   h: string;     // hanzi
   p: string;     // pinyin
   m: string;     // meaning (comma-separated if multiple)

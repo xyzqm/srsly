@@ -25,5 +25,3 @@ export function isActive(w: DeckWord): boolean {
 export function isDueToday(w: DeckWord, now: Date = new Date()): boolean {
   return isActive(w) && localDateStr(w.due) <= localDateStr(now);
 }
-
-export const identity = (w: { h: string; m: string }) => `${w.h}${w.m.trim()}`;

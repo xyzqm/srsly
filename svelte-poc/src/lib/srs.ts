@@ -38,38 +38,21 @@ function schedulerFor(s: SrsSettings) {
   );
 }
 
-/** A fresh, unscheduled card (state New, due now) carrying the given identity fields. */
-export function newCard(fields: Partial<DeckWord> & { h: string; p: string; m: string }): DeckWord {
+/** A fresh, unscheduled card (state New, due now) carrying the given identity fields. No `id` —
+ *  that's assigned by Postgres when the card is inserted into `deck_words`. */
+export function newCard(fields: Partial<Omit<DeckWord, 'id'>> & { h: string; p: string; m: string }): Omit<DeckWord, 'id'> {
   return { ...createEmptyCard(new Date()), ...fields };
 }
 
-/**
- * Normalize a DeckWord loaded from localStorage. JSON turns Card's `due`/`last_review` Dates
- * into ISO strings, so revive them here. Also migrates the pre-Card on-disk shape (dueAt /
- * reviews / phase / …) one time, so older saved decks keep working.
- */
+/** Normalize a DeckWord row loaded from Supabase: `due`/`last_review` come back as ISO
+ *  timestamp strings, so turn them back into Dates here. */
 export function reviveCard(raw: DeckWord): DeckWord {
   const r = raw as unknown as Record<string, unknown>;
-  if (r.due != null) {
-    // Current shape — just turn the serialized dates back into Date objects.
-    return {
-      ...raw,
-      due: new Date(r.due as string),
-      last_review: r.last_review != null ? new Date(r.last_review as string) : undefined,
-    };
-  }
-  // Legacy shape → map the old scheduling fields onto a fresh Card.
-  const base = createEmptyCard(new Date());
-  if (r.dueAt) base.due = new Date(`${r.dueAt as string}T00:00:00`);
-  if (r.lastReview) base.last_review = new Date(`${r.lastReview as string}T00:00:00`);
-  base.reps = (r.reviews as number) ?? 0;
-  base.stability = (r.stability as number) ?? base.stability;
-  base.difficulty = (r.difficulty as number) ?? base.difficulty;
-  base.lapses = (r.lapses as number) ?? 0;
-  base.learning_steps = (r.learningStep as number) ?? 0;
-  base.state = r.phase === 'review' ? State.Review : r.phase === 'learning' ? State.Learning : base.state;
-  const { h, p, m, pool } = raw;
-  return { ...base, h, p, m, pool };
+  return {
+    ...raw,
+    due: new Date(r.due as string),
+    last_review: r.last_review != null ? new Date(r.last_review as string) : undefined,
+  };
 }
 
 /** Has this card never been reviewed? */
