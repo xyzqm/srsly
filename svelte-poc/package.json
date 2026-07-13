@@ -19,6 +19,7 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1"
+    "@anthropic-ai/sdk": "^0.104.1",
+    "ts-fsrs": "^5.4.1"
   }
 }

@@ -7,6 +7,7 @@
   import { levelFor } from '$lib/languageConfig';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
+  import { installDevTools } from '$lib/dev/seed';
 
   // Port of app/page.tsx's AppShell — tab switching between Read / Vocab / Settings.
   type Tab = 'read' | 'vocab' | 'settings';
@@ -32,6 +33,8 @@
     booted = true;
     // Load today's cached passage (or leave it to the Generate button if none).
     await daily.load(hskLevel, deckStore.deck, 'zh');
+    // Dev-only debugging console for seeding due words (window.__srsly).
+    if (import.meta.env.DEV) installDevTools(() => hskLevel);
   });
 
   function goVocab() { tab = 'vocab'; }

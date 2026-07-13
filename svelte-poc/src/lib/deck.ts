@@ -1,11 +1,18 @@
 import type { DeckWord } from './types';
 
 /** Formats a Date as YYYY-MM-DD using its local calendar day (not UTC). */
-function localDateStr(d: Date): string {
+export function localDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/** A Date `n` local days from now (used for card `due` overrides). */
+export function dayOffset(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d;
 }
 
 /**
@@ -40,17 +47,18 @@ export function shuffle<T>(arr: T[]): T[] {
  * of Anki's suspend / bury — both pull the word out of every review surface
  * (flashcards, fill-in-blank, daily-passage word selection).
  */
-export function isActive(w: DeckWord, today: string = todayStr()): boolean {
+export function isActive(w: DeckWord, now: Date = new Date()): boolean {
   if (w.pool) return false;
   if (w.paused) return false;
-  if (w.snoozeUntil && w.snoozeUntil > today) return false;
+  if (w.snoozeUntil && w.snoozeUntil > localDateStr(now)) return false;
   return true;
 }
 
-/** Active AND due today (or new). The single source of truth for "study this now". */
-export function isDueToday(w: DeckWord, today: string = todayStr()): boolean {
-  if (!isActive(w, today)) return false;
-  return !w.dueAt || w.dueAt <= today;
+/** Active AND due on/before today's local calendar day. The single source of truth for
+ *  "study this now". Compares by calendar day so a card due later today still counts. */
+export function isDueToday(w: DeckWord, now: Date = new Date()): boolean {
+  if (!isActive(w, now)) return false;
+  return localDateStr(w.due) <= localDateStr(now);
 }
 
 /** Whether a word belongs to the selected study deck (empty/undefined = all decks).

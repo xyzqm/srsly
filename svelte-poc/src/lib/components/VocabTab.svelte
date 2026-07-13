@@ -2,7 +2,8 @@
   import type { DeckWord } from '$lib/types';
   import { getDeckStore } from '$lib/stores/deck.svelte';
   import { lookupReadingAsync } from '$lib/data/lookup';
-  import { isDueToday, todayStr } from '$lib/deck';
+  import { isDueToday, localDateStr } from '$lib/deck';
+  import { isNew } from '$lib/srs';
 
   // Condensed port of components/vocab/VocabTab.tsx — add words (pinyin/meaning resolved
   // from CC-CEDICT), remove them, and see each card's due/new scheduling state.
@@ -11,8 +12,6 @@
   let input = $state('');
   let adding = $state(false);
   let notFound = $state('');
-
-  const today = $derived(todayStr());
 
   async function add() {
     const h = input.trim();
@@ -23,17 +22,17 @@
     if (!entry.reading && !entry.meaning) {
       notFound = `"${h}" isn't in the dictionary — added with a blank definition.`;
     }
-    // New words are due today so the next generated passage builds around them.
-    await deckStore.addWord({ h, p: entry.reading, m: entry.meaning, dueAt: today } as DeckWord);
+    // New words default to due today (newCard sets due=now), so the next generated passage
+    // builds around them.
+    await deckStore.addWord({ h, p: entry.reading, m: entry.meaning });
     input = '';
     adding = false;
   }
 
   function statusOf(w: DeckWord): { label: string; color: string } {
-    if (isDueToday(w, today)) return { label: 'due', color: 'var(--accent)' };
-    const isNew = (w.reviews ?? 0) === 0 && w.stability === undefined;
-    if (isNew) return { label: 'new', color: 'var(--jade)' };
-    return { label: `due ${w.dueAt}`, color: 'var(--ink-faint)' };
+    if (isDueToday(w)) return { label: 'due', color: 'var(--accent)' };
+    if (isNew(w)) return { label: 'new', color: 'var(--jade)' };
+    return { label: `due ${localDateStr(w.due)}`, color: 'var(--ink-faint)' };
   }
 </script>
 

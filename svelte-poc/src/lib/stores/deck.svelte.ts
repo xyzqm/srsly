@@ -1,7 +1,6 @@
 import type { DeckWord, LanguageCode } from '../types';
 import { storage } from '../storage';
-import { dateInDays, todayStr } from '../deck';
-import { fsrsSchedule, getSrsSettings, type FsrsGrade } from '../fsrs';
+import { gradeWord, getSrsSettings, newCard, reviveCard, type FsrsGrade } from '../srs';
 
 // Rune-based port of hooks/useVocabDeck.ts (core surface the PoC exercises).
 // A class holding $state deck; the same instance is shared app-wide via getDeckStore().
@@ -27,11 +26,15 @@ class DeckStore {
     this.lang = lang;
     this.loaded = false;
     const d = await storage.getVocabDeck(lang);
-    let changed = false;
-    const migrated = d.map((w) => (w.id ? w : (changed = true, { ...w, id: genId() })));
+    // Revive Card date fields (and migrate any legacy on-disk shape); backfill missing ids.
+    const migrated = d.map((w) => {
+      const revived = reviveCard(w);
+      return revived.id ? revived : { ...revived, id: genId() };
+    });
     this.deck = migrated;
     this.loaded = true;
-    if (changed) await storage.saveVocabDeck(lang, migrated);
+    // Persist so the (possibly migrated) shape is written back once.
+    await storage.saveVocabDeck(lang, migrated);
   }
 
   private async commit(next: DeckWord[]) {
@@ -39,35 +42,42 @@ class DeckStore {
     await storage.saveVocabDeck(this.lang, next);
   }
 
-  /** Add one word; merges instead of duplicating when (char + meaning) already exists. */
-  async addWord(word: DeckWord) {
+  /** Add one word; merges instead of duplicating when (char + meaning) already exists.
+   *  Accepts identity fields (h/p/m) plus optional Card overrides (e.g. `due`); everything
+   *  else is initialized to a fresh ts-fsrs card via newCard(). */
+  async addWord(fields: Partial<DeckWord> & { h: string; p: string; m: string }) {
     const cur = this.deck;
-    const existing = cur.findIndex((d) => identity(d) === identity(word));
+    const existing = cur.findIndex((d) => identity(d) === identity(fields));
     if (existing !== -1) return; // already present — nothing to do in the PoC
-    const withId = word.id ? word : { ...word, id: genId() };
-    await this.commit([withId, ...cur]); // prepend so newest appears first
+    const word = newCard({ id: genId(), ...fields });
+    await this.commit([word, ...cur]); // prepend so newest appears first
   }
 
   async removeWord(id: string) {
     await this.commit(this.deck.filter((d) => d.id !== id));
   }
 
-  /** Grade every reading of a character (passage-level review). grade: 1=Again…4=Easy. */
-  async updateWordReview(hanzi: string, grade: number, opts?: { minDaysOut?: number }) {
+  /** Grade every reading of a character (review). grade: 1=Again…4=Easy. Scheduling is
+   *  delegated to ts-fsrs via the srs.ts adapter. */
+  async updateWordReview(hanzi: string, grade: number) {
     const settings = getSrsSettings();
-    const minDate = opts?.minDaysOut ? dateInDays(opts.minDaysOut) : undefined;
-    const today = todayStr();
     let touched = false;
     const next = this.deck.map((d) => {
       if (d.h !== hanzi) return d;
       touched = true;
-      const patch = fsrsSchedule(d, grade as FsrsGrade, settings, { fuzz: true });
-      if (minDate && patch.dueAt !== undefined && patch.dueAt <= today) {
-        return { ...d, ...patch, dueAt: minDate, dueAtMs: undefined, phase: 'review' as const };
-      }
-      return { ...d, ...patch };
+      return gradeWord(d, grade as FsrsGrade, settings);
     });
     if (touched) await this.commit(next);
+  }
+
+  /** Replace the whole deck (used by the dev seeding helpers). */
+  async setDeck(words: DeckWord[]) {
+    await this.commit(words.map((w) => (w.id ? w : { ...w, id: genId() })));
+  }
+
+  /** Clear the deck (dev helper). */
+  async clear() {
+    await this.commit([]);
   }
 }
 

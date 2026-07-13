@@ -23,7 +23,7 @@ class DailyStore {
 
   private normalize(raw: RawPassage[], deck: DeckWord[], lang: LanguageCode): DailyPassage[] {
     const today = todayStr();
-    const dueWords = new Set(deck.filter((w) => isDueToday(w, today)).map((w) => w.h));
+    const dueWords = new Set(deck.filter((w) => isDueToday(w)).map((w) => w.h));
     const deckReadings = groupReadings(deck);
     return raw.map((p) => {
       const sentences = p.sentences.map((row) => {
@@ -55,7 +55,7 @@ class DailyStore {
   async generate(hskLevel: number, deck: DeckWord[], lang: LanguageCode, themeOffset: number) {
     this.status = 'loading';
     const today = todayStr();
-    const dueWords = deck.filter((w) => isDueToday(w, today));
+    const dueWords = deck.filter((w) => isDueToday(w));
     const words = dueWords.map((w) => ({ h: w.h, p: w.p, m: w.m }));
     try {
       const res = await fetch('/api/daily-content', {

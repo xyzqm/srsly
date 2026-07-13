@@ -105,19 +105,23 @@ function degroupOversized(tokens: PassageToken[], dueWords: Set<string>, deckRea
   return mergeCompoundTokens(exploded, dueWords, deckReadings, lang);
 }
 
+// Drop empty tokens, the literal string "punctuation", and blank/underscore placeholders the
+// model sometimes leaves inside fill before/after text (e.g. "____" or "＿＿") instead of only
+// removing the answer word.
+function keepTok(r: RawTok): boolean {
+  const t = r[0];
+  return t !== '' && t !== 'punctuation' && !/^[_＿＿‗﹍-﹏\s]+$/.test(t);
+}
+
 export function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode = 'zh'): Sentence[] {
   return rawRows.map((row) => {
-    const raw = row
-      .filter((r) => r[0] !== '' && r[0] !== 'punctuation')
-      .map((r) => rawToToken(r, dueWords, deckReadings, lang));
+    const raw = row.filter(keepTok).map((r) => rawToToken(r, dueWords, deckReadings, lang));
     const tokens = degroupOversized(raw, dueWords, deckReadings, lang);
     return { tokens, plainText: tokens.map((t) => t.text).join('') };
   });
 }
 
 export function buildTokens(row: RawTok[], dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode = 'zh'): PassageToken[] {
-  const raw = row
-    .filter((r) => r[0] !== '' && r[0] !== 'punctuation')
-    .map((r) => rawToToken(r, dueWords, deckReadings, lang));
+  const raw = row.filter(keepTok).map((r) => rawToToken(r, dueWords, deckReadings, lang));
   return degroupOversized(raw, dueWords, deckReadings, lang);
 }

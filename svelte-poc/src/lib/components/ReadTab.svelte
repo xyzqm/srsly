@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { PassageToken, DeckWord } from '$lib/types';
+  import type { PassageToken } from '$lib/types';
   import { getDeckStore } from '$lib/stores/deck.svelte';
   import { getDailyStore } from '$lib/stores/daily.svelte';
-  import { isDueToday, dateInDays, todayStr } from '$lib/deck';
+  import { isDueToday, dayOffset } from '$lib/deck';
+  import { isNew } from '$lib/srs';
   import ClickableWord from './ClickableWord.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
 
@@ -35,13 +36,11 @@
   // Visual state per word, derived from SCHEDULING (survives reloads):
   //   due now → accent underline; pending (new, not yet due) → green '+'.
   const status = $derived.by(() => {
-    const today = todayStr();
     const due = new Set<string>();
     const pending = new Set<string>();
     for (const w of deckStore.deck) {
-      if (isDueToday(w, today)) { due.add(w.h); continue; }
-      const isNewCard = (w.reviews ?? 0) === 0 && w.stability === undefined;
-      if (isNewCard) pending.add(w.h);
+      if (isDueToday(w)) { due.add(w.h); continue; }
+      if (isNew(w)) pending.add(w.h); // added, not yet due
     }
     return { due, pending };
   });
@@ -62,7 +61,7 @@
 
   function addVocab(word: string, pinyin: string, meaning: string) {
     // Added while reading → due tomorrow (you just saw it in context).
-    deckStore.addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) } as DeckWord);
+    deckStore.addWord({ h: word, p: pinyin, m: meaning, due: dayOffset(1) });
     addedThisSession = new Set([...addedThisSession, word]);
   }
 

@@ -4,7 +4,16 @@ export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 
 /** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese. */
 export type LanguageCode = 'zh' | 'ja';
 
-export interface DeckWord {
+import type { Card } from 'ts-fsrs';
+
+/**
+ * A vocabulary card. Extends ts-fsrs's `Card`, which supplies every scheduling field:
+ * `due` (Date), `stability`, `difficulty`, `reps`, `lapses`, `state`, `learning_steps`,
+ * `last_review` (Date). Because DeckWord *is* a Card, the ts-fsrs scheduler consumes and
+ * returns DeckWords directly — no field mapping. `due`/`last_review` are Date objects in
+ * memory and ISO strings in localStorage; the deck store revives them on load.
+ */
+export interface DeckWord extends Card {
   id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
   h: string;     // hanzi
   p: string;     // pinyin
@@ -13,19 +22,8 @@ export interface DeckWord {
                         // surface a reading that isn't natural standalone, in generated passages
   cn?: string;   // example sentence (HTML)
   en?: string;   // example translation
-  reviews?: number;    // successful review count for mastery tracking
-  dueAt?: string;      // YYYY-MM-DD next review date; absent = due immediately
-  // FSRS scheduling fields (added after initial SRS migration)
-  stability?: number;  // days until retrievability ≈ 90%
-  difficulty?: number; // 1–10 card difficulty (higher = harder to remember)
-  lapses?: number;     // number of times the card was forgotten (Again)
-  lastReview?: string; // YYYY-MM-DD of most recent review
-  // Learning phase fields
-  phase?: 'learning' | 'review'; // 'learning' = in learning/relearning steps; 'review' = graduated; absent = new card
-  learningStep?: number;          // 0-indexed step within the learning phase
-  dueAtMs?: number;               // epoch-ms for sub-day scheduling (learning phase only)
-  // Card-management state — srsly's take on Anki's flag/suspend/bury. Kept separate
-  // from scheduling so they can be toggled without disturbing FSRS history.
+  // Card-management state — srsly's take on Anki's flag/suspend/bury. Kept separate from FSRS
+  // scheduling. snoozeUntil stays a YYYY-MM-DD string: it's an app "bury", not FSRS state.
   focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
