@@ -35,7 +35,9 @@
     style="cursor:pointer; border-bottom:{borderStyle}; background:{hovered
       ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
       : 'transparent'}; border-radius:3px; padding-bottom:1px; transition:background .12s;"
-  >{token.text}<rt>{token.reading}</rt></ruby><span
+  >{token.text}
+  <!-- <rt>{token.reading}</rt> DISABLE READINGS FOR NOW, may add back ni the fuure -->
+  </ruby><span
     aria-hidden="true"
     style="display:inline; font-size:0.45em; vertical-align:super; line-height:0; font-family:var(--f-ui); font-weight:700; pointer-events:none; user-select:none; color:{badgeColor};"
   >+</span>
