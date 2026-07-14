@@ -10,9 +10,9 @@ import { reviveCard } from '../srs';
 const PREFS_TABLE = 'poc_user_data';
 const DECK_TABLE = 'deck_words';
 
-export interface Prefs { theme: Theme; hskLevel: number }
+export interface Prefs { theme: Theme; hskLevel: number; showWordBoundaries: boolean }
 
-const DEFAULT_PREFS: Prefs = { theme: 'paper', hskLevel: 3 };
+export const DEFAULT_PREFS: Prefs = { theme: 'paper', hskLevel: 3, showWordBoundaries: true };
 
 export async function loadPrefs(sb: SupabaseClient, userId: string): Promise<Prefs> {
   const { data } = await sb.from(PREFS_TABLE).select('prefs').eq('user_id', userId).maybeSingle();

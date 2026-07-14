@@ -13,6 +13,7 @@ import {
   savePrefs,
   saveDaily,
   type Prefs,
+  DEFAULT_PREFS,
 } from '$lib/server/data';
 import { generatePassage as genPassage, type Word } from '$lib/server/generate';
 import { newCard, gradeWord, type FsrsGrade } from '$lib/srs';
@@ -57,7 +58,7 @@ export const getDeck = query(async () => {
 export const getPrefs = query(async () => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
-  if (!user) return { theme: 'paper' as Theme, hskLevel: 3 } as Prefs;
+  if (!user) return DEFAULT_PREFS;
   return loadPrefs(supabase, user.id);
 });
 
@@ -121,6 +122,14 @@ export const saveLevel = command('unchecked', async ({ hskLevel }: { hskLevel: n
   const { user, supabase } = await ctx();
   const prefs = await loadPrefs(supabase, user.id);
   const next = { ...prefs, hskLevel };
+  await savePrefs(supabase, user.id, next);
+  getPrefs().set(next);
+});
+
+export const saveBoundaries = command('unchecked', async ({ showWordBoundaries }: { showWordBoundaries: boolean }) => {
+  const { user, supabase } = await ctx();
+  const prefs = await loadPrefs(supabase, user.id);
+  const next = { ...prefs, showWordBoundaries };
   await savePrefs(supabase, user.id, next);
   getPrefs().set(next);
 });

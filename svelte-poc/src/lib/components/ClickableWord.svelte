@@ -7,17 +7,18 @@
     token: PassageToken;
     onOpen: (e: MouseEvent, token: PassageToken) => void;
     claimKind?: 'vocab' | null;
-    isReviewWord?: boolean;
+    /** When false, hides the underline + badge that mark word boundaries. */
+    showBoundaries?: boolean;
   }
-  let { token, onOpen, claimKind = null, isReviewWord = false }: Props = $props();
+  let { token, onOpen, claimKind = null, showBoundaries = true }: Props = $props();
 
   let hovered = $state(false);
 
   const borderStyle = $derived(
-    claimKind === 'vocab'
-      ? '1.5px solid var(--jade)'
-      : isReviewWord
-        ? '1.5px dotted var(--accent)'
+    !showBoundaries
+      ? 'none'
+      : claimKind === 'vocab'
+        ? '1.5px solid var(--jade)'
         : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)',
   );
   const badgeColor = $derived(claimKind === 'vocab' ? 'var(--jade)' : 'transparent');
@@ -36,9 +37,9 @@
       ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
       : 'transparent'}; border-radius:3px; padding-bottom:1px; transition:background .12s;"
   >{token.text}
-  <!-- <rt>{token.reading}</rt> DISABLE READINGS FOR NOW, may add back ni the fuure -->
-  </ruby><span
+  <!-- <rt>{token.reading}</rt> DISABLE READINGS FOR NOW, may add back in the fuure -->
+  </ruby>{#if showBoundaries}<span
     aria-hidden="true"
     style="display:inline; font-size:0.45em; vertical-align:super; line-height:0; font-family:var(--f-ui); font-weight:700; pointer-events:none; user-select:none; color:{badgeColor};"
-  >+</span>
+  >+</span>{/if}
 {/if}

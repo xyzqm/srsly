@@ -73,7 +73,7 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} daily={daily} hskLevel={prefs.hskLevel} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} daily={daily} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} />
       {:else}

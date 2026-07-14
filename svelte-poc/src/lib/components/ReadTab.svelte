@@ -7,7 +7,7 @@
   import { preloadDict } from '$lib/data/lookup';
   import { isDueToday } from '$lib/deck';
   import { isNew, type FsrsGrade } from '$lib/srs';
-  import { addWord, generatePassage, gradeCloze } from '$lib/data.remote';
+  import { addWord, generatePassage, gradeCloze, saveBoundaries } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -19,9 +19,17 @@
     deck: DeckWord[];
     daily: StoredDaily | null;
     hskLevel: number;
+    showWordBoundaries: boolean;
     onNavigateVocab: () => void;
   }
-  let { deck, daily, hskLevel, onNavigateVocab }: Props = $props();
+  let { deck, daily, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
+
+  // Optimistic local mirror of the persisted pref, same pattern as SettingsTab's `level`.
+  let boundaries = $derived(showWordBoundaries);
+  function toggleBoundaries() {
+    boundaries = !boundaries;
+    saveBoundaries({ showWordBoundaries: boundaries });
+  }
 
   let dictReady = $state(false);
   let generating = $state(false);
@@ -126,7 +134,7 @@
       {#if passage}
         <div style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
           {#each passage.title as t, i (i)}
-            <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} isReviewWord={status.due.has(t.text) && t.type === 'vocab'} />
+            <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} showBoundaries={boundaries} />
           {/each}
         </div>
       {/if}
@@ -149,7 +157,17 @@
         Fill in the underlined review words as you read — type the characters, then press Enter.
       </p>
     {/if}
-    <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:12px;">
+    <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+      <button onclick={toggleBoundaries}
+        style="font-family:var(--f-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:500;
+          padding:6px 12px; border-radius:7px; cursor:pointer; transition:all .15s;
+          border:1px solid {boundaries ? 'var(--ink)' : 'var(--line)'};
+          background:{boundaries ? 'var(--ink)' : 'var(--card)'};
+          color:{boundaries ? 'var(--paper)' : 'var(--ink-soft)'};">
+        Boundaries
+      </button>
+    </div>
+    <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
       {#each passage.sentences as s, si (si)}
         <span>
           {#each s as t, ti (ti)}
@@ -157,7 +175,7 @@
               {@const occId = `${si}-${ti}`}
               <ClozeBlank token={t} showHint={true} onGrade={(c) => onCloze(occId, t.text, c)} />
             {:else}
-              <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} isReviewWord={false} />
+              <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} showBoundaries={boundaries} />
             {/if}
           {/each}
         </span>
