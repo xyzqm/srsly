@@ -66,7 +66,12 @@ export const getDaily = query(async () => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
   if (!user) return null;
-  return loadDaily(supabase, user.id);
+  const daily = await loadDaily(supabase, user.id);
+  if (daily && daily.date !== todayStr()) {
+    await saveDaily(supabase, user.id, null);
+    return null;
+  }
+  return daily;
 });
 
 // ── Commands (each `.set()`s the query(ies) it affects with the value it just wrote) ──────────

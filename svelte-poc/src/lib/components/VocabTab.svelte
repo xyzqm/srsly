@@ -27,8 +27,7 @@
 
   function statusOf(w: DeckWord): { label: string; color: string } {
     if (isDueToday(w)) return { label: 'due', color: 'var(--accent)' };
-    if (isNew(w)) return { label: 'new', color: 'var(--jade)' };
-    return { label: `due ${localDateStr(w.due)}`, color: 'var(--ink-faint)' };
+    return { label: `due ${localDateStr(w.due)}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
   }
 </script>
 
