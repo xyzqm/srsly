@@ -25,10 +25,10 @@
 
   const THEMES: Theme[] = ['paper', 'ink', 'tea', 'slate', 'bone', 'dusk'];
 
-  const theme = $derived(prefs.theme ?? 'paper');
+  let theme = $derived(prefs.theme ?? 'paper');
   $effect(() => { document.documentElement.setAttribute('data-theme', theme); });
   function setTheme(t: Theme) {
-    document.documentElement.setAttribute('data-theme', t); // optimistic
+    theme = t;
     saveTheme({ theme: t });
   }
 </script>

@@ -71,8 +71,7 @@
   // Grade automatically the moment every blank is filled, so there's nothing to click.
   // `finished` guards against re-firing if blanks/answers are still around (unchanged) after
   // grading — e.g. a word graded "Again" that's still due today.
-  const allFilled = $derived(blankCount > 0 && clozeAnswers.size >= blankCount);
-  $effect(() => { if (allFilled && !finished) { finished = true; finish(); } });
+  $effect(() => { if (blankCount > 0 && clozeAnswers.size >= blankCount && !finished) { finished = true; finish(); } });
 
   const summary = $derived.by(() => {
     let correct = 0;
@@ -85,7 +84,7 @@
     const grades: Record<string, FsrsGrade> = {};
     for (const { word, correct } of clozeAnswers.values()) {
       const g: FsrsGrade = correct ? 3 : 1;
-      grades[word] = grades[word] === undefined ? g : (Math.min(grades[word], g) as FsrsGrade);
+      grades[word] = Math.min(grades[word] ?? Infinity, g) as FsrsGrade;
     }
     console.log(grades);
     gradeCloze({ grades });
