@@ -5,7 +5,7 @@
 
   // An inline cloze blank for a due vocab word in the passage. The user types the hanzi; typed
   // characters colour green (correct prefix) / red (mismatch) in real time. On submit (Enter or
-  // blur) the word is revealed with ✓/✗ and graded: correct → Good (3), incorrect → Again (1).
+  // blur) the word is revealed, graded, and replaced with a ClickableWord.
   interface Props {
     token: PassageToken;
     showHint: boolean;
