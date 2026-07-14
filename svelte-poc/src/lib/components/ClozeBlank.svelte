@@ -42,10 +42,6 @@
   <span style="color:{color}">
     {@render children()}
   </span>
-  <!-- <ruby style="color:{color};">{token.text}<rt>{token.reading}</rt></ruby><span
-    aria-hidden="true"
-    style="display:inline; font-size:0.45em; vertical-align:super; line-height:0; font-family:var(--f-ui); font-weight:700; pointer-events:none; user-select:none; color:{color};"
-  >{correct ? '✓' : '✗'}</span> -->
 {:else}
   <span
     style="display:inline-block; position:relative; vertical-align:baseline;"
