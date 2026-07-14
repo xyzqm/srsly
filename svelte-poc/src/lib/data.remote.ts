@@ -1,6 +1,6 @@
 import { query, command, getRequestEvent } from '$app/server';
 import { error } from '@sveltejs/kit';
-import type { DeckWord, Theme } from '$lib/types';
+import type { DeckWord, LanguageCode, Theme } from '$lib/types';
 import {
   loadDeck,
   loadPrefs,
@@ -48,11 +48,11 @@ const DEMO: Word[] = [
 
 // ── Queries ──────────────────────────────────────────────────────────────────
 
-export const getDeck = query(async () => {
+export const getDeck = query('unchecked', async (lang: LanguageCode) => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
   if (!user) return [] as DeckWord[];
-  return loadDeck(supabase, user.id);
+  return loadDeck(supabase, user.id, lang);
 });
 
 export const getPrefs = query(async () => {
@@ -78,42 +78,48 @@ export const getDaily = query(async () => {
 
 export const addWord = command(
   'unchecked',
-  async ({ h, p, m, dueInDays = 0 }: { h: string; p: string; m: string; dueInDays?: number }) => {
+  async ({ h, p, m, lang, dueInDays = 0 }: { h: string; p: string; m: string; lang: LanguageCode; dueInDays?: number }) => {
     const { user, supabase } = await ctx();
-    await insertWord(supabase, user.id, newCard({ h, p, m, due: dayOffset(dueInDays) }));
-    getDeck().refresh();
+    await insertWord(supabase, user.id, newCard({ h, p, m, due: dayOffset(dueInDays) }), lang);
+    getDeck(lang).refresh();
   },
 );
 
-export const removeWord = command('unchecked', async ({ id }: { id: string }) => {
+export const removeWord = command('unchecked', async ({ id, lang }: { id: string; lang: LanguageCode }) => {
   const { user, supabase } = await ctx();
   await deleteWord(supabase, user.id, id);
-  getDeck().refresh();
+  getDeck(lang).refresh();
 });
 
 // Grade cloze blanks. `grades` maps hanzi → worst rating (computed client-side).
-export const gradeCloze = command('unchecked', async ({ grades }: { grades: Record<string, FsrsGrade> }) => {
-  const { user, supabase } = await ctx();
-  const deck = await loadDeck(supabase, user.id);
-  const graded = deck.filter((w) => grades[w.h]).map((w) => gradeWord(w, grades[w.h]));
-  await updateWords(supabase, user.id, graded);
-  getDeck().set(deck.map((w) => graded.find((g) => g.id === w.id) ?? w));
-});
+export const gradeCloze = command(
+  'unchecked',
+  async ({ grades, lang }: { grades: Record<string, FsrsGrade>; lang: LanguageCode }) => {
+    const { user, supabase } = await ctx();
+    const deck = await loadDeck(supabase, user.id, lang);
+    const graded = deck.filter((w) => grades[w.h]).map((w) => gradeWord(w, grades[w.h]));
+    await updateWords(supabase, user.id, graded);
+    getDeck(lang).set(deck.map((w) => graded.find((g) => g.id === w.id) ?? w));
+  },
+);
 
-export const generatePassage = command(async (): Promise<{ error?: string }> => {
-  const { user, supabase } = await ctx();
-  const [deck, prefs] = await Promise.all([loadDeck(supabase, user.id), loadPrefs(supabase, user.id)]);
-  try {
-    const passages = await genPassage(dueWords(deck), prefs.hskLevel, Math.floor(Math.random() * 12));
-    if (!passages.length) return { error: 'generation failed' };
-    const daily = { date: todayStr(), passages };
-    await saveDaily(supabase, user.id, daily);
-    getDaily().set(daily);
-    return {};
-  } catch (e) {
-    return { error: String(e).includes('no-api-key') ? 'no-api-key' : 'generation failed' };
-  }
-});
+export const generatePassage = command(
+  'unchecked',
+  async ({ lang }: { lang: LanguageCode }): Promise<{ error?: string }> => {
+    const { user, supabase } = await ctx();
+    const [deck, prefs] = await Promise.all([loadDeck(supabase, user.id, lang), loadPrefs(supabase, user.id)]);
+    try {
+      const passages = await genPassage(dueWords(deck), prefs.hskLevel, Math.floor(Math.random() * 12));
+      if (!passages.length) return { error: 'generation failed' };
+      const daily = { date: todayStr(), passages };
+      await saveDaily(supabase, user.id, daily);
+      getDaily().set(daily);
+      return {};
+    } catch (e) {
+      return { error: String(e).includes('no-api-key') ? 'no-api-key' : 'generation failed' };
+    }
+  },
+);
 
 export const saveTheme = command('unchecked', async ({ theme }: { theme: Theme }) => {
   const { user, supabase } = await ctx();
@@ -131,6 +137,14 @@ export const saveLevel = command('unchecked', async ({ hskLevel }: { hskLevel: n
   getPrefs().set(next);
 });
 
+export const saveLanguage = command('unchecked', async ({ language }: { language: LanguageCode }) => {
+  const { user, supabase } = await ctx();
+  const prefs = await loadPrefs(supabase, user.id);
+  const next = { ...prefs, language };
+  await savePrefs(supabase, user.id, next);
+  getPrefs().set(next);
+});
+
 export const saveBoundaries = command('unchecked', async ({ showWordBoundaries }: { showWordBoundaries: boolean }) => {
   const { user, supabase } = await ctx();
   const prefs = await loadPrefs(supabase, user.id);
@@ -139,15 +153,16 @@ export const saveBoundaries = command('unchecked', async ({ showWordBoundaries }
   getPrefs().set(next);
 });
 
-// Dev convenience: seed a few demo words due today.
+// Dev convenience: seed a few demo words due today. DEMO is Chinese, so always tagged 'zh'
+// regardless of the currently selected study language.
 export const seedDemo = command(async () => {
   const { user, supabase } = await ctx();
-  await insertWords(supabase, user.id, DEMO.map((w) => newCard(w)));
-  getDeck().refresh();
+  await insertWords(supabase, user.id, DEMO.map((w) => newCard(w)), 'zh');
+  getDeck('zh').refresh();
 });
 
-export const clearDeck = command(async () => {
+export const clearDeck = command('unchecked', async ({ lang }: { lang: LanguageCode }) => {
   const { user, supabase } = await ctx();
-  await clearDeckWords(supabase, user.id);
-  getDeck().set([]);
+  await clearDeckWords(supabase, user.id, lang);
+  getDeck(lang).set([]);
 });

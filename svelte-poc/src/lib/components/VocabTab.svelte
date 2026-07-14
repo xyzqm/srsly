@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { DeckWord } from '$lib/types';
+  import type { DeckWord, LanguageCode } from '$lib/types';
   import { lookupReadingAsync } from '$lib/data/lookup';
-  import { isDueToday, localDateStr } from '$lib/deck';
+  import { isActive, isDueToday, localDateStr } from '$lib/deck';
   import { isNew } from '$lib/srs';
   import { addWord, removeWord } from '$lib/data.remote';
 
   // Vocab deck. Data via props (getDeck query), mutations via remote commands. Adding resolves
   // pinyin/meaning from CC-CEDICT client-side, then persists to Supabase.
-  let { deck }: { deck: DeckWord[] } = $props();
+  let { deck, language }: { deck: DeckWord[]; language: LanguageCode } = $props();
 
   let input = $state('');
   let adding = $state(false);
@@ -18,9 +18,9 @@
     if (!h) return;
     adding = true;
     notFound = '';
-    const entry = await lookupReadingAsync('zh', h);
+    const entry = await lookupReadingAsync(language, h);
     if (!entry.reading && !entry.meaning) notFound = `"${h}" isn't in the dictionary — added with a blank definition.`;
-    await addWord({ h, p: entry.reading, m: entry.meaning }); // due today (dueInDays 0)
+    await addWord({ h, p: entry.reading, m: entry.meaning, lang: language }); // due today (dueInDays 0)
     input = '';
     adding = false;
   }
@@ -29,6 +29,14 @@
     if (isDueToday(w)) return { label: 'due', color: 'var(--accent)' };
     return { label: `due ${localDateStr(w.due)}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
   }
+
+  // Pool words are staged but not yet in circulation (lib/types.ts) — hidden here, same as
+  // everywhere else "the deck" means the active deck. Most-due-first within what's left:
+  // isDueToday treats every card due today or earlier as equally due (calendar day, not exact
+  // timestamp — a card due 11pm today is as due as one due 6am), so sorting by the raw `due`
+  // instant still puts them all before anything due later, and orders them sensibly within
+  // that group.
+  const visible = $derived(deck.filter(isActive).sort((a, b) => a.due.getTime() - b.due.getTime()));
 </script>
 
 <div
@@ -36,7 +44,7 @@
   style="background:var(--card); border:1px solid var(--line); border-radius:0 12px 12px 12px; padding:32px 36px;"
 >
   <div style="font-family:var(--f-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint);">
-    Vocab deck · {deck.length} word{deck.length === 1 ? '' : 's'}
+    Vocab deck · {visible.length} word{visible.length === 1 ? '' : 's'}
   </div>
 
   <div style="display:flex; gap:8px; margin:16px 0 6px; flex-wrap:wrap;">
@@ -59,7 +67,7 @@
     <div style="font-size:12px; color:var(--ink-faint); margin-bottom:6px;">{notFound}</div>
   {/if}
 
-  {#if deck.length === 0}
+  {#if visible.length === 0}
     <div style="text-align:center; padding:48px 24px; color:var(--ink-soft);">
       <div style="font-family:var(--f-display); font-size:20px; font-weight:500; color:var(--ink);">Your deck is empty</div>
       <p style="font-size:13.5px; line-height:1.6; margin-top:8px;">
@@ -68,7 +76,7 @@
     </div>
   {:else}
     <div style="margin-top:12px; display:flex; flex-direction:column;">
-      {#each deck as w (w.id)}
+      {#each visible as w (w.id)}
         {@const st = statusOf(w)}
         <div style="display:flex; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--line-soft);">
           <span style="font-family:var(--f-han); font-size:22px; font-weight:500; min-width:2.5em;">{w.h}</span>
@@ -76,7 +84,7 @@
           <span style="flex:1; font-size:13.5px; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{w.m || '—'}</span>
           <span style="font-family:var(--f-mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:{st.color};">{st.label}</span>
           <button
-            onclick={() => removeWord({id: w.id})}
+            onclick={() => removeWord({id: w.id, lang: language})}
             aria-label="Remove"
             style="background:none; border:1px solid var(--line); border-radius:6px; color:var(--ink-faint); cursor:pointer; padding:4px 9px; font-size:13px;"
           >×</button>

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Theme } from '$lib/types';
-  import { getDeck, getPrefs, getDaily, saveTheme } from '$lib/data.remote';
+  import type { LanguageCode, Theme } from '$lib/types';
+  import { SUPPORTED_LANGUAGES } from '$lib/languageConfig';
+  import { getDeck, getPrefs, getDaily, saveTheme, saveLanguage } from '$lib/data.remote';
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
@@ -12,8 +13,10 @@
   let { data } = $props();
   // Each query is called unconditionally (it returns empty data when logged out). The layout's
   // auth listener calls .refresh() on all three on sign in/out, which reactively updates these.
-  const deck = $derived(await getDeck());
+  // `deck` re-fetches whenever the selected study language changes, since getDeck is
+  // parameterized by language — this is the one place that picks which language's deck to load.
   const prefs = $derived(await getPrefs());
+  const deck = $derived(await getDeck(prefs.language));
   const daily = $derived(await getDaily());
 
   type Tab = 'read' | 'vocab' | 'settings';
@@ -25,12 +28,18 @@
   let tab = $state<Tab>('read');
 
   const THEMES: Theme[] = ['paper', 'ink', 'tea', 'slate', 'bone', 'dusk'];
+  // Single-glyph selector labels — presentation only; which languages exist comes from
+  // SUPPORTED_LANGUAGES (svelte-poc/src/lib/languageConfig.ts), the shared source of truth.
+  const LANGUAGE_LABELS: Record<LanguageCode, string> = { zh: '中', ja: 'あ' };
 
   let theme = $derived(prefs.theme ?? 'paper');
   $effect(() => { document.documentElement.setAttribute('data-theme', theme); });
   function setTheme(t: Theme) {
     theme = t;
     saveTheme({ theme: t });
+  }
+  function setLanguage(l: LanguageCode) {
+    saveLanguage({ language: l });
   }
 </script>
 
@@ -44,6 +53,14 @@
     </div>
     {#if data.user}
       <div style="display:flex; gap:10px; align-items:center;">
+        <div style="display:flex; gap:2px; align-items:center; border:1px solid var(--line); border-radius:7px; padding:2px;">
+          {#each SUPPORTED_LANGUAGES as l (l)}
+            <button onclick={() => setLanguage(l)} aria-label={l} title={l}
+              style="font-family:var(--f-han); font-size:13px; line-height:1; width:24px; height:24px; border-radius:5px; cursor:pointer; border:none;
+                background:{prefs.language === l ? 'var(--ink)' : 'transparent'}; color:{prefs.language === l ? 'var(--paper)' : 'var(--ink-soft)'};"
+            >{LANGUAGE_LABELS[l]}</button>
+          {/each}
+        </div>
         <div style="display:flex; gap:6px; align-items:center;">
           {#each THEMES as t (t)}
             <button onclick={() => setTheme(t)} aria-label={t} title={t}
@@ -73,9 +90,9 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} daily={daily} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} daily={daily} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
-        <VocabTab deck={deck} />
+        <VocabTab deck={deck} language={prefs.language} />
       {:else}
         <SettingsTab prefs={prefs} />
       {/if}

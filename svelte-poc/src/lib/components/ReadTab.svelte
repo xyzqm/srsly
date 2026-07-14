@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { PassageToken, DeckWord } from '$lib/types';
+  import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
   import type { StoredDaily } from '$lib/tokens';
   import { buildTokens } from '$lib/tokens';
   import { groupReadings } from '$lib/readings';
@@ -18,11 +17,12 @@
   interface Props {
     deck: DeckWord[];
     daily: StoredDaily | null;
+    language: LanguageCode;
     hskLevel: number;
     showWordBoundaries: boolean;
     onNavigateVocab: () => void;
   }
-  let { deck, daily, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
+  let { deck, daily, language, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
 
   // Optimistic local mirror of the persisted pref, same pattern as SettingsTab's `level`.
   let boundaries = $derived(showWordBoundaries);
@@ -38,7 +38,10 @@
   // Cloze answers this session, keyed by "${sentenceIdx}-${tokenIdx}".
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
-  onMount(async () => { await preloadDict('zh'); dictReady = true; });
+  $effect(() => {
+    dictReady = false;
+    preloadDict(language).then(() => { dictReady = true; });
+  });
 
   const deckWords = $derived(new Set(deck.map((d) => d.h)));
   const status = $derived.by(() => {
@@ -95,7 +98,7 @@
       grades[word] = Math.min(grades[word] ?? Infinity, g) as FsrsGrade;
     }
     console.log(grades);
-    gradeCloze({ grades });
+    gradeCloze({ grades, lang: language });
   }
 
   function openPopup(e: MouseEvent, token: PassageToken) {
@@ -104,7 +107,7 @@
     popup = { word: token.text, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect };
   }
   async function addVocab(word: string, pinyin: string, meaning: string) {
-    await addWord({ h: word, p: pinyin, m: meaning, dueInDays: 1 });
+    await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 1 });
   }
   const isNewlyAdded = (t: PassageToken): boolean =>
     t.type === 'vocab' && !status.due.has(t.text) && status.pending.has(t.text);
@@ -112,7 +115,7 @@
   async function generate() {
     generating = true;
     genError = '';
-    const r = await generatePassage();
+    const r = await generatePassage({ lang: language });
     generating = false;
     if (r?.error) genError = r.error;
   }

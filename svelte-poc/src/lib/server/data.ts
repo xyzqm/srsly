@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DeckWord, Theme } from '../types';
+import type { DeckWord, LanguageCode, Theme } from '../types';
 import type { StoredDaily } from '../tokens';
 import { reviveCard } from '../srs';
 
@@ -10,9 +10,9 @@ import { reviveCard } from '../srs';
 const PREFS_TABLE = 'poc_user_data';
 const DECK_TABLE = 'deck_words';
 
-export interface Prefs { theme: Theme; hskLevel: number; showWordBoundaries: boolean }
+export interface Prefs { theme: Theme; hskLevel: number; showWordBoundaries: boolean; language: LanguageCode }
 
-export const DEFAULT_PREFS: Prefs = { theme: 'paper', hskLevel: 3, showWordBoundaries: true };
+export const DEFAULT_PREFS: Prefs = { theme: 'paper', hskLevel: 3, showWordBoundaries: true, language: 'zh' };
 
 export async function loadPrefs(sb: SupabaseClient, userId: string): Promise<Prefs> {
   const { data } = await sb.from(PREFS_TABLE).select('prefs').eq('user_id', userId).maybeSingle();
@@ -55,26 +55,29 @@ function toRow(card: Omit<DeckWord, 'id'>) {
   };
 }
 
-export async function loadDeck(sb: SupabaseClient, userId: string): Promise<DeckWord[]> {
+/** A user's deck is partitioned by language — every read/write below is scoped to one. */
+export async function loadDeck(sb: SupabaseClient, userId: string, lang: LanguageCode): Promise<DeckWord[]> {
   const { data } = await sb
     .from(DECK_TABLE)
     .select('*')
     .eq('user_id', userId)
+    .eq('lang', lang)
     .order('created_at', { ascending: false });
   return (data ?? []).map(reviveCard);
 }
 
-/** Insert one card unless a word with the same (hanzi, meaning) already exists for this user —
- *  a single atomic upsert (`ON CONFLICT DO NOTHING`), no read-modify-write. Returns the new row,
- *  or null if it already existed. */
+/** Insert one card unless a word with the same (hanzi, meaning, language) already exists for
+ *  this user — a single atomic upsert (`ON CONFLICT DO NOTHING`), no read-modify-write.
+ *  Returns the new row, or null if it already existed. */
 export async function insertWord(
   sb: SupabaseClient,
   userId: string,
   card: Omit<DeckWord, 'id'>,
+  lang: LanguageCode,
 ): Promise<DeckWord | null> {
   const { data } = await sb
     .from(DECK_TABLE)
-    .upsert({ user_id: userId, ...toRow(card) }, { onConflict: 'user_id,h,m', ignoreDuplicates: true })
+    .upsert({ user_id: userId, lang, ...toRow(card) }, { onConflict: 'user_id,h,m,lang', ignoreDuplicates: true })
     .select()
     .maybeSingle();
   return data ? reviveCard(data) : null;
@@ -85,13 +88,14 @@ export async function insertWords(
   sb: SupabaseClient,
   userId: string,
   cards: Omit<DeckWord, 'id'>[],
+  lang: LanguageCode,
 ): Promise<DeckWord[]> {
   if (!cards.length) return [];
   const { data } = await sb
     .from(DECK_TABLE)
     .upsert(
-      cards.map((c) => ({ user_id: userId, ...toRow(c) })),
-      { onConflict: 'user_id,h,m', ignoreDuplicates: true },
+      cards.map((c) => ({ user_id: userId, lang, ...toRow(c) })),
+      { onConflict: 'user_id,h,m,lang', ignoreDuplicates: true },
     )
     .select();
   return (data ?? []).map(reviveCard);
@@ -102,13 +106,14 @@ export async function deleteWord(sb: SupabaseClient, userId: string, id: string)
 }
 
 /** Persist FSRS-graded scheduling fields for a batch of cards — one UPDATE per row (each row
- *  gets a different grade, so this can't collapse into a single statement). */
+ *  gets a different grade, so this can't collapse into a single statement). Grading never
+ *  changes a card's language, so `lang` is left untouched. */
 export async function updateWords(sb: SupabaseClient, userId: string, cards: DeckWord[]): Promise<void> {
   await Promise.all(
     cards.map((c) => sb.from(DECK_TABLE).update(toRow(c)).eq('user_id', userId).eq('id', c.id)),
   );
 }
 
-export async function clearDeckWords(sb: SupabaseClient, userId: string): Promise<void> {
-  await sb.from(DECK_TABLE).delete().eq('user_id', userId);
+export async function clearDeckWords(sb: SupabaseClient, userId: string, lang: LanguageCode): Promise<void> {
+  await sb.from(DECK_TABLE).delete().eq('user_id', userId).eq('lang', lang);
 }

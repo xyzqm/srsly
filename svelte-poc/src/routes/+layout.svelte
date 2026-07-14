@@ -3,6 +3,7 @@
   import { invalidate } from '$app/navigation';
   import { onMount } from 'svelte';
   import { getDeck, getPrefs, getDaily } from '$lib/data.remote';
+  import { SUPPORTED_LANGUAGES } from '$lib/languageConfig';
 
   let { data, children } = $props();
 
@@ -12,7 +13,9 @@
     const { data: sub } = data.supabase.auth.onAuthStateChange((_, newSession) => {
       if (newSession?.expires_at !== data.session?.expires_at) {
         invalidate('supabase:auth');
-        getDeck().refresh();
+        // getDeck is parameterized by language, so its cache has one entry per language —
+        // refresh all of them rather than guessing which one is currently shown.
+        for (const lang of SUPPORTED_LANGUAGES) getDeck(lang).refresh();
         getPrefs().refresh();
         getDaily().refresh();
       }
@@ -21,7 +24,7 @@
   });
 </script>
 
-<!-- Boundary for the page's async `await getDeck()`/`getPrefs()`/`getDaily()` (experimental async). -->
+<!-- Boundary for the page's async `await getDeck(lang)`/`getPrefs()`/`getDaily()` (experimental async). -->
 <svelte:boundary>
   {@render children()}
   {#snippet pending()}

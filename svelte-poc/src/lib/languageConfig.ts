@@ -117,6 +117,10 @@ export const LANGUAGE_CONFIGS: Record<LanguageCode, LanguageConfig> = {
   ja: JA_CONFIG,
 };
 
+/** Every language code srsly supports — the single list to iterate when an operation (cache
+ *  refresh, a selector UI, a migration script) needs to touch "all languages". */
+export const SUPPORTED_LANGUAGES = Object.keys(LANGUAGE_CONFIGS) as LanguageCode[];
+
 export function getLanguageConfig(lang: LanguageCode | undefined): LanguageConfig {
   return LANGUAGE_CONFIGS[lang ?? 'zh'];
 }
