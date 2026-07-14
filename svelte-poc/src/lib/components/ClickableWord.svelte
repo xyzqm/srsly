@@ -6,22 +6,22 @@
   interface Props {
     token: PassageToken;
     onOpen: (e: MouseEvent, token: PassageToken) => void;
-    claimKind?: 'vocab' | null;
+    newlyAdded?: boolean;
     /** When false, hides the underline + badge that mark word boundaries. */
     showBoundaries?: boolean;
   }
-  let { token, onOpen, claimKind = null, showBoundaries = true }: Props = $props();
+  let { token, onOpen, newlyAdded = false, showBoundaries = true }: Props = $props();
 
   let hovered = $state(false);
 
   const borderStyle = $derived(
-    !showBoundaries
-      ? 'none'
-      : claimKind === 'vocab'
-        ? '1.5px solid var(--jade)'
+    newlyAdded
+      ? '1.5px solid var(--jade)'
+      : !showBoundaries
+        ? 'none'
         : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)',
   );
-  const badgeColor = $derived(claimKind === 'vocab' ? 'var(--jade)' : 'transparent');
+  const badgeColor = $derived(newlyAdded ? 'var(--jade)' : 'transparent');
 </script>
 
 {#if !token.reading || token.type === 'punct'}

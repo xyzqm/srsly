@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { PassageToken } from '$lib/types';
+    import type { Snippet } from 'svelte';
+    import ClickableWord from './ClickableWord.svelte';
 
   // An inline cloze blank for a due vocab word in the passage. The user types the hanzi; typed
   // characters colour green (correct prefix) / red (mismatch) in real time. On submit (Enter or
@@ -8,8 +10,9 @@
     token: PassageToken;
     showHint: boolean;
     onGrade: (correct: boolean) => void;
+    children: Snippet;
   }
-  let { token, showHint, onGrade }: Props = $props();
+  let { token, showHint, onGrade, children }: Props = $props();
 
   let value = $state('');
   let submitted = $state(false);
@@ -36,10 +39,13 @@
 
 {#if submitted}
   {@const color = correct ? 'var(--jade)' : 'var(--accent)'}
-  <ruby style="color:{color};">{token.text}<rt>{token.reading}</rt></ruby><span
+  <span style="color:{color}">
+    {@render children()}
+  </span>
+  <!-- <ruby style="color:{color};">{token.text}<rt>{token.reading}</rt></ruby><span
     aria-hidden="true"
     style="display:inline; font-size:0.45em; vertical-align:super; line-height:0; font-family:var(--f-ui); font-weight:700; pointer-events:none; user-select:none; color:{color};"
-  >{correct ? '✓' : '✗'}</span>
+  >{correct ? '✓' : '✗'}</span> -->
 {:else}
   <span
     style="display:inline-block; position:relative; vertical-align:baseline;"

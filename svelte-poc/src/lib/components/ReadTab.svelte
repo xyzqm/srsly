@@ -106,8 +106,8 @@
   async function addVocab(word: string, pinyin: string, meaning: string) {
     await addWord({ h: word, p: pinyin, m: meaning, dueInDays: 1 });
   }
-  const claimKindFor = (t: PassageToken): 'vocab' | null =>
-    t.type === 'vocab' && !status.due.has(t.text) && status.pending.has(t.text) ? 'vocab' : null;
+  const isNewlyAdded = (t: PassageToken): boolean =>
+    t.type === 'vocab' && !status.due.has(t.text) && status.pending.has(t.text);
 
   async function generate() {
     generating = true;
@@ -134,7 +134,7 @@
       {#if passage}
         <div style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
           {#each passage.title as t, i (i)}
-            <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} showBoundaries={boundaries} />
+            <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
           {/each}
         </div>
       {/if}
@@ -171,11 +171,16 @@
       {#each passage.sentences as s, si (si)}
         <span>
           {#each s as t, ti (ti)}
+            {#snippet clickable()}
+                <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
+            {/snippet}
             {#if isBlank(t)}
               {@const occId = `${si}-${ti}`}
-              <ClozeBlank token={t} showHint={true} onGrade={(c) => onCloze(occId, t.text, c)} />
+              <ClozeBlank token={t} showHint={true} onGrade={(c) => onCloze(occId, t.text, c)}>
+                {@render clickable()}
+              </ClozeBlank>
             {:else}
-              <ClickableWord token={t} onOpen={openPopup} claimKind={claimKindFor(t)} showBoundaries={boundaries} />
+              {@render clickable()}
             {/if}
           {/each}
         </span>
