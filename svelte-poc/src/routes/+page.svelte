@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LanguageCode, Theme } from '$lib/types';
   import { SUPPORTED_LANGUAGES } from '$lib/languageConfig';
-  import { getDeck, getPrefs, getDaily, saveTheme, saveLanguage } from '$lib/data.remote';
+  import { getDeck, getPrefs, getPassage, saveTheme, saveLanguage } from '$lib/data.remote';
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
@@ -9,15 +9,15 @@
 
   // `data` comes from +layout.ts (the browser Supabase client + session/user, used for the
   // login gate and auth). App data comes from three independent remote queries — deck, prefs,
-  // daily — so e.g. adding a word doesn't invalidate prefs or today's passage.
+  // passage — so e.g. adding a word doesn't invalidate prefs or today's passage.
   let { data } = $props();
   // Each query is called unconditionally (it returns empty data when logged out). The layout's
   // auth listener calls .refresh() on all three on sign in/out, which reactively updates these.
-  // `deck` re-fetches whenever the selected study language changes, since getDeck is
-  // parameterized by language — this is the one place that picks which language's deck to load.
+  // `deck` and `passage` re-fetch whenever the selected study language changes, since both are
+  // parameterized by language — this is the one place that picks which language's data to load.
   const prefs = $derived(await getPrefs());
   const deck = $derived(await getDeck(prefs.language));
-  const daily = $derived(await getDaily());
+  const passage = $derived(await getPassage(prefs.language));
 
   type Tab = 'read' | 'vocab' | 'settings';
   const TABS: { id: Tab; label: string }[] = [
@@ -90,7 +90,7 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} daily={daily} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} storedPassage={passage} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} language={prefs.language} />
       {:else}

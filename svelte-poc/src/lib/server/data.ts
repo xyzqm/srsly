@@ -1,14 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DeckWord, LanguageCode, Theme } from '../types';
-import type { StoredDaily } from '../tokens';
+import type { StoredPassage, BlankProgress, RawPassage } from '../tokens';
 import { reviveCard } from '../srs';
 
-// PoC storage: `deck_words` holds one row per vocab card (see supabase-deck-words.sql) so
-// add/remove are plain SQL insert/delete. `poc_user_data` still holds prefs/daily as jsonb,
-// one row per user — those aren't queried/mutated word-by-word, so a blob is fine there.
+// PoC storage: `deck_words` and `passages` each hold one row per item (see
+// supabase-deck-words.sql / supabase-passages.sql) so add/remove/progress updates are plain SQL
+// rather than a read-modify-write over a jsonb array. `poc_user_data` still holds prefs as jsonb,
+// one row per user — that isn't queried/mutated word-by-word, so a blob is fine there.
 
 const PREFS_TABLE = 'poc_user_data';
 const DECK_TABLE = 'deck_words';
+const PASSAGES_TABLE = 'passages';
 
 export interface Prefs { theme: Theme; hskLevel: number; showWordBoundaries: boolean; language: LanguageCode }
 
@@ -19,11 +21,6 @@ export async function loadPrefs(sb: SupabaseClient, userId: string): Promise<Pre
   return { ...DEFAULT_PREFS, ...(data?.prefs as Partial<Prefs> | null) };
 }
 
-export async function loadDaily(sb: SupabaseClient, userId: string): Promise<StoredDaily | null> {
-  const { data } = await sb.from(PREFS_TABLE).select('daily').eq('user_id', userId).maybeSingle();
-  return (data?.daily as StoredDaily | null) ?? null;
-}
-
 function patch(sb: SupabaseClient, userId: string, fields: Record<string, unknown>) {
   return sb
     .from(PREFS_TABLE)
@@ -31,7 +28,61 @@ function patch(sb: SupabaseClient, userId: string, fields: Record<string, unknow
 }
 
 export const savePrefs = (sb: SupabaseClient, userId: string, prefs: Prefs) => patch(sb, userId, { prefs });
-export const saveDaily = (sb: SupabaseClient, userId: string, daily: StoredDaily | null) => patch(sb, userId, { daily });
+
+// ── passages ─────────────────────────────────────────────────────────────────
+
+interface PassageRow {
+  id: string;
+  date: string;
+  passage: RawPassage;
+  progress: BlankProgress;
+  added_words: string[];
+}
+
+const fromRow = (r: PassageRow): StoredPassage =>
+  ({ id: r.id, date: r.date, passage: r.passage, progress: r.progress, addedWords: r.added_words });
+
+/** Today's passage for this user + language, if one has been generated yet. */
+export async function loadPassage(
+  sb: SupabaseClient, userId: string, lang: LanguageCode, date: string,
+): Promise<StoredPassage | null> {
+  const { data } = await sb
+    .from(PASSAGES_TABLE).select('*')
+    .eq('user_id', userId).eq('lang', lang).eq('date', date).eq('passage_idx', 0)
+    .maybeSingle();
+  return data ? fromRow(data as PassageRow) : null;
+}
+
+/** Create (or replace, on "+ New passage") today's passage row. Resets progress/added_words. */
+export async function createPassage(
+  sb: SupabaseClient, userId: string, lang: LanguageCode, date: string, passage: RawPassage,
+): Promise<StoredPassage> {
+  const { data } = await sb
+    .from(PASSAGES_TABLE)
+    .upsert(
+      { user_id: userId, lang, date, passage_idx: 0, passage, progress: {}, added_words: [] },
+      { onConflict: 'user_id,date,lang,passage_idx' },
+    )
+    .select()
+    .single();
+  return fromRow(data as PassageRow);
+}
+
+export async function saveProgress(
+  sb: SupabaseClient, userId: string, passageId: string, progress: BlankProgress,
+): Promise<void> {
+  await sb.from(PASSAGES_TABLE).update({ progress }).eq('id', passageId).eq('user_id', userId);
+}
+
+/** Record that `hanzi` was added to the deck while reading this passage (deduped). */
+export async function addPassageWord(
+  sb: SupabaseClient, userId: string, passageId: string, hanzi: string,
+): Promise<void> {
+  const { data } = await sb
+    .from(PASSAGES_TABLE).select('added_words').eq('id', passageId).eq('user_id', userId).maybeSingle();
+  const words = Array.from(new Set([...(data?.added_words ?? []), hanzi]));
+  await sb.from(PASSAGES_TABLE).update({ added_words: words }).eq('id', passageId).eq('user_id', userId);
+}
 
 // ── deck_words ────────────────────────────────────────────────────────────────
 

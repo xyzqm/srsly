@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PassageToken } from '$lib/types';
     import type { Snippet } from 'svelte';
+    import { untrack } from 'svelte';
     import ClickableWord from './ClickableWord.svelte';
 
   // An inline cloze blank for a due vocab word in the passage. The user types the hanzi; typed
@@ -10,15 +11,21 @@
     token: PassageToken;
     showHint: boolean;
     onGrade: (correct: boolean) => void;
+    /** Pre-fills an already-answered blank (restored from persisted progress) directly into the
+     *  submitted/revealed state, instead of an empty input. */
+    initialGrade?: { correct: boolean };
     children: Snippet;
   }
-  let { token, showHint, onGrade, children }: Props = $props();
+  let { token, showHint, onGrade, initialGrade, children }: Props = $props();
 
+  // `initialGrade` only ever matters at creation — the parent forces a remount (via `{#key}`)
+  // whenever restored/fresh status changes, so there's no later value to react to; `untrack`
+  // makes that one-shot read explicit instead of an unintentional stale-capture warning.
   let value = $state('');
-  let submitted = $state(false);
-  let correct = $state(false);
+  let submitted = $state(untrack(() => !!initialGrade));
+  let correct = $state(untrack(() => initialGrade?.correct ?? false));
   let hovered = $state(false);
-  let graded = false;
+  let graded = untrack(() => !!initialGrade);
 
   // Green up to the first mismatch, red from there on.
   const matchLen = $derived.by(() => {

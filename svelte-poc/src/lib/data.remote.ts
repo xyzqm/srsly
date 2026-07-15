@@ -1,17 +1,20 @@
 import { query, command, getRequestEvent } from '$app/server';
 import { error } from '@sveltejs/kit';
 import type { DeckWord, LanguageCode, Theme } from '$lib/types';
+import type { BlankProgress } from '$lib/tokens';
 import {
   loadDeck,
   loadPrefs,
-  loadDaily,
+  loadPassage,
+  createPassage,
+  saveProgress,
+  addPassageWord,
   insertWord,
   insertWords,
   deleteWord,
   updateWords,
   clearDeckWords,
   savePrefs,
-  saveDaily,
   type Prefs,
   DEFAULT_PREFS,
 } from '$lib/server/data';
@@ -62,25 +65,24 @@ export const getPrefs = query(async () => {
   return loadPrefs(supabase, user.id);
 });
 
-export const getDaily = query(async () => {
+export const getPassage = query('unchecked', async (lang: LanguageCode) => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
   if (!user) return null;
-  const daily = await loadDaily(supabase, user.id);
-  if (daily && daily.date !== todayStr()) {
-    await saveDaily(supabase, user.id, null);
-    return null;
-  }
-  return daily;
+  return loadPassage(supabase, user.id, lang, todayStr());
 });
 
 // ── Commands (each `.set()`s the query(ies) it affects with the value it just wrote) ──────────
 
 export const addWord = command(
   'unchecked',
-  async ({ h, p, m, lang, dueInDays = 0 }: { h: string; p: string; m: string; lang: LanguageCode; dueInDays?: number }) => {
+  async (
+    { h, p, m, lang, dueInDays = 0, passageId }:
+      { h: string; p: string; m: string; lang: LanguageCode; dueInDays?: number; passageId?: string },
+  ) => {
     const { user, supabase } = await ctx();
     await insertWord(supabase, user.id, newCard({ h, p, m, due: dayOffset(dueInDays) }), lang);
+    if (passageId) await addPassageWord(supabase, user.id, passageId, h);
     getDeck(lang).refresh();
   },
 );
@@ -111,13 +113,28 @@ export const generatePassage = command(
     try {
       const passages = await genPassage(dueWords(deck), prefs.hskLevel, Math.floor(Math.random() * 12));
       if (!passages.length) return { error: 'generation failed' };
-      const daily = { date: todayStr(), passages };
-      await saveDaily(supabase, user.id, daily);
-      getDaily().set(daily);
+      const stored = await createPassage(supabase, user.id, lang, todayStr(), passages[0]);
+      getPassage(lang).set(stored);
       return {};
     } catch (e) {
       return { error: String(e).includes('no-api-key') ? 'no-api-key' : 'generation failed' };
     }
+  },
+);
+
+// Persist one cloze blank's answer (read-merge-write on the sparse progress map). Fire-and-forget
+// from the client — ReadTab already tracks answers optimistically in local state, so this only
+// needs to make them durable across a reload, not stay live-synced to the query cache.
+export const saveClozeProgress = command(
+  'unchecked',
+  async (
+    { passageId, occId, correct, lang }: { passageId: string; occId: string; correct: boolean; lang: LanguageCode },
+  ) => {
+    const { user, supabase } = await ctx();
+    const current = await loadPassage(supabase, user.id, lang, todayStr());
+    if (!current || current.id !== passageId) return;
+    const progress: BlankProgress = { ...current.progress, [occId]: correct ? 1 : 0 };
+    await saveProgress(supabase, user.id, passageId, progress);
   },
 );
 

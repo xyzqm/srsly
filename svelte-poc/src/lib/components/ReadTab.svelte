@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
-  import type { StoredDaily } from '$lib/tokens';
+  import type { StoredPassage } from '$lib/tokens';
   import { buildTokens } from '$lib/tokens';
   import { groupReadings } from '$lib/readings';
   import { preloadDict } from '$lib/data/lookup';
   import { isDueToday } from '$lib/deck';
-  import { isNew, type FsrsGrade } from '$lib/srs';
-  import { addWord, generatePassage, gradeCloze, saveBoundaries } from '$lib/data.remote';
+  import type { FsrsGrade } from '$lib/srs';
+  import { addWord, generatePassage, gradeCloze, saveBoundaries, saveClozeProgress } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -16,13 +16,13 @@
   // grades them through ts-fsrs. Raw tokens from Supabase are normalized here with the client dict.
   interface Props {
     deck: DeckWord[];
-    daily: StoredDaily | null;
+    storedPassage: StoredPassage | null;
     language: LanguageCode;
     hskLevel: number;
     showWordBoundaries: boolean;
     onNavigateVocab: () => void;
   }
-  let { deck, daily, language, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
+  let { deck, storedPassage, language, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
 
   // Optimistic local mirror of the persisted pref, same pattern as SettingsTab's `level`.
   let boundaries = $derived(showWordBoundaries);
@@ -46,16 +46,15 @@
   const deckWords = $derived(new Set(deck.map((d) => d.h)));
   const status = $derived.by(() => {
     const due = new Set<string>();
-    const pending = new Set<string>();
-    for (const w of deck) {
-      if (isDueToday(w)) due.add(w.h);
-      else if (isNew(w)) pending.add(w.h);
-    }
-    return { due, pending };
+    for (const w of deck) if (isDueToday(w)) due.add(w.h);
+    return { due };
   });
+  // Words added while reading THIS passage specifically (not "any new card in the deck") — so the
+  // green "+" badge only lights up here, not in every other passage the word happens to appear in.
+  const addedWords = $derived(new Set(storedPassage?.addedWords ?? []));
 
   const passage = $derived.by(() => {
-    const raw = daily?.passages[0];
+    const raw = storedPassage?.passage;
     if (!raw || !dictReady) return null;
     const readings = groupReadings(deck);
     return {
@@ -68,15 +67,31 @@
   const blankCount = $derived(passage ? passage.sentences.flat().filter(isBlank).length : 0);
   const charCount = $derived(passage ? passage.sentences.flat().filter((t) => /[一-鿿]/.test(t.text)).length : 0);
 
-  // Reset cloze answers when the passage content changes (a newly generated passage), but keep
-  // them across the same-content reload that follows grading (so the summary survives).
-  const passageKey = $derived(daily?.passages[0] ? JSON.stringify(daily.passages[0].title) : '');
-  let lastKey = '';
   let finished = $state(false);
-  $effect(() => { if (passageKey !== lastKey) { lastKey = passageKey; clozeAnswers = new Map(); finished = false; } });
+
+  // Restore persisted blank progress once per passage row (id changes on every "+ New passage" —
+  // a fresh row has empty progress, so this doubles as the reset for a newly generated passage).
+  let restoredForId = '';
+  $effect(() => {
+    if (!passage || !storedPassage) return;
+    if (restoredForId === storedPassage.id) return;
+    restoredForId = storedPassage.id;
+    const restored = new Map<string, { word: string; correct: boolean }>();
+    for (const [occId, val] of Object.entries(storedPassage.progress)) {
+      const [si, ti] = occId.split('-').map(Number);
+      const tok = passage.sentences[si]?.[ti];
+      if (tok) restored.set(occId, { word: tok.text, correct: val === 1 });
+    }
+    clozeAnswers = restored;
+    // Persisted progress that already covers every blank was graded in an earlier session —
+    // mark it finished without re-grading (the auto-finish effect below only guards on `finished`,
+    // so without this a reload of a completed passage would call gradeCloze a second time).
+    finished = blankCount > 0 && restored.size >= blankCount;
+  });
 
   function onCloze(occId: string, word: string, correct: boolean) {
     clozeAnswers = new Map(clozeAnswers).set(occId, { word, correct });
+    if (storedPassage) saveClozeProgress({ passageId: storedPassage.id, occId, correct, lang: language });
   }
 
   // Grade automatically the moment every blank is filled, so there's nothing to click.
@@ -107,10 +122,10 @@
     popup = { word: token.text, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect };
   }
   async function addVocab(word: string, pinyin: string, meaning: string) {
-    await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 1 });
+    await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 1, passageId: storedPassage?.id });
   }
   const isNewlyAdded = (t: PassageToken): boolean =>
-    t.type === 'vocab' && !status.due.has(t.text) && status.pending.has(t.text);
+    t.type === 'vocab' && !status.due.has(t.text) && addedWords.has(t.text);
 
   async function generate() {
     generating = true;
@@ -131,7 +146,7 @@
       <div style="font-family:var(--f-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint); display:flex; align-items:center; gap:8px;">
         Today's passage
         {#if passage}
-          <span style="font-size:9px; letter-spacing:.06em; background:var(--jade-soft); color:var(--jade); border:1px solid color-mix(in srgb, var(--jade) 30%, transparent); border-radius:4px; padding:1px 5px;">✦ AI · {daily?.date}</span>
+          <span style="font-size:9px; letter-spacing:.06em; background:var(--jade-soft); color:var(--jade); border:1px solid color-mix(in srgb, var(--jade) 30%, transparent); border-radius:4px; padding:1px 5px;">✦ AI · {storedPassage?.date}</span>
         {/if}
       </div>
       {#if passage}
@@ -179,9 +194,17 @@
             {/snippet}
             {#if isBlank(t)}
               {@const occId = `${si}-${ti}`}
-              <ClozeBlank token={t} showHint={true} onGrade={(c) => onCloze(occId, t.text, c)}>
-                {@render clickable()}
-              </ClozeBlank>
+              {@const restored = clozeAnswers.get(occId)}
+              {#key restored ? 'restored' : 'fresh'}
+                <ClozeBlank
+                  token={t}
+                  showHint={true}
+                  onGrade={(c) => onCloze(occId, t.text, c)}
+                  initialGrade={restored ? { correct: restored.correct } : undefined}
+                >
+                  {@render clickable()}
+                </ClozeBlank>
+              {/key}
             {:else}
               {@render clickable()}
             {/if}

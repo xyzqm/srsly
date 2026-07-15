@@ -11,7 +11,19 @@ export type RawTok = [string] | [string, string] | [string, string, string] | [s
 // Compact, raw (un-normalized) content as generated on the server and stored in Supabase.
 // The client resolves pinyin/meaning from CC-CEDICT at render time, so storage stays small.
 export interface RawPassage { title: RawTok[]; sentences: RawTok[][] }
-export interface StoredDaily { date: string; passages: RawPassage[] }
+
+/** Per-blank cloze fill state, keyed by occurrence ID "${sentenceIdx}-${tokenIdx}". Unfilled =
+ *  key absent; the word itself isn't stored here since it's derivable from `passage`. */
+export type BlankProgress = Record<string, 0 | 1>;
+
+/** One row from the `passages` table (see supabase-passages.sql). */
+export interface StoredPassage {
+  id: string;
+  date: string;
+  passage: RawPassage;
+  progress: BlankProgress;
+  addedWords: string[];
+}
 
 const PUNCT_CHARS = new Set([
   '。', '！', '？', '，', '、', '—', '…', '·', '「', '」', '『', '』',
