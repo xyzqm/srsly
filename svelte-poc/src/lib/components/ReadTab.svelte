@@ -8,6 +8,7 @@
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
+  import ConfirmPopup from './ConfirmPopup.svelte';
 
   // Reading tab. Data comes from load() via props; mutations go through form actions. Due deck
   // words in the passage are inline cloze blanks — you fill them in as you read, then Finish
@@ -34,6 +35,7 @@
   let genError = $state('');
   let popup = $state<PopupData | null>(null);
   let showNoDuePopup = $state(false);
+  let showRegeneratePopup = $state(false);
   // Cloze answers this session, keyed by the token's index in passage.body.
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
@@ -119,7 +121,7 @@
     return Array.from(correctByWord, ([word, correct]) => {
       const w = deck.find((d) => d.h === word);
       return { word, correct, due: w?.due, lastReview: w?.last_review };
-    });
+    }).sort((a, b) => (a.due?.getTime() ?? Infinity) - (b.due?.getTime() ?? Infinity));
   });
 
   const summary = $derived.by(() => ({
@@ -164,6 +166,10 @@
     showNoDuePopup = false;
     generate(true);
   }
+  function confirmRegenerate() {
+    showRegeneratePopup = false;
+    requestGenerate();
+  }
 </script>
 
 <div
@@ -205,7 +211,7 @@
         Fill in the underlined review words as you read — type the characters, then press Enter.
       </p>
     {/if}
-    <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+    <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:12px;">
       <button onclick={toggleBoundaries}
         style="font-family:var(--f-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:500;
           padding:6px 12px; border-radius:7px; cursor:pointer; transition:all .15s;
@@ -213,6 +219,15 @@
           background:{boundaries ? 'var(--ink)' : 'var(--card)'};
           color:{boundaries ? 'var(--paper)' : 'var(--ink-soft)'};">
         Boundaries
+      </button>
+      <button onclick={() => (showRegeneratePopup = true)} aria-label="Regenerate passage" title="Regenerate passage"
+        style="display:flex; align-items:center; justify-content:center; width:30px; height:30px;
+          border-radius:7px; cursor:pointer; transition:all .15s; border:1px solid var(--line);
+          background:var(--card); color:var(--ink-soft);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-3-6.7" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
       </button>
     </div>
     <div bind:this={bodyEl} style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
@@ -296,39 +311,21 @@
 <WordPopup data={popup} onClose={() => (popup = null)} onAddVocab={addVocab} />
 
 {#if showNoDuePopup}
-  <div
-    role="presentation"
-    onclick={() => (showNoDuePopup = false)}
-    style="position:fixed; inset:0; z-index:9998; display:flex; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.35); padding:24px;"
-  >
-    <div
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={() => {}}
-      style="width:100%; max-width:360px; background:var(--card); border:1px solid var(--line); border-radius:14px;
-        padding:24px 26px; box-shadow:0 8px 32px rgba(0,0,0,.22), 0 2px 8px rgba(0,0,0,.14);"
-    >
-      <div style="font-family:var(--f-display); font-size:18px; font-weight:500;">No words due yet</div>
-      <p style="color:var(--ink-soft); font-size:13.5px; line-height:1.6; margin:10px 0 22px;">
-        Nothing in your deck is due for review right now. You can still generate a passage built around
-        your next-due words if you'd like to get ahead.
-      </p>
-      <div style="display:flex; gap:10px; justify-content:flex-end;">
-        <button onclick={() => (showNoDuePopup = false)}
-          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase;
-            background:none; color:var(--ink-soft); border:1px solid var(--line); border-radius:8px; padding:9px 16px; cursor:pointer;">
-          Cancel
-        </button>
-        <button onclick={reviewAnyway}
-          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.06em; text-transform:uppercase; font-weight:500;
-            background:var(--accent); color:#fff; border:none; border-radius:8px; padding:9px 16px; cursor:pointer;
-            box-shadow:0 2px 0 var(--accent-deep);">
-          Review anyway
-        </button>
-      </div>
-    </div>
-  </div>
+  <ConfirmPopup
+    title="No words due yet"
+    message="Nothing in your deck is due for review right now. You can still generate a passage built around your next-due words if you'd like to get ahead."
+    confirmLabel="Review anyway"
+    onConfirm={reviewAnyway}
+    onCancel={() => (showNoDuePopup = false)}
+  />
+{/if}
+
+{#if showRegeneratePopup}
+  <ConfirmPopup
+    title="Regenerate passage?"
+    message="We recommend you do this only if you believe the current passage is malformed. Cloze progress will not be saved."
+    confirmLabel="OK"
+    onConfirm={confirmRegenerate}
+    onCancel={() => (showRegeneratePopup = false)}
+  />
 {/if}
