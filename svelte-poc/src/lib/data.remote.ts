@@ -133,9 +133,13 @@ export const generatePassage = command(
   },
 );
 
-// Persist one cloze blank's answer (read-merge-write on the sparse progress map). Fire-and-forget
-// from the client — ReadTab already tracks answers optimistically in local state, so this only
-// needs to make them durable across a reload, not stay live-synced to the query cache.
+// Persist one cloze blank's answer (read-merge-write on the sparse progress map), and update the
+// query cache to match. ReadTab tracks answers optimistically in its own local state too, but
+// that state doesn't survive a remount — switching tabs and back destroys/recreates ReadTab (see
+// +page.svelte's {#if tab === 'read'}), at which point it rebuilds clozeAnswers from
+// storedPassage.progress. If this command only wrote the DB, that rebuild would read whatever
+// progress was cached before this session's answers — i.e. stale/empty — and blanks would
+// appear to revert until a full reload re-fetched the real state.
 export const saveClozeProgress = command(
   'unchecked',
   async (
@@ -146,6 +150,7 @@ export const saveClozeProgress = command(
     if (!current || current.id !== passageId) return;
     const progress: BlankProgress = { ...current.progress, [occId]: correct ? 1 : 0 };
     await saveProgress(supabase, user.id, passageId, progress);
+    getPassage(lang).set({ ...current, progress });
   },
 );
 
