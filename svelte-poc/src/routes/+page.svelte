@@ -90,7 +90,7 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} storedPassage={passage} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} storedPassage={passage} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} wordsPerPassage={prefs.wordsPerPassage} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} language={prefs.language} />
       {:else}

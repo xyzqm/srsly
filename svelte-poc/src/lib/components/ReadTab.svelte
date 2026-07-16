@@ -2,7 +2,7 @@
   import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
   import type { StoredPassage } from '$lib/tokens';
   import { buildTokens } from '$lib/tokens';
-  import { isActive, isDue, formatDelay } from '$lib/deck';
+  import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
   import { addWord, generatePassage, gradeCloze, saveBoundaries, saveClozeProgress } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
@@ -20,9 +20,10 @@
     language: LanguageCode;
     hskLevel: number;
     showWordBoundaries: boolean;
+    wordsPerPassage: number;
     onNavigateVocab: () => void;
   }
-  let { deck, storedPassage, language, hskLevel, showWordBoundaries, onNavigateVocab }: Props = $props();
+  let { deck, storedPassage, language, hskLevel, showWordBoundaries, wordsPerPassage, onNavigateVocab }: Props = $props();
 
   // Optimistic local mirror of the persisted pref, same pattern as SettingsTab's `level`.
   let boundaries = $derived(showWordBoundaries);
@@ -34,13 +35,16 @@
   let generating = $state(false);
   let genError = $state('');
   let popup = $state<PopupData | null>(null);
-  let showNoDuePopup = $state(false);
+  let showNoMoreTodayPopup = $state(false);
   let showRegeneratePopup = $state(false);
   // Cloze answers this session, keyed by the token's index in passage.body.
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
   const deckWords = $derived(new Set(deck.map((d) => d.h)));
-  const hasDueWords = $derived(deck.some((w) => isDue(w)));
+  // Generation is allowed around anything due today (isDueToday) — reviewing a word scheduled for
+  // later today needs no confirmation — but never beyond today, so there's no "force"/"review
+  // anyway" escape hatch once today's words are exhausted.
+  const hasDueToday = $derived(deck.some((w) => isDueToday(w)));
   // Which words are blanks — frozen at generation time (storedPassage.quizWords), not re-derived
   // from live due-status: under short-term scheduling a word can leave the due set within minutes
   // of being graded, and blanks shouldn't disappear out from under an in-progress passage.
@@ -147,24 +151,27 @@
   const isNewlyAdded = (t: PassageToken): boolean =>
     t.type === 'vocab' && !quizWords.has(t.text) && addedWords.has(t.text) && deckWords.has(t.text);
 
-  async function generate(force = false) {
+  async function generate() {
     generating = true;
     genError = '';
-    const words = deck.filter((w) => isDue(w) || (force && isActive(w))).map((w) => ({ h: w.h, p: w.p, m: w.m }));
+    // Soonest-due first, capped at wordsPerPassage — isDueToday can return more candidates than
+    // one passage should be built around.
+    const words = deck
+      .filter((w) => isDueToday(w))
+      .sort((a, b) => a.due.getTime() - b.due.getTime())
+      .slice(0, wordsPerPassage)
+      .map((w) => ({ h: w.h, p: w.p, m: w.m }));
     const r = await generatePassage({ lang: language, words });
     generating = false;
     if (r?.error) genError = r.error;
   }
 
-  // Entry point for both "Generate passage" and "+ New passage": if there's a deck but nothing
-  // in it is due yet, ask first instead of silently generating a passage with no review blanks.
+  // Entry point for both "Generate passage" and "+ New passage": if there's a deck but nothing in
+  // it is due today, block generation — early review is allowed for anything due later today, but
+  // never beyond that, so there's no bypass here (unlike the old "review anyway" flow).
   function requestGenerate() {
-    if (deck.length > 0 && !hasDueWords) { showNoDuePopup = true; return; }
+    if (deck.length > 0 && !hasDueToday) { showNoMoreTodayPopup = true; return; }
     generate();
-  }
-  function reviewAnyway() {
-    showNoDuePopup = false;
-    generate(true);
   }
   function confirmRegenerate() {
     showRegeneratePopup = false;
@@ -310,13 +317,12 @@
 
 <WordPopup data={popup} onClose={() => (popup = null)} onAddVocab={addVocab} />
 
-{#if showNoDuePopup}
+{#if showNoMoreTodayPopup}
   <ConfirmPopup
-    title="No words due yet"
-    message="Nothing in your deck is due for review right now. You can still generate a passage built around your next-due words if you'd like to get ahead."
-    confirmLabel="Review anyway"
-    onConfirm={reviewAnyway}
-    onCancel={() => (showNoDuePopup = false)}
+    title="Nothing more due today"
+    message="You've reviewed everything due today — come back tomorrow for more. Reviewing ahead is only available for words already due later today, not future days."
+    confirmLabel="Got it"
+    onConfirm={() => (showNoMoreTodayPopup = false)}
   />
 {/if}
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DeckWord, LanguageCode } from '$lib/types';
-  import { isActive, isDue, localDateTimeStr } from '$lib/deck';
+  import { isActive, isDue, formatDelay } from '$lib/deck';
   import { isNew } from '$lib/srs';
   import { addWord, removeWord, lookupWord } from '$lib/data.remote';
 
@@ -27,7 +27,7 @@
 
   function statusOf(w: DeckWord): { label: string; color: string } {
     if (isDue(w)) return { label: 'due', color: 'var(--accent)' };
-    return { label: `due ${localDateTimeStr(w.due)}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
+    return { label: `due ${formatDelay(w.due, new Date())}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
   }
 
   // Pool words are staged but not yet in circulation (lib/types.ts) — hidden here, same as

@@ -186,6 +186,14 @@ export const saveBoundaries = command('unchecked', async ({ showWordBoundaries }
   getPrefs().set(next);
 });
 
+export const saveWordsPerPassage = command('unchecked', async ({ wordsPerPassage }: { wordsPerPassage: number }) => {
+  const { user, supabase } = await ctx();
+  const prefs = await loadPrefs(supabase, user.id);
+  const next = { ...prefs, wordsPerPassage };
+  await savePrefs(supabase, user.id, next);
+  getPrefs().set(next);
+});
+
 // Dev convenience: seed a few demo words due today. DEMO is Chinese, so always tagged 'zh'
 // regardless of the currently selected study language.
 export const seedDemo = command(async () => {

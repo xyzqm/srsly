@@ -5,29 +5,71 @@ import { reviveCard } from '../srs';
 
 // PoC storage: `deck_words` and `passages` each hold one row per item (see
 // supabase-deck-words.sql / supabase-passages.sql) so add/remove/progress updates are plain SQL
-// rather than a read-modify-write over a jsonb array. `poc_user_data` still holds prefs as jsonb,
-// one row per user — that isn't queried/mutated word-by-word, so a blob is fine there.
+// rather than a read-modify-write over a jsonb array. `poc_user_data` holds prefs as one row per
+// user, one column per setting (see supabase-flatten-prefs.sql) — direct column reads/writes,
+// not a jsonb blob.
 
 const PREFS_TABLE = 'poc_user_data';
 const DECK_TABLE = 'deck_words';
 const PASSAGES_TABLE = 'passages';
 
-export interface Prefs { theme: Theme; hskLevel: number; showWordBoundaries: boolean; language: LanguageCode }
+export interface Prefs {
+  theme: Theme;
+  hskLevel: number;
+  showWordBoundaries: boolean;
+  language: LanguageCode;
+  wordsPerPassage: number;
+}
 
-export const DEFAULT_PREFS: Prefs = { theme: 'paper', hskLevel: 3, showWordBoundaries: true, language: 'zh' };
+export const DEFAULT_PREFS: Prefs = {
+  theme: 'paper',
+  hskLevel: 3,
+  showWordBoundaries: true,
+  language: 'zh',
+  wordsPerPassage: 8,
+};
+
+interface PrefsRow {
+  theme: Theme;
+  hsk_level: number;
+  show_word_boundaries: boolean;
+  language: LanguageCode;
+  words_per_passage: number;
+}
+
+const fromPrefsRow = (r: PrefsRow): Prefs => ({
+  theme: r.theme,
+  hskLevel: r.hsk_level,
+  showWordBoundaries: r.show_word_boundaries,
+  language: r.language,
+  wordsPerPassage: r.words_per_passage,
+});
+
+const toPrefsRow = (p: Prefs): PrefsRow => ({
+  theme: p.theme,
+  hsk_level: p.hskLevel,
+  show_word_boundaries: p.showWordBoundaries,
+  language: p.language,
+  words_per_passage: p.wordsPerPassage,
+});
 
 export async function loadPrefs(sb: SupabaseClient, userId: string): Promise<Prefs> {
-  const { data } = await sb.from(PREFS_TABLE).select('prefs').eq('user_id', userId).maybeSingle();
-  return { ...DEFAULT_PREFS, ...(data?.prefs as Partial<Prefs> | null) };
-}
-
-function patch(sb: SupabaseClient, userId: string, fields: Record<string, unknown>) {
-  return sb
+  const { data } = await sb
     .from(PREFS_TABLE)
-    .upsert({ user_id: userId, ...fields, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    .select('theme, hsk_level, show_word_boundaries, language, words_per_passage')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data ? fromPrefsRow(data as PrefsRow) : DEFAULT_PREFS;
 }
 
-export const savePrefs = (sb: SupabaseClient, userId: string, prefs: Prefs) => patch(sb, userId, { prefs });
+export async function savePrefs(sb: SupabaseClient, userId: string, prefs: Prefs): Promise<void> {
+  await sb
+    .from(PREFS_TABLE)
+    .upsert(
+      { user_id: userId, ...toPrefsRow(prefs), updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    );
+}
 
 // ── passages ─────────────────────────────────────────────────────────────────
 
