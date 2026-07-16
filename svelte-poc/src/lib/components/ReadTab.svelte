@@ -62,13 +62,16 @@
 
   let finished = $state(false);
 
-  // Restore persisted blank progress once per passage row (id changes on every "+ New passage" —
-  // a fresh row has empty progress, so this doubles as the reset for a newly generated passage).
-  let restoredForId = '';
+  // Restore persisted blank progress once per passage object. Keyed by object identity, not
+  // storedPassage.id: "+ New passage" upserts on (user_id, date, lang, passage_idx), which
+  // reuses the same row id for the rest of the day — a fresh row has empty progress, so this
+  // doubles as the reset for a newly generated passage, but only if the guard can actually tell
+  // the new one apart from the old.
+  let restoredFor: StoredPassage | null = null; // note: this variable is persisted across runs of the effect below
   $effect(() => {
     if (!passage || !storedPassage) return;
-    if (restoredForId === storedPassage.id) return;
-    restoredForId = storedPassage.id;
+    if (restoredFor === storedPassage) return;
+    restoredFor = storedPassage;
     const restored = new Map<string, { word: string; correct: boolean }>();
     for (const [occId, val] of Object.entries(storedPassage.progress)) {
       const tok = passage.body[Number(occId)];
