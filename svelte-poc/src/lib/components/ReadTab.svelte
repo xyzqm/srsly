@@ -84,9 +84,23 @@
     finished = blankCount > 0 && restored.size >= blankCount;
   });
 
-  function onCloze(occId: string, word: string, correct: boolean) {
+  function onCloze(occId: string, word: string, correct: boolean, advance: boolean) {
     clozeAnswers = new Map(clozeAnswers).set(occId, { word, correct });
     if (storedPassage) saveClozeProgress({ passageId: storedPassage.id, occId, correct, lang: language });
+    if (advance) focusNextBlank(occId);
+  }
+
+  // After Enter-submitting a blank, move focus to the next not-yet-answered one in reading order
+  // so filling the passage doesn't require clicking each blank by hand.
+  let bodyEl = $state<HTMLDivElement | null>(null);
+  function focusNextBlank(afterOccId: string) {
+    if (!passage || !bodyEl) return;
+    for (let i = Number(afterOccId) + 1; i < passage.body.length; i++) {
+      if (isBlank(passage.body[i]) && !clozeAnswers.has(String(i))) {
+        bodyEl.querySelector<HTMLInputElement>(`input[data-occid="${i}"]`)?.focus();
+        return;
+      }
+    }
   }
 
   // Grade automatically the moment every blank is filled, so there's nothing to click.
@@ -191,7 +205,7 @@
         Boundaries
       </button>
     </div>
-    <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
+    <div bind:this={bodyEl} style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
       {#each passage.body as t, ti (ti)}
         {#snippet clickable()}
             <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
@@ -203,7 +217,8 @@
             <ClozeBlank
               token={t}
               showHint={true}
-              onGrade={(c) => onCloze(occId, t.text, c)}
+              occId={occId}
+              onGrade={(c, advance) => onCloze(occId, t.text, c, advance)}
               initialGrade={restored ? { correct: restored.correct } : undefined}
             >
               {@render clickable()}

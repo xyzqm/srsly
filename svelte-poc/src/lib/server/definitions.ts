@@ -70,7 +70,10 @@ export async function getDefinition(word: string, lang: LanguageCode): Promise<D
     `Respond with EXACTLY one line in the form:\nreading|meaning\n` +
     `${lang === 'zh' ? 'reading = pinyin with tone marks' : 'reading = hiragana'}. No other text.`,
   );
-  const [reading = '', meaning = ''] = raw.split('|').map((s) => s.trim());
+  // The model occasionally backslash-escapes quotes/apostrophes as if writing a string literal
+  // (e.g. "on one\'s own initiative") — strip that before it gets cached.
+  const unescape = (s: string) => s.replace(/\\(['"])/g, '$1');
+  const [reading = '', meaning = ''] = raw.split('|').map((s) => unescape(s.trim()));
   const result: Definition = { reading, meaning };
 
   if (meaning) await client().from(TABLE).upsert({ word, lang, reading, meaning }, { onConflict: 'word,lang' });

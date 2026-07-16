@@ -10,13 +10,19 @@
   interface Props {
     token: PassageToken;
     showHint: boolean;
-    onGrade: (correct: boolean) => void;
+    /** `advance` is true when submission came from pressing Enter (vs. blurring away, e.g. to
+     *  click a word's definition popup) — the parent uses it to decide whether to move focus to
+     *  the next blank. */
+    onGrade: (correct: boolean, advance: boolean) => void;
     /** Pre-fills an already-answered blank (restored from persisted progress) directly into the
      *  submitted/revealed state, instead of an empty input. */
     initialGrade?: { correct: boolean };
+    /** Identifies this blank's `<input>` in the DOM (`data-occid`) so the parent can focus the
+     *  next one after Enter-submit. */
+    occId: string;
     children: Snippet;
   }
-  let { token, showHint, onGrade, initialGrade, children }: Props = $props();
+  let { token, showHint, onGrade, initialGrade, occId, children }: Props = $props();
 
   // `initialGrade` only ever matters at creation — the parent forces a remount (via `{#key}`)
   // whenever restored/fresh status changes, so there's no later value to react to; `untrack`
@@ -34,13 +40,13 @@
     return n;
   });
 
-  function submit(force = false) {
+  function submit(force = false, advance = false) {
     if (graded) return;
     if (!value.trim() && !force) return;
     graded = true;
     correct = value.trim() === token.text;
     submitted = true;
-    onGrade(correct);
+    onGrade(correct, advance);
   }
 </script>
 
@@ -71,7 +77,8 @@
     <input
       type="text"
       bind:value
-      onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) submit(true); }}
+      data-occid={occId}
+      onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) submit(true, true); }}
       onblur={() => submit()}
       aria-label={`Fill in the blank${showHint && token.meaning ? `: ${token.meaning}` : ''}`}
       style="width:{Math.max(token.text.length * 1.3, 2.5)}em; font-family:var(--f-han); font-size:1em; color:transparent;
