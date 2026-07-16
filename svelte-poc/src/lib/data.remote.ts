@@ -19,8 +19,10 @@ import {
   DEFAULT_PREFS,
 } from '$lib/server/data';
 import { generatePassage as genPassage, type Word } from '$lib/server/generate';
+import { getDefinition } from '$lib/server/definitions';
 import { newCard, gradeWord, type FsrsGrade } from '$lib/srs';
 import { isDueToday, localDateStr, dayOffset } from '$lib/deck';
+import { levelFor } from '$lib/languageConfig';
 
 // All page data + mutations as SvelteKit remote functions (replacing +page.server.ts load /
 // actions). Each runs on the server via getRequestEvent().locals — which carries the
@@ -74,6 +76,12 @@ export const getPassage = query('unchecked', async (lang: LanguageCode) => {
 
 // ── Commands (each `.set()`s the query(ies) it affects with the value it just wrote) ──────────
 
+// Look up a word's reading + meaning (centralized dictionary -> Supabase cache -> LLM). Used by
+// VocabTab when manually adding a word not already resolved from a passage.
+export const lookupWord = command('unchecked', async ({ word, lang }: { word: string; lang: LanguageCode }) => {
+  return getDefinition(word, lang);
+});
+
 export const addWord = command(
   'unchecked',
   async (
@@ -111,9 +119,8 @@ export const generatePassage = command(
     const { user, supabase } = await ctx();
     const [deck, prefs] = await Promise.all([loadDeck(supabase, user.id, lang), loadPrefs(supabase, user.id)]);
     try {
-      const passages = await genPassage(dueWords(deck), prefs.hskLevel, Math.floor(Math.random() * 12));
-      if (!passages.length) return { error: 'generation failed' };
-      const stored = await createPassage(supabase, user.id, lang, todayStr(), passages[0]);
+      const passage = await genPassage(dueWords(deck), lang, levelFor(lang, prefs), Math.floor(Math.random() * 12));
+      const stored = await createPassage(supabase, user.id, lang, todayStr(), passage);
       getPassage(lang).set(stored);
       return {};
     } catch (e) {

@@ -1,12 +1,12 @@
 import { createServerClient } from '@supabase/ssr';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/static/public';
 import { loadPrefs } from '$lib/server/data';
 import type { Handle } from '@sveltejs/kit';
 
 // Request-scoped Supabase server client (cookie-backed session) + a safeGetSession helper
 // that validates the JWT with the auth server. The standard @supabase/ssr SvelteKit setup.
 export const handle: Handle = async ({ event, resolve }) => {
-  event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+  event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
     cookies: {
       getAll: () => event.cookies.getAll(),
       setAll: (cookiesToSet) => {

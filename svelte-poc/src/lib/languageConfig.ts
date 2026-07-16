@@ -19,11 +19,11 @@ export interface LanguageConfig {
   deckKey: string;       // localStorage suffix for the vocab deck (srsly-vocab-deck-<deckKey>)
   /** Where the user's chosen proficiency level is stored on UserPrefs. */
   levelPrefKey: 'hskLevel' | 'jlptLevel';
-  /** Whether the AI returns tokens with readings pre-annotated (true for ja). When false
-   *  (zh) the client looks readings up from the bundled dictionary. */
-  aiProvidesReadings: boolean;
   /** Grading instruction for /api/grade-response — which script the answer must be in. */
   answerScriptNote: string;
+  /** One correctly-formatted example passage line (pipe-delimited words), shown to the
+   *  generation model so it can see the target script/segmentation style at a glance. */
+  promptExample: string;
 }
 
 export const ZH_CONFIG: LanguageConfig = {
@@ -43,8 +43,8 @@ export const ZH_CONFIG: LanguageConfig = {
   defaultLevel: 3,
   deckKey: 'zh',
   levelPrefKey: 'hskLevel',
-  aiProvidesReadings: false,
   answerScriptNote: 'The answer MUST be written in Chinese characters.',
+  promptExample: '上海|浦东|开发|与|建设|同步|。',
 };
 
 export const JA_CONFIG: LanguageConfig = {
@@ -64,8 +64,8 @@ export const JA_CONFIG: LanguageConfig = {
   defaultLevel: 4,   // N4 — comfortable beginner
   deckKey: 'ja',
   levelPrefKey: 'jlptLevel',
-  aiProvidesReadings: true,
   answerScriptNote: 'The answer MUST be written in Japanese (hiragana, katakana, or kanji).',
+  promptExample: '水|を|飲みました|。',
 };
 
 /** Sentence count and recommended vocab-word range per level — longer/harder passages can

@@ -2,8 +2,6 @@
   import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
   import type { StoredPassage } from '$lib/tokens';
   import { buildTokens } from '$lib/tokens';
-  import { groupReadings } from '$lib/readings';
-  import { preloadDict } from '$lib/data/lookup';
   import { isDueToday } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
   import { addWord, generatePassage, gradeCloze, saveBoundaries, saveClozeProgress } from '$lib/data.remote';
@@ -13,7 +11,8 @@
 
   // Reading tab. Data comes from load() via props; mutations go through form actions. Due deck
   // words in the passage are inline cloze blanks — you fill them in as you read, then Finish
-  // grades them through ts-fsrs. Raw tokens from Supabase are normalized here with the client dict.
+  // grades them through ts-fsrs. Raw tokens already carry reading/meaning baked in server-side
+  // (src/lib/server/generate.ts), so building tokens here is just a plain mapping.
   interface Props {
     deck: DeckWord[];
     storedPassage: StoredPassage | null;
@@ -31,17 +30,11 @@
     saveBoundaries({ showWordBoundaries: boundaries });
   }
 
-  let dictReady = $state(false);
   let generating = $state(false);
   let genError = $state('');
   let popup = $state<PopupData | null>(null);
-  // Cloze answers this session, keyed by "${sentenceIdx}-${tokenIdx}".
+  // Cloze answers this session, keyed by the token's index in passage.body.
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
-
-  $effect(() => {
-    dictReady = false;
-    preloadDict(language).then(() => { dictReady = true; });
-  });
 
   const deckWords = $derived(new Set(deck.map((d) => d.h)));
   const status = $derived.by(() => {
@@ -55,17 +48,16 @@
 
   const passage = $derived.by(() => {
     const raw = storedPassage?.passage;
-    if (!raw || !dictReady) return null;
-    const readings = groupReadings(deck);
+    if (!raw) return null;
     return {
-      title: buildTokens(raw.title, status.due, readings),
-      sentences: raw.sentences.map((s) => buildTokens(s, status.due, readings)),
+      title: buildTokens(raw.title),
+      body: buildTokens(raw.body),
     };
   });
 
   const isBlank = (t: PassageToken) => t.type === 'vocab' && status.due.has(t.text);
-  const blankCount = $derived(passage ? passage.sentences.flat().filter(isBlank).length : 0);
-  const charCount = $derived(passage ? passage.sentences.flat().filter((t) => /[一-鿿]/.test(t.text)).length : 0);
+  const blankCount = $derived(passage ? passage.body.filter(isBlank).length : 0);
+  const charCount = $derived(passage ? passage.body.filter((t) => /[一-鿿]/.test(t.text)).length : 0);
 
   let finished = $state(false);
 
@@ -78,8 +70,7 @@
     restoredForId = storedPassage.id;
     const restored = new Map<string, { word: string; correct: boolean }>();
     for (const [occId, val] of Object.entries(storedPassage.progress)) {
-      const [si, ti] = occId.split('-').map(Number);
-      const tok = passage.sentences[si]?.[ti];
+      const tok = passage.body[Number(occId)];
       if (tok) restored.set(occId, { word: tok.text, correct: val === 1 });
     }
     clozeAnswers = restored;
@@ -186,30 +177,26 @@
       </button>
     </div>
     <div style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
-      {#each passage.sentences as s, si (si)}
-        <span>
-          {#each s as t, ti (ti)}
-            {#snippet clickable()}
-                <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
-            {/snippet}
-            {#if isBlank(t)}
-              {@const occId = `${si}-${ti}`}
-              {@const restored = clozeAnswers.get(occId)}
-              {#key restored ? 'restored' : 'fresh'}
-                <ClozeBlank
-                  token={t}
-                  showHint={true}
-                  onGrade={(c) => onCloze(occId, t.text, c)}
-                  initialGrade={restored ? { correct: restored.correct } : undefined}
-                >
-                  {@render clickable()}
-                </ClozeBlank>
-              {/key}
-            {:else}
+      {#each passage.body as t, ti (ti)}
+        {#snippet clickable()}
+            <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
+        {/snippet}
+        {#if isBlank(t)}
+          {@const occId = `${ti}`}
+          {@const restored = clozeAnswers.get(occId)}
+          {#key restored ? 'restored' : 'fresh'}
+            <ClozeBlank
+              token={t}
+              showHint={true}
+              onGrade={(c) => onCloze(occId, t.text, c)}
+              initialGrade={restored ? { correct: restored.correct } : undefined}
+            >
               {@render clickable()}
-            {/if}
-          {/each}
-        </span>
+            </ClozeBlank>
+          {/key}
+        {:else}
+          {@render clickable()}
+        {/if}
       {/each}
     </div>
 

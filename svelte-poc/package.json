@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "simulate-grading": "tsx scripts/simulate-grading.ts"
+    "simulate-grading": "tsx scripts/simulate-grading.ts",
+    "test-generate-passage": "tsx scripts/test-generate-passage.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^3.3.1",

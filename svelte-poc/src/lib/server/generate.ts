@@ -1,68 +1,18 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { env } from '$env/dynamic/private';
-import { sentenceCountForLevel } from '$lib/languageConfig';
+import { getLanguageConfig, sentenceCountForLevel } from '$lib/languageConfig';
 import type { RawTok, RawPassage } from '$lib/tokens';
+import type { LanguageCode } from '$lib/types';
+import { askText } from './llm';
+import { getDefinition } from './definitions';
 
-// Server-side AI generation (Chinese, HSK). The model emits pipe-delimited bare-hanzi token
-// strings; we parse them into compact RawTok arrays and let the client resolve pinyin/meaning
-// from CC-CEDICT at render time. Returns raw content for storage in Supabase.
+// The model's only job is to write natural text and mark word boundaries with `|` — no JSON, no
+// per-language branching, no proper-noun gloss side-channel. Every token's reading/meaning is
+// resolved afterward by getDefinition (our dictionary -> shared Supabase cache -> one-off LLM
+// query), so a name the model reuses across many passages only ever costs one real lookup.
 
 export type Word = { h: string; p: string; m: string };
-const MAX_NAME_MERGE = 4;
+const MAX_WORD_MERGE = 4;
 
-type Resolve = Map<string, { p: string; m: string }>;
-
-/** Split one pipe-delimited token string into RawTok[]. */
-function parseTokenString(s: unknown, map: Resolve): RawTok[] {
-  if (typeof s !== 'string' || !s) return [];
-  type Seg = { h: string; inline: { p: string; m: string } | null };
-  const segs: Seg[] = [];
-  for (const rawSeg of s.split('|')) {
-    let seg = rawSeg.trim();
-    if (!seg) continue;
-    if (seg.startsWith('~')) seg = seg.slice(1).trim();
-    if (seg.includes('::')) {
-      const [h, p = '', m = ''] = seg.split('::').map((x) => x.trim());
-      if (!h) continue;
-      segs.push({ h, inline: p ? { p, m } : null });
-      continue;
-    }
-    segs.push({ h: seg, inline: null });
-  }
-  const out: RawTok[] = [];
-  for (let i = 0; i < segs.length; i++) {
-    if (segs[i].inline) {
-      out.push([segs[i].h, segs[i].inline!.p, segs[i].inline!.m]);
-      continue;
-    }
-    let merged: string | null = null;
-    let used = 1;
-    for (let len = Math.min(MAX_NAME_MERGE, segs.length - i); len >= 2; len--) {
-      const window = segs.slice(i, i + len);
-      if (window.some((x) => x.inline)) continue;
-      const joined = window.map((x) => x.h).join('');
-      if (map.has(joined)) { merged = joined; used = len; break; }
-    }
-    const text = merged ?? segs[i].h;
-    const hit = map.get(text);
-    out.push(hit ? [text, hit.p, hit.m] : [text]);
-    i += used - 1;
-  }
-  return out;
-}
-
-function extractJson(raw: string): Record<string, unknown> {
-  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start > 0 && end > start) cleaned = cleaned.slice(start, end + 1);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    // Repair common model JSON slips: trailing commas, raw newlines in strings.
-    return JSON.parse(cleaned.replace(/,(\s*[}\]])/g, '$1').replace(/"([^"\\]*)\n([^"\\]*)"/g, '"$1\\n$2"'));
-  }
-}
+type DueSet = Set<string>;
 
 const DAILY_THEMES = [
   'travel and transportation', 'food and restaurants', 'work and career',
@@ -71,99 +21,101 @@ const DAILY_THEMES = [
   'art and entertainment', 'city life and neighborhoods', 'weather and seasons',
 ];
 
-const PIPE_RULES = `
-OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
-Every field marked "WORDS" MUST be a SINGLE STRING with a | (vertical bar) between EVERY
-word and EVERY punctuation mark. A sentence with no | bars is INVALID output.
-
-  CORRECT:  "在|现代|社会|中|，|艺术|对|经济|发展|很|重要|。"
-  WRONG:    "在现代社会中，艺术对经济发展很重要。"
-
-Rules for tokens between the bars:
-  - Output ONLY hanzi and punctuation. NO pinyin, NO English, NO tone numbers.
-  - Keep every multi-character word / compound WHOLE as one token: 现代 经济 发展 已经.
-  - Keep proper names WHOLE as ONE token: 王小雨 (never 王|小雨), 北京.
-  - Each punctuation mark (。 ， ！ ？ 、 — …) is its OWN token between bars.
-
-PROPER NAMES: list EVERY person/place name in the "names" array with pinyin and English gloss.`.trim();
-
-function client(): Anthropic {
-  const apiKey = env.SRSLY_API_KEY || env.ANTHROPIC_API_KEY;
-  if (!apiKey || apiKey === 'your-api-key-here') throw new Error('no-api-key');
-  return new Anthropic({ apiKey });
+function buildDueSet(words: Word[]): DueSet {
+  return new Set(words.map((w) => w.h));
 }
 
-async function ask(prompt: string): Promise<Record<string, unknown>> {
-  const res = await client().messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 16000,
-    system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
-    messages: [{ role: 'user', content: prompt }],
-  });
-  return extractJson(res.content[0].type === 'text' ? res.content[0].text.trim() : '');
+function splitPipeLine(line: string): string[] {
+  return line.split('|').map((s) => s.trim()).filter(Boolean);
 }
 
-/** Build a resolve map from the practiced words plus the model's proper-name list. */
-function resolveMap(words: Word[], parsed: Record<string, unknown>): Resolve {
-  const map: Resolve = new Map();
-  for (const w of words) if (!map.has(w.h)) map.set(w.h, { p: w.p, m: w.m });
-  for (const n of (Array.isArray(parsed.names) ? parsed.names : []) as Record<string, unknown>[]) {
-    const h = typeof n?.h === 'string' ? n.h.trim() : '';
-    if (h && !map.has(h)) map.set(h, { p: typeof n.p === 'string' ? n.p : '', m: typeof n.m === 'string' ? n.m : '' });
+/** Re-merge a due word the model split across bars despite being told to keep it whole. */
+function mergeDueWords(segs: string[], due: DueSet): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < segs.length; i++) {
+    let merged: string | null = null;
+    let used = 1;
+    for (let len = Math.min(MAX_WORD_MERGE, segs.length - i); len >= 2; len--) {
+      const joined = segs.slice(i, i + len).join('');
+      if (due.has(joined)) { merged = joined; used = len; break; }
+    }
+    out.push(merged ?? segs[i]);
+    i += used - 1;
   }
-  return map;
+  return out;
 }
 
-function ctx(words: Word[], hskLevel: number, themeOffset: number) {
-  const levelDesc = hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced';
-  const today = new Date().toISOString().slice(0, 10);
-  const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
+/** Split the model's raw "title\n\nbody" response. Falls back to a single `\n` if it forgot the
+ *  blank line, and folds any stray newlines inside the body into `|` so a token boundary isn't lost. */
+function parseOutput(raw: string, due: DueSet): { title: string[]; body: string[] } {
+  const cleaned = raw.trim();
+  const sep = cleaned.match(/\n\s*\n/) ?? cleaned.match(/\n/);
+  if (!sep || sep.index === undefined) return { title: [], body: mergeDueWords(splitPipeLine(cleaned), due) };
+  const titlePart = cleaned.slice(0, sep.index);
+  const bodyPart = cleaned.slice(sep.index + sep[0].length).replace(/\n+/g, '|');
   return {
-    levelDesc,
-    sentenceCount: sentenceCountForLevel('zh', hskLevel),
-    theme: DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length],
-    wordList: words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n'),
-    difficulty: levelDesc === 'beginner'
-      ? 'simple grammar, short sentences'
-      : levelDesc === 'intermediate'
-        ? 'varied patterns, moderate complexity'
-        : 'complex grammar, literary or abstract vocabulary',
+    title: mergeDueWords(splitPipeLine(titlePart), due),
+    body: mergeDueWords(splitPipeLine(bodyPart), due),
   };
 }
 
-/** Generate one reading passage (raw tokens) built around the given due words. */
-export async function generatePassage(words: Word[], hskLevel: number, themeOffset = 0): Promise<RawPassage[]> {
-  const c = ctx(words, hskLevel, themeOffset);
-  const prompt = `You are a Chinese language teacher generating a reading passage.
-
-LEVEL: HSK ${hskLevel} (${c.levelDesc})
-TODAY'S THEME: ${c.theme} — the passage must revolve around this theme.
-${words.length ? `\nWORDS TO USE:\n${c.wordList}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
-
-Generate a JSON object with EXACTLY this structure:
-
-{
-  "passages": [{ "title": "WORDS", "sentences": ["WORDS", "WORDS", ...] }],
-  "names": [{ "h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming" }]
+/** Resolve each token text to a RawTok, using `cache` to dedupe repeated words (e.g. a name used
+ *  in both the title and the body) to a single getDefinition call. */
+async function resolveTokens(texts: string[], lang: LanguageCode, cache: Map<string, RawTok>): Promise<RawTok[]> {
+  const unresolved = texts.filter((t) => !cache.has(t));
+  await Promise.all([...new Set(unresolved)].map(async (text) => {
+    const def = await getDefinition(text, lang);
+    cache.set(text, def.meaning ? [text, def.reading, def.meaning] : [text]);
+  }));
+  return texts.map((t) => cache.get(t)!);
 }
 
-Example of a correctly-formatted sentence string:
-  "城市|的|经济|发展|离不开|科技|的|进步|。"
-${words.length ? 'Use ALL the words above naturally in a coherent story' : 'Write a coherent story'} (${c.sentenceCount}–${c.sentenceCount + 2} sentences).
+function buildPrompt(words: Word[], lang: LanguageCode, level: number, themeOffset: number): string {
+  const cfg = getLanguageConfig(lang);
+  const levelDescriptor = cfg.levels.find((l) => l.level === level) ?? cfg.levels[0];
+  const today = new Date().toISOString().slice(0, 10);
+  const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
+  const theme = DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length];
+  const sentenceCount = sentenceCountForLevel(lang, level);
+  const wordList = words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
 
-${PIPE_RULES}
+  return `You are a ${cfg.name} language teacher generating a reading passage.
 
-REQUIREMENTS:
-1. Exactly 1 passage. 2. ${c.sentenceCount}–${c.sentenceCount + 2} sentences.
-3. Difficulty appropriate for HSK ${hskLevel}: ${c.difficulty}.
+LEVEL: ${levelDescriptor.label} (${levelDescriptor.desc})
+TODAY'S THEME: ${theme} — the passage must revolve around this theme.
+${words.length ? `\nWORDS TO USE:\n${wordList}` : '\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.'}
 
-Return ONLY the JSON object. No markdown fences, no explanation.`;
+${words.length ? 'Use ALL the words above naturally in a coherent story' : 'Write a coherent story'} (${sentenceCount}–${sentenceCount + 2} sentences).
 
-  const parsed = await ask(prompt);
-  const map = resolveMap(words, parsed);
-  const rows = Array.isArray(parsed.passages) ? (parsed.passages as Record<string, unknown>[]) : [];
-  return rows.map((p) => ({
-    title: parseTokenString(p.title, map),
-    sentences: (Array.isArray(p.sentences) ? p.sentences : []).map((s) => parseTokenString(s, map)),
-  }));
+OUTPUT FORMAT — THIS IS THE MOST IMPORTANT RULE:
+Line 1: the title, as ${cfg.name} words separated by a | (vertical bar).
+Line 2: blank.
+Line 3 onward: the ENTIRE passage as ${cfg.name} words separated by | — one continuous stream,
+not broken up per sentence.
+
+Rules for tokens between the bars:
+  - Output ONLY ${cfg.name} text (${cfg.nativeName}) and punctuation. NO readings, NO English, NO romanization.
+  - Keep every multi-character word / compound / conjugated form WHOLE as one token.
+  - Keep proper names WHOLE as ONE token (never split a name across bars).
+  - Each punctuation mark is its own token between bars.
+  - Do NOT tag proper nouns or any word with a definition — just the bare word/name itself.
+
+Example of correctly-formatted output:
+${cfg.promptExample}
+
+Return ONLY the title line, a blank line, then the passage line. No JSON, no markdown fences, no explanation.`;
+}
+
+/** Generate one reading passage built around the given due words. */
+export async function generatePassage(words: Word[], lang: LanguageCode, level: number, themeOffset = 0): Promise<RawPassage> {
+  const due = buildDueSet(words);
+  const raw = await askText(buildPrompt(words, lang, level, themeOffset));
+  console.log('raw:\n', raw);
+  const { title, body } = parseOutput(raw, due);
+
+  const cache = new Map<string, RawTok>();
+  return {
+    title: await resolveTokens(title, lang, cache),
+    body: await resolveTokens(body, lang, cache),
+  };
 }

@@ -1,5 +1,5 @@
 import { createBrowserClient, createServerClient, isBrowser } from '@supabase/ssr';
-import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY } from '$env/static/public';
+import { PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY } from '$env/static/public';
 import type { LayoutLoad } from './$types';
 
 // Isomorphic Supabase client: a browser client in the browser, a cookie-backed server client
@@ -8,8 +8,8 @@ export const load: LayoutLoad = async ({ data, depends, fetch }) => {
   depends('supabase:auth');
 
   const supabase = isBrowser()
-    ? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, { global: { fetch } })
-    : createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, {
+    ? createBrowserClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, { global: { fetch } })
+    : createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
         global: { fetch },
         cookies: { getAll: () => data.cookies },
       });

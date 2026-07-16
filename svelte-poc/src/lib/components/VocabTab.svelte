@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { DeckWord, LanguageCode } from '$lib/types';
-  import { lookupReadingAsync } from '$lib/data/lookup';
   import { isActive, isDueToday, localDateStr } from '$lib/deck';
   import { isNew } from '$lib/srs';
-  import { addWord, removeWord } from '$lib/data.remote';
+  import { addWord, removeWord, lookupWord } from '$lib/data.remote';
 
   // Vocab deck. Data via props (getDeck query), mutations via remote commands. Adding resolves
-  // pinyin/meaning from CC-CEDICT client-side, then persists to Supabase.
+  // pinyin/meaning from the centralized word_definitions dictionary server-side, then persists
+  // to Supabase.
   let { deck, language }: { deck: DeckWord[]; language: LanguageCode } = $props();
 
   let input = $state('');
@@ -18,7 +18,7 @@
     if (!h) return;
     adding = true;
     notFound = '';
-    const entry = await lookupReadingAsync(language, h);
+    const entry = await lookupWord({ word: h, lang: language });
     if (!entry.reading && !entry.meaning) notFound = `"${h}" isn't in the dictionary — added with a blank definition.`;
     await addWord({ h, p: entry.reading, m: entry.meaning, lang: language }); // due today (dueInDays 0)
     input = '';
