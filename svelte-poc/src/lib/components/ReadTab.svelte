@@ -116,7 +116,7 @@
     await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 1, passageId: storedPassage?.id });
   }
   const isNewlyAdded = (t: PassageToken): boolean =>
-    t.type === 'vocab' && !status.due.has(t.text) && addedWords.has(t.text);
+    t.type === 'vocab' && !status.due.has(t.text) && addedWords.has(t.text) && deckWords.has(t.text);
 
   async function generate() {
     generating = true;

@@ -90,7 +90,10 @@ export const addWord = command(
   ) => {
     const { user, supabase } = await ctx();
     await insertWord(supabase, user.id, newCard({ h, p, m, due: dayOffset(dueInDays) }), lang);
-    if (passageId) await addPassageWord(supabase, user.id, passageId, h);
+    if (passageId) {
+      await addPassageWord(supabase, user.id, passageId, h);
+      getPassage(lang).refresh();
+    }
     getDeck(lang).refresh();
   },
 );
