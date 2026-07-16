@@ -16,6 +16,16 @@ export function localDateTimeStr(d: Date): string {
   return `${localDateStr(d)} ${h}:${min}`;
 }
 
+/** Formats how far `due` is from `from` as a short relative delay ("+10m", "+4h", "+3d") — the
+ *  interval FSRS just scheduled, rather than an absolute timestamp the reader has to do math on. */
+export function formatDelay(due: Date, from: Date): string {
+  const mins = Math.round((due.getTime() - from.getTime()) / 60_000);
+  if (mins < 60) return `+${Math.max(mins, 1)}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `+${hours}h`;
+  return `+${Math.round(hours / 24)}d`;
+}
+
 /** A Date `n` local days from now (used for card `due` overrides). */
 export function dayOffset(n: number): Date {
   const d = new Date();

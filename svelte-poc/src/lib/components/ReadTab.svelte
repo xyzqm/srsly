@@ -2,7 +2,7 @@
   import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
   import type { StoredPassage } from '$lib/tokens';
   import { buildTokens } from '$lib/tokens';
-  import { isActive, isDue } from '$lib/deck';
+  import { isActive, isDue, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
   import { addWord, generatePassage, gradeCloze, saveBoundaries, saveClozeProgress } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
@@ -107,20 +107,30 @@
   // `finished` guards against re-firing on every subsequent render once blanks/answers settle.
   $effect(() => { if (blankCount > 0 && clozeAnswers.size >= blankCount && !finished) { finished = true; finish(); } });
 
-  const summary = $derived.by(() => {
-    let correct = 0;
-    for (const a of clozeAnswers.values()) if (a.correct) correct++;
-    return { correct, total: clozeAnswers.size };
+  // Per-word (not per-blank) results: a word may fill several blanks, so it only counts as
+  // correct overall if every occurrence was — same worst-of rule finish() grades with. `due`/
+  // `lastReview` read live off `deck`, so cards pick up the post-grade schedule once gradeCloze's
+  // `getDeck.set(...)` lands (briefly still the pre-grade values while that request is in flight).
+  const wordResults = $derived.by(() => {
+    const correctByWord = new Map<string, boolean>();
+    for (const { word, correct } of clozeAnswers.values()) {
+      correctByWord.set(word, (correctByWord.get(word) ?? true) && correct);
+    }
+    return Array.from(correctByWord, ([word, correct]) => {
+      const w = deck.find((d) => d.h === word);
+      return { word, correct, due: w?.due, lastReview: w?.last_review };
+    });
   });
+
+  const summary = $derived.by(() => ({
+    correct: wordResults.filter((r) => r.correct).length,
+    total: wordResults.length,
+  }));
 
   async function finish() {
     // Worst grade per word (a word may appear in several blanks): correct → Good (3), miss → Again (1).
     const grades: Record<string, FsrsGrade> = {};
-    for (const { word, correct } of clozeAnswers.values()) {
-      const g: FsrsGrade = correct ? 3 : 1;
-      grades[word] = Math.min(grades[word] ?? Infinity, g) as FsrsGrade;
-    }
-    console.log(grades);
+    for (const { word, correct } of wordResults) grades[word] = correct ? 3 : 1;
     gradeCloze({ grades, lang: language });
   }
 
@@ -248,6 +258,20 @@
         </button>
       {/if}
     </div>
+
+    {#if finished && wordResults.length > 0}
+      <div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
+        {#each wordResults as r (r.word)}
+          <div style="min-width:108px; padding:8px 14px; border-radius:10px; background:var(--card);
+            border:1.5px solid {r.correct ? 'var(--jade)' : 'var(--accent)'};">
+            <div style="font-family:var(--f-han); font-size:16px; font-weight:500; color:var(--ink);">{r.word}</div>
+            <div style="font-family:var(--f-mono); font-size:10px; letter-spacing:.04em; color:var(--ink-faint); margin-top:3px; white-space:nowrap;">
+              {r.due ? formatDelay(r.due, r.lastReview ?? new Date()) : '—'}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   {:else}
     <div style="text-align:center; padding:56px 24px;">
       <div style="font-family:var(--f-display); font-size:22px; font-weight:500;">{genError ? "Couldn't generate a passage" : 'No passage yet'}</div>
