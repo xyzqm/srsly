@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DeckWord, LanguageCode } from '$lib/types';
-  import { isActive, isDueToday, localDateStr } from '$lib/deck';
+  import { isActive, isDue, localDateTimeStr } from '$lib/deck';
   import { isNew } from '$lib/srs';
   import { addWord, removeWord, lookupWord } from '$lib/data.remote';
 
@@ -26,16 +26,14 @@
   }
 
   function statusOf(w: DeckWord): { label: string; color: string } {
-    if (isDueToday(w)) return { label: 'due', color: 'var(--accent)' };
-    return { label: `due ${localDateStr(w.due)}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
+    if (isDue(w)) return { label: 'due', color: 'var(--accent)' };
+    return { label: `due ${localDateTimeStr(w.due)}`, color: isNew(w) ? 'var(--jade)': 'var(--ink-faint)' };
   }
 
   // Pool words are staged but not yet in circulation (lib/types.ts) — hidden here, same as
-  // everywhere else "the deck" means the active deck. Most-due-first within what's left:
-  // isDueToday treats every card due today or earlier as equally due (calendar day, not exact
-  // timestamp — a card due 11pm today is as due as one due 6am), so sorting by the raw `due`
-  // instant still puts them all before anything due later, and orders them sensibly within
-  // that group.
+  // everywhere else "the deck" means the active deck. Most-due-first within what's left: sorting
+  // by the raw `due` instant ascending puts everything already due (due <= now) first, in order,
+  // then everything else in the order it'll become due.
   const visible = $derived(deck.filter(isActive).sort((a, b) => a.due.getTime() - b.due.getTime()));
 </script>
 

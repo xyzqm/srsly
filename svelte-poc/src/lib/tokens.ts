@@ -16,11 +16,15 @@ export interface RawPassage { title: RawTok[]; body: RawTok[] }
  *  absent; the word itself isn't stored here since it's derivable from `passage`. */
 export type BlankProgress = Record<string, 0 | 1>;
 
-/** One row from the `passages` table (see supabase-passages.sql). */
+/** One row from the `passages` table (see supabase-passages.sql). `quizWords` is frozen at
+ *  generation time (whichever words the passage was built around) rather than re-derived from
+ *  live deck due-status — a word graded mid-session can leave the due set within minutes under
+ *  short-term scheduling, and blanks shouldn't disappear out from under an in-progress passage. */
 export interface StoredPassage {
   id: string;
   date: string;
   passage: RawPassage;
+  quizWords: string[];
   progress: BlankProgress;
   addedWords: string[];
 }

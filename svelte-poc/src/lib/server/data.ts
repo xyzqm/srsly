@@ -31,16 +31,24 @@ export const savePrefs = (sb: SupabaseClient, userId: string, prefs: Prefs) => p
 
 // ── passages ─────────────────────────────────────────────────────────────────
 
+// `quizWords` rides inside the `passage` jsonb column (alongside title/body) rather than as its
+// own DB column — no migration needed, and it's only ever read/written together with the passage.
 interface PassageRow {
   id: string;
   date: string;
-  passage: RawPassage;
+  passage: RawPassage & { quizWords?: string[] };
   progress: BlankProgress;
   added_words: string[];
 }
 
-const fromRow = (r: PassageRow): StoredPassage =>
-  ({ id: r.id, date: r.date, passage: r.passage, progress: r.progress, addedWords: r.added_words });
+const fromRow = (r: PassageRow): StoredPassage => ({
+  id: r.id,
+  date: r.date,
+  passage: { title: r.passage.title, body: r.passage.body },
+  quizWords: r.passage.quizWords ?? [],
+  progress: r.progress,
+  addedWords: r.added_words,
+});
 
 /** Today's passage for this user + language, if one has been generated yet. */
 export async function loadPassage(
@@ -53,14 +61,16 @@ export async function loadPassage(
   return data ? fromRow(data as PassageRow) : null;
 }
 
-/** Create (or replace, on "+ New passage") today's passage row. Resets progress/added_words. */
+/** Create (or replace, on "+ New passage") today's passage row. Resets progress/added_words.
+ *  `quizWords` are whichever words the passage was built around — persisted so blanks stay fixed
+ *  for the life of this passage regardless of later due-status changes. */
 export async function createPassage(
-  sb: SupabaseClient, userId: string, lang: LanguageCode, date: string, passage: RawPassage,
+  sb: SupabaseClient, userId: string, lang: LanguageCode, date: string, passage: RawPassage, quizWords: string[],
 ): Promise<StoredPassage> {
   const { data } = await sb
     .from(PASSAGES_TABLE)
     .upsert(
-      { user_id: userId, lang, date, passage_idx: 0, passage, progress: {}, added_words: [] },
+      { user_id: userId, lang, date, passage_idx: 0, passage: { ...passage, quizWords }, progress: {}, added_words: [] },
       { onConflict: 'user_id,date,lang,passage_idx' },
     )
     .select()

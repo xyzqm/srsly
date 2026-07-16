@@ -21,7 +21,7 @@ import {
 import { generatePassage as genPassage, type Word } from '$lib/server/generate';
 import { getDefinition } from '$lib/server/definitions';
 import { newCard, gradeWord, type FsrsGrade } from '$lib/srs';
-import { isDueToday, localDateStr, dayOffset } from '$lib/deck';
+import { localDateStr, dayOffset } from '$lib/deck';
 import { levelFor } from '$lib/languageConfig';
 
 // All page data + mutations as SvelteKit remote functions (replacing +page.server.ts load /
@@ -33,7 +33,6 @@ import { levelFor } from '$lib/languageConfig';
 // insert/delete rather than a read-modify-write over a jsonb array.
 
 const todayStr = () => localDateStr(new Date());
-const dueWords = (deck: DeckWord[]): Word[] => deck.filter((w) => isDueToday(w)).map((w) => ({ h: w.h, p: w.p, m: w.m }));
 
 /** The acting user + request-scoped Supabase client, or 401. */
 async function ctx() {
@@ -118,12 +117,14 @@ export const gradeCloze = command(
 
 export const generatePassage = command(
   'unchecked',
-  async ({ lang }: { lang: LanguageCode }): Promise<{ error?: string }> => {
+  // `words` (the words to build the passage around) is computed client-side from ReadTab's
+  // already-loaded deck — no need to refetch it here just to re-derive what's due.
+  async ({ lang, words }: { lang: LanguageCode; words: Word[] }): Promise<{ error?: string }> => {
     const { user, supabase } = await ctx();
-    const [deck, prefs] = await Promise.all([loadDeck(supabase, user.id, lang), loadPrefs(supabase, user.id)]);
+    const prefs = await loadPrefs(supabase, user.id);
     try {
-      const passage = await genPassage(dueWords(deck), lang, levelFor(lang, prefs), Math.floor(Math.random() * 12));
-      const stored = await createPassage(supabase, user.id, lang, todayStr(), passage);
+      const passage = await genPassage(words, lang, levelFor(lang, prefs), Math.floor(Math.random() * 12));
+      const stored = await createPassage(supabase, user.id, lang, todayStr(), passage, words.map((w) => w.h));
       getPassage(lang).set(stored);
       return {};
     } catch (e) {

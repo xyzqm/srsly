@@ -1,6 +1,5 @@
 import { fsrs, generatorParameters, createEmptyCard, State, type Grade } from 'ts-fsrs';
 import type { DeckWord } from './types';
-import { dayOffset } from './deck';
 
 // SRS scheduling backed by the ts-fsrs library (open-spaced-repetition). Because DeckWord
 // extends ts-fsrs's Card (see types.ts), there's no DeckWord<->Card conversion: a DeckWord is
@@ -34,9 +33,8 @@ function schedulerFor(s: SrsSettings) {
       request_retention: s.desiredRetention,
       maximum_interval: s.maxIntervalDays,
       enable_fuzz: true,
-      // Disables ts-fsrs's sub-day (re)learning steps, so every grade — even a same-session
-      // "Again" — reschedules at least a full day out instead of minutes later.
-      enable_short_term: false,
+      // enable_short_term defaults to true: sub-day (re)learning steps, so a same-session
+      // "Again" can reschedule minutes later instead of always jumping a full day out.
     }),
   );
 }
@@ -63,15 +61,11 @@ export function isNew(w: DeckWord): boolean {
   return w.state === State.New;
 }
 
-/** Grade a card (1=Again…4=Easy) and return the updated card. ts-fsrs does the scheduling;
- *  we merge its returned Card fields back onto the DeckWord, preserving h/p/m/decks/etc.
- *
- *  A word's very first review (state New) always comes back in exactly one day (i.e. first grade is always Again)
- *  — FSRS's own initial-stability curve would otherwise send a first "Good" out several
- *  days while a first "Again" comes back in one, and a word that's never been seen once doesn't
- *  carry enough signal to trust that spread. `stability`/`difficulty` still get FSRS's real
- *  values, so every *subsequent* review schedules normally. */
+/** Grade a card (1=Again…4=Easy) and return the updated card. ts-fsrs does the scheduling
+ *  (short-term/learning-step scheduling enabled, so `due` may land minutes or hours out rather
+ *  than a full day); we merge its returned Card fields back onto the DeckWord, preserving
+ *  h/p/m/decks/etc. */
 export function gradeWord(word: DeckWord, grade: FsrsGrade, settings: SrsSettings = DEFAULT_SRS_SETTINGS): DeckWord {
-  const { card } = schedulerFor(settings).next(word, new Date(), (word.state === State.New ? 1 : grade) as Grade);
+  const { card } = schedulerFor(settings).next(word, new Date(), grade as Grade);
   return { ...word, ...card };
 }

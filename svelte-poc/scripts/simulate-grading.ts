@@ -34,7 +34,7 @@ function parseGrade(tok: string): FsrsGrade | null {
 }
 
 function fmtDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return d.toISOString();
 }
 
 function daysBetween(a: Date, b: Date): number {
