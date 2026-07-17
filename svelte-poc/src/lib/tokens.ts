@@ -5,7 +5,11 @@ import type { PassageToken } from './types';
 // turning raw tokens into PassageTokens here is a straight mapping — no client-side dictionary,
 // no segmentation-repair heuristics needed.
 
-export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
+export interface RawTok {
+  text: string;
+  reading?: string;
+  meaning?: string;
+}
 
 // Compact, raw (un-normalized) content as generated on the server and stored in Supabase. `body`
 // is the whole passage as one flat token stream — sentence boundaries aren't tracked, since cloze
@@ -36,14 +40,19 @@ const PUNCT_CHARS = new Set([
   '～', '~', '／', '\\', '|', '`', '^',
 ]);
 
-function isPunct(text: string): boolean {
-  if (PUNCT_CHARS.has(text)) return true;
-  if (text.length === 1 && !/[一-鿿㐀-䶿]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
-  return false;
+/** Whether a single character is punctuation rather than a word character. Also used by
+ *  the BudouX-based segmenters (see segment.ts) to peel punctuation off phrase boundaries — so
+ *  this must recognize hiragana/katakana as word characters too, not just Han ideographs, or
+ *  Japanese phrases get shredded kana-by-kana. */
+export function isPunctChar(ch: string): boolean {
+  return PUNCT_CHARS.has(ch) || (!/[一-鿿㐀-䶿぀-ヿ]/.test(ch) && !/[a-zA-Z0-9]/.test(ch));
 }
 
-function rawToToken(arr: RawTok): PassageToken {
-  const [text, reading, meaning] = arr as [string, string?, string?];
+function isPunct(text: string): boolean {
+  return text.length === 1 && isPunctChar(text);
+}
+
+function rawToToken({ text, reading, meaning }: RawTok): PassageToken {
   if (isPunct(text)) return { text, type: 'punct' };
   if (meaning) return { text, reading: reading || undefined, meaning, type: 'vocab' };
   if (reading) return { text, reading };
@@ -54,7 +63,7 @@ function rawToToken(arr: RawTok): PassageToken {
 // model sometimes leaves inside fill before/after text (e.g. "____" or "＿＿") instead of only
 // removing the answer word.
 function keepTok(r: RawTok): boolean {
-  const t = r[0];
+  const t = r.text;
   return t !== '' && t !== 'punctuation' && !/^[_＿＿‗﹍-﹏\s]+$/.test(t);
 }
 

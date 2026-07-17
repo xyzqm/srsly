@@ -65,7 +65,7 @@ async function resolveTokens(texts: string[], lang: LanguageCode, cache: Map<str
   const unresolved = texts.filter((t) => !cache.has(t));
   await Promise.all([...new Set(unresolved)].map(async (text) => {
     const def = await getDefinition(text, lang);
-    cache.set(text, def.meaning ? [text, def.reading, def.meaning] : [text]);
+    cache.set(text, def.meaning ? { text, reading: def.reading, meaning: def.meaning } : { text });
   }));
   return texts.map((t) => cache.get(t)!);
 }

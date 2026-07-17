@@ -24,15 +24,14 @@ function parseWord(spec: string): Word {
   return { h, p, m };
 }
 
-function fmtTok(t: RawTok): string {
-  const [text, p, m] = t;
-  return p ? `${text}(${p}${m ? `, ${m}` : ''})` : text;
+function fmtTok({ text, reading, meaning }: RawTok): string {
+  return reading ? `${text}(${reading}${meaning ? `, ${meaning}` : ''})` : text;
 }
 
 function printPassage(p: RawPassage) {
-  console.log(`title: ${p.title.map((t) => t[0]).join('')}`);
+  console.log(`title: ${p.title.map((t) => t.text).join('')}`);
   console.log(`  ${p.title.map(fmtTok).join(' | ')}`);
-  console.log(`\nbody: ${p.body.map((t) => t[0]).join('')}`);
+  console.log(`\nbody: ${p.body.map((t) => t.text).join('')}`);
   console.log(`  ${p.body.map(fmtTok).join(' | ')}`);
 }
 
