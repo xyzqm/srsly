@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { PassageToken, DeckWord, LanguageCode } from '$lib/types';
+  import type { PassageToken, DeckWord } from '$lib/types';
   import type { StoredPassage } from '$lib/tokens';
+  import type { Prefs } from '$lib/server/data';
   import { buildTokens } from '$lib/tokens';
   import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
-  import { addWord, generatePassage, gradeCloze, saveBoundaries, saveClozeProgress } from '$lib/data.remote';
+  import { addWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -17,19 +18,19 @@
   interface Props {
     deck: DeckWord[];
     storedPassage: StoredPassage | null;
-    language: LanguageCode;
-    hskLevel: number;
-    showWordBoundaries: boolean;
-    wordsPerPassage: number;
+    prefs: Prefs;
     onNavigateVocab: () => void;
   }
-  let { deck, storedPassage, language, hskLevel, showWordBoundaries, wordsPerPassage, onNavigateVocab }: Props = $props();
+  let { deck, storedPassage, prefs, onNavigateVocab }: Props = $props();
+  const language = $derived(prefs.language);
+  const hskLevel = $derived(prefs.hskLevel);
+  const wordsPerPassage = $derived(prefs.wordsPerPassage);
 
   // Optimistic local mirror of the persisted pref, same pattern as SettingsTab's `level`.
-  let boundaries = $derived(showWordBoundaries);
+  let boundaries = $derived(prefs.showWordBoundaries);
   function toggleBoundaries() {
     boundaries = !boundaries;
-    saveBoundaries({ showWordBoundaries: boundaries });
+    updatePrefs({ prefs: { ...prefs, showWordBoundaries: boundaries } });
   }
 
   let generating = $state(false);

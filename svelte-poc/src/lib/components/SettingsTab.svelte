@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Prefs } from '$lib/server/data';
-  import { saveLevel, saveWordsPerPassage, seedDemo, clearDeck } from '$lib/data.remote';
+  import { updatePrefs, seedDemo, clearDeck } from '$lib/data.remote';
 
   // Settings tab. Level/wordsPerPassage are read from prefs (props) and saved via remote command;
   // seed/clear are one-shot remote commands with no local state to track.
@@ -20,7 +20,7 @@
       {#each [1, 2, 3, 4, 5, 6] as n (n)}
         <button onclick={() => {
           level = n; // optimistic UI update
-          saveLevel({ hskLevel: n });
+          updatePrefs({ prefs: { ...prefs, hskLevel: n } });
         }}
           style="font-family:var(--f-mono); font-size:12px; padding:8px 14px; border-radius:7px; cursor:pointer;
             border:1px solid {level === n ? 'var(--ink)' : 'var(--line)'};
@@ -33,7 +33,7 @@
       {#each [3, 5, 8, 12, 15] as n (n)}
         <button onclick={() => {
           wordsPerPassage = n; // optimistic UI update
-          saveWordsPerPassage({ wordsPerPassage: n });
+          updatePrefs({ prefs: { ...prefs, wordsPerPassage: n } });
         }}
           style="font-family:var(--f-mono); font-size:12px; padding:8px 14px; border-radius:7px; cursor:pointer;
             border:1px solid {wordsPerPassage === n ? 'var(--ink)' : 'var(--line)'};

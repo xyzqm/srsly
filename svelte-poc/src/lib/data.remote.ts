@@ -1,6 +1,6 @@
 import { query, command, getRequestEvent } from '$app/server';
 import { error } from '@sveltejs/kit';
-import type { DeckWord, LanguageCode, Theme } from '$lib/types';
+import type { DeckWord, LanguageCode } from '$lib/types';
 import type { BlankProgress } from '$lib/tokens';
 import {
   loadDeck,
@@ -154,44 +154,15 @@ export const saveClozeProgress = command(
   },
 );
 
-export const saveTheme = command('unchecked', async ({ theme }: { theme: Theme }) => {
+// Every prefs mutation (theme, level, language, boundaries, words-per-passage) is this same
+// shape — persist the full next Prefs object and push it straight into the cache. The caller
+// already has the current prefs (it's a query result they hold), so it computes `next` itself
+// (`{ ...prefs, theme: t }` etc.) rather than this command re-reading the row from the DB just
+// to merge in one changed field.
+export const updatePrefs = command('unchecked', async ({ prefs }: { prefs: Prefs }) => {
   const { user, supabase } = await ctx();
-  const prefs = await loadPrefs(supabase, user.id);
-  const next = { ...prefs, theme };
-  await savePrefs(supabase, user.id, next);
-  getPrefs().set(next);
-});
-
-export const saveLevel = command('unchecked', async ({ hskLevel }: { hskLevel: number }) => {
-  const { user, supabase } = await ctx();
-  const prefs = await loadPrefs(supabase, user.id);
-  const next = { ...prefs, hskLevel };
-  await savePrefs(supabase, user.id, next);
-  getPrefs().set(next);
-});
-
-export const saveLanguage = command('unchecked', async ({ language }: { language: LanguageCode }) => {
-  const { user, supabase } = await ctx();
-  const prefs = await loadPrefs(supabase, user.id);
-  const next = { ...prefs, language };
-  await savePrefs(supabase, user.id, next);
-  getPrefs().set(next);
-});
-
-export const saveBoundaries = command('unchecked', async ({ showWordBoundaries }: { showWordBoundaries: boolean }) => {
-  const { user, supabase } = await ctx();
-  const prefs = await loadPrefs(supabase, user.id);
-  const next = { ...prefs, showWordBoundaries };
-  await savePrefs(supabase, user.id, next);
-  getPrefs().set(next);
-});
-
-export const saveWordsPerPassage = command('unchecked', async ({ wordsPerPassage }: { wordsPerPassage: number }) => {
-  const { user, supabase } = await ctx();
-  const prefs = await loadPrefs(supabase, user.id);
-  const next = { ...prefs, wordsPerPassage };
-  await savePrefs(supabase, user.id, next);
-  getPrefs().set(next);
+  await savePrefs(supabase, user.id, prefs);
+  getPrefs().set(prefs);
 });
 
 // Dev convenience: seed a few demo words due today. DEMO is Chinese, so always tagged 'zh'

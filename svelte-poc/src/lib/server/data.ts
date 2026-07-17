@@ -158,14 +158,19 @@ function toRow(card: Omit<DeckWord, 'id'>) {
   };
 }
 
-/** A user's deck is partitioned by language — every read/write below is scoped to one. */
+/** A user's deck is partitioned by language — every read/write below is scoped to one. Pool
+ *  (staged) words are excluded and due-ascending is the sort order: PostgREST caps unbounded
+ *  selects at 1000 rows, and with pool words in the mix a user's active/due cards can get
+ *  silently truncated past that line — ordering by due date keeps whatever's soonest (i.e.
+ *  already overdue) safely inside the cap. */
 export async function loadDeck(sb: SupabaseClient, userId: string, lang: LanguageCode): Promise<DeckWord[]> {
   const { data } = await sb
     .from(DECK_TABLE)
     .select('*')
     .eq('user_id', userId)
     .eq('lang', lang)
-    .order('created_at', { ascending: false });
+    .eq('pool', false)
+    .order('due', { ascending: true });
   return (data ?? []).map(reviveCard);
 }
 

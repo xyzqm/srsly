@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { LanguageCode, Theme } from '$lib/types';
+  import type { DeckWord, LanguageCode, Theme } from '$lib/types';
+  import type { StoredPassage } from '$lib/tokens';
   import { SUPPORTED_LANGUAGES } from '$lib/languageConfig';
-  import { getDeck, getPrefs, getPassage, saveTheme, saveLanguage } from '$lib/data.remote';
+  import { getDeck, getPrefs, getPassage, updatePrefs } from '$lib/data.remote';
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
@@ -13,11 +14,27 @@
   let { data } = $props();
   // Each query is called unconditionally (it returns empty data when logged out). The layout's
   // auth listener calls .refresh() on all three on sign in/out, which reactively updates these.
-  // `deck` and `passage` re-fetch whenever the selected study language changes, since both are
-  // parameterized by language — this is the one place that picks which language's data to load.
+  // `deck` and `passage` are parameterized by language, but SvelteKit's remote-query cache is
+  // reference-counted, not persistent: a cache entry is evicted once nothing live points at it
+  // (see @sveltejs/kit's remote-functions/cache.svelte.js). Deriving just `getDeck(prefs.language)`
+  // would mean only the *current* language's entry stays referenced — switching away drops the
+  // other language's entry, so switching back is a fresh fetch every time, not a cache hit.
+  // Awaiting every language in SUPPORTED_LANGUAGES unconditionally (via one Promise.all, so the
+  // svelte:boundary in +layout.svelte still suspends on it like any other top-level await) keeps
+  // every entry pinned for as long as this page is mounted, so language switches are instant
+  // after the first load of each — and it scales to however many languages srsly ends up
+  // supporting, with nothing here naming 'zh'/'ja' specifically.
   const prefs = $derived(await getPrefs());
-  const deck = $derived(await getDeck(prefs.language));
-  const passage = $derived(await getPassage(prefs.language));
+  const decks = $derived(await Promise.all(SUPPORTED_LANGUAGES.map((lang) => getDeck(lang))));
+  const passages = $derived(await Promise.all(SUPPORTED_LANGUAGES.map((lang) => getPassage(lang))));
+  const deckByLang = $derived(
+    Object.fromEntries(SUPPORTED_LANGUAGES.map((lang, i) => [lang, decks[i]])) as Record<LanguageCode, DeckWord[]>,
+  );
+  const passageByLang = $derived(
+    Object.fromEntries(SUPPORTED_LANGUAGES.map((lang, i) => [lang, passages[i]])) as Record<LanguageCode, StoredPassage | null>,
+  );
+  const deck = $derived(deckByLang[prefs.language]);
+  const passage = $derived(passageByLang[prefs.language]);
 
   type Tab = 'read' | 'vocab' | 'settings';
   const TABS: { id: Tab; label: string }[] = [
@@ -36,10 +53,10 @@
   $effect(() => { document.documentElement.setAttribute('data-theme', theme); });
   function setTheme(t: Theme) {
     theme = t;
-    saveTheme({ theme: t });
+    updatePrefs({ prefs: { ...prefs, theme: t } });
   }
   function setLanguage(l: LanguageCode) {
-    saveLanguage({ language: l });
+    updatePrefs({ prefs: { ...prefs, language: l } });
   }
 </script>
 
@@ -90,7 +107,7 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} storedPassage={passage} language={prefs.language} hskLevel={prefs.hskLevel} showWordBoundaries={prefs.showWordBoundaries} wordsPerPassage={prefs.wordsPerPassage} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} storedPassage={passage} prefs={prefs} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} language={prefs.language} />
       {:else}
