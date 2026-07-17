@@ -113,7 +113,13 @@ export async function generatePassage(words: Word[], lang: LanguageCode, level: 
   console.log('raw:\n', raw);
   const { title, body } = parseOutput(raw, due);
 
-  const cache = new Map<string, RawTok>();
+  // Seed the cache with due words' own (deck-supplied) reading/meaning so resolveTokens uses
+  // those instead of re-deriving from the shared word_definitions dictionary — the deck's copy
+  // may have been user-corrected (see editWordDefinition in data.remote.ts), and a personal
+  // correction should never leak into word_definitions, where it'd apply to every other user.
+  const cache = new Map<string, RawTok>(
+    words.map((w): [string, RawTok] => [w.h, w.m ? { text: w.h, reading: w.p, meaning: w.m } : { text: w.h }]),
+  );
   return {
     title: await resolveTokens(title, lang, cache),
     body: await resolveTokens(body, lang, cache),
