@@ -111,9 +111,13 @@ export const removeWord = command('unchecked', async ({ id, lang }: { id: string
 export const editWordDefinition = command(
   'unchecked',
   async ({ id, h, p, m, lang }: { id: string; h: string; p: string; m: string; lang: LanguageCode }) => {
+    // A word with no meaning falls out of the 'vocab' token type (see rawToToken in tokens.ts),
+    // which silently breaks cloze-blank detection for every occurrence of it in a passage.
+    if (!m.trim()) error(400, 'Meaning cannot be empty.');
     const { user, supabase } = await ctx();
     await updateWordDefinition(supabase, user.id, id, p, m);
-    getDeck(lang).refresh();
+    const deck = await loadDeck(supabase, user.id, lang);
+    getDeck(lang).set(deck.map((w) => (w.id === id ? { ...w, p, m } : w)));
 
     const current = await loadPassage(supabase, user.id, lang);
     if (!current) return;

@@ -15,8 +15,10 @@
     onClose: () => void;
     onAddVocab: (word: string, pinyin: string, meaning: string) => void;
     // Present only for type 'lookup' (the word is already in the deck) — lets the user correct a
-    // bad reading/meaning inline instead of only being able to view it.
-    onSaveDefinition?: (pinyin: string, meaning: string) => void;
+    // bad reading/meaning inline instead of only being able to view it. Returns a Promise (rather
+    // than firing and forgetting) so this popup can wait for the save to actually land before
+    // leaving edit mode, and show an error inline instead of silently discarding a failed edit.
+    onSaveDefinition?: (pinyin: string, meaning: string) => Promise<void>;
     // Present only for type 'lookup' — requests removal from the deck. Just a request, not the
     // deletion itself: the caller is expected to confirm before actually removing (see ReadTab.svelte).
     onRequestRemove?: () => void;
@@ -31,17 +33,44 @@
   let editing = $state(false);
   let editP = $state('');
   let editM = $state('');
+  let saving = $state(false);
+  let saveError = $state('');
 
   // Editing state is scoped to whichever word the popup is currently showing — reset it (and
   // seed the drafts) every time `data` changes, not just on mount.
   $effect(() => {
     editing = false;
+    saveError = '';
     if (data) { editP = data.pinyin; editM = data.meaning; }
   });
 
-  function saveEdit() {
+  // Reseeds the drafts every time editing starts (not just when `data` changes) — otherwise a
+  // value typed, then Cancelled, would silently resurface (and be save-able) the next time Edit
+  // is clicked on this same still-open popup.
+  function startEdit() {
+    if (!data) return;
+    editP = data.pinyin;
+    editM = data.meaning;
+    saveError = '';
+    editing = true;
+  }
+  function cancelEdit() {
     editing = false;
-    onSaveDefinition?.(editP.trim(), editM.trim());
+    saveError = '';
+  }
+
+  async function saveEdit() {
+    if (!onSaveDefinition || !editM.trim()) return;
+    saving = true;
+    saveError = '';
+    try {
+      await onSaveDefinition(editP.trim(), editM.trim());
+      editing = false;
+    } catch {
+      saveError = "Couldn't save — try again.";
+    } finally {
+      saving = false;
+    }
   }
 
   function fmtMeaning(m: string): string {
@@ -117,7 +146,8 @@
       {#if editing}
         <input
           bind:value={editP}
-          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') (editing = false); }}
+          disabled={saving}
+          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') cancelEdit(); }}
           placeholder="reading"
           style="font-family:var(--f-mono); font-size:12px; color:var(--pop-fg); margin-left:6px; width:6em;
             background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:5px; padding:2px 6px;"
@@ -130,11 +160,17 @@
       {#if editing}
         <input
           bind:value={editM}
-          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') (editing = false); }}
+          disabled={saving}
+          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') cancelEdit(); }}
           placeholder="meaning"
           style="width:100%; font-size:13.5px; color:var(--pop-fg); background:rgba(255,255,255,.1);
             border:1px solid rgba(255,255,255,.2); border-radius:5px; padding:4px 8px;"
         />
+        {#if !editM.trim()}
+          <div style="font-size:10.5px; color:var(--pop-warn); margin-top:4px;">Meaning can't be empty.</div>
+        {:else if saveError}
+          <div style="font-size:10.5px; color:var(--pop-warn); margin-top:4px;">{saveError}</div>
+        {/if}
       {:else if data.meaning}
         {fmtMeaning(data.meaning)}
       {:else}
@@ -166,10 +202,11 @@
         padding-top:8px; font-size:11px; border-top:1px solid rgba(255,255,255,.1); font-family:var(--f-mono); letter-spacing:.05em;">
         {#if editing}
           <div style="display:flex; gap:6px;">
-            <button onclick={saveEdit}
-              style="background:var(--jade); border:none; border-radius:6px; color:#fff; cursor:pointer; padding:4px 10px; font-size:11px;"
-            >Save</button>
-            <button onclick={() => (editing = false)}
+            <button onclick={saveEdit} disabled={saving || !editM.trim()}
+              style="background:var(--jade); border:none; border-radius:6px; color:#fff; cursor:pointer; padding:4px 10px; font-size:11px;
+                opacity:{saving || !editM.trim() ? 0.5 : 1};"
+            >{saving ? 'Saving…' : 'Save'}</button>
+            <button onclick={cancelEdit} disabled={saving}
               style="background:none; border:1px solid rgba(255,255,255,.25); border-radius:6px; color:var(--pop-fg); cursor:pointer; padding:4px 10px; font-size:11px;"
             >Cancel</button>
           </div>
@@ -177,7 +214,7 @@
           <span style="color:rgba(120,210,120,.85);">+ Added to your deck</span>
           <div style="display:flex; gap:6px;">
             {#if onSaveDefinition}
-              <button onclick={() => (editing = true)}
+              <button onclick={startEdit}
                 style="background:none; border:1px solid rgba(255,255,255,.2); border-radius:6px; color:var(--pop-fg);
                   opacity:.75; cursor:pointer; padding:3px 9px; font-size:10.5px;"
               >Edit</button>

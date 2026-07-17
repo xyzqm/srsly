@@ -154,15 +154,16 @@
   }
   // Only reachable for popup type 'lookup' (word already in deck) — WordPopup gates the Edit
   // button on that itself, but guard here too since `deck` may have changed since the popup opened.
-  // Updates `popup` itself immediately (the command's round trip, plus its own patch of today's
-  // passage tokens, would otherwise leave the open popup showing the pre-edit reading/meaning).
-  function saveDefinition(pinyin: string, meaning: string) {
+  // Awaits the command (WordPopup awaits this in turn, staying in edit mode with an inline error
+  // on rejection) and only updates `popup` once the save has actually landed — no optimistic
+  // update to unwind if it fails.
+  async function saveDefinition(pinyin: string, meaning: string) {
     if (!popup) return;
     const word = popup.word;
     const w = deck.find((d) => d.h === word);
     if (!w) return;
-    popup = { ...popup, pinyin, meaning };
-    editWordDefinition({ id: w.id, h: word, p: pinyin, m: meaning, lang: language });
+    await editWordDefinition({ id: w.id, h: word, p: pinyin, m: meaning, lang: language });
+    if (popup && popup.word === word) popup = { ...popup, pinyin, meaning };
   }
   // Trash icon in WordPopup only requests removal — closes the popup and opens a confirmation
   // (irretrievably deletes the word's SRS progress, so it's not a one-click action).

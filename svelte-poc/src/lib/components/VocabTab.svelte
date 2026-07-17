@@ -42,6 +42,7 @@
   async function saveEdit(w: DeckWord) {
     const p = editP.trim();
     const m = editM.trim();
+    if (!m) return;
     editingId = null;
     if (p === w.p && m === w.m) return;
     await editWordDefinition({ id: w.id, h: w.h, p, m, lang: language });
@@ -116,8 +117,9 @@
               style="flex:1; font-size:13.5px; color:var(--ink); background:var(--paper);
                 border:1px solid var(--line); border-radius:5px; padding:3px 8px;"
             />
-            <button onclick={() => saveEdit(w)} aria-label="Save"
-              style="background:var(--jade); border:none; border-radius:6px; color:#fff; cursor:pointer; padding:4px 9px; font-size:12px;"
+            <button onclick={() => saveEdit(w)} disabled={!editM.trim()} aria-label="Save"
+              style="background:var(--jade); border:none; border-radius:6px; color:#fff; cursor:pointer; padding:4px 9px; font-size:12px;
+                opacity:{editM.trim() ? 1 : 0.5};"
             >✓</button>
             <button onclick={cancelEdit} aria-label="Cancel edit"
               style="background:none; border:1px solid var(--line); border-radius:6px; color:var(--ink-faint); cursor:pointer; padding:4px 9px; font-size:13px;"
