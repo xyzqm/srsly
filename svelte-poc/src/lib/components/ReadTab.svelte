@@ -71,17 +71,33 @@
   const charCount = $derived(passage ? passage.body.filter((t) => /[一-鿿]/.test(t.text)).length : 0);
 
   let finished = $state(false);
+  // True while a just-completed passage's grades are being persisted — separate from `finished`
+  // so the word-status summary doesn't reveal itself (and briefly flash pre-grade due dates,
+  // since it reads them live off `deck`) until gradeCloze's `getDeck.set(...)` has actually landed.
+  let grading = $state(false);
 
-  // Restore persisted blank progress once per passage object. Keyed by object identity, not
-  // storedPassage.id: "+ New passage" upserts on (user_id, lang, passage_idx) — there's only ever
-  // one passage row per user+lang — which reuses the same row id indefinitely, so this doubles as
-  // the reset for a newly generated passage, but only if the guard can actually tell the new one
-  // apart from the old.
+  // Restore persisted blank progress on mount/reload (`clozeAnswers` starts empty then). Keyed on
+  // object identity, not storedPassage.id: "+ New passage" upserts on (user_id, lang, passage_idx)
+  // — there's only ever one passage row per user+lang, reusing the same row id indefinitely — so
+  // identity is the only way to tell "the same passage, updated" from "a genuinely new one".
+  //
+  // storedPassage gets a new reference on *every* saveClozeProgress/gradeCloze call too, not just
+  // on mount or regeneration — each answered blank re-triggers this effect mid-session. The
+  // `clozeAnswers.size > 0` guard is what keeps it from mattering then: once `onCloze` has locally
+  // recorded at least one answer, this effect only re-tracks `restoredFor` and stops (doesn't
+  // restore anything or touch `finished`). Without that guard, the *last* blank's own
+  // saveClozeProgress — a fast single-field write — reliably resolves before finish()'s much
+  // heavier gradeCloze call, so this would see persisted progress covering every blank and set
+  // `finished = true` directly right here, well before gradeCloze has actually graded anything —
+  // bypassing the `grading` guard entirely and re-introducing the due-date flicker from a
+  // different angle. (Regeneration still resets `clozeAnswers` to empty first — see generate() —
+  // so this stays correct for that case too.)
   let restoredFor: StoredPassage | null = null; // note: this variable is persisted across runs of the effect below
   $effect(() => {
     if (!passage || !storedPassage) return;
     if (restoredFor === storedPassage) return;
     restoredFor = storedPassage;
+    if (clozeAnswers.size > 0) return;
     const restored = new Map<string, { word: string; correct: boolean }>();
     for (const [occId, val] of Object.entries(storedPassage.progress)) {
       const tok = passage.body[Number(occId)];
@@ -114,13 +130,16 @@
   }
 
   // Grade automatically the moment every blank is filled, so there's nothing to click.
-  // `finished` guards against re-firing on every subsequent render once blanks/answers settle.
-  $effect(() => { if (blankCount > 0 && clozeAnswers.size >= blankCount && !finished) { finished = true; finish(); } });
+  // `finished`/`grading` guard against re-firing on every subsequent render once blanks/answers
+  // settle, and while finish()'s gradeCloze call is still in flight.
+  $effect(() => {
+    if (blankCount > 0 && clozeAnswers.size >= blankCount && !finished && !grading) { grading = true; finish(); }
+  });
 
   // Per-word (not per-blank) results: a word may fill several blanks, so it only counts as
   // correct overall if every occurrence was — same worst-of rule finish() grades with. `due`/
-  // `lastReview` read live off `deck`, so cards pick up the post-grade schedule once gradeCloze's
-  // `getDeck.set(...)` lands (briefly still the pre-grade values while that request is in flight).
+  // `lastReview` read live off `deck`, so this only becomes accurate once gradeCloze's
+  // `getDeck.set(...)` lands — `finished` (which reveals it) is held back until then.
   const wordResults = $derived.by(() => {
     const correctByWord = new Map<string, boolean>();
     for (const { word, correct } of clozeAnswers.values()) {
@@ -141,7 +160,9 @@
     // Worst grade per word (a word may appear in several blanks): correct → Good (3), miss → Again (1).
     const grades: Record<string, FsrsGrade> = {};
     for (const { word, correct } of wordResults) grades[word] = correct ? 3 : 1;
-    gradeCloze({ grades, lang: language });
+    await gradeCloze({ grades, lang: language });
+    grading = false;
+    finished = true;
   }
 
   function openPopup(e: MouseEvent, token: PassageToken) {
@@ -195,7 +216,13 @@
       .map((w) => ({ h: w.h, p: w.p, m: w.m }));
     const r = await generatePassage({ lang: language, words });
     generating = false;
-    if (r?.error) genError = r.error;
+    if (r?.error) { genError = r.error; return; }
+    // Explicit reset rather than relying on the restore effect to infer it: that effect now only
+    // restores/re-derives `finished` when `clozeAnswers` is already empty (see its comment above),
+    // so any answers left over from a passage regenerated mid-completion need clearing here first.
+    clozeAnswers = new Map();
+    finished = false;
+    grading = false;
   }
 
   // Entry point for both "Generate passage" and "+ New passage": if there's a deck but nothing in
