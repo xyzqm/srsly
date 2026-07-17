@@ -2,7 +2,7 @@
   import type { DeckWord, LanguageCode, Theme } from '$lib/types';
   import type { StoredPassage } from '$lib/tokens';
   import { SUPPORTED_LANGUAGES } from '$lib/languageConfig';
-  import { getDeck, getPrefs, getPassage, updatePrefs } from '$lib/data.remote';
+  import { getDeck, getPrefs, getPassage, getPoolWords, updatePrefs } from '$lib/data.remote';
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
@@ -27,14 +27,19 @@
   const prefs = $derived(await getPrefs());
   const decks = $derived(await Promise.all(SUPPORTED_LANGUAGES.map((lang) => getDeck(lang))));
   const passages = $derived(await Promise.all(SUPPORTED_LANGUAGES.map((lang) => getPassage(lang))));
+  const poolWordsList = $derived(await Promise.all(SUPPORTED_LANGUAGES.map((lang) => getPoolWords(lang))));
   const deckByLang = $derived(
     Object.fromEntries(SUPPORTED_LANGUAGES.map((lang, i) => [lang, decks[i]])) as Record<LanguageCode, DeckWord[]>,
   );
   const passageByLang = $derived(
     Object.fromEntries(SUPPORTED_LANGUAGES.map((lang, i) => [lang, passages[i]])) as Record<LanguageCode, StoredPassage | null>,
   );
+  const poolWordsByLang = $derived(
+    Object.fromEntries(SUPPORTED_LANGUAGES.map((lang, i) => [lang, poolWordsList[i]])) as Record<LanguageCode, DeckWord[]>,
+  );
   const deck = $derived(deckByLang[prefs.language]);
   const passage = $derived(passageByLang[prefs.language]);
+  const poolWords = $derived(poolWordsByLang[prefs.language]);
 
   type Tab = 'read' | 'vocab' | 'settings';
   const TABS: { id: Tab; label: string }[] = [
@@ -107,7 +112,7 @@
 
     <main>
       {#if tab === 'read'}
-        <ReadTab deck={deck} storedPassage={passage} prefs={prefs} onNavigateVocab={() => (tab = 'vocab')} />
+        <ReadTab deck={deck} poolWords={poolWords} storedPassage={passage} prefs={prefs} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} language={prefs.language} />
       {:else}

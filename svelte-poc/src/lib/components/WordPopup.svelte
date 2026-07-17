@@ -6,14 +6,20 @@
     word: string;
     pinyin: string;
     meaning: string;
-    type: 'vocab' | 'free' | 'lookup';
+    // pool = already staged in the deck (pool:true) but not yet in circulation — "Add to vocab"
+    // releases the existing row instead of inserting a new one (see poolId below).
+    type: 'vocab' | 'free' | 'lookup' | 'pool';
     anchorRect: DOMRect;
+    // Present only for type 'pool' — the staged row's id, needed to release it.
+    poolId?: string;
   }
 
   interface Props {
     data: PopupData | null;
     onClose: () => void;
     onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+    // Present only for type 'pool' — releases the existing staged row into circulation.
+    onReleaseFromPool?: (poolId: string) => void;
     // Present only for type 'lookup' (the word is already in the deck) — lets the user correct a
     // bad reading/meaning inline instead of only being able to view it. Returns a Promise (rather
     // than firing and forgetting) so this popup can wait for the save to actually land before
@@ -23,7 +29,7 @@
     // deletion itself: the caller is expected to confirm before actually removing (see ReadTab.svelte).
     onRequestRemove?: () => void;
   }
-  let { data, onClose, onAddVocab, onSaveDefinition, onRequestRemove }: Props = $props();
+  let { data, onClose, onAddVocab, onReleaseFromPool, onSaveDefinition, onRequestRemove }: Props = $props();
 
   let el = $state<HTMLDivElement | null>(null);
   let top = $state(0);
@@ -183,17 +189,24 @@
         border-top:1px solid rgba(255,255,255,.12); color:var(--pop-warn); line-height:1.35;">
         ↺ <span>Revealed — counts as <strong style="color:var(--pop-warn-strong);">forgotten</strong>, returns tomorrow</span>
       </div>
-    {:else if data.type === 'free'}
+    {:else if data.type === 'free' || data.type === 'pool'}
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:12px; padding-top:8px; border-top:1px solid rgba(255,255,255,.1);">
         <button
-          onclick={() => { onAddVocab(data.word, data.pinyin, data.meaning); onClose(); }}
+          onclick={() => {
+            if (data.type === 'pool' && data.poolId) onReleaseFromPool?.(data.poolId);
+            else onAddVocab(data.word, data.pinyin, data.meaning);
+            onClose();
+          }}
           style="width:100%; text-align:left; border-radius:8px; padding:8px 12px; cursor:pointer;
-            font-family:var(--f-mono); font-size:10.5px; letter-spacing:.05em; background:var(--jade);
+            font-family:var(--f-mono); font-size:10.5px; letter-spacing:.05em;
+            background:{data.type === 'pool' ? 'var(--purple)' : 'var(--jade)'};
             border:none; color:#fff; line-height:1.3; font-weight:600;"
         >
           Add to vocab
           <span style="display:block; font-weight:400; opacity:.65; margin-top:2px; font-size:9px; text-transform:none; letter-spacing:0;">
-            Joins your SRS deck — reviewed regularly starting tomorrow
+            {data.type === 'pool'
+              ? 'Already staged — releases into your SRS deck, reviewed starting today'
+              : 'Joins your SRS deck — reviewed regularly starting tomorrow'}
           </span>
         </button>
       </div>

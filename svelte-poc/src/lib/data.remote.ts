@@ -15,6 +15,8 @@ import {
   updateWords,
   updateWordDefinition,
   updatePassageTokens,
+  loadPoolWords,
+  releasePoolWord,
   clearDeckWords,
   savePrefs,
   type Prefs,
@@ -75,6 +77,16 @@ export const getPassage = query('unchecked', async (lang: LanguageCode) => {
   return loadPassage(supabase, user.id, lang);
 });
 
+// Loaded once alongside the deck (see +page.svelte) so ReadTab can recognize a pool word at
+// click time synchronously — see loadPoolWords in server/data.ts for why this isn't just folded
+// into getDeck.
+export const getPoolWords = query('unchecked', async (lang: LanguageCode) => {
+  const { safeGetSession, supabase } = getRequestEvent().locals;
+  const { user } = await safeGetSession();
+  if (!user) return [] as DeckWord[];
+  return loadPoolWords(supabase, user.id, lang);
+});
+
 // ── Commands (each `.set()`s the query(ies) it affects with the value it just wrote) ──────────
 
 // Look up a word's reading + meaning (centralized dictionary -> Supabase cache -> LLM). Used by
@@ -82,6 +94,7 @@ export const getPassage = query('unchecked', async (lang: LanguageCode) => {
 export const lookupWord = command('unchecked', async ({ word, lang }: { word: string; lang: LanguageCode }) => {
   return getDefinition(word, lang);
 });
+
 
 export const addWord = command(
   'unchecked',
@@ -98,6 +111,15 @@ export const addWord = command(
     getDeck(lang).refresh();
   },
 );
+
+// Release a pool word into circulation: due starting now, like any other freshly-added word —
+// `loadDeck`'s pool exclusion means it'll show up in the active deck as soon as this lands.
+export const releaseFromPool = command('unchecked', async ({ id, lang }: { id: string; lang: LanguageCode }) => {
+  const { user, supabase } = await ctx();
+  await releasePoolWord(supabase, user.id, id, dayOffset(0));
+  getDeck(lang).refresh();
+  getPoolWords(lang).refresh();
+});
 
 export const removeWord = command('unchecked', async ({ id, lang }: { id: string; lang: LanguageCode }) => {
   const { user, supabase } = await ctx();

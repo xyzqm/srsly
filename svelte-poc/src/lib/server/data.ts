@@ -188,6 +188,26 @@ export async function loadDeck(sb: SupabaseClient, userId: string, lang: Languag
   return (data ?? []).map(reviveCard);
 }
 
+/** All staged (pool) words for this user+lang — loaded once (alongside loadDeck) so ReadTab can
+ *  recognize a pool word at click time synchronously, instead of a per-click round trip that
+ *  would otherwise show the wrong "Add to vocab" button color for a moment before upgrading.
+ *  Kept as its own query, separate from loadDeck's row-cap-safe active-only one above: pool
+ *  counts aren't bounded the same way active/due cards need to be. */
+export async function loadPoolWords(sb: SupabaseClient, userId: string, lang: LanguageCode): Promise<DeckWord[]> {
+  const { data } = await sb
+    .from(DECK_TABLE).select('*')
+    .eq('user_id', userId).eq('lang', lang).eq('pool', true);
+  return (data ?? []).map(reviveCard);
+}
+
+/** Release a pool word into circulation: no longer staged, due starting now like any other
+ *  freshly-added word. */
+export async function releasePoolWord(
+  sb: SupabaseClient, userId: string, id: string, due: Date,
+): Promise<void> {
+  await sb.from(DECK_TABLE).update({ pool: false, due: due.toISOString() }).eq('user_id', userId).eq('id', id);
+}
+
 /** Insert one card unless a word with the same (hanzi, meaning, language) already exists for
  *  this user — a single atomic upsert (`ON CONFLICT DO NOTHING`), no read-modify-write.
  *  Returns the new row, or null if it already existed. */

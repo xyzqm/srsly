@@ -3,7 +3,7 @@
   --paper: #F4EFE6; --paper-2: #EEE8DA; --card: #FBF8F1;
   --ink: #22201C; --ink-soft: #5A554C; --ink-faint: #9A9387;
   --line: #DDD5C5; --line-soft: #E7E0D2;
-  --accent: #B23A2E; --accent-deep: #8E2C22; --jade: #5C7355; --gold: #A9803C;
+  --accent: #B23A2E; --accent-deep: #8E2C22; --jade: #5C7355; --gold: #A9803C; --purple: #7B5EA7;
   --accent-soft: rgba(178,58,46,.10); --jade-soft: rgba(92,115,85,.13); --gold-soft: rgba(169,128,60,.12);
   --pop-bg: #22201C; --pop-fg: #F4EFE6; --pop-pin: #F0C0B8; --pop-mute: #8d877c; --pop-warn: #E8A89F;
 }
@@ -11,7 +11,7 @@
   --paper: #FAFAF8; --paper-2: #F1F0EC; --card: #FFFFFF;
   --ink: #0F1115; --ink-soft: #4A4D55; --ink-faint: #9CA0A8;
   --line: #DDDCD6; --line-soft: #EBE9E2;
-  --accent: #0F1115; --accent-deep: #000; --jade: #2E7D4F; --gold: #8A6A1F;
+  --accent: #0F1115; --accent-deep: #000; --jade: #2E7D4F; --gold: #8A6A1F; --purple: #6750A4;
   --accent-soft: rgba(15,17,21,.08); --jade-soft: rgba(46,125,79,.12); --gold-soft: rgba(138,106,31,.12);
   --pop-bg: #0F1115; --pop-fg: #FAFAF8; --pop-pin: #CFCEC8; --pop-mute: #7F8087; --pop-warn: #D8A6A0;
 }
@@ -19,7 +19,7 @@
   --paper: #EEF2EA; --paper-2: #E4EADF; --card: #F7F9F4;
   --ink: #1B2A22; --ink-soft: #475247; --ink-faint: #8A9486;
   --line: #CCD6C3; --line-soft: #DCE3D3;
-  --accent: #2F6B4C; --accent-deep: #1F4E37; --jade: #2F6B4C; --gold: #9E7C2A;
+  --accent: #2F6B4C; --accent-deep: #1F4E37; --jade: #2F6B4C; --gold: #9E7C2A; --purple: #6B5B95;
   --accent-soft: rgba(47,107,76,.12); --jade-soft: rgba(47,107,76,.14); --gold-soft: rgba(158,124,42,.12);
   --pop-bg: #1B2A22; --pop-fg: #EEF2EA; --pop-pin: #B8DCC4; --pop-mute: #869185; --pop-warn: #C9D9C6;
 }
@@ -27,7 +27,7 @@
   --paper: #1B1A22; --paper-2: #23222C; --card: #2A2934;
   --ink: #F0EDE4; --ink-soft: #B4AFA1; --ink-faint: #7E7A6F;
   --line: #3A3845; --line-soft: #322F3B;
-  --accent: #D77A5B; --accent-deep: #A95934; --jade: #86A57E; --gold: #D6B26A;
+  --accent: #D77A5B; --accent-deep: #A95934; --jade: #86A57E; --gold: #D6B26A; --purple: #A78BFA;
   --accent-soft: rgba(215,122,91,.14); --jade-soft: rgba(134,165,126,.14); --gold-soft: rgba(214,178,106,.14);
   --pop-bg: #0E0D14; --pop-fg: #F0EDE4; --pop-pin: #F0BFA8; --pop-mute: #7E7A6F; --pop-warn: #E8A89F;
 }

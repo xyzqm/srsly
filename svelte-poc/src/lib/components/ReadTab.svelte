@@ -5,7 +5,7 @@
   import { buildTokens } from '$lib/tokens';
   import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
-  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition } from '$lib/data.remote';
+  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition, releaseFromPool } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -17,11 +17,12 @@
   // (src/lib/server/generate.ts), so building tokens here is just a plain mapping.
   interface Props {
     deck: DeckWord[];
+    poolWords: DeckWord[];
     storedPassage: StoredPassage | null;
     prefs: Prefs;
     onNavigateVocab: () => void;
   }
-  let { deck, storedPassage, prefs, onNavigateVocab }: Props = $props();
+  let { deck, poolWords, storedPassage, prefs, onNavigateVocab }: Props = $props();
   const language = $derived(prefs.language);
   const hskLevel = $derived(prefs.hskLevel);
   const wordsPerPassage = $derived(prefs.wordsPerPassage);
@@ -45,6 +46,10 @@
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
   const deckWords = $derived(new Set(deck.map((d) => d.h)));
+  // hanzi -> pool row id, so openPopup can recognize a pool word (and get the id it needs to
+  // release it) synchronously — no per-click round trip, so no flash from one button color to
+  // another once a check resolves.
+  const poolWordIds = $derived(new Map(poolWords.map((w) => [w.h, w.id])));
   // Generation is allowed around anything due today (isDueToday) — reviewing a word scheduled for
   // later today needs no confirmation — but never beyond today, so there's no "force"/"review
   // anyway" escape hatch once today's words are exhausted.
@@ -167,11 +172,16 @@
 
   function openPopup(e: MouseEvent, token: PassageToken) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const type: PopupData['type'] = deckWords.has(token.text) ? 'lookup' : 'free';
-    popup = { word: token.text, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect };
+    const word = token.text;
+    const poolId = poolWordIds.get(word);
+    const type: PopupData['type'] = deckWords.has(word) ? 'lookup' : poolId ? 'pool' : 'free';
+    popup = { word, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect, poolId };
   }
   async function addVocab(word: string, pinyin: string, meaning: string) {
     await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 0, passageId: storedPassage?.id });
+  }
+  async function releaseVocab(poolId: string) {
+    await releaseFromPool({ id: poolId, lang: language });
   }
   // Only reachable for popup type 'lookup' (word already in deck) — WordPopup gates the Edit
   // button on that itself, but guard here too since `deck` may have changed since the popup opened.
@@ -378,6 +388,7 @@
   data={popup}
   onClose={() => (popup = null)}
   onAddVocab={addVocab}
+  onReleaseFromPool={releaseVocab}
   onSaveDefinition={saveDefinition}
   onRequestRemove={requestRemove}
 />
