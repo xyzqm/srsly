@@ -333,8 +333,11 @@
 
     <div style="margin-top:28px; padding-top:20px; border-top:1px solid var(--line); display:flex; gap:12px; justify-content:center; align-items:center; flex-wrap:wrap;">
       {#if !finished}
-        <span style="font-family:var(--f-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint);">
-          {clozeAnswers.size}/{blankCount} blanks filled
+        <span
+          class={grading ? 'animate-pulse' : ''}
+          style="font-family:var(--f-mono); font-size:12px; letter-spacing:.06em; color:var(--ink-faint);"
+        >
+          {grading ? 'Grading…' : `${clozeAnswers.size}/${blankCount} blanks filled`}
         </span>
       {:else}
         {#if summary.total > 0}
