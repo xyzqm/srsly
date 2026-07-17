@@ -14,14 +14,35 @@
     data: PopupData | null;
     onClose: () => void;
     onAddVocab: (word: string, pinyin: string, meaning: string) => void;
+    // Present only for type 'lookup' (the word is already in the deck) — lets the user correct a
+    // bad reading/meaning inline instead of only being able to view it.
+    onSaveDefinition?: (pinyin: string, meaning: string) => void;
+    // Present only for type 'lookup' — requests removal from the deck. Just a request, not the
+    // deletion itself: the caller is expected to confirm before actually removing (see ReadTab.svelte).
+    onRequestRemove?: () => void;
   }
-  let { data, onClose, onAddVocab }: Props = $props();
+  let { data, onClose, onAddVocab, onSaveDefinition, onRequestRemove }: Props = $props();
 
   let el = $state<HTMLDivElement | null>(null);
   let top = $state(0);
   let left = $state(0);
   let below = $state(false);
   let ready = $state(false);
+  let editing = $state(false);
+  let editP = $state('');
+  let editM = $state('');
+
+  // Editing state is scoped to whichever word the popup is currently showing — reset it (and
+  // seed the drafts) every time `data` changes, not just on mount.
+  $effect(() => {
+    editing = false;
+    if (data) { editP = data.pinyin; editM = data.meaning; }
+  });
+
+  function saveEdit() {
+    editing = false;
+    onSaveDefinition?.(editP.trim(), editM.trim());
+  }
 
   function fmtMeaning(m: string): string {
     return m.replace(/\s*·\s*/g, '; ');
@@ -93,10 +114,28 @@
 
     <div style="display:flex; align-items:baseline; gap:8px; padding-right:20px; flex-wrap:wrap;">
       <span style="font-family:var(--f-han); font-size:22px; font-weight:500;">{data.word}</span>
-      <span style="font-family:var(--f-mono); font-size:12px; color:var(--pop-pin); margin-left:6px;">{data.pinyin}</span>
+      {#if editing}
+        <input
+          bind:value={editP}
+          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') (editing = false); }}
+          placeholder="reading"
+          style="font-family:var(--f-mono); font-size:12px; color:var(--pop-fg); margin-left:6px; width:6em;
+            background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:5px; padding:2px 6px;"
+        />
+      {:else}
+        <span style="font-family:var(--f-mono); font-size:12px; color:var(--pop-pin); margin-left:6px;">{data.pinyin}</span>
+      {/if}
     </div>
     <div style="font-size:13.5px; margin-top:5px; line-height:1.5;">
-      {#if data.meaning}
+      {#if editing}
+        <input
+          bind:value={editM}
+          onkeydown={(e) => { if (e.key === 'Enter') saveEdit(); else if (e.key === 'Escape') (editing = false); }}
+          placeholder="meaning"
+          style="width:100%; font-size:13.5px; color:var(--pop-fg); background:rgba(255,255,255,.1);
+            border:1px solid rgba(255,255,255,.2); border-radius:5px; padding:4px 8px;"
+        />
+      {:else if data.meaning}
         {fmtMeaning(data.meaning)}
       {:else}
         <em style="opacity:.35; font-size:12px;">definition not in local dictionary</em>
@@ -123,9 +162,42 @@
         </button>
       </div>
     {:else if data.type === 'lookup'}
-      <div style="margin-top:8px; padding-top:8px; font-size:11px; border-top:1px solid rgba(255,255,255,.1);
-        color:rgba(120,210,120,.85); font-family:var(--f-mono); letter-spacing:.05em;">
-        + Added to your deck
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px;
+        padding-top:8px; font-size:11px; border-top:1px solid rgba(255,255,255,.1); font-family:var(--f-mono); letter-spacing:.05em;">
+        {#if editing}
+          <div style="display:flex; gap:6px;">
+            <button onclick={saveEdit}
+              style="background:var(--jade); border:none; border-radius:6px; color:#fff; cursor:pointer; padding:4px 10px; font-size:11px;"
+            >Save</button>
+            <button onclick={() => (editing = false)}
+              style="background:none; border:1px solid rgba(255,255,255,.25); border-radius:6px; color:var(--pop-fg); cursor:pointer; padding:4px 10px; font-size:11px;"
+            >Cancel</button>
+          </div>
+        {:else}
+          <span style="color:rgba(120,210,120,.85);">+ Added to your deck</span>
+          <div style="display:flex; gap:6px;">
+            {#if onSaveDefinition}
+              <button onclick={() => (editing = true)}
+                style="background:none; border:1px solid rgba(255,255,255,.2); border-radius:6px; color:var(--pop-fg);
+                  opacity:.75; cursor:pointer; padding:3px 9px; font-size:10.5px;"
+              >Edit</button>
+            {/if}
+            {#if onRequestRemove}
+              <button onclick={onRequestRemove} aria-label="Remove from deck" title="Remove from deck"
+                style="display:flex; align-items:center; background:none; border:1px solid rgba(255,255,255,.2); border-radius:6px;
+                  color:var(--pop-warn); opacity:.85; cursor:pointer; padding:3px 7px;"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>

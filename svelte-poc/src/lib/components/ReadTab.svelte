@@ -5,7 +5,7 @@
   import { buildTokens } from '$lib/tokens';
   import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
-  import { addWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress } from '$lib/data.remote';
+  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -38,6 +38,9 @@
   let popup = $state<PopupData | null>(null);
   let showNoMoreTodayPopup = $state(false);
   let showRegeneratePopup = $state(false);
+  // Word pending removal, awaiting confirmation — closing WordPopup when this opens avoids two
+  // fixed-position overlays (WordPopup's z-index 9999, ConfirmPopup's 9998) stacking wrong.
+  let removeConfirm = $state<{ id: string; h: string } | null>(null);
   // Cloze answers this session, keyed by the token's index in passage.body.
   let clozeAnswers = $state<Map<string, { word: string; correct: boolean }>>(new Map());
 
@@ -70,10 +73,10 @@
   let finished = $state(false);
 
   // Restore persisted blank progress once per passage object. Keyed by object identity, not
-  // storedPassage.id: "+ New passage" upserts on (user_id, date, lang, passage_idx), which
-  // reuses the same row id for the rest of the day — a fresh row has empty progress, so this
-  // doubles as the reset for a newly generated passage, but only if the guard can actually tell
-  // the new one apart from the old.
+  // storedPassage.id: "+ New passage" upserts on (user_id, lang, passage_idx) — there's only ever
+  // one passage row per user+lang — which reuses the same row id indefinitely, so this doubles as
+  // the reset for a newly generated passage, but only if the guard can actually tell the new one
+  // apart from the old.
   let restoredFor: StoredPassage | null = null; // note: this variable is persisted across runs of the effect below
   $effect(() => {
     if (!passage || !storedPassage) return;
@@ -147,7 +150,34 @@
     popup = { word: token.text, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect };
   }
   async function addVocab(word: string, pinyin: string, meaning: string) {
-    await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 1, passageId: storedPassage?.id });
+    await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 0, passageId: storedPassage?.id });
+  }
+  // Only reachable for popup type 'lookup' (word already in deck) — WordPopup gates the Edit
+  // button on that itself, but guard here too since `deck` may have changed since the popup opened.
+  // Updates `popup` itself immediately (the command's round trip, plus its own patch of today's
+  // passage tokens, would otherwise leave the open popup showing the pre-edit reading/meaning).
+  function saveDefinition(pinyin: string, meaning: string) {
+    if (!popup) return;
+    const word = popup.word;
+    const w = deck.find((d) => d.h === word);
+    if (!w) return;
+    popup = { ...popup, pinyin, meaning };
+    editWordDefinition({ id: w.id, h: word, p: pinyin, m: meaning, lang: language });
+  }
+  // Trash icon in WordPopup only requests removal — closes the popup and opens a confirmation
+  // (irretrievably deletes the word's SRS progress, so it's not a one-click action).
+  function requestRemove() {
+    if (!popup) return;
+    const word = popup.word;
+    const w = deck.find((d) => d.h === word);
+    if (!w) return;
+    removeConfirm = { id: w.id, h: w.h };
+    popup = null;
+  }
+  function confirmRemove() {
+    if (!removeConfirm) return;
+    removeWord({ id: removeConfirm.id, lang: language });
+    removeConfirm = null;
   }
   const isNewlyAdded = (t: PassageToken): boolean =>
     t.type === 'vocab' && !quizWords.has(t.text) && addedWords.has(t.text) && deckWords.has(t.text);
@@ -316,7 +346,13 @@
   {/if}
 </div>
 
-<WordPopup data={popup} onClose={() => (popup = null)} onAddVocab={addVocab} />
+<WordPopup
+  data={popup}
+  onClose={() => (popup = null)}
+  onAddVocab={addVocab}
+  onSaveDefinition={saveDefinition}
+  onRequestRemove={requestRemove}
+/>
 
 {#if showNoMoreTodayPopup}
   <ConfirmPopup
@@ -334,5 +370,15 @@
     confirmLabel="OK"
     onConfirm={confirmRegenerate}
     onCancel={() => (showRegeneratePopup = false)}
+  />
+{/if}
+
+{#if removeConfirm}
+  <ConfirmPopup
+    title="Remove from your deck?"
+    message={`This will irretrievably delete all progress made on "${removeConfirm.h}" — it can't be undone.`}
+    confirmLabel="Remove"
+    onConfirm={confirmRemove}
+    onCancel={() => (removeConfirm = null)}
   />
 {/if}

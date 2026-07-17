@@ -92,20 +92,23 @@ const fromRow = (r: PassageRow): StoredPassage => ({
   addedWords: r.added_words,
 });
 
-/** Today's passage for this user + language, if one has been generated yet. */
+/** The user's one current passage for this language, if one has been generated yet. Not scoped
+ *  to "today" — there's only ever one passage per (user, lang) at a time (see supabase-passages.sql),
+ *  so a passage generated at 11:59pm is still the current one at 12:01am, not hidden until a new
+ *  one is generated. `date` is kept only as display metadata (when it was generated). */
 export async function loadPassage(
-  sb: SupabaseClient, userId: string, lang: LanguageCode, date: string,
+  sb: SupabaseClient, userId: string, lang: LanguageCode,
 ): Promise<StoredPassage | null> {
   const { data } = await sb
     .from(PASSAGES_TABLE).select('*')
-    .eq('user_id', userId).eq('lang', lang).eq('date', date).eq('passage_idx', 0)
+    .eq('user_id', userId).eq('lang', lang).eq('passage_idx', 0)
     .maybeSingle();
   return data ? fromRow(data as PassageRow) : null;
 }
 
-/** Create (or replace, on "+ New passage") today's passage row. Resets progress/added_words.
- *  `quizWords` are whichever words the passage was built around — persisted so blanks stay fixed
- *  for the life of this passage regardless of later due-status changes. */
+/** Create (or replace, on "+ New passage") the user's one passage for this language. Resets
+ *  progress/added_words. `quizWords` are whichever words the passage was built around — persisted
+ *  so blanks stay fixed for the life of this passage regardless of later due-status changes. */
 export async function createPassage(
   sb: SupabaseClient, userId: string, lang: LanguageCode, date: string, passage: RawPassage, quizWords: string[],
 ): Promise<StoredPassage> {
@@ -113,7 +116,7 @@ export async function createPassage(
     .from(PASSAGES_TABLE)
     .upsert(
       { user_id: userId, lang, date, passage_idx: 0, passage: { ...passage, quizWords }, progress: {}, added_words: [] },
-      { onConflict: 'user_id,date,lang,passage_idx' },
+      { onConflict: 'user_id,lang,passage_idx' },
     )
     .select()
     .single();
@@ -124,6 +127,17 @@ export async function saveProgress(
   sb: SupabaseClient, userId: string, passageId: string, progress: BlankProgress,
 ): Promise<void> {
   await sb.from(PASSAGES_TABLE).update({ progress }).eq('id', passageId).eq('user_id', userId);
+}
+
+/** Overwrite a stored passage's tokens — used when a deck word's definition is user-edited
+ *  (WordPopup/VocabTab): each occurrence of that word in today's passage had its reading/meaning
+ *  baked in at generation time (see generatePassage), so the edit has to be re-applied here too
+ *  or the passage would keep showing the old definition until it's regenerated. `quizWords` rides
+ *  inside the same jsonb column (see createPassage), so it must be passed through unchanged. */
+export async function updatePassageTokens(
+  sb: SupabaseClient, userId: string, passageId: string, passage: RawPassage & { quizWords: string[] },
+): Promise<void> {
+  await sb.from(PASSAGES_TABLE).update({ passage }).eq('id', passageId).eq('user_id', userId);
 }
 
 /** Record that `hanzi` was added to the deck while reading this passage (deduped). */
@@ -211,6 +225,14 @@ export async function insertWords(
 
 export async function deleteWord(sb: SupabaseClient, userId: string, id: string): Promise<void> {
   await sb.from(DECK_TABLE).delete().eq('user_id', userId).eq('id', id);
+}
+
+/** User-edited reading/meaning for one deck word — e.g. correcting a bad dictionary/LLM lookup.
+ *  Narrower than updateWords: touches only p/m, never the FSRS scheduling fields. */
+export async function updateWordDefinition(
+  sb: SupabaseClient, userId: string, id: string, p: string, m: string,
+): Promise<void> {
+  await sb.from(DECK_TABLE).update({ p, m }).eq('user_id', userId).eq('id', id);
 }
 
 /** Persist FSRS-graded scheduling fields for a batch of cards — one UPDATE per row (each row

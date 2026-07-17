@@ -13,7 +13,9 @@ create table if not exists passages (
   progress     jsonb not null default '{}'::jsonb,  -- { "${si}-${ti}": 0 | 1 }; unfilled = key absent
   added_words  jsonb not null default '[]'::jsonb,  -- hanzi[] added while reading THIS passage
   created_at   timestamptz not null default now(),
-  unique (user_id, date, lang, passage_idx)
+  -- Not scoped by date: there's only ever one current passage per (user, lang), so a passage
+  -- generated at 11:59pm is still the current one at 12:01am, not hidden until a new one is made.
+  unique (user_id, lang, passage_idx)
 );
 
 alter table passages enable row level security;
@@ -24,7 +26,7 @@ create policy "passages self" on passages
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index if not exists passages_user_date_idx on passages(user_id, date);
+create index if not exists passages_user_lang_idx on passages(user_id, lang);
 
 -- Superseded by the table above.
 alter table poc_user_data drop column if exists daily;

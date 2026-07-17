@@ -1,7 +1,7 @@
 import { query, command, getRequestEvent } from '$app/server';
 import { error } from '@sveltejs/kit';
 import type { DeckWord, LanguageCode } from '$lib/types';
-import type { BlankProgress } from '$lib/tokens';
+import type { BlankProgress, RawTok } from '$lib/tokens';
 import {
   loadDeck,
   loadPrefs,
@@ -13,6 +13,8 @@ import {
   insertWords,
   deleteWord,
   updateWords,
+  updateWordDefinition,
+  updatePassageTokens,
   clearDeckWords,
   savePrefs,
   type Prefs,
@@ -70,7 +72,7 @@ export const getPassage = query('unchecked', async (lang: LanguageCode) => {
   const { safeGetSession, supabase } = getRequestEvent().locals;
   const { user } = await safeGetSession();
   if (!user) return null;
-  return loadPassage(supabase, user.id, lang, todayStr());
+  return loadPassage(supabase, user.id, lang);
 });
 
 // ── Commands (each `.set()`s the query(ies) it affects with the value it just wrote) ──────────
@@ -102,6 +104,27 @@ export const removeWord = command('unchecked', async ({ id, lang }: { id: string
   await deleteWord(supabase, user.id, id);
   getDeck(lang).refresh();
 });
+
+// User-edited reading/meaning for a word already in the deck — from WordPopup (clicking a word
+// in a passage that's already in the deck) or VocabTab (clicking a row directly). `h` (the word's
+// text) is needed to also patch the user's current passage, if it's in there — see updatePassageTokens.
+export const editWordDefinition = command(
+  'unchecked',
+  async ({ id, h, p, m, lang }: { id: string; h: string; p: string; m: string; lang: LanguageCode }) => {
+    const { user, supabase } = await ctx();
+    await updateWordDefinition(supabase, user.id, id, p, m);
+    getDeck(lang).refresh();
+
+    const current = await loadPassage(supabase, user.id, lang);
+    if (!current) return;
+    const patch = (toks: RawTok[]) => toks.map((t): RawTok => (t.text === h ? { text: h, reading: p, meaning: m } : t));
+    const appears = current.passage.title.some((t) => t.text === h) || current.passage.body.some((t) => t.text === h);
+    if (!appears) return;
+    const passage = { title: patch(current.passage.title), body: patch(current.passage.body) };
+    await updatePassageTokens(supabase, user.id, current.id, { ...passage, quizWords: current.quizWords });
+    getPassage(lang).set({ ...current, passage });
+  },
+);
 
 // Grade cloze blanks. `grades` maps hanzi → worst rating (computed client-side).
 export const gradeCloze = command(
@@ -146,7 +169,7 @@ export const saveClozeProgress = command(
     { passageId, occId, correct, lang }: { passageId: string; occId: string; correct: boolean; lang: LanguageCode },
   ) => {
     const { user, supabase } = await ctx();
-    const current = await loadPassage(supabase, user.id, lang, todayStr());
+    const current = await loadPassage(supabase, user.id, lang);
     if (!current || current.id !== passageId) return;
     const progress: BlankProgress = { ...current.progress, [occId]: correct ? 1 : 0 };
     await saveProgress(supabase, user.id, passageId, progress);
