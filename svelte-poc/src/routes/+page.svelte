@@ -6,6 +6,7 @@
   import LoginGate from '$lib/components/LoginGate.svelte';
   import ReadTab from '$lib/components/ReadTab.svelte';
   import VocabTab from '$lib/components/VocabTab.svelte';
+  import StatsTab from '$lib/components/StatsTab.svelte';
   import SettingsTab from '$lib/components/SettingsTab.svelte';
 
   // `data` comes from +layout.ts (the browser Supabase client + session/user, used for the
@@ -41,9 +42,10 @@
   const passage = $derived(passageByLang[prefs.language]);
   const poolWords = $derived(poolWordsByLang[prefs.language]);
 
-  type Tab = 'read' | 'vocab' | 'settings';
+  type Tab = 'read' | 'vocab' | 'stats' | 'settings';
   const TABS: { id: Tab; label: string }[] = [
     { id: 'read', label: 'Read' },
+    { id: 'stats', label: 'Stats' },
     { id: 'vocab', label: 'Vocab' },
     { id: 'settings', label: 'Settings' },
   ];
@@ -115,6 +117,8 @@
         <ReadTab deck={deck} poolWords={poolWords} storedPassage={passage} prefs={prefs} onNavigateVocab={() => (tab = 'vocab')} />
       {:else if tab === 'vocab'}
         <VocabTab deck={deck} language={prefs.language} />
+      {:else if tab === 'stats'}
+        <StatsTab deck={deck} poolWords={poolWords} />
       {:else}
         <SettingsTab prefs={prefs} />
       {/if}
