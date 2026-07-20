@@ -49,6 +49,27 @@ async function decomposedLookup(word: string, lang: LanguageCode): Promise<Defin
   return null;
 }
 
+// A well-formed response is a single line of exactly `reading|meaning`, both non-empty. Anything
+// else — no pipe, an empty reading, extra lines — means the model refused or explained itself
+// instead of answering, and must not be cached.
+const WELL_FORMED_RE = /^([^\n|]+)\|([^\n|]+)$/;
+// Refusals that do happen to slip through the shape check above read as full sentences, not
+// dictionary glosses: long, and/or opening with stock refusal language.
+const REFUSAL_RE = /^(i\s*(cannot|can't|am unable|'m unable|do not|don't)|i'm sorry|i am sorry|sorry[,.]|as an ai|unfortunately|note:)/i;
+
+function parseDefinitionResponse(raw: string): Definition | null {
+  const unescape = (s: string) => s.replace(/\\(['"])/g, '$1');
+  const match = WELL_FORMED_RE.exec(raw.trim());
+  if (!match) return null;
+
+  const reading = unescape(match[1].trim());
+  const meaning = unescape(match[2].trim());
+  if (!reading || !meaning) return null;
+  if (meaning.length > 100 || REFUSAL_RE.test(meaning)) return null;
+
+  return { reading, meaning };
+}
+
 /**
  * Resolve a word's reading + meaning, in priority order: the centralized `word_definitions`
  * table (seeded from CC-CEDICT/HSK/COMMON — see scripts/port-dictionaries-to-supabase.ts — and
@@ -70,13 +91,11 @@ export async function getDefinition(word: string, lang: LanguageCode): Promise<D
     `Respond with EXACTLY one line in the form:\nreading|meaning\n` +
     `${lang === 'zh' ? 'reading = pinyin with tone marks' : 'reading = hiragana'}. No other text.`,
   );
-  // The model occasionally backslash-escapes quotes/apostrophes as if writing a string literal
-  // (e.g. "on one\'s own initiative") — strip that before it gets cached.
-  const unescape = (s: string) => s.replace(/\\(['"])/g, '$1');
-  const [reading = '', meaning = ''] = raw.split('|').map((s) => unescape(s.trim()));
-  const result: Definition = { reading, meaning };
 
-  if (meaning) await client().from(TABLE).upsert({ word, lang, reading, meaning }, { onConflict: 'word,lang' });
+  const result = parseDefinitionResponse(raw);
+  if (!result) return { reading: '', meaning: '' };
+
+  await client().from(TABLE).upsert({ word, lang, ...result }, { onConflict: 'word,lang' });
 
   return result;
 }
