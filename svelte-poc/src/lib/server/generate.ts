@@ -14,13 +14,6 @@ const MAX_WORD_MERGE = 4;
 
 type DueSet = Set<string>;
 
-const DAILY_THEMES = [
-  'travel and transportation', 'food and restaurants', 'work and career',
-  'family and relationships', 'health and exercise', 'technology and the internet',
-  'nature and the environment', 'shopping and money', 'education and learning',
-  'art and entertainment', 'city life and neighborhoods', 'weather and seasons',
-];
-
 function buildDueSet(words: Word[]): DueSet {
   return new Set(words.map((w) => w.h));
 }
@@ -70,19 +63,18 @@ async function resolveTokens(texts: string[], lang: LanguageCode, cache: Map<str
   return texts.map((t) => cache.get(t)!);
 }
 
-function buildPrompt(words: Word[], lang: LanguageCode, level: number, themeOffset: number): string {
+function buildPrompt(words: Word[], lang: LanguageCode, level: number, seed: number): string {
   const cfg = getLanguageConfig(lang);
   const levelDescriptor = cfg.levels.find((l) => l.level === level) ?? cfg.levels[0];
-  const today = new Date().toISOString().slice(0, 10);
-  const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
-  const theme = DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length];
   const sentenceCount = sentenceCountForLevel(lang, level);
   const wordList = words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
 
   return `You are a ${cfg.name} language teacher generating a reading passage.
 
 LEVEL: ${levelDescriptor.label} (${levelDescriptor.desc})
-TODAY'S THEME: ${theme} — the passage must revolve around this theme.
+THEME: pick your own topic for this passage. Go for something specific and concrete (a particular
+event, place, character, or moment) rather than a generic textbook category like "food" or "travel" —
+and pick something different from what you'd typically default to. (variety seed, don't mention it: ${seed})
 ${words.length ? `\nWORDS TO USE:\n${wordList}` : '\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.'}
 
 ${words.length ? 'Use ALL the words above naturally in a coherent story' : 'Write a coherent story'} (${sentenceCount}–${sentenceCount + 2} sentences).
@@ -107,9 +99,9 @@ Return ONLY the title line, a blank line, then the passage line. No JSON, no mar
 }
 
 /** Generate one reading passage built around the given due words. */
-export async function generatePassage(words: Word[], lang: LanguageCode, level: number, themeOffset = 0): Promise<RawPassage> {
+export async function generatePassage(words: Word[], lang: LanguageCode, level: number, seed = 0): Promise<RawPassage> {
   const due = buildDueSet(words);
-  const raw = await askText(buildPrompt(words, lang, level, themeOffset));
+  const raw = await askText(buildPrompt(words, lang, level, seed));
   console.log('raw:\n', raw);
   const { title, body } = parseOutput(raw, due);
 

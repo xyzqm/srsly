@@ -13,16 +13,36 @@
   let adding = $state(false);
   let notFound = $state('');
 
+  // The input doubles as a search box: while non-empty it also filters/highlights the list below.
+  const query = $derived(input.trim());
+  const alreadyInDeck = $derived(query !== '' && deck.some((w) => w.h === query));
+
   async function add() {
     const h = input.trim();
-    if (!h) return;
+    if (!h || alreadyInDeck) return;
     adding = true;
     notFound = '';
     const entry = await lookupWord({ word: h, lang: language });
-    if (!entry.reading && !entry.meaning) notFound = `"${h}" isn't in the dictionary — added with a blank definition.`;
+    if (!entry.reading && !entry.meaning) {
+      notFound = `"${h}" isn't in the dictionary — try a different word.`;
+      adding = false;
+      return;
+    }
     await addWord({ h, p: entry.reading, m: entry.meaning, lang: language }); // due today (dueInDays 0)
     input = '';
     adding = false;
+  }
+
+  /** Split `text` into segments around the first case-insensitive match of `query`, for highlighting. */
+  function matchSegments(text: string, q: string): { text: string; match: boolean }[] {
+    if (!q) return [{ text, match: false }];
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return [{ text, match: false }];
+    const segs: { text: string; match: boolean }[] = [];
+    if (idx > 0) segs.push({ text: text.slice(0, idx), match: false });
+    segs.push({ text: text.slice(idx, idx + q.length), match: true });
+    if (idx + q.length < text.length) segs.push({ text: text.slice(idx + q.length), match: false });
+    return segs;
   }
 
   // Inline edit of a row's reading/meaning — one row at a time. Drafts are local until saved so
@@ -57,7 +77,10 @@
   // everywhere else "the deck" means the active deck. Most-due-first within what's left: sorting
   // by the raw `due` instant ascending puts everything already due (due <= now) first, in order,
   // then everything else in the order it'll become due.
-  const visible = $derived(deck.filter(isActive).sort((a, b) => a.due.getTime() - b.due.getTime()));
+  const visible = $derived(
+    deck.filter(isActive).filter((w) => !query || w.h.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => a.due.getTime() - b.due.getTime()),
+  );
 </script>
 
 <div
@@ -71,29 +94,37 @@
   <div style="display:flex; gap:8px; margin:16px 0 6px; flex-wrap:wrap;">
     <input
       bind:value={input}
+      oninput={() => notFound = ''}
       onkeydown={(e) => { if (e.key === 'Enter') add(); }}
-      placeholder="Add a word — e.g. 城市, 经济, 朋友"
+      placeholder="Add or search a word — e.g. 城市, 经济, 朋友"
       style="flex:1; min-width:180px; font-family:var(--f-han); font-size:16px; padding:10px 14px;
         background:var(--paper); border:1px solid var(--line); border-radius:8px; color:var(--ink);"
     />
     <button
       onclick={add}
-      disabled={adding || !input.trim()}
+      disabled={adding || !query || alreadyInDeck}
       style="font-family:var(--f-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; font-weight:500;
         background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 18px; cursor:pointer;
-        box-shadow:0 2px 0 var(--accent-deep); opacity:{adding || !input.trim() ? 0.5 : 1};"
+        box-shadow:0 2px 0 var(--accent-deep); opacity:{adding || !query || alreadyInDeck ? 0.5 : 1};"
     >{adding ? 'Adding…' : 'Add'}</button>
   </div>
   {#if notFound}
-    <div style="font-size:12px; color:var(--ink-faint); margin-bottom:6px;">{notFound}</div>
+    <div style="font-size:12px; color:var(--ink-soft); margin-bottom:6px;">{notFound}</div>
   {/if}
 
   {#if visible.length === 0}
     <div style="text-align:center; padding:48px 24px; color:var(--ink-soft);">
-      <div style="font-family:var(--f-display); font-size:20px; font-weight:500; color:var(--ink);">Your deck is empty</div>
-      <p style="font-size:13.5px; line-height:1.6; margin-top:8px;">
-        Add a few words above, then head to Read to get a passage built around them.
-      </p>
+      {#if query}
+        <div style="font-family:var(--f-display); font-size:20px; font-weight:500; color:var(--ink);">No matches</div>
+        <p style="font-size:13.5px; line-height:1.6; margin-top:8px;">
+          No words in your deck contain "{query}".
+        </p>
+      {:else}
+        <div style="font-family:var(--f-display); font-size:20px; font-weight:500; color:var(--ink);">Your deck is empty</div>
+        <p style="font-size:13.5px; line-height:1.6; margin-top:8px;">
+          Add a few words above, then head to Read to get a passage built around them.
+        </p>
+      {/if}
     </div>
   {:else}
     <div style="margin-top:12px; display:flex; flex-direction:column;">
@@ -101,7 +132,11 @@
         {@const st = statusOf(w)}
         {@const editing = editingId === w.id}
         <div style="display:flex; align-items:center; gap:14px; padding:12px 4px; border-bottom:1px solid var(--line-soft);">
-          <span style="font-family:var(--f-han); font-size:22px; font-weight:500; min-width:2.5em;">{w.h}</span>
+          <span style="font-family:var(--f-han); font-size:22px; font-weight:500; min-width:2.5em;">
+            {#each matchSegments(w.h, query) as seg}
+              <span style={seg.match ? 'color:var(--accent);' : ''}>{seg.text}</span>
+            {/each}
+          </span>
           {#if editing}
             <input
               bind:value={editP}

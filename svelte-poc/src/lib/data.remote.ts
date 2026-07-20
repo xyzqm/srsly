@@ -172,7 +172,7 @@ export const generatePassage = command(
     const { user, supabase } = await ctx();
     const prefs = await loadPrefs(supabase, user.id);
     try {
-      const passage = await genPassage(words, lang, levelFor(lang, prefs), Math.floor(Math.random() * 12));
+      const passage = await genPassage(words, lang, levelFor(lang, prefs), Math.floor(Math.random() * 1000));
       const stored = await createPassage(supabase, user.id, lang, todayStr(), passage, words.map((w) => w.h));
       getPassage(lang).set(stored);
       return {};
