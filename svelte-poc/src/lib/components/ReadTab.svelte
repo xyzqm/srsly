@@ -5,7 +5,7 @@
   import { buildTokens } from '$lib/tokens';
   import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
-  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition, releaseFromPool, lookupWordInDb } from '$lib/data.remote';
+  import { addWord, removeWord, startGenerating, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition, releaseFromPool, lookupWordInDb, getPassage } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -34,7 +34,10 @@
     updatePrefs({ prefs: { ...prefs, showWordBoundaries: boundaries } });
   }
 
-  let generating = $state(false);
+  // Persisted server-side (not local component state) so an in-flight "Generate passage" request
+  // survives a tab switch or full reload — see server/data.ts's markGenerating/clearGenerating and
+  // the poll effect below.
+  const generating = $derived(storedPassage?.generating ?? false);
   let genError = $state('');
   let popup = $state<PopupData | null>(null);
   let showNoMoreTodayPopup = $state(false);
@@ -267,7 +270,6 @@
     t.type === 'vocab' && !quizWords.has(t.text) && addedWords.has(t.text) && deckWords.has(t.text);
 
   async function generate() {
-    generating = true;
     genError = '';
     // Soonest-due first, capped at wordsPerPassage — isDueToday can return more candidates than
     // one passage should be built around.
@@ -276,8 +278,11 @@
       .sort((a, b) => a.due.getTime() - b.due.getTime())
       .slice(0, wordsPerPassage)
       .map((w) => ({ h: w.h, p: w.p, m: w.m }));
+    // Awaited as its own fast round trip first — see startGenerating's comment — so `generating`
+    // (derived from storedPassage) flips true right away, both for this tab's own shimmer and, if
+    // persisted before the user switches away, for whichever tab/reload sees the row next.
+    await startGenerating({ lang: language });
     const r = await generatePassage({ lang: language, words });
-    generating = false;
     if (r?.error) { genError = r.error; return; }
     // Explicit reset rather than relying on the restore effect to infer it: that effect now only
     // restores/re-derives `finished` when `clozeAnswers` is already empty (see its comment above),
@@ -286,6 +291,17 @@
     finished = false;
     grading = false;
   }
+
+  // Covers the case where *this* mount didn't initiate the in-flight generation (a different tab
+  // did, or the page was just reloaded mid-generation) — there's no local await chain here to
+  // deliver the result, so this polls the persisted row until `generating` clears. Harmless
+  // overlap with our own generate() above: that call's own resolution already updates the same
+  // cache, so the poll just finds nothing new to do until then.
+  $effect(() => {
+    if (!generating) return;
+    const id = setInterval(() => { getPassage(language).refresh(); }, 3000);
+    return () => clearInterval(id);
+  });
 
   // Entry point for both "Generate passage" and "+ New passage": if there's a deck but nothing in
   // it is due today, block generation — early review is allowed for anything due later today, but
@@ -309,11 +325,13 @@
     <div>
       <div style="font-family:var(--f-mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint); display:flex; align-items:center; gap:8px;">
         Today's passage
-        {#if passage}
+        {#if passage && !generating}
           <span style="font-size:9px; letter-spacing:.06em; background:var(--jade-soft); color:var(--jade); border:1px solid color-mix(in srgb, var(--jade) 30%, transparent); border-radius:4px; padding:1px 5px;">✦ AI · {storedPassage?.date}</span>
         {/if}
       </div>
-      {#if passage}
+      {#if generating}
+        <div class="shimmer" style="height:26px; width:230px; border-radius:4px; margin-top:6px;"></div>
+      {:else if passage}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div bind:this={titleEl} onmouseup={handleSelection} style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
           {#each passage.title as t, i (i)}
@@ -323,7 +341,7 @@
       {/if}
     </div>
     <div style="font-family:var(--f-mono); font-size:11px; color:var(--ink-faint); letter-spacing:.05em;">
-      level <span style="color:var(--jade); font-weight:500;">HSK {hskLevel}</span>{#if passage} · ~{charCount} 字{/if}
+      level <span style="color:var(--jade); font-weight:500;">HSK {hskLevel}</span>{#if passage && !generating} · ~{charCount} 字{/if}
     </div>
   </div>
 

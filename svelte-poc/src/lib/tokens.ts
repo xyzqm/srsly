@@ -20,17 +20,25 @@ export interface RawPassage { title: RawTok[]; body: RawTok[] }
  *  absent; the word itself isn't stored here since it's derivable from `passage`. */
 export type BlankProgress = Record<string, 0 | 1>;
 
-/** One row from the `passages` table (see supabase-passages.sql). `quizWords` is frozen at
- *  generation time (whichever words the passage was built around) rather than re-derived from
- *  live deck due-status — a word graded mid-session can leave the due set within minutes under
- *  short-term scheduling, and blanks shouldn't disappear out from under an in-progress passage. */
+/** One row from the `passages` table (see supabase-passages.sql, supabase-passage-generating.sql).
+ *  `quizWords` is frozen at generation time (whichever words the passage was built around) rather
+ *  than re-derived from live deck due-status — a word graded mid-session can leave the due set
+ *  within minutes under short-term scheduling, and blanks shouldn't disappear out from under an
+ *  in-progress passage.
+ *
+ *  `generating` reflects a "Generate passage"/"+ New passage" request that's still in flight —
+ *  persisted server-side (not just local component state) so it survives a tab switch or reload
+ *  mid-generation (see server/data.ts's markGenerating/clearGenerating and ReadTab's poll effect).
+ *  `passage` is null only for the very first generation of a user+lang, where `generating` is
+ *  true but no passage content has ever been written yet. */
 export interface StoredPassage {
   id: string;
   date: string;
-  passage: RawPassage;
+  passage: RawPassage | null;
   quizWords: string[];
   progress: BlankProgress;
   addedWords: string[];
+  generating: boolean;
 }
 
 const PUNCT_CHARS = new Set([

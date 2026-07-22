@@ -78,18 +78,20 @@ export async function savePrefs(sb: SupabaseClient, userId: string, prefs: Prefs
 interface PassageRow {
   id: string;
   date: string;
-  passage: RawPassage & { quizWords?: string[] };
+  passage: (RawPassage & { quizWords?: string[] }) | null;
   progress: BlankProgress;
   added_words: string[];
+  generating: boolean;
 }
 
 const fromRow = (r: PassageRow): StoredPassage => ({
   id: r.id,
   date: r.date,
-  passage: { title: r.passage.title, body: r.passage.body },
-  quizWords: r.passage.quizWords ?? [],
+  passage: r.passage ? { title: r.passage.title, body: r.passage.body } : null,
+  quizWords: r.passage?.quizWords ?? [],
   progress: r.progress,
   addedWords: r.added_words,
+  generating: r.generating,
 });
 
 /** The user's one current passage for this language, if one has been generated yet. Not scoped
@@ -107,20 +109,48 @@ export async function loadPassage(
 }
 
 /** Create (or replace, on "+ New passage") the user's one passage for this language. Resets
- *  progress/added_words. `quizWords` are whichever words the passage was built around — persisted
- *  so blanks stay fixed for the life of this passage regardless of later due-status changes. */
+ *  progress/added_words and clears `generating` (see markGenerating below). `quizWords` are
+ *  whichever words the passage was built around — persisted so blanks stay fixed for the life of
+ *  this passage regardless of later due-status changes. */
 export async function createPassage(
   sb: SupabaseClient, userId: string, lang: LanguageCode, date: string, passage: RawPassage, quizWords: string[],
 ): Promise<StoredPassage> {
   const { data } = await sb
     .from(PASSAGES_TABLE)
     .upsert(
-      { user_id: userId, lang, date, passage_idx: 0, passage: { ...passage, quizWords }, progress: {}, added_words: [] },
+      {
+        user_id: userId, lang, date, passage_idx: 0, passage: { ...passage, quizWords },
+        progress: {}, added_words: [], generating: false,
+      },
       { onConflict: 'user_id,lang,passage_idx' },
     )
     .select()
     .single();
   return fromRow(data as PassageRow);
+}
+
+/** Marks this user+lang's passage as currently (re)generating — a fast upsert, called and
+ *  awaited *before* the slow LLM call in generatePassage (data.remote.ts) starts, so the flag is
+ *  persisted (and reflected back to the client) well before that call resolves. Only the columns
+ *  named here are touched: on an existing row, `passage`/`progress`/`added_words` are left as-is
+ *  (regenerating shows a shimmer regardless, so there's no need to clear the old content early);
+ *  for a user+lang's very first-ever generation, this inserts a new row with `passage` left null
+ *  (see the schema's relaxed not-null constraint in supabase-passage-generating.sql). Persisting
+ *  this server-side (rather than only as local component state) is what lets a tab switch or full
+ *  reload mid-generation still show the loading state instead of losing track of it. */
+export async function markGenerating(sb: SupabaseClient, userId: string, lang: LanguageCode, date: string): Promise<void> {
+  await sb
+    .from(PASSAGES_TABLE)
+    .upsert(
+      { user_id: userId, lang, passage_idx: 0, generating: true, date },
+      { onConflict: 'user_id,lang,passage_idx' },
+    );
+}
+
+/** Clears the `generating` flag without touching anything else — used on the failure path in
+ *  generatePassage (the success path clears it via createPassage's upsert above instead). */
+export async function clearGenerating(sb: SupabaseClient, userId: string, lang: LanguageCode): Promise<void> {
+  await sb.from(PASSAGES_TABLE).update({ generating: false }).eq('user_id', userId).eq('lang', lang).eq('passage_idx', 0);
 }
 
 export async function saveProgress(

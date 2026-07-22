@@ -19,6 +19,8 @@ import {
   releasePoolWord,
   clearDeckWords,
   savePrefs,
+  markGenerating,
+  clearGenerating,
   type Prefs,
   DEFAULT_PREFS,
 } from '$lib/server/data';
@@ -149,7 +151,7 @@ export const editWordDefinition = command(
     getDeck(lang).set(deck.map((w) => (w.id === id ? { ...w, p, m } : w)));
 
     const current = await loadPassage(supabase, user.id, lang);
-    if (!current) return;
+    if (!current || !current.passage) return;
     const patch = (toks: RawTok[]) => toks.map((t): RawTok => (t.text === h ? { text: h, reading: p, meaning: m } : t));
     const appears = current.passage.title.some((t) => t.text === h) || current.passage.body.some((t) => t.text === h);
     if (!appears) return;
@@ -171,6 +173,18 @@ export const gradeCloze = command(
   },
 );
 
+// Fast — just marks the passage row as generating and pushes the updated row into the getPassage
+// cache, so it returns (and the client sees `storedPassage.generating` flip to true) well before
+// the slow LLM call in generatePassage below even starts. Awaited *first*, as its own command
+// call, specifically so this persists server-side ahead of that call rather than only alongside
+// it — a single command's internal query updates aren't visible to the client until the whole
+// command resolves, which for generatePassage is 20-35 seconds away.
+export const startGenerating = command('unchecked', async ({ lang }: { lang: LanguageCode }) => {
+  const { user, supabase } = await ctx();
+  await markGenerating(supabase, user.id, lang, todayStr());
+  getPassage(lang).set(await loadPassage(supabase, user.id, lang));
+});
+
 export const generatePassage = command(
   'unchecked',
   // `words` (the words to build the passage around) is computed client-side from ReadTab's
@@ -184,6 +198,8 @@ export const generatePassage = command(
       getPassage(lang).set(stored);
       return {};
     } catch (e) {
+      await clearGenerating(supabase, user.id, lang);
+      getPassage(lang).set(await loadPassage(supabase, user.id, lang));
       return { error: String(e).includes('no-api-key') ? 'no-api-key' : 'generation failed' };
     }
   },
