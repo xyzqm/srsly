@@ -12,6 +12,11 @@
     anchorRect: DOMRect;
     // Present only for type 'pool' — the staged row's id, needed to release it.
     poolId?: string;
+    // True while a highlight-triggered lookup is still in flight — see ReadTab's handleSelection.
+    // Suppresses the meaning text and Add-to-vocab section until the definition (or its absence)
+    // is known, so the popup doesn't flash a "not in dictionary" message that a moment later
+    // turns out to be wrong.
+    loading?: boolean;
   }
 
   interface Props {
@@ -177,6 +182,8 @@
         {:else if saveError}
           <div style="font-size:10.5px; color:var(--pop-warn); margin-top:4px;">{saveError}</div>
         {/if}
+      {:else if data.loading}
+        <em style="opacity:.5; font-size:12px;">Looking up…</em>
       {:else if data.meaning}
         {fmtMeaning(data.meaning)}
       {:else}
@@ -189,7 +196,7 @@
         border-top:1px solid rgba(255,255,255,.12); color:var(--pop-warn); line-height:1.35;">
         ↺ <span>Revealed — counts as <strong style="color:var(--pop-warn-strong);">forgotten</strong>, returns tomorrow</span>
       </div>
-    {:else if data.type === 'free' || data.type === 'pool'}
+    {:else if (data.type === 'free' || data.type === 'pool') && !data.loading && data.meaning}
       <div style="display:flex; flex-direction:column; gap:6px; margin-top:12px; padding-top:8px; border-top:1px solid rgba(255,255,255,.1);">
         <button
           onclick={() => {

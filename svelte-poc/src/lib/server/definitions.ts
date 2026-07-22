@@ -71,17 +71,31 @@ function parseDefinitionResponse(raw: string): Definition | null {
 }
 
 /**
- * Resolve a word's reading + meaning, in priority order: the centralized `word_definitions`
- * table (seeded from CC-CEDICT/HSK/COMMON — see scripts/port-dictionaries-to-supabase.ts — and
- * grown incrementally by the LLM tier below) -> a few cheap Chinese morphological decompositions
- * -> a one-off LLM query, cached back into word_definitions for next time.
+ * Resolve a word's reading + meaning from what's already known — the centralized
+ * `word_definitions` table (seeded from CC-CEDICT/HSK/COMMON — see
+ * scripts/port-dictionaries-to-supabase.ts — and grown incrementally by getDefinition's LLM tier)
+ * plus a few cheap Chinese morphological decompositions. Never calls the LLM, so a miss here
+ * means "not in the dictionary" rather than "not looked up yet" — for callers (e.g. highlighting
+ * arbitrary passage text) that should surface an honest not-found rather than spend an LLM call
+ * on every ad-hoc selection.
  */
-export async function getDefinition(word: string, lang: LanguageCode): Promise<Definition> {
+export async function getDefinitionFromDb(word: string, lang: LanguageCode): Promise<Definition> {
   const hit = await lookup(word, lang);
   if (hit) return hit;
 
   const decomposed = await decomposedLookup(word, lang);
   if (decomposed) return decomposed;
+
+  return { reading: '', meaning: '' };
+}
+
+/**
+ * Resolve a word's reading + meaning, in priority order: getDefinitionFromDb's table + morphology
+ * tiers -> a one-off LLM query, cached back into word_definitions for next time.
+ */
+export async function getDefinition(word: string, lang: LanguageCode): Promise<Definition> {
+  const fromDb = await getDefinitionFromDb(word, lang);
+  if (fromDb.meaning) return fromDb;
 
   console.log('using an LLM to look up ' + word);
 

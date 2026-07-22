@@ -23,7 +23,7 @@ import {
   DEFAULT_PREFS,
 } from '$lib/server/data';
 import { generatePassage as genPassage, type Word } from '$lib/server/generate';
-import { getDefinition } from '$lib/server/definitions';
+import { getDefinition, getDefinitionFromDb } from '$lib/server/definitions';
 import { newCard, gradeWord, type FsrsGrade } from '$lib/srs';
 import { localDateStr, dayOffset } from '$lib/deck';
 import { levelFor } from '$lib/languageConfig';
@@ -93,6 +93,13 @@ export const getPoolWords = query('unchecked', async (lang: LanguageCode) => {
 // VocabTab when manually adding a word not already resolved from a passage.
 export const lookupWord = command('unchecked', async ({ word, lang }: { word: string; lang: LanguageCode }) => {
   return getDefinition(word, lang);
+});
+
+// Same, but DB-only (no LLM fallback/caching) — used for highlighting arbitrary passage text,
+// where an unresolved selection should read as "not in the dictionary" rather than spend an LLM
+// call generating a fresh definition for whatever the user happened to select.
+export const lookupWordInDb = command('unchecked', async ({ word, lang }: { word: string; lang: LanguageCode }) => {
+  return getDefinitionFromDb(word, lang);
 });
 
 

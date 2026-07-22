@@ -5,7 +5,7 @@
   import { buildTokens } from '$lib/tokens';
   import { isDueToday, formatDelay } from '$lib/deck';
   import type { FsrsGrade } from '$lib/srs';
-  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition, releaseFromPool } from '$lib/data.remote';
+  import { addWord, removeWord, generatePassage, gradeCloze, updatePrefs, saveClozeProgress, editWordDefinition, releaseFromPool, lookupWordInDb } from '$lib/data.remote';
   import ClickableWord from './ClickableWord.svelte';
   import ClozeBlank from './ClozeBlank.svelte';
   import WordPopup, { type PopupData } from './WordPopup.svelte';
@@ -124,6 +124,7 @@
   // After Enter-submitting a blank, move focus to the next not-yet-answered one in reading order
   // so filling the passage doesn't require clicking each blank by hand.
   let bodyEl = $state<HTMLDivElement | null>(null);
+  let titleEl = $state<HTMLDivElement | null>(null);
   function focusNextBlank(afterOccId: string) {
     if (!passage || !bodyEl) return;
     for (let i = Number(afterOccId) + 1; i < passage.body.length; i++) {
@@ -171,11 +172,62 @@
   }
 
   function openPopup(e: MouseEvent, token: PassageToken) {
+    // A drag that starts and ends inside the same ruby (e.g. highlighting just "店" out of the
+    // "书店" token) still fires a trailing click on that ruby after mouseup — which would
+    // otherwise clobber the correct substring popup handleSelection just set with this token's
+    // full word. A non-collapsed selection at click time means this click is that trailing one
+    // (a plain, no-drag click always starts with mousedown collapsing any selection), so defer to
+    // handleSelection instead of overwriting its popup.
+    if (window.getSelection()?.toString()) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const word = token.text;
     const poolId = poolWordIds.get(word);
     const type: PopupData['type'] = deckWords.has(word) ? 'lookup' : poolId ? 'pool' : 'free';
     popup = { word, pinyin: token.reading ?? '', meaning: token.meaning ?? '', type, anchorRect: rect, poolId };
+  }
+
+  // Arbitrary user-selected text in the passage (not necessarily a single tokenized word) — same
+  // popup as a click, but the definition has to be resolved rather than read off a token. Checked
+  // in priority order against what's already known client-side (deck -> pool -> passage tokens,
+  // the last covering multi-character selections that happen to exactly match a vocab token)
+  // before falling back to a DB-only dictionary lookup (lookupWordInDb) — deliberately no LLM
+  // fallback here, so selecting arbitrary text can't spend an LLM call; a miss just reads as
+  // "not in the dictionary".
+  function findToken(text: string): PassageToken | undefined {
+    if (!passage) return undefined;
+    return passage.title.find((t) => t.text === text) ?? passage.body.find((t) => t.text === text);
+  }
+  async function handleSelection() {
+    if (!passage) return;
+    const sel = window.getSelection();
+    const text = sel?.toString().trim() ?? '';
+    if (!text || !sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    if (!titleEl?.contains(container) && !bodyEl?.contains(container)) return;
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+
+    const deckWord = deck.find((w) => w.h === text);
+    if (deckWord) {
+      popup = { word: text, pinyin: deckWord.p, meaning: deckWord.m, type: 'lookup', anchorRect: rect };
+      return;
+    }
+    const poolId = poolWordIds.get(text);
+    const poolWord = poolId ? poolWords.find((w) => w.id === poolId) : undefined;
+    if (poolWord) {
+      popup = { word: text, pinyin: poolWord.p, meaning: poolWord.m, type: 'pool', anchorRect: rect, poolId };
+      return;
+    }
+    const known = findToken(text);
+    if (known?.reading && known.meaning) {
+      popup = { word: text, pinyin: known.reading, meaning: known.meaning, type: 'free', anchorRect: rect };
+      return;
+    }
+
+    popup = { word: text, pinyin: '', meaning: '', type: 'free', anchorRect: rect, loading: true };
+    const entry = await lookupWordInDb({ word: text, lang: language });
+    if (popup?.word === text && popup.loading) popup = { ...popup, pinyin: entry.reading, meaning: entry.meaning, loading: false };
   }
   async function addVocab(word: string, pinyin: string, meaning: string) {
     await addWord({ h: word, p: pinyin, m: meaning, lang: language, dueInDays: 0, passageId: storedPassage?.id });
@@ -262,7 +314,8 @@
         {/if}
       </div>
       {#if passage}
-        <div style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div bind:this={titleEl} onmouseup={handleSelection} style="font-family:var(--f-han); font-size:26px; font-weight:500; letter-spacing:-.01em; margin-top:4px;">
           {#each passage.title as t, i (i)}
             <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
           {/each}
@@ -306,7 +359,8 @@
         </svg>
       </button>
     </div>
-    <div bind:this={bodyEl} style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div bind:this={bodyEl} onmouseup={handleSelection} style="font-family:var(--f-han); font-size:21px; line-height:2.6; margin-top:8px;">
       {#each passage.body as t, ti (ti)}
         {#snippet clickable()}
             <ClickableWord token={t} onOpen={openPopup} newlyAdded={isNewlyAdded(t)} showBoundaries={boundaries} />
