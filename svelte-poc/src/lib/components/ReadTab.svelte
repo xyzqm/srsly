@@ -103,6 +103,16 @@
   let restoredFor: StoredPassage | null = null; // note: this variable is persisted across runs of the effect below
   $effect(() => {
     if (!passage || !storedPassage) return;
+    // While a (re)generation is in flight, `storedPassage.passage`/`.progress` still hold the
+    // *previous* passage's content — markGenerating deliberately leaves them untouched (see its
+    // comment in server/data.ts) since the shimmer hides them anyway. But a mount that happens to
+    // land mid-generation (a tab switch or reload while "+ New passage" is still running) starts
+    // with an empty `clozeAnswers`, so without this guard it would restore *that* old progress —
+    // and once the real new passage arrives, the `clozeAnswers.size > 0` guard below would then
+    // block this effect from ever correcting it, leaving the old "Reviewed N words" summary
+    // stuck on the freshly generated passage. Skipping entirely here means `restoredFor` isn't
+    // updated either, so this effect re-evaluates for real once `generating` clears.
+    if (storedPassage.generating) return;
     if (restoredFor === storedPassage) return;
     restoredFor = storedPassage;
     if (clozeAnswers.size > 0) return;
