@@ -64,7 +64,7 @@
         aria-label={answer.correct ? 'Mark as incorrect' : 'Mark as correct'}
         style="background:none; border:none; cursor:pointer; font-family:var(--f-mono);
           font-size:0.5em; line-height:1; vertical-align:super; padding:0 1px 0 3px;
-          color:{hovered ? color : 'var(--ink-faint)'};"
+          color:{hovered ? color : 'var(--ink-faint)'}; user-select:none; -webkit-user-select:none;"
       >{answer.correct ? '✕' : '✓'}</button>{/if}
   </span>
 {:else}
