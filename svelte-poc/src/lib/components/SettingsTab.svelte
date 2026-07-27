@@ -30,7 +30,7 @@
     </div>
     <div style="font-size:13.5px; color:var(--ink-soft); margin-top:22px;">Words per passage</div>
     <div style="display:flex; gap:6px; margin-top:8px;">
-      {#each [3, 5, 8, 12, 15] as n (n)}
+      {#each [3, 5, 8, 12, 15, 20] as n (n)}
         <button onclick={() => {
           wordsPerPassage = n; // optimistic UI update
           updatePrefs({ prefs: { ...prefs, wordsPerPassage: n } });

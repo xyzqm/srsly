@@ -82,6 +82,7 @@ interface PassageRow {
   progress: BlankProgress;
   added_words: string[];
   generating: boolean;
+  finished: boolean;
 }
 
 const fromRow = (r: PassageRow): StoredPassage => ({
@@ -92,6 +93,7 @@ const fromRow = (r: PassageRow): StoredPassage => ({
   progress: r.progress,
   addedWords: r.added_words,
   generating: r.generating,
+  finished: r.finished,
 });
 
 /** The user's one current passage for this language, if one has been generated yet. Not scoped
@@ -120,7 +122,7 @@ export async function createPassage(
     .upsert(
       {
         user_id: userId, lang, date, passage_idx: 0, passage: { ...passage, quizWords },
-        progress: {}, added_words: [], generating: false,
+        progress: {}, added_words: [], generating: false, finished: false,
       },
       { onConflict: 'user_id,lang,passage_idx' },
     )
@@ -157,6 +159,13 @@ export async function saveProgress(
   sb: SupabaseClient, userId: string, passageId: string, progress: BlankProgress,
 ): Promise<void> {
   await sb.from(PASSAGES_TABLE).update({ progress }).eq('id', passageId).eq('user_id', userId);
+}
+
+/** Marks the passage as graded — called once from gradeCloze after the "Finish" button locks and
+ *  grades all blanks, so a later reload knows every blank was already answered *and* graded (not
+ *  just filled-in-but-not-yet-finished). */
+export async function markFinished(sb: SupabaseClient, userId: string, passageId: string): Promise<void> {
+  await sb.from(PASSAGES_TABLE).update({ finished: true }).eq('id', passageId).eq('user_id', userId);
 }
 
 /** Overwrite a stored passage's tokens — used when a deck word's definition is user-edited

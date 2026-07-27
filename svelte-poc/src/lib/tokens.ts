@@ -30,7 +30,12 @@ export type BlankProgress = Record<string, 0 | 1>;
  *  persisted server-side (not just local component state) so it survives a tab switch or reload
  *  mid-generation (see server/data.ts's markGenerating/clearGenerating and ReadTab's poll effect).
  *  `passage` is null only for the very first generation of a user+lang, where `generating` is
- *  true but no passage content has ever been written yet. */
+ *  true but no passage content has ever been written yet.
+ *
+ *  `finished` is set once the user presses "Finish" and the blanks are graded — distinct from
+ *  `progress` covering every blank, since grading is a manual step (not fired the instant the last
+ *  blank is filled), so a passage can have `progress` covering every blank while still `finished:
+ *  false`. */
 export interface StoredPassage {
   id: string;
   date: string;
@@ -39,6 +44,7 @@ export interface StoredPassage {
   progress: BlankProgress;
   addedWords: string[];
   generating: boolean;
+  finished: boolean;
 }
 
 const PUNCT_CHARS = new Set([

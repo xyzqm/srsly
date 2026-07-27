@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { PassageToken } from '$lib/types';
-    import type { Snippet } from 'svelte';
-    import { untrack } from 'svelte';
-    import ClickableWord from './ClickableWord.svelte';
+  import type { Snippet } from 'svelte';
+  import ClickableWord from './ClickableWord.svelte';
 
   // An inline cloze blank for a due vocab word in the passage. The user types the hanzi; typed
   // characters colour green (correct prefix) / red (mismatch) in real time. On submit (Enter or
-  // blur) the word is revealed, graded, and replaced with a ClickableWord.
+  // blur) the word is revealed and replaced with a ClickableWord, colored by `answer.correct`.
   interface Props {
     token: PassageToken;
     showHint: boolean;
@@ -14,24 +13,28 @@
      *  click a word's definition popup) — the parent uses it to decide whether to move focus to
      *  the next blank. */
     onGrade: (correct: boolean, advance: boolean) => void;
-    /** Pre-fills an already-answered blank (restored from persisted progress) directly into the
-     *  submitted/revealed state, instead of an empty input. */
-    initialGrade?: { correct: boolean };
+    /** The parent's recorded answer for this blank, or undefined if not yet submitted. Unlike a
+     *  one-shot initial value, this is read on every render — so a later `onToggle` (flipping
+     *  correct/incorrect in the parent) re-renders here directly, no remount needed. */
+    answer?: { correct: boolean };
+    /** True once the passage has been finished (graded) — the correct/incorrect toggle is only
+     *  offered before then. */
+    locked: boolean;
+    /** Flips this blank between correct/incorrect (e.g. to fix a typo the grader shouldn't have
+     *  counted against the word). Only rendered when `answer` is set and not `locked`. */
+    onToggle: () => void;
     /** Identifies this blank's `<input>` in the DOM (`data-occid`) so the parent can focus the
      *  next one after Enter-submit. */
     occId: string;
     children: Snippet;
   }
-  let { token, showHint, onGrade, initialGrade, occId, children }: Props = $props();
+  let { token, showHint, onGrade, answer, locked, onToggle, occId, children }: Props = $props();
 
-  // `initialGrade` only ever matters at creation — the parent forces a remount (via `{#key}`)
-  // whenever restored/fresh status changes, so there's no later value to react to; `untrack`
-  // makes that one-shot read explicit instead of an unintentional stale-capture warning.
   let value = $state('');
-  let submitted = $state(untrack(() => !!initialGrade));
-  let correct = $state(untrack(() => initialGrade?.correct ?? false));
   let hovered = $state(false);
-  let graded = untrack(() => !!initialGrade);
+  // Guards against a submit firing twice in the same tick (Enter moves focus to the next blank,
+  // which blurs this one — both handlers can fire before `answer` propagates back down as a prop).
+  let graded = false;
 
   // Green up to the first mismatch, red from there on.
   const matchLen = $derived.by(() => {
@@ -44,16 +47,25 @@
     if (graded) return;
     if (!value.trim() && !force) return;
     graded = true;
-    correct = value.trim() === token.text;
-    submitted = true;
-    onGrade(correct, advance);
+    onGrade(value.trim() === token.text, advance);
   }
 </script>
 
-{#if submitted}
-  {@const color = correct ? 'var(--jade)' : 'var(--accent)'}
-  <span style="color:{color}">
-    {@render children()}
+{#if answer}
+  {@const color = answer.correct ? 'var(--jade)' : 'var(--accent)'}
+  <span style="color:{color};" role="group"
+    onmouseenter={() => (hovered = true)}
+    onmouseleave={() => (hovered = false)}
+  >
+    {@render children()}{#if !locked}<button
+        type="button"
+        onclick={onToggle}
+        title={answer.correct ? 'Mark as incorrect' : 'Mark as correct'}
+        aria-label={answer.correct ? 'Mark as incorrect' : 'Mark as correct'}
+        style="background:none; border:none; cursor:pointer; font-family:var(--f-mono);
+          font-size:0.5em; line-height:1; vertical-align:super; padding:0 1px 0 3px;
+          color:{hovered ? color : 'var(--ink-faint)'};"
+      >{answer.correct ? '✕' : '✓'}</button>{/if}
   </span>
 {:else}
   <span

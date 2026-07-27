@@ -78,10 +78,13 @@
   const blankCount = $derived(passage ? passage.body.filter(isBlank).length : 0);
   const charCount = $derived(passage ? passage.body.filter((t) => /[一-鿿]/.test(t.text)).length : 0);
 
-  let finished = $state(false);
-  // True while a just-completed passage's grades are being persisted — separate from `finished`
-  // so the word-status summary doesn't reveal itself (and briefly flash pre-grade due dates,
-  // since it reads them live off `deck`) until gradeCloze's `getDeck.set(...)` has actually landed.
+  // Persisted server-side (see markFinished/gradeCloze) rather than inferred from `progress`
+  // covering every blank: grading is now a manual "Finish" step rather than firing the instant
+  // the last blank is filled, so a passage can have every blank answered but not yet graded.
+  const finished = $derived(storedPassage?.finished ?? false);
+  // True while a just-pressed Finish's grades are being persisted — separate from `finished` so
+  // the word-status summary doesn't reveal itself (and briefly flash pre-grade due dates, since it
+  // reads them live off `deck`) until gradeCloze's `getDeck.set(...)` has actually landed.
   let grading = $state(false);
 
   // Restore persisted blank progress on mount/reload (`clozeAnswers` starts empty then). Keyed on
@@ -93,13 +96,9 @@
   // on mount or regeneration — each answered blank re-triggers this effect mid-session. The
   // `clozeAnswers.size > 0` guard is what keeps it from mattering then: once `onCloze` has locally
   // recorded at least one answer, this effect only re-tracks `restoredFor` and stops (doesn't
-  // restore anything or touch `finished`). Without that guard, the *last* blank's own
-  // saveClozeProgress — a fast single-field write — reliably resolves before finish()'s much
-  // heavier gradeCloze call, so this would see persisted progress covering every blank and set
-  // `finished = true` directly right here, well before gradeCloze has actually graded anything —
-  // bypassing the `grading` guard entirely and re-introducing the due-date flicker from a
-  // different angle. (Regeneration still resets `clozeAnswers` to empty first — see generate() —
-  // so this stays correct for that case too.)
+  // restore anything). `finished` itself no longer needs inferring here — it's read directly off
+  // `storedPassage.finished` above, which stays correct across a reload regardless of whether
+  // `progress` happens to cover every blank.
   let restoredFor: StoredPassage | null = null; // note: this variable is persisted across runs of the effect below
   $effect(() => {
     if (!passage || !storedPassage) return;
@@ -122,16 +121,25 @@
       if (tok) restored.set(occId, { word: tok.text, correct: val === 1 });
     }
     clozeAnswers = restored;
-    // Persisted progress that already covers every blank was graded in an earlier session —
-    // mark it finished without re-grading (the auto-finish effect below only guards on `finished`,
-    // so without this a reload of a completed passage would call gradeCloze a second time).
-    finished = blankCount > 0 && restored.size >= blankCount;
   });
 
   function onCloze(occId: string, word: string, correct: boolean, advance: boolean) {
     clozeAnswers = new Map(clozeAnswers).set(occId, { word, correct });
     if (storedPassage) saveClozeProgress({ passageId: storedPassage.id, occId, correct, lang: language });
     if (advance) focusNextBlank(occId);
+  }
+
+  // Flips an already-answered blank between correct/incorrect — e.g. the user typed the right
+  // word but fat-fingered a character, or vice versa. Only offered before Finish locks the
+  // passage (ClozeBlank hides the toggle once `finished`). Persists like any other cloze answer,
+  // so the corrected status survives a reload too.
+  function toggleCloze(occId: string) {
+    if (finished) return;
+    const entry = clozeAnswers.get(occId);
+    if (!entry) return;
+    const correct = !entry.correct;
+    clozeAnswers = new Map(clozeAnswers).set(occId, { ...entry, correct });
+    if (storedPassage) saveClozeProgress({ passageId: storedPassage.id, occId, correct, lang: language });
   }
 
   // After Enter-submitting a blank, move focus to the next not-yet-answered one in reading order
@@ -148,12 +156,9 @@
     }
   }
 
-  // Grade automatically the moment every blank is filled, so there's nothing to click.
-  // `finished`/`grading` guard against re-firing on every subsequent render once blanks/answers
-  // settle, and while finish()'s gradeCloze call is still in flight.
-  $effect(() => {
-    if (blankCount > 0 && clozeAnswers.size >= blankCount && !finished && !grading) { grading = true; finish(); }
-  });
+  // Whether every blank has been filled — the "Finish" button is only active once this is true
+  // (and there's at least one blank to grade).
+  const canFinish = $derived(blankCount > 0 && clozeAnswers.size >= blankCount);
 
   // Per-word (not per-blank) results: a word may fill several blanks, so it only counts as
   // correct overall if every occurrence was — same worst-of rule finish() grades with. `due`/
@@ -175,13 +180,16 @@
     total: wordResults.length,
   }));
 
+  // Called from the "Finish" button — only enabled once `canFinish`. Locks all blank statuses
+  // (the toggle disappears once `finished` flips true) and grades each word through ts-fsrs.
   async function finish() {
+    if (!storedPassage || !canFinish || grading) return;
+    grading = true;
     // Worst grade per word (a word may appear in several blanks): correct → Good (3), miss → Again (1).
     const grades: Record<string, FsrsGrade> = {};
     for (const { word, correct } of wordResults) grades[word] = correct ? 3 : 1;
-    await gradeCloze({ grades, lang: language });
+    await gradeCloze({ grades, lang: language, passageId: storedPassage.id });
     grading = false;
-    finished = true;
   }
 
   function openPopup(e: MouseEvent, token: PassageToken) {
@@ -294,11 +302,11 @@
     await startGenerating({ lang: language });
     const r = await generatePassage({ lang: language, words });
     if (r?.error) { genError = r.error; return; }
-    // Explicit reset rather than relying on the restore effect to infer it: that effect now only
-    // restores/re-derives `finished` when `clozeAnswers` is already empty (see its comment above),
-    // so any answers left over from a passage regenerated mid-completion need clearing here first.
+    // Explicit reset rather than relying on the restore effect: that effect only restores answers
+    // when `clozeAnswers` is already empty (see its comment above), so any answers left over from
+    // a passage regenerated mid-completion need clearing here first. `finished` itself needs no
+    // reset — it's derived from `storedPassage.finished`, which createPassage resets server-side.
     clozeAnswers = new Map();
-    finished = false;
     grading = false;
   }
 
@@ -395,18 +403,18 @@
         {/snippet}
         {#if isBlank(t)}
           {@const occId = `${ti}`}
-          {@const restored = clozeAnswers.get(occId)}
-          {#key restored ? 'restored' : 'fresh'}
-            <ClozeBlank
-              token={t}
-              showHint={true}
-              occId={occId}
-              onGrade={(c, advance) => onCloze(occId, t.text, c, advance)}
-              initialGrade={restored ? { correct: restored.correct } : undefined}
-            >
-              {@render clickable()}
-            </ClozeBlank>
-          {/key}
+          {@const answer = clozeAnswers.get(occId)}
+          <ClozeBlank
+            token={t}
+            showHint={true}
+            occId={occId}
+            onGrade={(c, advance) => onCloze(occId, t.text, c, advance)}
+            answer={answer ? { correct: answer.correct } : undefined}
+            locked={finished}
+            onToggle={() => toggleCloze(occId)}
+          >
+            {@render clickable()}
+          </ClozeBlank>
         {:else}
           {@render clickable()}
         {/if}
@@ -421,6 +429,17 @@
         >
           {grading ? 'Grading…' : `${clozeAnswers.size}/${blankCount} blanks filled`}
         </span>
+        {#if blankCount > 0}
+          <button onclick={finish} disabled={!canFinish || grading}
+            style="font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:500;
+              background:{canFinish && !grading ? 'var(--accent)' : 'var(--card)'};
+              color:{canFinish && !grading ? '#fff' : 'var(--ink-faint)'};
+              border:1px solid {canFinish && !grading ? 'var(--accent)' : 'var(--line)'};
+              border-radius:8px; padding:12px 20px; cursor:{canFinish && !grading ? 'pointer' : 'default'};
+              opacity:{canFinish && !grading ? 1 : 0.6}; transition:all .15s;">
+            Finish
+          </button>
+        {/if}
       {:else}
         {#if summary.total > 0}
           <span style="font-family:var(--f-mono); font-size:12px; color:var(--jade); letter-spacing:.04em;">

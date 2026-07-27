@@ -21,6 +21,7 @@ import {
   savePrefs,
   markGenerating,
   clearGenerating,
+  markFinished,
   type Prefs,
   DEFAULT_PREFS,
 } from '$lib/server/data';
@@ -161,15 +162,25 @@ export const editWordDefinition = command(
   },
 );
 
-// Grade cloze blanks. `grades` maps hanzi → worst rating (computed client-side).
+// Grade cloze blanks (the "Finish" button). `grades` maps hanzi → worst rating (computed
+// client-side). Also marks the passage `finished` so a later reload knows these blanks were
+// actually graded, not just filled in — see markFinished's comment.
 export const gradeCloze = command(
   'unchecked',
-  async ({ grades, lang }: { grades: Record<string, FsrsGrade>; lang: LanguageCode }) => {
+  async (
+    { grades, lang, passageId }: { grades: Record<string, FsrsGrade>; lang: LanguageCode; passageId: string },
+  ) => {
     const { user, supabase } = await ctx();
     const deck = await loadDeck(supabase, user.id, lang);
     const graded = deck.filter((w) => grades[w.h]).map((w) => gradeWord(w, grades[w.h]));
     await updateWords(supabase, user.id, graded);
     getDeck(lang).set(deck.map((w) => graded.find((g) => g.id === w.id) ?? w));
+
+    const current = await loadPassage(supabase, user.id, lang);
+    if (current && current.id === passageId) {
+      await markFinished(supabase, user.id, passageId);
+      getPassage(lang).set({ ...current, finished: true });
+    }
   },
 );
 
