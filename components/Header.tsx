@@ -1,6 +1,7 @@
 'use client';
 import type { ReactNode } from 'react';
 import type { LanguageCode } from '@/lib/types';
+import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { useSRS } from '@/hooks/useSRS';
 
 interface Props {
@@ -39,10 +40,10 @@ export default function Header({ onOpenTheme, accountSlot, language, onLanguageC
               borderRadius: 7, padding: '7px 11px', cursor: 'pointer', fontWeight: 500,
             }}
           >
-            <option value="zh">中文 · Chinese</option>
-            <option value="ja">日本語 · Japanese</option>
+            {SUPPORTED_LANGUAGES.map(cfg => (
+              <option key={cfg.code} value={cfg.code}>{cfg.nativeName} · {cfg.name}</option>
+            ))}
             <option value="ko" disabled>한국어 · Korean (soon)</option>
-            <option value="es" disabled>Español · Spanish (soon)</option>
           </select>
         </label>
 

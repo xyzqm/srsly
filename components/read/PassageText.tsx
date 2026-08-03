@@ -1,11 +1,12 @@
 'use client';
-import { useState, useCallback, useRef } from 'react';
+import { Fragment, useState, useCallback, useRef } from 'react';
 import type { PassageToken, DeckWord, Sentence, ClozeGradeEntry } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
 import { lookupWord } from '@/lib/data/dict';
 import { lookupReadingAsync } from '@/lib/data/lookup';
 import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
@@ -42,8 +43,9 @@ interface Props {
   showPinyin?: boolean;
   audioOnly: boolean;
   deckWords: Set<string>;
-  /** Deck words whose next review is due now → cloze blanks. */
-  dueDeckWords: Set<string>;
+  /** This passage's due target words → cloze blanks. Deliberately NOT every due deck word:
+   *  see `clozeWords` in ReadTab for why the passage only blanks what it was built around. */
+  clozeWords: Set<string>;
   /** Deck words added but not yet due (new card, e.g. "due tomorrow") → green '+' badge. */
   pendingDeckWords: Set<string>;
   deckReadings?: Map<string, ReadingHint[]>;
@@ -63,18 +65,24 @@ interface Props {
   showWordBoundaries?: boolean;
 }
 
-function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBoundaries, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBoundaries, reserveGap, onClick }: {
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
   claimKind: 'vocab' | null;
   compounds: CompoundHint[];
   showWordBoundaries: boolean;
+  /** Reserve a blank slot after the word so tokens read as separate. Only unspaced scripts
+   *  need it — in Spanish the real space already separates them, and reserving another
+   *  slot pushes punctuation away from the word it belongs to ("bonita . Carlos"). */
+  reserveGap: boolean;
   onClick: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  // Non-interactive when there's no reading or the token is punctuation
-  if (!token.reading || token.type === 'punct') return <span>{token.text}</span>;
+  // Non-interactive when it's punctuation, or when we know nothing about the word.
+  // The test is deliberately "reading OR meaning", not reading alone: Spanish has no
+  // reading layer at all, so gating on it would make every Spanish token dead text.
+  if (token.type === 'punct' || !(token.reading || token.meaning)) return <span>{token.text}</span>;
 
   // Indicator character and color — empty string when none so the span is always present
   const indicatorChar  = claimKind === 'vocab' ? '+' : (peeked && isReviewWord) ? '↺' : '';
@@ -108,9 +116,11 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
         }}
       >
         {token.text}
-        <rt>{token.reading}</rt>
+        {/* Omitted for languages with no reading layer (es) — an empty <rt> would still
+            reserve the annotation line above every word and space the text out. */}
+        {token.reading && <rt>{token.reading}</rt>}
       </ruby>
-      {showWordBoundaries && (
+      {showWordBoundaries && (indicatorChar || reserveGap) && (
         <span
           aria-hidden="true"
           style={{
@@ -130,6 +140,27 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
       )}
     </>
   );
+}
+
+/**
+ * Punctuation that OPENS something and therefore takes a space before it but none after —
+ * Spanish's inverted marks plus the usual brackets and quotes.
+ */
+const OPENING_PUNCT = new Set(['¿', '¡', '«', '(', '[', '{', '“', '‘']);
+
+/**
+ * Whether a space should be rendered before token `ti`. Unspaced scripts (zh, ja) never get
+ * one — their tokens butt together the way the script is actually written. Spaced scripts
+ * get a space between words, but not before closing punctuation and not after an opening
+ * mark, so `¿Dónde está la biblioteca?` comes out with its marks tight against the words.
+ */
+function needsSpaceBefore(tokens: PassageToken[], ti: number, scriptIsUnspaced: boolean): string {
+  if (scriptIsUnspaced || ti === 0) return '';
+  const token = tokens[ti];
+  const prev = tokens[ti - 1];
+  if (token.type === 'punct' && !OPENING_PUNCT.has(token.text)) return '';
+  if (prev.type === 'punct' && OPENING_PUNCT.has(prev.text)) return '';
+  return ' ';
 }
 
 function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
@@ -169,7 +200,7 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
           onClick={onWordClick ? (e) => onWordClick(e, token, []) : undefined}
         >
           {token.text}
-          <rt>{token.reading}</rt>
+          {token.reading && <rt>{token.reading}</rt>}
         </ruby>
         <span
           aria-hidden="true"
@@ -272,12 +303,15 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, dueDeckWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
+  const langConfig = getLanguageConfig(language);
 
   const openTokenPopup = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
-    if (!token.reading || token.type === 'punct') return;
+    // Same "reading OR meaning" test as TokenEl — a reading-only gate would stop Spanish
+    // words from ever opening the lookup popup.
+    if (token.type === 'punct' || !(token.reading || token.meaning)) return;
     const el = e.currentTarget as HTMLElement;
     const rects = el.getClientRects();
     const rect = rects.length > 0 ? rects[0] : el.getBoundingClientRect();
@@ -323,10 +357,10 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
     // Review words are cloze blanks — they handle their own interaction.
-    const isReviewWord = dueDeckWords.has(token.text) && token.type === 'vocab';
+    const isReviewWord = clozeWords.has(token.text) && token.type === 'vocab';
     if (isReviewWord) return;
     openTokenPopup(e, token, compounds);
-  }, [dueDeckWords, openTokenPopup]);
+  }, [clozeWords, openTokenPopup]);
 
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
@@ -389,8 +423,13 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
           }}
         >
           {sentences.map((sent, si) => (
+            <Fragment key={si}>
+            {/* Sentences are separate spans (each is independently highlightable), so the
+                space BETWEEN them has to be emitted here — a spaced script would otherwise
+                run them together as "cumpleaños.Todos". Kept outside the span so it never
+                widens the active-sentence highlight. */}
+            {si > 0 && !langConfig.scriptIsUnspaced && ' '}
             <span
-              key={si}
               className="transition-all duration-200 rounded-[5px]"
               style={
                 si === activeSentenceIdx
@@ -400,45 +439,55 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
             >
               {sent.tokens.map((token, ti) => {
                 // Due vocab words become cloze blanks. A conjugated Japanese token is
-                // a review word if its base form (not surface form) is in dueDeckWords.
-                const reviewKey = token.baseForm && dueDeckWords.has(token.baseForm) ? token.baseForm : token.text;
-                const isReviewWord = dueDeckWords.has(reviewKey) && token.type === 'vocab';
+                // a review word if its base form (not surface form) is in clozeWords.
+                const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
+                const isReviewWord = clozeWords.has(reviewKey) && token.type === 'vocab';
+                // Spaced scripts need the spaces put back: the segmenter drops whitespace,
+                // and rendering tokens flush together (correct for CJK) would otherwise
+                // produce "muchos amigos . El" with the punctuation adrift.
+                const space = needsSpaceBefore(sent.tokens, ti, langConfig.scriptIsUnspaced);
                 // Due vocab words become cloze blanks — rendered separately.
                 if (isReviewWord) {
                   const occurrenceId = `${si}-${ti}`;
                   const storedEntry = restoredClozeGrades?.get(occurrenceId);
                   return (
+                    <Fragment key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}>
+                    {space}
                     <ClozeBlank
-                      key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}
                       token={token}
                       showHint={showClozeHints ?? true}
                       onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
                       initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
                       onWordClick={openTokenPopup}
                     />
+                    </Fragment>
                   );
                 }
                 const claimKind = (
                   pendingDeckWords.has(token.text) ||
-                  (language === 'ja' && !!token.baseForm && pendingDeckWords.has(token.baseForm))
+                  (langConfig.usesBaseForms && !!token.baseForm && pendingDeckWords.has(token.baseForm))
                 ) ? 'vocab' : null;
-                // Compound hints are a Chinese single-character feature; Japanese tokens
-                // already arrive as whole words.
+                // Compound hints are a Chinese single-character feature; server-segmented
+                // languages (ja, es) already arrive as whole words.
                 const compounds = language === 'zh' ? findCompoundHints(token, sent, ti) : [];
                 return (
-                  <TokenEl
-                    key={ti}
-                    token={token}
-                    peeked={false}
-                    isReviewWord={false}
-                    claimKind={claimKind}
-                    compounds={compounds}
-                    showWordBoundaries={showWordBoundaries}
-                    onClick={handleTokenClick}
-                  />
+                  <Fragment key={ti}>
+                    {space}
+                    <TokenEl
+                      token={token}
+                      peeked={false}
+                      isReviewWord={false}
+                      claimKind={claimKind}
+                      compounds={compounds}
+                      showWordBoundaries={showWordBoundaries}
+                      reserveGap={langConfig.scriptIsUnspaced}
+                      onClick={handleTokenClick}
+                    />
+                  </Fragment>
                 );
               })}
             </span>
+            </Fragment>
           ))}
         </div>
       )}

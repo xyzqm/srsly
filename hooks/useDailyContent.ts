@@ -7,7 +7,7 @@ import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, inSelectedDecks, decksSignature, todayStr, shuffle } from '@/lib/deck';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
-import { defaultWordsPerPassage } from '@/lib/languageConfig';
+import { defaultWordsPerPassage, getLanguageConfig } from '@/lib/languageConfig';
 
 type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
 
@@ -17,17 +17,44 @@ const PUNCT_CHARS = new Set([
   '：','；',',','.',';',':','!','?','(',')','"',"'",'[',']','{','}',
   '–','○','●','□','■','◇','◆','△','▲','▽','▼','★','☆','•','‥',
   '～','~','／','\\','|','`','^',
+  // Spanish: the inverted marks that open a question/exclamation, and its quote pair.
+  '¿','¡','«','»',
 ]);
+
+/** A letter in any script srsly supports — CJK/kana, or Latin including the accented
+ *  characters Spanish uses. Without the Latin-1 letter ranges a bare "á" or "ñ" would
+ *  fall through the single-character test below and be misread as punctuation. */
+const LETTER_RE = /[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿa-zA-Z0-9À-ÖØ-öø-ÿ]/;
 
 function isPunct(text: string): boolean {
   if (PUNCT_CHARS.has(text)) return true;
-  if (text.length === 1 && !/[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ]/.test(text) && !/[a-zA-Z0-9]/.test(text)) return true;
+  if (text.length === 1 && !LETTER_RE.test(text)) return true;
   return false;
 }
 
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): PassageToken {
   const [text, rawReading, meaning, rawBaseForm] = arr as [string, string?, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
+  const cfg = getLanguageConfig(lang);
+  const baseForm = cfg.usesBaseForms && rawBaseForm && rawBaseForm !== text ? rawBaseForm : undefined;
+
+  // Languages with no reading layer (Spanish) classify a token as vocab on its MEANING.
+  // The reading-gated path below would drop every Spanish word to plain text, since there
+  // is no pinyin/furigana to resolve — nothing would ever become a cloze blank.
+  if (!cfg.hasReadings) {
+    const resolvedMeaning = meaning
+      || (baseForm ? lookupReading(lang, baseForm).meaning : '')
+      || lookupReading(lang, text).meaning
+      || '';
+    if (dueWords.has(text) || (baseForm && dueWords.has(baseForm)) || resolvedMeaning) {
+      return baseForm
+        ? { text, meaning: resolvedMeaning, type: 'vocab', baseForm }
+        : { text, meaning: resolvedMeaning, type: 'vocab' };
+    }
+    // A word we have no definition for is still a word, not punctuation.
+    return { text };
+  }
+
   const reading = rawReading || lookupReading(lang, text).reading || '';
   if (!reading) {
     // No reading resolved. For Chinese a 2+ Han-char run is still a word; for Japanese
@@ -39,13 +66,12 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
   const dictEntry = lookupReading(lang, text, reading, '');
   const resolvedMeaning = meaning || pickReading(deckReadings.get(text), reading)?.m || dictEntry.meaning || '';
   if (dueWords.has(text) || resolvedMeaning) {
-    // Japanese conjugated verbs/adjectives carry their dictionary (base) form as the 4th
-    // RawTok element (resolved server-side by kuromoji). Keep it on EVERY such token — not
-    // only due words — so the lookup popup headlines the base form (する, not しています) and
-    // "Add to vocab" stores/dedupes against the base-form card. Cloze-blank detection and
-    // grade attribution in PassageText still gate on whether the base form is actually a due
-    // word, so surfacing it here never turns a non-due word into a blank.
-    const baseForm = lang === 'ja' && rawBaseForm && rawBaseForm !== text ? rawBaseForm : undefined;
+    // Inflected words carry their dictionary (base) form as the 4th RawTok element,
+    // resolved server-side (kuromoji for ja, the lemmatizer for es). Keep it on EVERY such
+    // token — not only due words — so the lookup popup headlines the base form (する, not
+    // しています) and "Add to vocab" stores/dedupes against the base-form card. Cloze-blank
+    // detection and grade attribution in PassageText still gate on whether the base form is
+    // actually a due word, so surfacing it here never turns a non-due word into a blank.
     return baseForm
       ? { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm }
       : { text, reading, meaning: resolvedMeaning, type: 'vocab' };
@@ -60,16 +86,17 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
 // never reach this single-char merge path.
 const NON_MERGING_PARTICLES = new Set(['的', '了', '着', '地', '吗', '呢', '吧', '啊', '呀', '嘛']);
 
-// Greedy single-character compound merge — a Chinese-only concern (the model emits bare
-// hanzi that may form compounds). Japanese arrives pre-segmented from the AI, so this is a
-// no-op there.
+// Greedy single-character compound merge — only needed where the MODEL did the segmenting
+// (the Chinese pipe format, where it emits bare hanzi that may form compounds). Languages
+// segmented server-side (ja via kuromoji, es via the Spanish segmenter) arrive correct and
+// pass through untouched.
 function mergeCompoundTokens(
   tokens: PassageToken[],
   dueWords: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
   lang: LanguageCode,
 ): PassageToken[] {
-  if (lang === 'ja') return tokens;
+  if (getLanguageConfig(lang).segmentation === 'server') return tokens;
   const result: PassageToken[] = [];
   let i = 0;
   const isSingleCJK = (t: PassageToken | undefined): t is PassageToken =>
@@ -112,15 +139,15 @@ function mergeCompoundTokens(
 const CJK_RE = /[一-鿿㐀-䶿]/;
 
 // Split oversized / mis-grouped runs back into characters, then re-merge real compounds.
-// This whole dance exists because the Chinese model emits bare hanzi; Japanese tokens come
-// from the AI already correctly segmented with furigana, so we pass them through untouched.
+// This whole dance exists because the Chinese model emits bare hanzi; server-segmented
+// languages (ja, es) arrive already correct and pass through untouched.
 function degroupOversized(
   tokens: PassageToken[],
   dueWords: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
   lang: LanguageCode,
 ): PassageToken[] {
-  if (lang === 'ja') return tokens;
+  if (getLanguageConfig(lang).segmentation === 'server') return tokens;
   const exploded: PassageToken[] = [];
 
   function explodeToken(t: PassageToken) {

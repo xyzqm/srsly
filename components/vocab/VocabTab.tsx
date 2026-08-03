@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
@@ -966,7 +967,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search words — hanzi, pinyin, or meaning"
+              placeholder={`Search words — ${getLanguageConfig(language).hasReadings ? `word, ${getLanguageConfig(language).readingLabel.toLowerCase()}, or meaning` : 'word or meaning'}`}
               style={{
                 width: '100%', fontFamily: 'var(--f-mono)', fontSize: 12.5,
                 background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 8,

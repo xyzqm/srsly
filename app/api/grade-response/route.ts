@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { isAnonymousGuest } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
-import { getLanguageConfig } from '@/lib/languageConfig';
+import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 
 /** Keyword-match fallback — used when no API key or Claude fails. */
 function keywordFallback(response: string, key: string[], langName: string): {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     model     = String(body.model    ?? '');
     key       = Array.isArray(body.key) ? body.key : [];
     response  = String(body.response ?? '');
-    language  = body.language === 'ja' ? 'ja' : 'zh';
+    language  = toLanguageCode(body.language);
     hskLevel  = Number(body.hskLevel) || 4;
   } catch {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   const config = getLanguageConfig(language);
   const langName = config.name;
-  const levelName = language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`;
+  const levelName = levelLabel(language, hskLevel);
 
   if (!question || !response) {
     return NextResponse.json({ error: 'question and response are required' }, { status: 400 });
@@ -63,10 +63,9 @@ export async function POST(req: NextRequest) {
 
   const client = new Anthropic({ apiKey });
 
-  // HSK: higher = harder. JLPT: higher number = easier.
-  const levelDesc = language === 'ja'
-    ? (hskLevel >= 4 ? 'beginner' : hskLevel >= 2 ? 'intermediate' : 'advanced')
-    : (hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced');
+  // Tier comes off the language config — the level numbering runs in opposite directions
+  // per language (HSK 6 and CEFR C2 are hardest; JLPT N1 is hardest).
+  const levelDesc = difficultyTier(language, hskLevel);
   const keyList = key.length > 0 ? key.join(', ') : '(none specified)';
 
   const prompt = `You are grading a ${langName} language student's free-response reading comprehension answer.

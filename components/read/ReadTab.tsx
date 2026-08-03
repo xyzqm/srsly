@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor } from '@/lib/languageConfig';
+import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -50,6 +50,7 @@ function readSavedPassageIdx(contentKey: string): number {
 export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitStudyScope, onNavigateVocab }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
+  const langConfig = getLanguageConfig(language);
   const { deck, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
 
   // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
@@ -90,8 +91,12 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
   const TITLE_TOKENS = useMemo(() => currentPassage?.titleTokens ?? [], [currentPassage]);
   // AI passages start with no questions; they're generated lazily on demand.
   const QUESTIONS = useMemo(() => currentPassage?.questions ?? [], [currentPassage]);
+  // Passage length: characters for unspaced scripts, words for spaced ones — a Han-character
+  // count is the natural measure for zh/ja and always zero for Spanish.
   const charCount = currentPassage
-    ? currentPassage.sentences.flatMap(s => s.tokens).filter(t => /[一-鿿]/.test(t.text)).length
+    ? currentPassage.sentences.flatMap(s => s.tokens).filter(t =>
+        langConfig.scriptIsUnspaced ? /[一-鿿]/.test(t.text) : t.type !== 'punct'
+      ).length
     : 0;
 
   const genEstShort = hskLevel <= 3 ? '~15–25s' : '~20–35s';
@@ -161,26 +166,49 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
     return { dueDeckWords: due, pendingDeckWords: pending };
   }, [deck, passageAnchors]);
 
-  const reviewWordCount = targetWords.length + passageAnchors.size;
+  // The words this passage actually blanks out: the ones it was GENERATED around
+  // (`vocabWords`), narrowed to those still due. Blanking every due deck word that merely
+  // happens to appear would bury the passage — once the due queue is large, an HSK 3 text is
+  // almost entirely deck vocabulary, and the reader gets a wall of gaps instead of prose.
+  // `vocabWords` is already keyed the way tokens resolve here (surface form, Japanese base
+  // form, or anchor compound), so no extra normalisation is needed.
+  const clozeWords = useMemo(
+    () => new Set([...PASSAGE_VOCAB_SET].filter(w => dueDeckWords.has(w))),
+    [PASSAGE_VOCAB_SET, dueDeckWords]
+  );
 
-  // Count every blank occurrence in the passage (a word appearing N times = N blanks).
-  const clozeWordCount = useMemo(() => {
+  const reviewWordCount = clozeWords.size;
+
+  // Count every blank occurrence in the passage (a word appearing N times = N blanks), and
+  // separately how many distinct words those blanks cover — the summary reports both, since
+  // "9 blanks" and "5 review words" are different facts and conflating them is what made the
+  // old copy read as if the deck had exploded.
+  const { clozeWordCount, clozeDistinctCount } = useMemo(() => {
     let count = 0;
+    const distinct = new Set<string>();
     for (const s of SENTENCES) {
       for (const t of s.tokens) {
         if (t.type !== 'vocab') continue;
-        const key = (t.baseForm && dueDeckWords.has(t.baseForm)) ? t.baseForm : t.text;
-        if (dueDeckWords.has(key)) count++;
+        const key = (t.baseForm && clozeWords.has(t.baseForm)) ? t.baseForm : t.text;
+        if (clozeWords.has(key)) { count++; distinct.add(key); }
       }
     }
-    return count;
-  }, [SENTENCES, dueDeckWords]);
+    return { clozeWordCount: count, clozeDistinctCount: distinct.size };
+  }, [SENTENCES, clozeWords]);
 
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
   const [showClozeHints, setShowClozeHints] = useState(true);
+  // Word-boundary marks exist because CJK has no spaces. Spanish already delimits its
+  // words, so they default off there (the BOUNDARIES toggle still works either way).
+  // Set in an effect, not as the useState initial value: `language` starts at the context
+  // default ('zh') and only becomes the user's real language once prefs load, so an
+  // initial-value default would stick on the wrong setting.
   const [showWordBoundaries, setShowWordBoundaries] = useState(true);
+  useEffect(() => {
+    setShowWordBoundaries(getLanguageConfig(language).scriptIsUnspaced);
+  }, [language]);
   // Occurrence-based: keyed by "${sentenceIdx}-${tokenIdx}", value tracks word + grade.
   const [clozeGrades, setClozeGrades] = useState<Map<string, { word: string; grade: FsrsGrade }>>(new Map());
   const [frResponses, setFrResponses] = useState<Record<number, FRResponse>>({});
@@ -297,12 +325,14 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
     async function check() {
       if (!dailyContent || !contentKey) { if (!cancelled) setAllPassagesComplete(true); return; }
       const results = await Promise.all(dailyContent.passages.map(async (passage, idx) => {
+        // Same rule as `clozeWords`, but scoped to each passage's own target words.
+        const blankable = new Set(passage.vocabWords.filter(w => dueDeckWords.has(w)));
         let needed = 0;
         for (const s of passage.sentences) {
           for (const t of s.tokens) {
             if (t.type !== 'vocab') continue;
-            const key = (t.baseForm && dueDeckWords.has(t.baseForm)) ? t.baseForm : t.text;
-            if (dueDeckWords.has(key)) needed++;
+            const key = (t.baseForm && blankable.has(t.baseForm)) ? t.baseForm : t.text;
+            if (blankable.has(key)) needed++;
           }
         }
         if (needed === 0) return true;
@@ -583,9 +613,9 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => {
-                  // due → accent (review word); else pending (added, not yet due) → green '+'.
-                  // Same rules as the passage body.
-                  const isReviewWord = dueDeckWords.has(t.text) && t.type === 'vocab';
+                  // one of this passage's due target words → accent (review word); else
+                  // pending (added, not yet due) → green '+'. Same rules as the passage body.
+                  const isReviewWord = clozeWords.has(t.text) && t.type === 'vocab';
                   const claimKind = isReviewWord ? null
                     : pendingDeckWords.has(t.text) ? 'vocab' as const
                     : null;
@@ -597,7 +627,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
         </div>
         <div className="flex flex-col items-end gap-2">
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-            level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`}</span> · ~{charCount} 字
+            level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}
           </div>
         </div>
       </div>
@@ -699,7 +729,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
             activeSentenceIdx={activeSentence}
             audioOnly={audioOnly}
             deckWords={passageDeckWords}
-            dueDeckWords={dueDeckWords}
+            clozeWords={clozeWords}
             pendingDeckWords={pendingDeckWords}
             deckReadings={deckReadings}
             onAddToDeck={handleAddToDeck}
@@ -714,6 +744,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
 
           <LookupSummary
             totalVocab={clozeWordCount}
+            distinctWords={clozeDistinctCount}
             clozeAnswered={clozeGrades.size}
           />
         </>
