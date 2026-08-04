@@ -3,6 +3,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { lookupReadingAsync } from '@/lib/data/lookup';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
+import { POLYPHONES } from '@/lib/polyphones';
 import { useLanguage } from '@/lib/LanguageContext';
 import { inStudyDeck } from '@/lib/deck';
 import { getLanguageConfig, levelLabel, levelNumbers } from '@/lib/languageConfig';
@@ -136,36 +137,112 @@ function wordIdentity(w: { h: string; m: string }): string {
   return w.h + ' ' + (w.m || '').trim();
 }
 
-async function resolveWord(
-  w: { h: string; p: string; m: string },
+/** Does a pasted gloss look like it describes this reading's senses? Used only to pick
+ *  BETWEEN a polyphone's readings — never as a source of definition text. */
+function matchesSenses(pasted: string, senses: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const target = norm(pasted);
+  if (!target) return false;
+  return norm(senses).split(' ').some(word => word.length > 2 && target.includes(word));
+}
+
+/** Words the batch endpoint resolved, keyed by the surface that was submitted. */
+type BatchResults = Record<string, { found: boolean; word: string; reading: string; meaning: string }>;
+
+/** Requests per round-trip. Large pastes are chunked so one huge list doesn't become one
+ *  huge request (the endpoint caps at 500). */
+const BATCH_CHUNK = 200;
+
+/**
+ * Ask the server to resolve every distinct surface in one go, undoing inflection on the
+ * way — this is what lets a pasted 먹었어요 land as the 먹다 card instead of being rejected.
+ * Chinese never gets here: see `resolveBatch`.
+ */
+async function fetchBatch(surfaces: string[], lang: LanguageCode): Promise<BatchResults> {
+  const out: BatchResults = {};
+  for (let i = 0; i < surfaces.length; i += BATCH_CHUNK) {
+    const chunk = surfaces.slice(i, i + BATCH_CHUNK);
+    const res = await fetch('/api/batch-word-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: lang, words: chunk }),
+    });
+    if (!res.ok) throw new Error(`batch lookup failed: ${res.status}`);
+    const data = await res.json();
+    Object.assign(out, data.results ?? {});
+  }
+  return out;
+}
+
+/**
+ * Resolve a whole parsed paste against the dictionary.
+ *
+ * STRICT POLICY: the dictionary is the only source of definitions. Pasted readings and
+ * glosses are used solely to disambiguate WHICH entry is meant — never stored. A word with
+ * no dictionary entry comes back 'not-found' and cannot be imported.
+ *
+ * Two transports behind one function, chosen the same way `useWordLookup` chooses for the
+ * single-word form:
+ *
+ *   - Inflecting languages (ja, es, ko) go to /api/batch-word-lookup, because undoing
+ *     conjugation needs the server-side lemmatizers.
+ *   - Chinese stays on the client. It has no inflection to undo, and both CC-CEDICT and the
+ *     polyphone table are already in the browser — sending it to the server would mean
+ *     shipping another 8 MB dictionary server-side to compute an answer we already have.
+ */
+async function resolveBatch(
+  parsed: Array<{ h: string; p: string; m: string }>,
   deckIds: Set<string>,
   lang: LanguageCode,
-): Promise<ParsedWord> {
-  let p = w.p, m = w.m;
-  // Pull a leading reading out of the definition so polyphones keep distinct pinyin
-  // ("háng - a row" → pinyin "háng", meaning "a row"). Chinese only — Japanese readings
-  // are hiragana and aren't space-prefixed in glosses.
-  if (!p && lang === 'zh') {
-    const split = splitLeadingPinyin(m);
-    if (split) { p = split.pinyin; m = split.meaning; }
+): Promise<ParsedWord[]> {
+  const settle = (h: string, pin: string, mean: string): ParsedWord => {
+    // In-deck only when the same character AND meaning already exist.
+    if (deckIds.has(wordIdentity({ h, m: mean }))) {
+      return { h, p: pin, m: mean, status: 'in-deck', selected: false };
+    }
+    return { h, p: pin, m: mean, status: 'ready', selected: true };
+  };
+  const missing = (h: string): ParsedWord =>
+    ({ h, p: '', m: '', status: 'not-found', selected: false });
+
+  if (lang === 'zh') {
+    return Promise.all(parsed.map(async w => {
+      let p = w.p;
+      let pastedMeaning = w.m;
+      // Pull a leading reading out of the definition so polyphones keep distinct pinyin
+      // ("háng - a row" → pinyin "háng", meaning "a row").
+      if (!p) {
+        const split = splitLeadingPinyin(pastedMeaning);
+        if (split) { p = split.pinyin; pastedMeaning = split.meaning; }
+      }
+      if (/[1-5]/.test(p)) p = toneNumToMark(p);
+
+      // Polyphones carry a different meaning per reading, and the dictionary returns one
+      // merged gloss covering all of them. The pasted reading (or gloss) picks which one is
+      // meant; the definition text still comes from POLYPHONES — our curated data, not the
+      // paste.
+      const poly = POLYPHONES[w.h];
+      if (poly?.length) {
+        const chosen =
+          poly.find(r => r.p === p)
+          ?? poly.find(r => matchesSenses(pastedMeaning, r.m))
+          ?? poly[0];
+        return settle(w.h, chosen.p, chosen.m);
+      }
+      const found = await lookupReadingAsync(lang, w.h, '', '');
+      return found.meaning ? settle(w.h, found.reading || p, found.meaning) : missing(w.h);
+    }));
   }
-  let status: ParsedWord['status'];
-  if (p && m) {
-    p = lang === 'zh' && /[1-5]/.test(p) ? toneNumToMark(p) : p;
-    status = 'ready';
-  } else {
-    const found = await lookupReadingAsync(lang, w.h, '', m);
-    p = found.reading || p;
-    // Prefer the pasted meaning: it's what distinguishes two readings of one character
-    // (行 "to walk" vs "a row"); the dictionary returns a single merged gloss.
-    m = m || found.meaning;
-    status = (m || found.meaning || found.reading) ? 'ready' : 'not-found';
-  }
-  // In-deck only when the same character AND meaning already exist.
-  if (deckIds.has(wordIdentity({ h: w.h, m }))) {
-    return { h: w.h, p, m, status: 'in-deck', selected: false };
-  }
-  return { h: w.h, p, m, status, selected: status === 'ready' };
+
+  const surfaces = [...new Set(parsed.map(w => w.h).filter(Boolean))];
+  const results = await fetchBatch(surfaces, lang);
+  return parsed.map(w => {
+    const r = results[w.h];
+    if (!r?.found) return missing(w.h);
+    // File the card under the dictionary form the server resolved, so an inflected paste
+    // dedupes against the same card a generated passage would produce.
+    return settle(r.word || w.h, r.reading, r.meaning);
+  });
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -186,12 +263,11 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   const [text, setText] = useState('');
   const [words, setWords] = useState<ParsedWord[]>([]);
   const [lookupDone, setLookupDone] = useState(false);
+  const [lookupError, setLookupError] = useState(false);
   const abortRef = useRef(0);
 
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
   const [debugCopied, setDebugCopied] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState({ h: '', p: '', m: '' });
   const [dupCount, setDupCount] = useState(0);     // duplicate hanzi merged out of the paste
   const [droppedCount, setDroppedCount] = useState(0); // pasted lines that couldn't be parsed
 
@@ -240,24 +316,8 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   function switchMode(m: ImportMode) {
     setMode(m);
     if (m === 'hsk') void loadLevelData();
-    setText(''); setWords([]); setLookupDone(false); setEditingIdx(null);
+    setText(''); setWords([]); setLookupDone(false);
     setDupCount(0); setDroppedCount(0);
-  }
-
-  function startEdit(e: React.MouseEvent, i: number) {
-    e.stopPropagation();
-    setEditingIdx(i);
-    setEditDraft({ h: words[i].h, p: words[i].p, m: words[i].m });
-  }
-
-  function commitEdit() {
-    if (editingIdx === null) return;
-    setWords(prev => prev.map((w, i) =>
-      i === editingIdx
-        ? { ...w, h: editDraft.h.trim(), p: editDraft.p.trim(), m: editDraft.m.trim(), status: 'ready' as const, selected: true }
-        : w
-    ));
-    setEditingIdx(null);
   }
 
   // Re-parse text on change
@@ -284,22 +344,42 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
     setWords(raw.map(w => ({ ...w, status: 'loading', selected: false })));
     setLookupDone(false);
 
-    Promise.all(raw.map(w => resolveWord(w, deckIds, language))).then(results => {
+    setLookupError(false);
+    resolveBatch(raw, deckIds, language).then(results => {
       if (abortRef.current !== run) return;
       setWords(results);
+      setLookupDone(true);
+    }).catch(() => {
+      if (abortRef.current !== run) return;
+      // A failed lookup must not read as "these words don't exist" — nothing is importable,
+      // but the reason shown is the network, not the dictionary.
+      setWords(prev => prev.map(w => ({ ...w, status: 'not-found', selected: false })));
+      setLookupError(true);
       setLookupDone(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, mode, language]);
 
+  /** Only a confirmed dictionary entry can ever be selected. */
+  const isSelectable = (w: ParsedWord) => w.status === 'ready';
+
   const toggleWord = useCallback((i: number) => {
-    setWords(prev => prev.map((w, j) => j === i ? { ...w, selected: !w.selected } : w));
+    setWords(prev => prev.map((w, j) =>
+      j === i && isSelectable(w) ? { ...w, selected: !w.selected } : w
+    ));
   }, []);
 
-  const selectedWords = words.filter(w => w.selected && w.h);
+  const selectedWords = words.filter(w => isSelectable(w) && w.selected && w.h && w.m);
 
   function handleImport() {
-    onImport(selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m })));
+    // Re-filter rather than trusting `selected` alone. The UI already prevents selecting a
+    // 'not-found' row, but this is the last point before the word reaches the deck, and a
+    // stale selection (a row that was selectable and then re-resolved as not-found while
+    // the text was still being edited) must not slip through.
+    const payload = words
+      .filter(w => isSelectable(w) && w.selected && w.h && w.m)
+      .map(w => ({ h: w.h, p: w.p, m: w.m }));
+    if (payload.length > 0) onImport(payload);
   }
 
   // ── HSK level mode ──────────────────────────────────────────────────────────
@@ -311,7 +391,10 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       .map(h => {
         const v = levelVocab[h];
         return { h, p: v?.pinyin ?? v?.reading ?? '', m: v?.meaning ?? '' };
-      });
+      })
+      // Level lists are dictionary-derived, but a handful of entries carry no gloss.
+      // A card with no meaning can't be reviewed, so it doesn't belong in the deck.
+      .filter(w => w.m);
     if (toAdd.length > 0) onImport(toAdd);
   }
 
@@ -491,100 +574,114 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
               Preview · {words.length} word{words.length !== 1 ? 's' : ''}
               {dupCount > 0 && <span style={{ textTransform: 'none', letterSpacing: 0 }} title="Your deck stores one entry per character, so repeated characters were collapsed into one."> · {dupCount} duplicate{dupCount !== 1 ? 's' : ''} merged</span>}
-              {droppedCount > 0 && <span style={{ textTransform: 'none', letterSpacing: 0 }} title="Lines with no Chinese character or no definition couldn't be imported."> · {droppedCount} skipped</span>}
+              {droppedCount > 0 && <span style={{ textTransform: 'none', letterSpacing: 0 }} title={`Lines with no ${langConfig.name} word couldn't be parsed.`}> · {droppedCount} skipped</span>}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setWords(prev => prev.map(w => w.status === 'in-deck' ? w : { ...w, selected: true }))}
+              <button onClick={() => setWords(prev => prev.map(w => isSelectable(w) ? { ...w, selected: true } : w))}
                 style={{ ...inputStyle, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>All</button>
               <button onClick={() => setWords(prev => prev.map(w => ({ ...w, selected: false })))}
                 style={{ ...inputStyle, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>None</button>
             </div>
           </div>
 
+          {!lookupDone && (
+            <div
+              className="flex items-center gap-2.5 mb-2 px-4 py-2.5 rounded-[9px]"
+              style={{ background: 'var(--paper-2)', border: '1px dashed var(--line)' }}
+            >
+              <span className="playing-pulse" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-soft)', letterSpacing: '.04em' }}>
+                Validating vocabulary against the {langConfig.dictName.replace(/\s*\(.*\)$/, '')} dictionary…
+              </span>
+            </div>
+          )}
+
+          {lookupError && (
+            <div
+              className="mb-2 px-4 py-2.5 rounded-[9px]"
+              style={{ background: 'color-mix(in srgb, var(--accent) 7%, transparent)', border: '1px dashed var(--accent)' }}
+            >
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)' }}>Couldn&apos;t reach the dictionary</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.5 }}>
+                This is a connection problem, not a verdict on these words — edit the text above to retry.
+              </div>
+            </div>
+          )}
+
           <div className="rounded-[10px] overflow-hidden mb-4" style={{ border: '1px solid var(--line)', maxHeight: 300, overflowY: 'auto' }}>
             {words.map((w, i) => (
               <div key={i}
-                onClick={() => editingIdx !== i && w.status !== 'in-deck' && toggleWord(i)}
+                onClick={() => isSelectable(w) && toggleWord(i)}
                 className="flex items-center gap-2 px-4 py-2 transition-colors"
                 style={{
                   background: i % 2 === 0 ? 'var(--paper-2)' : 'var(--card)',
                   borderBottom: i < words.length - 1 ? '1px solid var(--line-soft)' : 'none',
-                  cursor: editingIdx === i ? 'default' : w.status === 'in-deck' ? 'default' : 'pointer',
-                  opacity: w.status === 'not-found' && editingIdx !== i ? 0.5 : 1,
+                  cursor: isSelectable(w) ? 'pointer' : 'not-allowed',
+                  opacity: w.status === 'not-found' ? 0.5 : 1,
                   minHeight: 42,
                 }}>
-                {/* Checkbox */}
-                <div style={{
-                  width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                  border: `2px solid ${w.selected ? 'var(--accent)' : 'var(--line)'}`,
-                  background: w.selected ? 'var(--accent)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {w.selected && <span style={{ color: '#fff', fontSize: 9, fontWeight: 700 }}>✓</span>}
-                </div>
+                {/* Checkbox — only a confirmed dictionary entry can be ticked. */}
+                <input
+                  type="checkbox"
+                  checked={w.selected}
+                  disabled={!isSelectable(w)}
+                  readOnly
+                  aria-label={isSelectable(w) ? `Import ${w.h}` : `${w.h} cannot be imported`}
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => toggleWord(i)}
+                  style={{
+                    width: 16, height: 16, flexShrink: 0, margin: 0, accentColor: 'var(--accent)',
+                    cursor: isSelectable(w) ? 'pointer' : 'not-allowed',
+                    opacity: isSelectable(w) ? 1 : 0.4,
+                  }}
+                />
 
-                {editingIdx === i ? (
-                  <>
-                    <input autoFocus value={editDraft.h}
-                      onChange={e => setEditDraft(d => ({ ...d, h: e.target.value }))}
-                      onClick={e => e.stopPropagation()}
-                      style={{ ...inputStyle, width: 56, fontFamily: 'var(--f-han)', fontSize: 17, padding: '3px 6px' }} />
-                    <input value={editDraft.p} placeholder="pīnyīn"
-                      onChange={e => setEditDraft(d => ({ ...d, p: e.target.value }))}
-                      onClick={e => e.stopPropagation()}
-                      style={{ ...inputStyle, width: 94, fontSize: 12, padding: '3px 6px' }} />
-                    <input value={editDraft.m} placeholder="meaning"
-                      onChange={e => setEditDraft(d => ({ ...d, m: e.target.value }))}
-                      onClick={e => e.stopPropagation()}
-                      onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingIdx(null); }}
-                      style={{ ...inputStyle, flex: 1, fontSize: 12, padding: '3px 6px' }} />
-                    <button onClick={e => { e.stopPropagation(); commitEdit(); }}
-                      style={{ background: 'var(--jade)', color: '#fff', border: 'none', borderRadius: 5, padding: '4px 9px', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 11, flexShrink: 0 }}>✓</button>
-                    <button onClick={e => { e.stopPropagation(); setEditingIdx(null); }}
-                      style={{ background: 'var(--line-soft)', color: 'var(--ink-soft)', border: 'none', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontFamily: 'var(--f-mono)', fontSize: 11, flexShrink: 0 }}>✕</button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontFamily: 'var(--f-han)', fontSize: 20, minWidth: 56, fontWeight: 'var(--han-weight)' as 'bold' }}>{w.h}</span>
-                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', minWidth: 90, letterSpacing: '.03em' }}>
-                      {w.status === 'loading' ? '…' : w.p || '—'}
-                    </span>
-                    <span style={{ fontSize: 13, color: 'var(--ink-soft)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {w.status === 'loading' ? 'looking up…' :
-                       w.status === 'not-found' ? 'not in dictionary' :
-                       w.status === 'in-deck' ? <span style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 11 }}>already in deck</span> :
-                       w.m || '—'}
-                    </span>
-                    {w.status !== 'in-deck' && w.status !== 'loading' && (
-                      <button onClick={e => startEdit(e, i)}
-                        title="Edit"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 5px', color: 'var(--ink-faint)', flexShrink: 0, fontSize: 14, lineHeight: 1, borderRadius: 4 }}>
-                        ✎
-                      </button>
-                    )}
-                  </>
-                )}
+                <span style={{ fontFamily: 'var(--f-han)', fontSize: 20, minWidth: 56, fontWeight: 'var(--han-weight)' as 'bold' }}>{w.h}</span>
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', minWidth: 90, letterSpacing: '.03em' }}>
+                  {w.status === 'loading' ? '…' : w.p || '—'}
+                </span>
+                {/* Read-only — definitions come from the dictionary and are never editable. */}
+                <span style={{ fontSize: 13, color: 'var(--ink-soft)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {w.status === 'loading' ? 'looking up…' :
+                   w.status === 'not-found' ? <span style={{ color: 'var(--accent)', fontFamily: 'var(--f-mono)', fontSize: 11 }}>not in dictionary — can&apos;t be imported</span> :
+                   w.status === 'in-deck' ? <span style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 11 }}>already in deck</span> :
+                   w.m || '—'}
+                </span>
               </div>
             ))}
           </div>
 
-          {selectedWords.length > 0 && lookupDone && (
-            <div className="flex items-center gap-3">
-              <button onClick={handleImport}
-                className="cursor-pointer transition-all duration-150"
-                style={{
-                  fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-                  background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-                  padding: '11px 22px', boxShadow: '0 2px 0 var(--accent-deep)',
-                }}>
-                Import {selectedWords.length} word{selectedWords.length !== 1 ? 's' : ''}
-              </button>
-              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
-                {words.filter(w => w.status === 'in-deck').length > 0 && `${words.filter(w => w.status === 'in-deck').length} already in deck`}
-                {words.filter(w => w.status === 'not-found').length > 0 && ` · ${words.filter(w => w.status === 'not-found').length} not found`}
-              </span>
-            </div>
-          )}
+          {/* Shown whenever the lookup has finished — not only when something is
+              selectable. If every pasted word is missing from the dictionary the counts
+              are the only explanation the user gets for an empty import. */}
+          {lookupDone && (() => {
+            const inDeck = words.filter(w => w.status === 'in-deck').length;
+            const missing = words.filter(w => w.status === 'not-found').length;
+            const notes = [
+              inDeck > 0 ? `${inDeck} already in deck` : '',
+              missing > 0 ? `${missing} not in dictionary` : '',
+            ].filter(Boolean).join(' · ');
+            return (
+              <div className="flex items-center gap-3 flex-wrap">
+                {selectedWords.length > 0 && (
+                  <button onClick={handleImport}
+                    className="cursor-pointer transition-all duration-150"
+                    style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                      background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                      padding: '11px 22px', boxShadow: '0 2px 0 var(--accent-deep)',
+                    }}>
+                    Import {selectedWords.length} word{selectedWords.length !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {notes && (
+                  <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: missing > 0 && selectedWords.length === 0 ? 'var(--accent)' : 'var(--ink-faint)' }}>
+                    {notes}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

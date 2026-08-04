@@ -1,14 +1,13 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { DeckWord } from '@/lib/types';
-import { autoFillPinyin, toneNumToMark, checkPinyin } from '@/lib/pinyin';
+import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
-import { lookupJa } from '@/lib/data/jadict';
-import { lookupEs } from '@/lib/data/esdict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
+import { useWordLookup, splitSenses } from '@/hooks/useWordLookup';
 
 interface Props {
   onAdd: (word: DeckWord) => void;
@@ -20,13 +19,11 @@ interface Props {
 export default function AddWordForm({ onAdd, onCancel, deckOptions = [], defaultDeck = '' }: Props) {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
-  const isJa = language === 'ja';
   const isZh = language === 'zh';
   const [hanzi, setHanzi] = useState('');
   const [deckName, setDeckName] = useState(defaultDeck);
   const [pinyin, setPinyin] = useState('');
   const [pinHint, setPinHint] = useState(langConfig.readingHint);
-  const [defs, setDefs] = useState<string[]>(['']);
   // Compound words that carry the chosen reading — surfaced in generated passages
   // for readings that don't stand alone (行 háng → 银行, 行业).
   const [compounds, setCompounds] = useState<string[]>([]);
@@ -36,100 +33,68 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognizerRef = useRef<any>(null);
 
+  const trimmed = hanzi.trim();
+  const lookup = useWordLookup(hanzi, language);
+
+  // A Chinese polyphone carries a DIFFERENT meaning per reading (行 xíng "to walk" vs háng
+  // "a row"), and the dictionary returns one merged gloss covering all of them. So for
+  // these the senses come from the selected reading, not from the lookup — otherwise every
+  // reading of a polyphone would show the same conflated definition.
+  const polyReadings = isZh ? POLYPHONES[trimmed] : undefined;
+  const activeReading = useMemo(
+    () => polyReadings?.find(r => r.p === pinyin) ?? polyReadings?.[0],
+    [polyReadings, pinyin],
+  );
+
+  /** The senses that will be stored, shown read-only below. */
+  const definitions = activeReading ? splitSenses(activeReading.m) : lookup.definitions;
+  /** POLYPHONES is a curated list of real characters, so a hit there is authoritative even
+   *  if the merged dictionary entry didn't resolve. */
+  const status = polyReadings?.length ? 'found' : lookup.status;
+  /** Dictionary form to file the card under — the lemma for inflecting languages. */
+  const canonicalWord = activeReading ? trimmed : (lookup.word || trimmed);
+  const canAdd = status === 'found' && definitions.length > 0;
+
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setHasSpeech(!!(( window as any).SpeechRecognition || (window as any).webkitSpeechRecognition));
   }, []);
 
-  function handleHanziChange(val: string) {
-    setHanzi(val);
-    const trimmed = val.trim();
-    // Compounds are reading-specific; reset on any hanzi change (a reading chip re-fills them).
-    setCompounds([]);
+  // Polyphone: default to the most frequent reading when the WORD changes.
+  //
+  // Deliberately keyed on the word alone, not on the lookup state. The lookup is debounced,
+  // so if this also re-ran when the result landed it would reset the reading out from under
+  // someone who had already clicked a different chip in the meantime — silently filing 行
+  // under xíng when they picked háng.
+  useEffect(() => {
+    const poly = isZh ? POLYPHONES[trimmed] : undefined;
+    if (!poly?.length) return;
+    setPinyin(poly[0].p);
+    setCompounds(poly[0].compounds ?? []);
+    setPinHint('auto-filled — tap to edit');
+  }, [trimmed, isZh]);
 
-    if (!trimmed) {
+  // Everything else: the reading follows whatever the dictionary resolved.
+  useEffect(() => {
+    if (isZh && POLYPHONES[trimmed]) return;  // handled above
+    setCompounds([]);
+    if (!langConfig.hasReadings) return;
+    if (lookup.status === 'found') {
+      setPinyin(lookup.reading);
+      setPinHint(lookup.reading ? 'auto-filled — tap to edit' : langConfig.readingHint);
+    } else if (lookup.status !== 'loading') {
       setPinyin('');
       setPinHint(langConfig.readingHint);
-      setDefs(['']);
-      return;
     }
+  }, [trimmed, isZh, lookup.status, lookup.reading, langConfig.hasReadings, langConfig.readingHint]);
 
-    // Spanish: no reading and no polyphone/tone machinery — fill the meaning only.
-    // The lemma is resolved on submit via /api/es-word-lookup, as Japanese does.
-    if (language === 'es') {
-      const e = lookupEs(trimmed);
-      if (e.meaning) {
-        const parts = e.meaning.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
-        setDefs(parts.length > 0 ? parts : [e.meaning]);
-      }
-      return;
-    }
-
-    // Japanese: no polyphone/tone machinery — look the word up in JMdict for furigana + meaning.
-    if (isJa) {
-      const e = lookupJa(trimmed);
-      if (e.reading) { setPinyin(e.reading); setPinHint('auto-filled — tap to edit'); }
-      else { setPinyin(''); setPinHint('type the reading in hiragana'); }
-      if (e.meaning) {
-        const parts = e.meaning.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
-        setDefs(parts.length > 0 ? parts : [e.meaning]);
-      }
-      return;
-    }
-
-    // Polyphone: auto-select the most frequent reading (first in POLYPHONES) rather
-    // than the dictionary's merged entry, which combines every reading's pinyin and
-    // senses. The reading chips let the user switch to another reading.
-    const poly = POLYPHONES[trimmed];
-    if (poly && poly.length > 0) {
-      const top = poly[0];
-      setPinyin(top.p);
-      setPinHint('auto-filled — tap to edit');
-      const parts = top.m.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
-      setDefs(parts.length > 0 ? parts : ['']);
-      setCompounds(top.compounds ?? []);
-      return;
-    }
-
-    // Non-polyphone: dictionary for pinyin + meaning.
-    const entry = lookupWord(trimmed);
-    if (entry.pinyin) {
-      setPinyin(entry.pinyin);
-      setPinHint('auto-filled — tap to edit');
-    } else {
-      // Fall back to phonetic auto-fill (character-by-character)
-      const filled = autoFillPinyin(trimmed);
-      if (filled) {
-        setPinyin(filled);
-        setPinHint('auto-filled — tap to edit');
-      } else {
-        setPinyin('');
-        setPinHint('type with tone numbers e.g. shui3bei1');
-      }
-    }
-
-    // Auto-fill meaning from dictionary if found. Dictionary sources separate senses
-    // with either ';' or a middle dot '·' — split on both so each becomes its own field.
-    if (entry.meaning) {
-      const parts = entry.meaning.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
-      setDefs(parts.length > 0 ? parts : [entry.meaning]);
-    }
+  function handleHanziChange(val: string) {
+    setHanzi(val);
   }
 
   function handlePinyinBlur(val: string) {
     // Tone-number → diacritic conversion is Chinese-only; Japanese readings are kana.
     if (isZh && /[1-5]/.test(val)) setPinyin(toneNumToMark(val));
-  }
-
-  function addDef() { setDefs(d => [...d, '']); }
-  function removeDef(i: number) {
-    setDefs(d => {
-      const next = d.filter((_, j) => j !== i);
-      return next.length ? next : [''];
-    });
-  }
-  function setDef(i: number, val: string) {
-    setDefs(d => d.map((v, j) => j === i ? val : v));
   }
 
   function addCompound() { setCompounds(c => [...c, '']); }
@@ -139,46 +104,31 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
   }
 
   async function submit() {
-    const h = hanzi.trim();
-    const m = defs.map(d => d.trim()).filter(Boolean).join('; ');
-    if (!h || !m) return;
+    // The dictionary is the only source of words and meanings now — nothing here is
+    // free text, so there is no unvalidated input to guard against.
+    if (!canAdd) return;
+    const h = canonicalWord;
+    const m = definitions.join('; ');
     const p = pinyin.trim();
+    const deck = deckName.trim();
+
     if (isZh) {
       // Chinese-only validation: warn on a wrong reading, and check compound sanity.
+      // The reading stays editable because for a polyphone it is the user's choice of
+      // WHICH card this is (行 xíng and 行 háng are separate cards).
       const known = [lookupWord(h).pinyin, ...(POLYPHONES[h]?.map(r => r.p) ?? [])].filter(Boolean);
       const warn = checkPinyin(p, h, known);
       if (warn && !window.confirm(warn)) return;
       const cleanCompounds = compounds.map(c => c.trim()).filter(Boolean);
       const compWarn = await checkCompounds(h, cleanCompounds);
       if (compWarn && !window.confirm(compWarn)) return;
-      const deck = deckName.trim();
       onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}), ...(cleanCompounds.length ? { compounds: cleanCompounds } : {}) });
       return;
     }
-    const deck = deckName.trim();
-    if (!langConfig.usesBaseForms) {
-      onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}) });
-      return;
-    }
-    // Convert an inflected surface form (食べました, organizamos) to its dictionary form
-    // (食べる, organizar) via the same server pipeline generated passages use, so the deck
-    // stores a consistent canonical form. Each inflecting language exposes the same
-    // endpoint shape. Falls back to the raw typed text on any failure or multi-word input.
-    let canonicalH = h;
-    try {
-      const res = await fetch(`/api/${language}-word-lookup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: h }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.single && data.baseForm) canonicalH = data.baseForm;
-      }
-    } catch {
-      // Network hiccup — keep the raw typed text.
-    }
-    onAdd({ h: canonicalH, p, m, ...(deck ? { decks: [deck] } : {}) });
+
+    // For inflecting languages `canonicalWord` is already the lemma the lookup resolved
+    // (먹었어요 → 먹다), so no second round-trip is needed here.
+    onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}) });
   }
 
   function toggleVoice() {
@@ -215,6 +165,12 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
     fontFamily: 'var(--f-han)', fontSize: 16, background: 'var(--paper-2)', border: '1px solid var(--line)',
     borderRadius: 9, padding: '10px 13px', color: 'var(--ink)', width: '100%', transition: 'all .15s',
     outline: 'none',
+  };
+
+  /** Shared frame for the idle / loading / not-found / error states of the lookup. */
+  const statusBoxStyle = {
+    background: 'var(--paper-2)', border: '1px dashed var(--line)', borderRadius: 9,
+    padding: '11px 14px', fontSize: 13.5, lineHeight: 1.5,
   };
 
   return (
@@ -300,10 +256,10 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
                 <button
                   key={r.p}
                   onClick={() => {
+                    // Selecting a reading is enough — the displayed definitions derive from
+                    // whichever reading is active (see `activeReading`).
                     setPinyin(r.p);
                     setPinHint('auto-filled — tap to edit');
-                    const parts = r.m.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
-                    setDefs(parts.length > 0 ? parts : [r.m]);
                     setCompounds(r.compounds ?? []);
                   }}
                   className="cursor-pointer transition-all duration-150"
@@ -323,46 +279,75 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
         </div>
       )}
 
-      {/* Definitions */}
+      {/* Definitions — read-only, straight from the dictionary. Cards can only be created
+          from real dictionary entries, so there is nothing to type here. */}
       <div className="mb-2.5">
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
-          Definitions{' '}
+          Definition{' '}
           <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>
-            — add one or more, shown separated by semicolons
+            — from the {langConfig.dictName.replace(/\s*\(.*\)$/, '')} dictionary
           </span>
         </div>
-        <div className="flex flex-col gap-2">
-          {defs.map((d, i) => (
-            <div key={i} className="flex gap-2 items-center">
-              <input
-                value={d}
-                onChange={e => setDef(i, e.target.value)}
-                placeholder="e.g. garbage"
-                style={inputStyle}
-                onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.background = 'var(--card)'; }}
-                onBlur={e => { e.target.style.borderColor = 'var(--line)'; e.target.style.background = 'var(--paper-2)'; }}
-              />
-              <button
-                onClick={() => removeDef(i)}
-                className="shrink-0 cursor-pointer"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 16, background: 'none', border: 'none', color: 'var(--ink-faint)', width: 28, height: 28, borderRadius: 6 }}
-              >
-                ×
-              </button>
+
+        {status === 'idle' && (
+          <div style={statusBoxStyle} >
+            <span style={{ color: 'var(--ink-faint)' }}>
+              Type a word above to look it up.
+            </span>
+          </div>
+        )}
+
+        {status === 'loading' && (
+          <div style={statusBoxStyle}>
+            <span className="playing-pulse" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--ink-faint)', marginRight: 9 }} />
+            <span style={{ color: 'var(--ink-soft)' }}>looking up…</span>
+          </div>
+        )}
+
+        {status === 'not-found' && (
+          <div style={{ ...statusBoxStyle, borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}>
+            <div style={{ color: 'var(--accent)', fontWeight: 500 }}>
+              Not found in the {langConfig.name} dictionary
             </div>
-          ))}
-        </div>
-        <button
-          onClick={addDef}
-          className="mt-2 w-full cursor-pointer transition-all duration-150"
-          style={{
-            fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em',
-            background: 'none', border: '1px dashed var(--line)',
-            color: 'var(--ink-faint)', borderRadius: 8, padding: '8px 14px',
-          }}
-        >
-          + add another definition
-        </button>
+            <div style={{ color: 'var(--ink-soft)', fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+              Only words with a dictionary entry can be added.
+              {langConfig.usesBaseForms && ' Conjugated forms are fine — they resolve to their dictionary form.'}
+            </div>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div style={{ ...statusBoxStyle, borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 7%, transparent)' }}>
+            <div style={{ color: 'var(--accent)', fontWeight: 500 }}>Couldn&apos;t reach the dictionary</div>
+            <div style={{ color: 'var(--ink-soft)', fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+              This is a connection problem, not a verdict on the word — edit the word to try again.
+            </div>
+          </div>
+        )}
+
+        {status === 'found' && (
+          <>
+            {/* Typing an inflected form files the card under its dictionary form; say so
+                rather than silently storing something the user didn't type. */}
+            {canonicalWord !== trimmed && (
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--ink-soft)', marginBottom: 8, letterSpacing: '.02em' }}>
+                <span style={{ fontFamily: 'var(--f-han)', fontSize: 14 }}>{trimmed}</span>
+                {' → saved as '}
+                <span style={{ fontFamily: 'var(--f-han)', fontSize: 14, color: 'var(--jade)', fontWeight: 500 }}>{canonicalWord}</span>
+              </div>
+            )}
+            <ol
+              className="flex flex-col gap-1.5"
+              style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 14px 11px 30px', margin: 0, listStyle: definitions.length > 1 ? 'decimal' : 'none' }}
+            >
+              {definitions.map((d, i) => (
+                <li key={i} style={{ fontSize: 14.5, color: 'var(--ink)', lineHeight: 1.5, marginLeft: definitions.length > 1 ? 0 : -16 }}>
+                  {d}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
       </div>
 
       {/* Compound words — surface this reading in generated passages. Shown for
@@ -432,14 +417,18 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
       <div className="flex gap-2 mt-3.5">
         <button
           onClick={submit}
-          className="cursor-pointer transition-all duration-150"
+          disabled={!canAdd}
+          title={canAdd ? undefined : 'Look up a word in the dictionary first'}
+          className="transition-all duration-150"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
             background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-            padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+            padding: '12px 20px', boxShadow: canAdd ? '0 2px 0 var(--accent-deep)' : 'none',
+            cursor: canAdd ? 'pointer' : 'not-allowed',
+            opacity: canAdd ? 1 : 0.45,
           }}
         >
-          Add to deck
+          {status === 'loading' ? 'Looking up…' : 'Add to deck'}
         </button>
         <button
           onClick={onCancel}
