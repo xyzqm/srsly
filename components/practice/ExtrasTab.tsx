@@ -5,7 +5,7 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor } from '@/lib/languageConfig';
+import { levelFor, getLanguageConfig } from '@/lib/languageConfig';
 import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
 import StudyScopeBanner from '@/components/shared/StudyScopeBanner';
 import Flashcards from './Flashcards';
@@ -129,7 +129,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
         // static first turn.
         generating.has('convo') ? (
           <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{language === 'ja' ? '話' : '话'}</div>
+            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{getLanguageConfig(language).glyph}</div>
             <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
               Generating a conversation for your due words…
             </p>

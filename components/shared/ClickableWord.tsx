@@ -23,12 +23,14 @@ interface Props {
 
 /**
  * A single clickable word that opens a definition popup.
- * Tokens without pinyin render as plain spans (punct / plain text).
+ * Tokens we know nothing about render as plain spans (punct / plain text).
  */
 export default function ClickableWord({ token, onOpen, style, claimKind, isReviewWord }: Props) {
   const [hovered, setHovered] = useState(false);
 
-  if (!token.reading || token.type === 'punct') return <span style={style}>{token.text}</span>;
+  // "reading OR meaning", not reading alone — Spanish has no reading layer, so a
+  // reading-only gate would render every Spanish word as dead text.
+  if (token.type === 'punct' || !(token.reading || token.meaning)) return <span style={style}>{token.text}</span>;
 
   const borderStyle = claimKind === 'vocab'
     ? '1.5px solid var(--jade)'
@@ -55,7 +57,7 @@ export default function ClickableWord({ token, onOpen, style, claimKind, isRevie
         }}
       >
         {token.text}
-        <rt>{token.reading}</rt>
+        {token.reading && <rt>{token.reading}</rt>}
       </ruby>
       {/* Badge indicator */}
       <span

@@ -4,7 +4,7 @@ import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
-import { getLanguageConfig, levelFor, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
+import { getLanguageConfig, levelFor, levelLabel, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
 import { todayStr } from '@/lib/deck';
 import SignInModal from '@/components/auth/SignInModal';
 
@@ -58,7 +58,7 @@ export default function SettingsTab() {
     });
   }, [language]);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; wordsPerPassage: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; wordsPerPassage: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -196,9 +196,9 @@ export default function SettingsTab() {
       )}
 
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
-      <SectionLabel>{language === 'ja' ? 'JLPT level' : 'HSK level'}</SectionLabel>
+      <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
       <div className="flex flex-col gap-2.5 mb-10" style={{ maxWidth: 540 }}>
-        {langConfig.levels.map(({ level: lvl, label, desc }) => {
+        {langConfig.levels.map(({ level: lvl, label, badge, desc }) => {
           const active = level === lvl;
           return (
             <button
@@ -218,7 +218,7 @@ export default function SettingsTab() {
                   className="shrink-0 flex items-center justify-center rounded-full"
                   style={{ width: 28, height: 28, background: active ? 'var(--accent)' : 'var(--line-soft)', color: active ? '#fff' : 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 11, fontWeight: 600, transition: 'all .15s' }}
                 >
-                  {language === 'ja' ? `N${lvl}` : lvl}
+                  {badge}
                 </div>
                 <div>
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', color: active ? 'var(--accent)' : 'var(--ink)' }}>
@@ -263,9 +263,7 @@ export default function SettingsTab() {
       <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
         {(() => {
           const [min, max] = recommendedWordsPerPassage(language, level);
-          const levelLabel = langConfig.levels.find(l => l.level === level)?.label
-            ?? (language === 'ja' ? `JLPT N${level}` : `HSK ${level}`);
-          return `For ${levelLabel}, we recommend studying between ${min}-${max} words per passage.`;
+          return `For ${levelLabel(language, level)}, we recommend studying between ${min}-${max} words per passage.`;
         })()}
       </div>
       <div className="flex gap-2 flex-wrap mb-10">

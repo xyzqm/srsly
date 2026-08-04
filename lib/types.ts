@@ -2,7 +2,7 @@ export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
 /** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese. */
-export type LanguageCode = 'zh' | 'ja';
+export type LanguageCode = 'zh' | 'ja' | 'es';
 
 export interface DeckWord {
   id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
@@ -88,6 +88,7 @@ export interface UserPrefs {
   language?: LanguageCode;   // active study language; absent = 'zh' (backward compat)
   hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
   jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')
+  cefrLevel?: number;        // Spanish proficiency level 1–6, 1=A1 easiest (used when language === 'es')
   srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)

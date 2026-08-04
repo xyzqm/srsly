@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { consumeAiCredit } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
-import { sentenceCountForLevel } from '@/lib/languageConfig';
+import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
+import { segmentEs } from '@/lib/server/spanishSegmenter';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
@@ -165,8 +166,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     words = body.words ?? [];
-    language = body.language === 'ja' ? 'ja' : 'zh';
-    hskLevel = body.hskLevel ?? (language === 'ja' ? 4 : 4);
+    language = toLanguageCode(body.language);
+    hskLevel = body.hskLevel ?? getLanguageConfig(language).defaultLevel;
     themeOffset = body.themeOffset ?? 0;
     batchSize = Math.min(Math.max(parseInt(body.wordsPerPassage, 10) || DEFAULT_BATCH_SIZE, MIN_BATCH_SIZE), MAX_BATCH_SIZE);
     passageText = typeof body.passageText === 'string' ? body.passageText : '';
@@ -202,13 +203,14 @@ export async function POST(req: NextRequest) {
     if (!inputMap.has(w.h)) inputMap.set(w.h, { p: w.p, m: w.m });
   }
 
-  // HSK: higher number = harder. JLPT: higher number = easier (N5 easiest, N1 hardest).
-  const levelDesc = language === 'ja'
-    ? (hskLevel >= 4 ? 'beginner' : hskLevel >= 2 ? 'intermediate' : 'advanced')
-    : (hskLevel <= 2 ? 'beginner' : hskLevel <= 4 ? 'intermediate' : 'advanced');
+  // Difficulty tier, level label and language name all come off the language config —
+  // the numbering runs in opposite directions per language (HSK 6 and CEFR C2 are hardest,
+  // JLPT N1 is hardest), so this must not be derived from the number here.
+  const langConfig = getLanguageConfig(language);
+  const levelDesc = difficultyTier(language, hskLevel);
   const sentenceCount = sentenceCountForLevel(language, hskLevel);
-  const langName = language === 'ja' ? 'Japanese' : 'Chinese';
-  const levelName = language === 'ja' ? `JLPT N${hskLevel}` : `HSK ${hskLevel}`;
+  const langName = langConfig.name;
+  const levelName = levelLabel(language, hskLevel);
 
   // Pick a daily theme so passages vary across days even with the same vocab words
   const DAILY_THEMES = [
@@ -253,8 +255,9 @@ export async function POST(req: NextRequest) {
       ).join('\n')}\n`
     : '';
 
-  // Compound/polyphone notes are Chinese-specific; Japanese passages don't use them.
-  const readingNotes = language === 'ja' ? '' : compoundNote + polyphoneNote;
+  // Compound/polyphone notes are Chinese-specific — they exist to disambiguate hanzi
+  // readings, which no other supported language has.
+  const readingNotes = language === 'zh' ? compoundNote + polyphoneNote : '';
   const wordList = words.map((w, i) => `${i + 1}. ${w.h} (${w.p}) — ${w.m}`).join('\n');
   const difficultyByLevel = (beginner: string, intermediate: string, advanced: string) =>
     levelDesc === 'beginner' ? beginner : levelDesc === 'intermediate' ? intermediate : advanced;
@@ -301,20 +304,45 @@ Japanese — normal sentence text, exactly as it would appear in real writing. D
 PROPER NAMES: list every person/place name in the "names" array (see schema) with its reading —
 kuromoji's dictionary coverage of proper nouns is incomplete, so this is still needed for names.`.trim();
 
-  const PIPE_RULES = language === 'ja' ? PIPE_RULES_JA : PIPE_RULES_ZH;
+  // Spanish: like Japanese, the model does NOT segment anything — it writes plain prose and
+  // lib/server/spanishSegmenter.ts splits it on whitespace/punctuation afterwards, which for
+  // a space-delimited language is exact rather than merely reliable. The one thing worth
+  // spelling out is the inverted opening marks, since they are the only punctuation the
+  // model tends to drop.
+  const PIPE_RULES_ES = `
+OUTPUT FORMAT:
+Every field marked "WORDS" below is a SINGLE STRING of plain, natural, grammatically correct
+Spanish — normal sentence text, exactly as it would appear in real writing. Do NOT insert any
+"|" bars or other markup, and do NOT add English translations inline.
 
-  // Side-channel for proper-name readings.
-  const NAMES_SCHEMA = language === 'ja'
-    ? `NAME = {"h": "田中", "p": "たなか", "m": "(name) Tanaka"}
-  "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.`
-    : `NAME = {"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}
-  "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.`;
+  CORRECT:  "¿Dónde está la biblioteca? Vamos a estudiar allí."
+  WRONG:    "Vamos|a|estudiar|allí|."        ← do not add bars or segment it yourself
+  WRONG:    "Vamos a estudiar allí (we are going to study there)."  ← no inline translation
+
+PUNCTUATION: use real Spanish punctuation, including the inverted opening marks ¿ and ¡ on
+every question and exclamation, and written accents on every word that takes one.
+
+PROPER NAMES: list every person/place name in the "names" array (see schema) so they can be
+glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
+
+  const PIPE_RULES = language === 'zh' ? PIPE_RULES_ZH
+    : language === 'ja' ? PIPE_RULES_JA
+    : PIPE_RULES_ES;
+
+  // Side-channel for proper-name readings. `p` is the reading slot — empty for Spanish,
+  // which has no pinyin/furigana analogue (see `hasReadings` in lib/languageConfig.ts).
+  const NAME_EXAMPLE = language === 'zh' ? `{"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}`
+    : language === 'ja' ? `{"h": "田中", "p": "たなか", "m": "(name) Tanaka"}`
+    : `{"h": "María", "p": "", "m": "(name) María"}`;
+  const NAMES_SCHEMA = `NAME = ${NAME_EXAMPLE}
+  "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.${
+    langConfig.hasReadings ? '' : '\n  "p" is unused for Spanish — always pass "".'}`;
 
   // ── Prompt builders (one per section) ──────────────────────────────────────
 
-  const exampleSentence = language === 'ja'
-    ? '私は町の図書館で本を借りました。'
-    : '城市|的|经济|发展|离不开|科技|的|进步|。';
+  const exampleSentence = language === 'zh' ? '城市|的|经济|发展|离不开|科技|的|进步|。'
+    : language === 'ja' ? '私は町の図書館で本を借りました。'
+    : 'Ayer fuimos al mercado del centro para comprar fruta fresca.';
 
   const passagePrompt = `You are a ${langName} language teacher generating a reading passage.
 
@@ -386,9 +414,11 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
 
   // For the "answer"/"key" fields the model emits the bare surface form (the word itself,
   // including kanji for Japanese). The blank's reading is resolved from the practiced words.
-  const answerNote = language === 'ja'
-    ? '"answer" is the bare surface form of the word (kanji/kana as written) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong words (bare surface form), same part of speech as the answer.'
-    : '"answer" is a SINGLE word (bare hanzi) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong bare-hanzi words, same part of speech as the answer.';
+  const answerNote = language === 'zh'
+    ? '"answer" is a SINGLE word (bare hanzi) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong bare-hanzi words, same part of speech as the answer.'
+    : language === 'ja'
+      ? '"answer" is the bare surface form of the word (kanji/kana as written) and MUST be one of the WORDS above.\n  "distractors" are three plausible-but-wrong words (bare surface form), same part of speech as the answer.'
+      : '"answer" is a SINGLE Spanish word and MUST be one of the WORDS above. Give it in the dictionary form listed there, not conjugated or pluralised.\n  "distractors" are three plausible-but-wrong Spanish words, same part of speech as the answer.';
 
   const fillPrompt = `You are a ${langName} language teacher generating fill-in-the-blank practice.
 
@@ -487,8 +517,9 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
   // kuromoji, logged alongside the model's raw sentence so segmentation quality is easy to
   // eyeball during testing (temporary, per explicit request — safe to remove later).
   async function expandTokens(s: unknown, map: Map<string, { p: string; m: string }>): Promise<RawTok[]> {
-    if (language !== 'ja') return parseTokenString(s, map);
+    if (langConfig.segmentation === 'pipe') return parseTokenString(s, map);
     if (typeof s !== 'string' || !s.trim()) return [];
+    if (language === 'es') return segmentEs(s, map);
     const tokens = await segmentJa(s, map);
     console.log('[kuromoji-debug] LLM sentence:', s);
     console.log('[kuromoji-debug] segmented:', tokens.map(t => t[0]));
@@ -500,8 +531,8 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
   // bare "answer" string as-is (which today has zero validation against the WORDS list).
   async function resolveWord(raw: unknown, map: Map<string, { p: string; m: string }>): Promise<[string, string]> {
     const trimmed = typeof raw === 'string' ? raw.trim() : '';
-    if (language !== 'ja') return [trimmed, map.get(trimmed)?.p ?? ''];
-    const tok = (await segmentJa(trimmed, map))[0];
+    if (langConfig.segmentation === 'pipe') return [trimmed, map.get(trimmed)?.p ?? ''];
+    const tok = language === 'es' ? segmentEs(trimmed, map)[0] : (await segmentJa(trimmed, map))[0];
     if (!tok) return [trimmed, map.get(trimmed)?.p ?? ''];
     const baseForm = tok.length === 4 ? tok[3] : undefined;
     const canonical = baseForm && map.has(baseForm) ? baseForm : trimmed;
@@ -538,7 +569,9 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       after: await expandTokens(f.after, map),
       distractors: await Promise.all(distractors.map(async d => {
         const [h, p] = await resolveWord(d, map);
-        return (language === 'ja' ? [h, p] : [h]) as [string] | [string, string];
+        // Only ship the reading when the AI is the one that supplied it (ja). For zh the
+        // client resolves pinyin from the dictionary, and es has no reading at all.
+        return (langConfig.aiProvidesReadings ? [h, p] : [h]) as [string] | [string, string];
       })),
     };
   }

@@ -4,6 +4,7 @@ import type { DeckWord } from '@/lib/types';
 import { autoFillPinyin, toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { lookupJa } from '@/lib/data/jadict';
+import { lookupEs } from '@/lib/data/esdict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -18,11 +19,13 @@ interface Props {
 
 export default function AddWordForm({ onAdd, onCancel, deckOptions = [], defaultDeck = '' }: Props) {
   const language = useLanguage();
+  const langConfig = getLanguageConfig(language);
   const isJa = language === 'ja';
+  const isZh = language === 'zh';
   const [hanzi, setHanzi] = useState('');
   const [deckName, setDeckName] = useState(defaultDeck);
   const [pinyin, setPinyin] = useState('');
-  const [pinHint, setPinHint] = useState(isJa ? 'type the reading in hiragana' : 'type with tone numbers e.g. shui3bei1');
+  const [pinHint, setPinHint] = useState(langConfig.readingHint);
   const [defs, setDefs] = useState<string[]>(['']);
   // Compound words that carry the chosen reading — surfaced in generated passages
   // for readings that don't stand alone (行 háng → 银行, 行业).
@@ -46,8 +49,19 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
 
     if (!trimmed) {
       setPinyin('');
-      setPinHint(isJa ? 'type the reading in hiragana' : 'type with tone numbers e.g. shui3bei1');
+      setPinHint(langConfig.readingHint);
       setDefs(['']);
+      return;
+    }
+
+    // Spanish: no reading and no polyphone/tone machinery — fill the meaning only.
+    // The lemma is resolved on submit via /api/es-word-lookup, as Japanese does.
+    if (language === 'es') {
+      const e = lookupEs(trimmed);
+      if (e.meaning) {
+        const parts = e.meaning.split(/\s*[;·]\s*/).map(s => s.trim()).filter(Boolean);
+        setDefs(parts.length > 0 ? parts : [e.meaning]);
+      }
       return;
     }
 
@@ -104,7 +118,7 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
 
   function handlePinyinBlur(val: string) {
     // Tone-number → diacritic conversion is Chinese-only; Japanese readings are kana.
-    if (!isJa && /[1-5]/.test(val)) setPinyin(toneNumToMark(val));
+    if (isZh && /[1-5]/.test(val)) setPinyin(toneNumToMark(val));
   }
 
   function addDef() { setDefs(d => [...d, '']); }
@@ -129,7 +143,7 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
     const m = defs.map(d => d.trim()).filter(Boolean).join('; ');
     if (!h || !m) return;
     const p = pinyin.trim();
-    if (!isJa) {
+    if (isZh) {
       // Chinese-only validation: warn on a wrong reading, and check compound sanity.
       const known = [lookupWord(h).pinyin, ...(POLYPHONES[h]?.map(r => r.p) ?? [])].filter(Boolean);
       const warn = checkPinyin(p, h, known);
@@ -142,12 +156,17 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
       return;
     }
     const deck = deckName.trim();
-    // Convert a conjugated surface form (e.g. 食べました) to its dictionary form (食べる) via
-    // the same kuromoji pipeline generated passages use, so the deck stores a consistent
-    // canonical form. Falls back to the raw typed text on any failure or non-single-word input.
+    if (!langConfig.usesBaseForms) {
+      onAdd({ h, p, m, ...(deck ? { decks: [deck] } : {}) });
+      return;
+    }
+    // Convert an inflected surface form (食べました, organizamos) to its dictionary form
+    // (食べる, organizar) via the same server pipeline generated passages use, so the deck
+    // stores a consistent canonical form. Each inflecting language exposes the same
+    // endpoint shape. Falls back to the raw typed text on any failure or multi-word input.
     let canonicalH = h;
     try {
-      const res = await fetch('/api/ja-word-lookup', {
+      const res = await fetch(`/api/${language}-word-lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: h }),
@@ -210,11 +229,11 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
       <div className="grid gap-3.5 mb-3.5" style={{ gridTemplateColumns: '100px 1fr' }}>
         {/* Hanzi + mic button */}
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>{isJa ? 'Word' : 'Hanzi'}</div>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6 }}>{langConfig.wordFieldLabel}</div>
           <input
             value={hanzi}
             onChange={e => handleHanziChange(e.target.value)}
-            placeholder={isJa ? '言葉' : '垃圾'}
+            placeholder={langConfig.wordFieldPlaceholder}
             style={{ ...inputStyle, fontSize: 26, textAlign: 'center' }}
             onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.background = 'var(--card)'; }}
             onBlur={e => { e.target.style.borderColor = 'var(--line)'; e.target.style.background = 'var(--paper-2)'; }}
@@ -245,13 +264,14 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
           )}
         </div>
 
-        {/* Pinyin */}
+        {/* Reading — not rendered at all for languages with no reading layer (es). */}
+        {langConfig.hasReadings && (
         <div>
           <div className="flex justify-between items-baseline mb-1.5">
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-              {isJa ? 'Reading' : 'Pinyin'}{' '}
+              {langConfig.readingLabel}{' '}
               <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)', fontFamily: 'var(--f-ui)', fontSize: 10 }}>
-                {isJa ? '(hiragana / katakana)' : '(lv4 for lǜ · no number = neutral tone e.g. le)'}
+                {langConfig.readingHelp}
               </span>
             </div>
             <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, color: 'var(--ink-faint)', letterSpacing: '.04em' }}>{pinHint}</span>
@@ -264,6 +284,7 @@ export default function AddWordForm({ onAdd, onCancel, deckOptions = [], default
             onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.background = 'var(--card)'; }}
           />
         </div>
+        )}
       </div>
 
       {/* Polyphone reading picker */}

@@ -6,15 +6,22 @@ import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
 import { HSK_LEVELS } from '@/lib/data/hsk-levels';
 import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
 import { JLPT_LEVELS } from '@/lib/data/jlpt-levels';
+import { CEFR_VOCAB } from '@/lib/data/cefr-vocab';
+import { CEFR_LEVELS } from '@/lib/data/cefr-levels';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
 import { useLanguage } from '@/lib/LanguageContext';
 import { inStudyDeck } from '@/lib/deck';
+import { getLanguageConfig, levelLabel, levelNumbers } from '@/lib/languageConfig';
 
-// Characters that count as "word characters" per language — used by the paste parsers.
-// Chinese: Han only. Japanese: Han + hiragana + katakana.
-const WORDCHAR_RE: Record<LanguageCode, RegExp> = {
-  zh: /[一-鿿]/,
-  ja: /[一-鿿぀-ヿ]/,
+/** The bundled level word lists per language. `vocab` entries carry `pinyin` (zh) or
+ *  `reading` (ja/es); the reading is always '' for Spanish. */
+const LEVEL_DATA: Record<LanguageCode, {
+  vocab: Record<string, { pinyin?: string; reading?: string; meaning: string }>;
+  words: Record<number, string[]>;
+}> = {
+  zh: { vocab: HSK_VOCAB,  words: HSK_LEVELS },
+  ja: { vocab: JLPT_VOCAB, words: JLPT_LEVELS },
+  es: { vocab: CEFR_VOCAB, words: CEFR_LEVELS },
 };
 
 interface Props {
@@ -150,13 +157,14 @@ async function resolveWord(
 
 export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Props) {
   const language = useLanguage();
-  const wordRe = WORDCHAR_RE[language];
-  const isJa = language === 'ja';
-  // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1).
-  const levelVocab = isJa ? JLPT_VOCAB : HSK_VOCAB;
-  const levelWords = isJa ? JLPT_LEVELS : HSK_LEVELS;
-  const levelList = isJa ? [5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6];
-  const levelLabel = (lvl: number) => isJa ? `JLPT N${lvl}` : `HSK ${lvl}`;
+  const langConfig = getLanguageConfig(language);
+  const wordRe = langConfig.wordCharRe;
+  // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1 / CEFR A1–C2).
+  const levelVocab = LEVEL_DATA[language].vocab;
+  const levelWords = LEVEL_DATA[language].words;
+  const levelList = levelNumbers(language);
+  // "HSK level" → "HSK levels" etc., so the tab and copy follow the active language.
+  const levelSetLabel = `${langConfig.levelSectionLabel}s`;
   const [mode, setMode] = useState<ImportMode>('list');
   const [text, setText] = useState('');
   const [words, setWords] = useState<ParsedWord[]>([]);
@@ -270,7 +278,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
     const toAdd = wordList
       .filter(h => !deckSet.has(h))
       .map(h => {
-        const v = levelVocab[h] as { pinyin?: string; reading?: string; meaning: string } | undefined;
+        const v = levelVocab[h];
         return { h, p: v?.pinyin ?? v?.reading ?? '', m: v?.meaning ?? '' };
       });
     if (toAdd.length > 0) onImport(toAdd);
@@ -300,7 +308,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       <div className="inline-flex gap-1 p-[5px] rounded-[11px] mb-5 flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
         {(Object.keys(MODE_LABELS) as ImportMode[]).map(m => (
           <button key={m} onClick={() => switchMode(m)} style={tabBtn(mode === m)}>
-            {m === 'hsk' ? (isJa ? 'JLPT levels' : 'HSK levels') : MODE_LABELS[m]}
+            {m === 'hsk' ? levelSetLabel : MODE_LABELS[m]}
           </button>
         ))}
       </div>
@@ -309,7 +317,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       {mode === 'hsk' && (
         <div>
           <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 18 }}>
-            Add all vocabulary words from a specific {isJa ? 'JLPT' : 'HSK'} level. Words already in your deck are skipped.
+            Add all vocabulary words from a specific {langConfig.levelSectionLabel.replace(/ level$/, '')} level. Words already in your deck are skipped.
           </p>
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
             {levelList.map(level => {
@@ -320,7 +328,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
                 <button key={level} onClick={() => addHskLevel(level)} disabled={toAdd === 0}
                   className="transition-all duration-150 hover:-translate-y-0.5 disabled:opacity-40 disabled:cursor-default cursor-pointer"
                   style={{ background: 'var(--card)', border: '1px solid var(--line)', borderBottom: '2px solid var(--accent)', borderRadius: 12, padding: '16px 18px', textAlign: 'left' }}>
-                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 600 }}>{levelLabel(level)}</div>
+                  <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 600 }}>{levelLabel(language, level)}</div>
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>
                     {toAdd > 0 ? `+ ${toAdd} new` : 'all added'}
                     <span style={{ color: 'var(--ink-faint)', marginLeft: 6 }}>/ {all} total</span>
@@ -423,9 +431,10 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       {mode === 'list' && (
         <div>
           <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 10 }}>
-            Paste Chinese words, one per line or comma-separated. Pinyin and meanings are looked up automatically from CC-CEDICT (121k entries).
+            Paste {langConfig.name} words, one per line or comma-separated.{' '}
+            {langConfig.hasReadings ? 'Readings and meanings are' : 'Meanings are'} looked up automatically from {langConfig.dictName}.
           </p>
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={'学习\n工作\n朋友\n...'} style={textareaStyle} />
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`${langConfig.sampleWords.join('\n')}\n...`} style={textareaStyle} />
         </div>
       )}
 
@@ -433,9 +442,9 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
       {mode === 'csv' && (
         <div>
           <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 10 }}>
-            Columns: <code style={{ fontFamily: 'var(--f-mono)', fontSize: 12, background: 'var(--line-soft)', padding: '1px 5px', borderRadius: 4 }}>hanzi, meaning</code> or <code style={{ fontFamily: 'var(--f-mono)', fontSize: 12, background: 'var(--line-soft)', padding: '1px 5px', borderRadius: 4 }}>hanzi, pinyin, meaning</code>. Compatible with Anki and Pleco exports.
+            Columns: <code style={{ fontFamily: 'var(--f-mono)', fontSize: 12, background: 'var(--line-soft)', padding: '1px 5px', borderRadius: 4 }}>word, meaning</code>{langConfig.hasReadings && <> or <code style={{ fontFamily: 'var(--f-mono)', fontSize: 12, background: 'var(--line-soft)', padding: '1px 5px', borderRadius: 4 }}>word, {langConfig.readingLabel.toLowerCase()}, meaning</code></>}. Compatible with Anki and Pleco exports.
           </p>
-          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={'学习,to study\n工作,gōngzuò,to work\n...'} style={textareaStyle} />
+          <textarea value={text} onChange={e => setText(e.target.value)} placeholder={`${langConfig.sampleWords[0]},to study\n${langConfig.sampleWords[1]},to work\n...`} style={textareaStyle} />
         </div>
       )}
 
