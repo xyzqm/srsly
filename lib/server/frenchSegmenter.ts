@@ -1,4 +1,4 @@
-import frdictData from '@/public/frdict.json';
+import frdictData from '@dict/frdict.json';
 import { FR_VOCAB } from '@/lib/data/fr-vocab';
 import { lemmatizeFr, type LemmaDict } from './frenchLemmatizer';
 

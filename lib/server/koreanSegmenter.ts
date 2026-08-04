@@ -1,4 +1,4 @@
-import kodictData from '@/public/kodict.json';
+import kodictData from '@dict/kodict.json';
 import { TOPIK_VOCAB } from '@/lib/data/topik-vocab';
 import { lemmatizeKo, type LemmaDict } from './koreanLemmatizer';
 

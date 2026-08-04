@@ -1,6 +1,6 @@
 import * as kuromoji from 'kuromoji';
 import path from 'path';
-import jmdictData from '@/public/jmdict.json';
+import jmdictData from '@dict/jmdict.json';
 import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
 
 /**

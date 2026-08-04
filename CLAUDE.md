@@ -15,13 +15,31 @@ Prioritize **elegance and concision** over volume. Concretely:
 ```bash
 npm run dev        # start dev server at localhost:3000
 npm run build      # production build
-npm run typecheck  # tsc --noEmit (needs a raised heap — see below)
+npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
 ```
 
-The generated vocab/forms tables now total ~5.5 MB of TypeScript object literals across five
-languages, which exceeds `tsc`'s default heap. `next build` typechecks in its own worker and
-is unaffected, but a bare `tsc --noEmit` needs the larger heap that `npm run typecheck` sets.
+### Generated data is JSON, imported through an alias
+
+The dictionaries and level tables are **JSON files with a thin typed `.ts` wrapper**, never
+TypeScript object literals — and the wrapper imports them through `@data/…` (or `@dict/…`
+for the large dictionaries under `public/`), aliases defined for webpack in
+`next.config.ts` and deliberately **absent from tsconfig's `paths`**.
+
+That indirection is the whole point. With `resolveJsonModule` on — which Next sets and
+rewrites back on every build, so it cannot simply be disabled — TypeScript opens each JSON
+file and materialises an object type with one property per key. Across five languages that
+was 2.13 GB and 2.86M symbols; routing the imports through a specifier tsc cannot resolve
+lets the ambient declaration in `lib/data/json-modules.d.ts` apply instead, and the files
+are never read: **0.31 GB and 220k symbols**. Webpack resolves them normally, so bundling
+and lazy `import()` chunk-splitting are unaffected.
+
+Two consequences worth knowing:
+
+- Emitting a generated dataset as a TS object literal will silently undo this. Build scripts
+  go through `scripts/lib/emitData.mjs`, which writes the `.json` and its wrapper together.
+- If an alias is ever dropped the build fails loudly with "module not found" — it cannot
+  regress quietly.
 
 No test suite exists yet.
 

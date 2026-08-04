@@ -1,4 +1,4 @@
-import esdictData from '@/public/esdict.json';
+import esdictData from '@dict/esdict.json';
 import { CEFR_VOCAB } from '@/lib/data/cefr-vocab';
 import { lemmatizeEs } from './spanishLemmatizer';
 
