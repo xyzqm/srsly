@@ -146,33 +146,55 @@ function matchesSenses(pasted: string, senses: string): boolean {
   return norm(senses).split(' ').some(word => word.length > 2 && target.includes(word));
 }
 
+/** Words the batch endpoint resolved, keyed by the surface that was submitted. */
+type BatchResults = Record<string, { found: boolean; word: string; reading: string; meaning: string }>;
+
+/** Requests per round-trip. Large pastes are chunked so one huge list doesn't become one
+ *  huge request (the endpoint caps at 500). */
+const BATCH_CHUNK = 200;
+
 /**
- * Resolve one pasted row against the dictionary.
+ * Ask the server to resolve every distinct surface in one go, undoing inflection on the
+ * way — this is what lets a pasted 먹었어요 land as the 먹다 card instead of being rejected.
+ * Chinese never gets here: see `resolveBatch`.
+ */
+async function fetchBatch(surfaces: string[], lang: LanguageCode): Promise<BatchResults> {
+  const out: BatchResults = {};
+  for (let i = 0; i < surfaces.length; i += BATCH_CHUNK) {
+    const chunk = surfaces.slice(i, i + BATCH_CHUNK);
+    const res = await fetch('/api/batch-word-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: lang, words: chunk }),
+    });
+    if (!res.ok) throw new Error(`batch lookup failed: ${res.status}`);
+    const data = await res.json();
+    Object.assign(out, data.results ?? {});
+  }
+  return out;
+}
+
+/**
+ * Resolve a whole parsed paste against the dictionary.
  *
- * STRICT POLICY: the dictionary is the only source of definitions. Pasted pinyin and
+ * STRICT POLICY: the dictionary is the only source of definitions. Pasted readings and
  * glosses are used solely to disambiguate WHICH entry is meant — never stored. A word with
  * no dictionary entry comes back 'not-found' and cannot be imported.
  *
- * This previously short-circuited to 'ready' whenever a row carried both a reading and a
- * meaning, which meant a CSV of `假词,jiǎcí,totally made up` imported without the
- * dictionary ever being consulted.
+ * Two transports behind one function, chosen the same way `useWordLookup` chooses for the
+ * single-word form:
+ *
+ *   - Inflecting languages (ja, es, ko) go to /api/batch-word-lookup, because undoing
+ *     conjugation needs the server-side lemmatizers.
+ *   - Chinese stays on the client. It has no inflection to undo, and both CC-CEDICT and the
+ *     polyphone table are already in the browser — sending it to the server would mean
+ *     shipping another 8 MB dictionary server-side to compute an answer we already have.
  */
-async function resolveWord(
-  w: { h: string; p: string; m: string },
+async function resolveBatch(
+  parsed: Array<{ h: string; p: string; m: string }>,
   deckIds: Set<string>,
   lang: LanguageCode,
-): Promise<ParsedWord> {
-  let p = w.p;
-  let pastedMeaning = w.m;
-  // Pull a leading reading out of the definition so polyphones keep distinct pinyin
-  // ("háng - a row" → pinyin "háng", meaning "a row"). Chinese only — Japanese readings
-  // are hiragana and aren't space-prefixed in glosses.
-  if (!p && lang === 'zh') {
-    const split = splitLeadingPinyin(pastedMeaning);
-    if (split) { p = split.pinyin; pastedMeaning = split.meaning; }
-  }
-  if (lang === 'zh' && /[1-5]/.test(p)) p = toneNumToMark(p);
-
+): Promise<ParsedWord[]> {
   const settle = (h: string, pin: string, mean: string): ParsedWord => {
     // In-deck only when the same character AND meaning already exist.
     if (deckIds.has(wordIdentity({ h, m: mean }))) {
@@ -180,26 +202,47 @@ async function resolveWord(
     }
     return { h, p: pin, m: mean, status: 'ready', selected: true };
   };
+  const missing = (h: string): ParsedWord =>
+    ({ h, p: '', m: '', status: 'not-found', selected: false });
 
-  // Chinese polyphones carry a different meaning per reading, and the dictionary returns
-  // one merged gloss covering all of them. The pasted reading (or gloss) picks which one
-  // is meant; the definition text still comes from POLYPHONES, which is our own curated
-  // data rather than anything the user typed.
-  const poly = lang === 'zh' ? POLYPHONES[w.h] : undefined;
-  if (poly?.length) {
-    const chosen =
-      poly.find(r => r.p === p)
-      ?? poly.find(r => matchesSenses(pastedMeaning, r.m))
-      ?? poly[0];
-    return settle(w.h, chosen.p, chosen.m);
+  if (lang === 'zh') {
+    return Promise.all(parsed.map(async w => {
+      let p = w.p;
+      let pastedMeaning = w.m;
+      // Pull a leading reading out of the definition so polyphones keep distinct pinyin
+      // ("háng - a row" → pinyin "háng", meaning "a row").
+      if (!p) {
+        const split = splitLeadingPinyin(pastedMeaning);
+        if (split) { p = split.pinyin; pastedMeaning = split.meaning; }
+      }
+      if (/[1-5]/.test(p)) p = toneNumToMark(p);
+
+      // Polyphones carry a different meaning per reading, and the dictionary returns one
+      // merged gloss covering all of them. The pasted reading (or gloss) picks which one is
+      // meant; the definition text still comes from POLYPHONES — our curated data, not the
+      // paste.
+      const poly = POLYPHONES[w.h];
+      if (poly?.length) {
+        const chosen =
+          poly.find(r => r.p === p)
+          ?? poly.find(r => matchesSenses(pastedMeaning, r.m))
+          ?? poly[0];
+        return settle(w.h, chosen.p, chosen.m);
+      }
+      const found = await lookupReadingAsync(lang, w.h, '', '');
+      return found.meaning ? settle(w.h, found.reading || p, found.meaning) : missing(w.h);
+    }));
   }
 
-  // Everything else: the entry must exist in the dictionary, and its own gloss is used.
-  const found = await lookupReadingAsync(lang, w.h, '', '');
-  if (!found.meaning) {
-    return { h: w.h, p: '', m: '', status: 'not-found', selected: false };
-  }
-  return settle(w.h, found.reading || p, found.meaning);
+  const surfaces = [...new Set(parsed.map(w => w.h).filter(Boolean))];
+  const results = await fetchBatch(surfaces, lang);
+  return parsed.map(w => {
+    const r = results[w.h];
+    if (!r?.found) return missing(w.h);
+    // File the card under the dictionary form the server resolved, so an inflected paste
+    // dedupes against the same card a generated passage would produce.
+    return settle(r.word || w.h, r.reading, r.meaning);
+  });
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -220,6 +263,7 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   const [text, setText] = useState('');
   const [words, setWords] = useState<ParsedWord[]>([]);
   const [lookupDone, setLookupDone] = useState(false);
+  const [lookupError, setLookupError] = useState(false);
   const abortRef = useRef(0);
 
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
@@ -300,9 +344,17 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
     setWords(raw.map(w => ({ ...w, status: 'loading', selected: false })));
     setLookupDone(false);
 
-    Promise.all(raw.map(w => resolveWord(w, deckIds, language))).then(results => {
+    setLookupError(false);
+    resolveBatch(raw, deckIds, language).then(results => {
       if (abortRef.current !== run) return;
       setWords(results);
+      setLookupDone(true);
+    }).catch(() => {
+      if (abortRef.current !== run) return;
+      // A failed lookup must not read as "these words don't exist" — nothing is importable,
+      // but the reason shown is the network, not the dictionary.
+      setWords(prev => prev.map(w => ({ ...w, status: 'not-found', selected: false })));
+      setLookupError(true);
       setLookupDone(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -531,6 +583,30 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
                 style={{ ...inputStyle, padding: '4px 10px', fontSize: 11, cursor: 'pointer' }}>None</button>
             </div>
           </div>
+
+          {!lookupDone && (
+            <div
+              className="flex items-center gap-2.5 mb-2 px-4 py-2.5 rounded-[9px]"
+              style={{ background: 'var(--paper-2)', border: '1px dashed var(--line)' }}
+            >
+              <span className="playing-pulse" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-soft)', letterSpacing: '.04em' }}>
+                Validating vocabulary against the {langConfig.dictName.replace(/\s*\(.*\)$/, '')} dictionary…
+              </span>
+            </div>
+          )}
+
+          {lookupError && (
+            <div
+              className="mb-2 px-4 py-2.5 rounded-[9px]"
+              style={{ background: 'color-mix(in srgb, var(--accent) 7%, transparent)', border: '1px dashed var(--accent)' }}
+            >
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)' }}>Couldn&apos;t reach the dictionary</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.5 }}>
+                This is a connection problem, not a verdict on these words — edit the text above to retry.
+              </div>
+            </div>
+          )}
 
           <div className="rounded-[10px] overflow-hidden mb-4" style={{ border: '1px solid var(--line)', maxHeight: 300, overflowY: 'auto' }}>
             {words.map((w, i) => (

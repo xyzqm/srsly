@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { segmentKo } from '@/lib/server/koreanSegmenter';
+import { resolveWordServer } from '@/lib/server/wordResolver';
 
 export const runtime = 'nodejs';
 
 /**
- * Resolves a single manually-typed Korean word to its dictionary (base) form via the same
- * segmenter/lemmatizer pipeline used for AI-generated content — the Korean counterpart of
- * /api/ja-word-lookup and /api/es-word-lookup. Used by AddWordForm so a conjugated word
- * typed by the user (e.g. 먹었어요) is stored in the deck as its dictionary form (먹다),
- * matching what generated passages resolve to.
+ * Resolves a single manually-typed Korean word to its dictionary (base) form, so a
+ * conjugated word typed into AddWordForm (먹었어요 → 먹다) is stored under the same
+ * card generated passages resolve to.
+ *
+ * The work lives in lib/server/wordResolver.ts, shared with /api/batch-word-lookup, so the
+ * single-word and bulk-import paths can never disagree about whether a word is real.
  */
 export async function POST(req: NextRequest) {
   let text: string;
@@ -20,12 +21,14 @@ export async function POST(req: NextRequest) {
   }
   if (!text) return NextResponse.json({ error: 'empty text' }, { status: 400 });
 
-  const tokens = segmentKo(text, new Map());
-  // Only a single resolved word is meaningful here — a phrase typed into the "add a word"
-  // field has no single canonical form, so the caller should keep the raw text as-is.
-  if (tokens.length !== 1) {
-    return NextResponse.json({ single: false });
-  }
-  const [surface, reading = '', meaning = '', baseForm] = tokens[0];
-  return NextResponse.json({ single: true, surface, reading, meaning, baseForm: baseForm ?? null });
+  const r = await resolveWordServer('ko', text);
+  // `single: false` covers both "that was a phrase, not a word" and "no dictionary entry".
+  if (!r.found) return NextResponse.json({ single: false });
+  return NextResponse.json({
+    single: true,
+    surface: r.surface,
+    reading: r.reading,
+    meaning: r.meaning,
+    baseForm: r.word !== r.surface ? r.word : null,
+  });
 }

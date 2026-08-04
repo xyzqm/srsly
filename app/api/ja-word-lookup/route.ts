@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { segmentJa } from '@/lib/server/kuromojiSegmenter';
+import { resolveWordServer } from '@/lib/server/wordResolver';
 
 export const runtime = 'nodejs';
 
 /**
- * Resolves a single manually-typed Japanese word to its dictionary (base) form via the same
- * kuromoji pipeline used for AI-generated content — used by AddWordForm so a conjugated word
- * typed by the user (e.g. 食べました) is stored in the deck as its dictionary form (食べる),
- * matching what generated passages resolve to.
+ * Resolves a single manually-typed Japanese word to its dictionary (base) form, so a
+ * conjugated word typed into AddWordForm (食べました → 食べる) is stored under the same
+ * card generated passages resolve to.
+ *
+ * The work lives in lib/server/wordResolver.ts, shared with /api/batch-word-lookup, so the
+ * single-word and bulk-import paths can never disagree about whether a word is real.
  */
 export async function POST(req: NextRequest) {
   let text: string;
@@ -19,12 +21,14 @@ export async function POST(req: NextRequest) {
   }
   if (!text) return NextResponse.json({ error: 'empty text' }, { status: 400 });
 
-  const tokens = await segmentJa(text, new Map());
-  // Only a single resolved word is meaningful here — a phrase/sentence typed into the "add a
-  // word" field has no single canonical form, so the caller should keep the raw text as-is.
-  if (tokens.length !== 1) {
-    return NextResponse.json({ single: false });
-  }
-  const [surface, reading = '', meaning = '', baseForm] = tokens[0];
-  return NextResponse.json({ single: true, surface, reading, meaning, baseForm: baseForm ?? null });
+  const r = await resolveWordServer('ja', text);
+  // `single: false` covers both "that was a phrase, not a word" and "no dictionary entry".
+  if (!r.found) return NextResponse.json({ single: false });
+  return NextResponse.json({
+    single: true,
+    surface: r.surface,
+    reading: r.reading,
+    meaning: r.meaning,
+    baseForm: r.word !== r.surface ? r.word : null,
+  });
 }
