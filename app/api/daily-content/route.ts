@@ -6,6 +6,7 @@ import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, d
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentKo } from '@/lib/server/koreanSegmenter';
+import { segmentFr } from '@/lib/server/frenchSegmenter';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
@@ -349,9 +350,31 @@ and keep it consistent throughout.
 PROPER NAMES: list every person/place name in the "names" array (see schema) so they can be
 glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
 
+  // French: plain prose, segmented server-side by lib/server/frenchSegmenter.ts. The rules
+  // worth stating are the ones the model actually gets wrong — elision and the accents,
+  // both of which change which dictionary entry a word resolves to.
+  const PIPE_RULES_FR = `
+OUTPUT FORMAT:
+Every field marked "WORDS" below is a SINGLE STRING of plain, natural, grammatically correct
+French — normal sentence text, exactly as it would appear in real writing. Do NOT insert any
+"|" bars or other markup, and do NOT add English translations inline.
+
+  CORRECT:  "Hier, nous sommes allés au marché pour acheter des fruits frais."
+  WRONG:    "Hier|nous|sommes|allés|."          ← do not add bars or segment it yourself
+  WRONG:    "Hier (yesterday), nous sommes..."  ← no inline translation
+
+ACCENTS: write every accent and cedilla correctly (é è ê ë à â ç ô û ù î ï). A missing accent
+changes the word.
+
+ELISION AND CONTRACTION: use natural French — l'eau, d'accord, j'ai, qu'il, au, du, des.
+
+PROPER NAMES: list every person/place name in the "names" array (see schema) so they can be
+glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
+
   const PIPE_RULES = language === 'zh' ? PIPE_RULES_ZH
     : language === 'ja' ? PIPE_RULES_JA
     : language === 'ko' ? PIPE_RULES_KO
+    : language === 'fr' ? PIPE_RULES_FR
     : PIPE_RULES_ES;
 
   // Side-channel for proper-name readings. `p` is the reading slot — empty for Spanish,
@@ -359,6 +382,7 @@ glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
   const NAME_EXAMPLE = language === 'zh' ? `{"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}`
     : language === 'ja' ? `{"h": "田中", "p": "たなか", "m": "(name) Tanaka"}`
     : language === 'ko' ? `{"h": "민수", "p": "", "m": "(name) Minsu"}`
+    : language === 'fr' ? `{"h": "Marie", "p": "", "m": "(name) Marie"}`
     : `{"h": "María", "p": "", "m": "(name) María"}`;
   const NAMES_SCHEMA = `NAME = ${NAME_EXAMPLE}
   "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.${
@@ -369,6 +393,7 @@ glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
   const exampleSentence = language === 'zh' ? '城市|的|经济|发展|离不开|科技|的|进步|。'
     : language === 'ja' ? '私は町の図書館で本を借りました。'
     : language === 'ko' ? '어제 친구와 같이 시장에 가서 과일을 샀어요.'
+    : language === 'fr' ? 'Hier, nous sommes allés au marché du centre pour acheter des fruits frais.'
     : 'Ayer fuimos al mercado del centro para comprar fruta fresca.';
 
   const passagePrompt = `You are a ${langName} language teacher generating a reading passage.
@@ -548,6 +573,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     if (typeof s !== 'string' || !s.trim()) return [];
     if (language === 'es') return segmentEs(s, map);
     if (language === 'ko') return segmentKo(s, map);
+    if (language === 'fr') return segmentFr(s, map);
     const tokens = await segmentJa(s, map);
     console.log('[kuromoji-debug] LLM sentence:', s);
     console.log('[kuromoji-debug] segmented:', tokens.map(t => t[0]));
@@ -562,6 +588,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     if (langConfig.segmentation === 'pipe') return [trimmed, map.get(trimmed)?.p ?? ''];
     const tok = language === 'es' ? segmentEs(trimmed, map)[0]
       : language === 'ko' ? segmentKo(trimmed, map)[0]
+      : language === 'fr' ? segmentFr(trimmed, map)[0]
       : (await segmentJa(trimmed, map))[0];
     if (!tok) return [trimmed, map.get(trimmed)?.p ?? ''];
     const baseForm = tok.length === 4 ? tok[3] : undefined;

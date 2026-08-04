@@ -35,7 +35,7 @@ export interface LanguageConfig {
   defaultLevel: number;
   deckKey: string;       // localStorage suffix for the vocab deck (srsly-vocab-deck-<deckKey>)
   /** Where the user's chosen proficiency level is stored on UserPrefs. */
-  levelPrefKey: 'hskLevel' | 'jlptLevel' | 'cefrLevel' | 'topikLevel';
+  levelPrefKey: 'hskLevel' | 'jlptLevel' | 'cefrLevel' | 'topikLevel' | 'frLevel';
   /** Whether the AI returns tokens with readings pre-annotated (true for ja). When false
    *  (zh) the client looks readings up from the bundled dictionary. Meaningless when
    *  `hasReadings` is false. */
@@ -122,6 +122,16 @@ const ES_LEVEL_SHAPE: Record<number, LevelShape> = {
 /** TOPIK: 1 = easiest … 6 = hardest, same direction as HSK and CEFR. TOPIK I covers
  *  levels 1–2 and TOPIK II covers 3–6, which is why the labels carry both. */
 const KO_LEVEL_SHAPE: Record<number, LevelShape> = {
+  1: { sentences: 6,  wordsMin: 3, wordsMax: 4 },
+  2: { sentences: 8,  wordsMin: 3, wordsMax: 5 },
+  3: { sentences: 10, wordsMin: 4, wordsMax: 6 },
+  4: { sentences: 11, wordsMin: 4, wordsMax: 6 },
+  5: { sentences: 13, wordsMin: 5, wordsMax: 7 },
+  6: { sentences: 14, wordsMin: 6, wordsMax: 8 },
+};
+
+/** CEFR again, same direction and same tier sizes as Spanish. */
+const FR_LEVEL_SHAPE: Record<number, LevelShape> = {
   1: { sentences: 6,  wordsMin: 3, wordsMax: 4 },
   2: { sentences: 8,  wordsMin: 3, wordsMax: 5 },
   3: { sentences: 10, wordsMin: 4, wordsMax: 6 },
@@ -327,15 +337,67 @@ export const KO_CONFIG: LanguageConfig = {
   answerScriptNote: 'The answer MUST be written in Korean (Hangul).',
 };
 
+/**
+ * French. Structurally the closest language to Spanish in this app: no reading layer
+ * (`hasReadings: false`), space-delimited, server-segmented, and graded on CEFR — so it
+ * reuses the same spacing/rendering and token paths rather than needing new ones.
+ *
+ * Its levels get their OWN pref key (`frLevel`) rather than sharing Spanish's `cefrLevel`.
+ * Both are CEFR, but they are independent studies: setting your French level should not
+ * move your Spanish one.
+ *
+ * Lemmatization is data-driven from Wiktionary's `form_of` senses — see
+ * lib/server/frenchLemmatizer.ts for why no npm package is involved.
+ */
+export const FR_CONFIG: LanguageConfig = {
+  code: 'fr',
+  name: 'French',
+  nativeName: 'Français',
+  htmlLang: 'fr',
+  bcp47: 'fr-FR',
+  levels: [
+    { level: 1, label: 'A1', badge: 'A1', tier: 'beginner',     desc: 'Absolute beginner · ~500 words · greetings, numbers, everyday objects' },
+    { level: 2, label: 'A2', badge: 'A2', tier: 'beginner',     desc: 'Beginner · ~1,500 words · routine exchanges on familiar matters' },
+    { level: 3, label: 'B1', badge: 'B1', tier: 'intermediate', desc: 'Intermediate · ~3,000 words · travel, work, opinions and plans' },
+    { level: 4, label: 'B2', badge: 'B2', tier: 'intermediate', desc: 'Upper-intermediate · ~5,000 words · abstract topics with fluency' },
+    { level: 5, label: 'C1', badge: 'C1', tier: 'advanced',     desc: 'Advanced · ~8,000 words · implicit meaning, journalism, literature' },
+    { level: 6, label: 'C2', badge: 'C2', tier: 'advanced',     desc: 'Mastery · ~12,000 words · near-native precision and nuance' },
+  ],
+  defaultLevel: 2,
+  deckKey: 'fr',
+  levelPrefKey: 'frLevel',
+  aiProvidesReadings: false,
+  hasReadings: false,
+  usesBaseForms: true,
+  segmentation: 'server',
+  scriptIsUnspaced: false,
+  wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
+  levelSectionLabel: 'CEFR level',
+  levelShape: FR_LEVEL_SHAPE,
+  glyph: 'é',
+  countUnit: 'words',
+  dictName: 'Wiktionary',
+  sampleWords: ['étudier', 'travail', 'ami'],
+  wordFieldLabel: 'Word',
+  wordFieldPlaceholder: 'ville',
+  // French is written in the same alphabet it is read in — no reading layer.
+  readingLabel: '',
+  readingHelp: '',
+  readingHint: '',
+  shortSentenceLimit: 'under 12 words',
+  answerScriptNote: 'The answer MUST be written in French.',
+};
+
 export const LANGUAGE_CONFIGS: Record<LanguageCode, LanguageConfig> = {
   zh: ZH_CONFIG,
   ja: JA_CONFIG,
   es: ES_CONFIG,
   ko: KO_CONFIG,
+  fr: FR_CONFIG,
 };
 
 /** Every supported language, in the order the Header's picker lists them. */
-export const SUPPORTED_LANGUAGES: LanguageConfig[] = [ZH_CONFIG, JA_CONFIG, ES_CONFIG, KO_CONFIG];
+export const SUPPORTED_LANGUAGES: LanguageConfig[] = [ZH_CONFIG, JA_CONFIG, ES_CONFIG, KO_CONFIG, FR_CONFIG];
 
 export function getLanguageConfig(lang: LanguageCode | undefined): LanguageConfig {
   return LANGUAGE_CONFIGS[lang ?? 'zh'] ?? ZH_CONFIG;
@@ -369,7 +431,7 @@ export function levelNumbers(lang: LanguageCode | undefined): number[] {
 /** Read the user's proficiency level for a language from prefs, falling back to its default. */
 export function levelFor(
   lang: LanguageCode | undefined,
-  prefs: { hskLevel?: number; jlptLevel?: number; cefrLevel?: number; topikLevel?: number },
+  prefs: { hskLevel?: number; jlptLevel?: number; cefrLevel?: number; topikLevel?: number; frLevel?: number },
 ): number {
   const cfg = getLanguageConfig(lang);
   return prefs[cfg.levelPrefKey] ?? cfg.defaultLevel;

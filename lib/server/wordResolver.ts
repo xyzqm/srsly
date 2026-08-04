@@ -2,12 +2,13 @@ import type { LanguageCode } from '@/lib/types';
 import { segmentJa } from './kuromojiSegmenter';
 import { segmentEs } from './spanishSegmenter';
 import { segmentKo } from './koreanSegmenter';
+import { segmentFr } from './frenchSegmenter';
 
 /**
  * Resolves a single typed word to its dictionary entry, server-side.
  *
  * This is the one place that knows how to turn an inflected surface into a card: 食べました
- * → 食べる, organizamos → organizar, 먹었어요 → 먹다. Both `/api/{lang}-word-lookup` (one word,
+ * → 食べる, organizamos → organizar, 먹었어요 → 먹다, mangé → manger. Both `/api/{lang}-word-lookup` (one word,
  * used by AddWordForm) and `/api/batch-word-lookup` (many words, used by ImportPanel) go
  * through it, so the two entry points cannot drift apart and start disagreeing about
  * whether a given word is real.
@@ -42,6 +43,7 @@ export async function resolveWordServer(language: LanguageCode, raw: string): Pr
   if (language === 'ja') tokens = await segmentJa(surface, NO_OVERRIDES);
   else if (language === 'es') tokens = segmentEs(surface, NO_OVERRIDES);
   else if (language === 'ko') tokens = segmentKo(surface, NO_OVERRIDES);
+  else if (language === 'fr') tokens = segmentFr(surface, NO_OVERRIDES);
   else return miss;   // zh — resolved client-side, see the note above
 
   // More than one token means a phrase, not a word: there is no single entry to file it

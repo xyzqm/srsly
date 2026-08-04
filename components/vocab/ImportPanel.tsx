@@ -17,7 +17,7 @@ interface LevelData {
 
 /**
  * Level tables are loaded ON DEMAND, not imported statically. Together they are ~1.8 MB of
- * source — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB — and every one of them used
+ * source — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB, French 900 kB — and every one of them used
  * to land in the initial page bundle even though they are only read inside this drawer's
  * level-import mode, and then only for the single active language.
  */
@@ -37,6 +37,10 @@ const LEVEL_LOADERS: Record<LanguageCode, () => Promise<LevelData>> = {
   ko: async () => ({
     vocab: (await import('@/lib/data/topik-vocab')).TOPIK_VOCAB,
     words: (await import('@/lib/data/topik-levels')).TOPIK_LEVELS,
+  }),
+  fr: async () => ({
+    vocab: (await import('@/lib/data/fr-vocab')).FR_VOCAB,
+    words: (await import('@/lib/data/fr-levels')).FR_LEVELS,
   }),
 };
 

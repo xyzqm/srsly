@@ -13,10 +13,15 @@ Prioritize **elegance and concision** over volume. Concretely:
 ## Commands
 
 ```bash
-npm run dev      # start dev server at localhost:3000
-npm run build    # production build
-npm run lint     # eslint
+npm run dev        # start dev server at localhost:3000
+npm run build      # production build
+npm run typecheck  # tsc --noEmit (needs a raised heap — see below)
+npm run lint       # eslint
 ```
+
+The generated vocab/forms tables now total ~5.5 MB of TypeScript object literals across five
+languages, which exceeds `tsc`'s default heap. `next build` typechecks in its own worker and
+is unaffected, but a bare `tsc --noEmit` needs the larger heap that `npm run typecheck` sets.
 
 No test suite exists yet.
 
@@ -26,7 +31,7 @@ AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it (o
 
 ## Architecture
 
-**srsly** is a multi-language SRS (spaced repetition) app built with Next.js 15 (App Router), React 19, TypeScript, and Tailwind CSS v4. It supports Chinese (HSK 1–6), Japanese (JLPT N5–N1), Spanish (CEFR A1–C2) and Korean (TOPIK 1–6).
+**srsly** is a multi-language SRS (spaced repetition) app built with Next.js 15 (App Router), React 19, TypeScript, and Tailwind CSS v4. It supports Chinese (HSK 1–6), Japanese (JLPT N5–N1), Spanish (CEFR A1–C2), Korean (TOPIK 1–6) and French (CEFR A1–C2).
 
 ### Adding or changing a language
 
@@ -36,10 +41,10 @@ Three flags drive most of the behaviour:
 
 | Flag | Meaning |
 |---|---|
-| `hasReadings` | Whether words carry a phonetic reading (pinyin/furigana). **False for Spanish and Korean** — the `p` slot stays empty, no ruby annotation renders, and a token qualifies as vocab on its *meaning* rather than on having resolved a reading |
-| `usesBaseForms` | Whether tokens can carry a lemma in `RawTok`'s 4th element (ja, es, ko) |
-| `segmentation` | `'pipe'` = the model self-segments with `\|` (zh); `'server'` = the model writes plain prose and we segment server-side (ja, es, ko) |
-| `scriptIsUnspaced` | Whether the script needs re-segmentation against the dictionary, word-boundary marks, and no inter-token spaces (zh, ja). Spanish and Korean are space-delimited and share the same spacing/rendering path |
+| `hasReadings` | Whether words carry a phonetic reading (pinyin/furigana). **False for Spanish, Korean and French** — the `p` slot stays empty, no ruby annotation renders, and a token qualifies as vocab on its *meaning* rather than on having resolved a reading |
+| `usesBaseForms` | Whether tokens can carry a lemma in `RawTok`'s 4th element (ja, es, ko, fr) |
+| `segmentation` | `'pipe'` = the model self-segments with `\|` (zh); `'server'` = the model writes plain prose and we segment server-side (ja, es, ko, fr) |
+| `scriptIsUnspaced` | Whether the script needs re-segmentation against the dictionary, word-boundary marks, and no inter-token spaces (zh, ja). Spanish, Korean and French are space-delimited and share the same spacing/rendering path |
 
 ### App structure
 
@@ -73,6 +78,15 @@ So it works by rule, in the same generate-liberally/validate-strictly style as S
 
 Coverage is measured, not assumed: `build-kodic.mts` runs the real lemmatizer over all 50k tokens of the frequency list and prints the resolution rate. It currently resolves **64% of distinct forms / 86.8% of running text**. The remainder is dominated by proper nouns and colloquial contractions (`어딨어`, `아녜요`). Two known limits: 들어요 is genuinely ambiguous between 들다 and 듣다, and words Wiktionary lists as headwords in their own right (그래 "yeah") stop at themselves rather than resolving to 그렇다.
 
+For French, the model writes plain prose and `lib/server/frenchSegmenter.ts` splits it — the same shape as Spanish. Lemmatization (`lib/server/frenchLemmatizer.ts`) is almost entirely **data-driven**: French Wiktionary records conjugation exhaustively (a sample slice held 28,609 `form_of` entries against 1,658 lemmas), so `lib/data/fr-forms.ts` supplies `suis` → `être` and `mangé` → `manger` outright, and the suffix rules only cover what falls outside it.
+
+**There is deliberately no npm lemmatizer.** None exists for French — `lefff-lemmatizer`, `french-lemmatizer` and `fr-lemmatizer` are not published, and `lemmatizer` is English-only. The one real option is a Snowball *stemmer*, which is the wrong tool here: stemmers emit non-words (`manger` → `mang`) and every candidate in this codebase must validate against a real headword.
+
+Two French-specific wrinkles:
+
+- **Elision.** `l'eau` is kept as ONE token so the passage reads naturally, and the proclitic is peeled off during lemmatization to link the card to `eau`. Only known proclitics (`l' d' j' n' qu' s' c' m' t'`) split, and a token that is *itself* a headword never does — which is what keeps `aujourd'hui` and `d'accord` ("OK", not "agreement") intact.
+- **Homograph ordering.** A surface that is a common word normally wins over its inflected reading (`livre` is "book", not a form of `livrer`; likewise `porte`, `ferme`, `vers`). The exception is `FORM_DOMINANT_LEMMAS` — forms of a dozen very high-frequency verbs, where the verb reading dominates so clearly that it should win anyway (`est` is "is" far more often than the noun "east"; `été` is "been" before "summer").
+
 ### Language data files
 
 Each language's dictionary and level lists are generated by a script in `scripts/`, never edited by hand:
@@ -83,14 +97,15 @@ Each language's dictionary and level lists are generated by a script in `scripts
 | `build-jmdict.mjs` | `public/jmdict.json`, `lib/data/jlpt-*.ts` |
 | `build-esdict.mjs` | `public/esdict.json`, `lib/data/es-forms.ts`, `lib/data/cefr-*.ts` |
 | `build-kodic.mts` | `public/kodict.json`, `lib/data/topik-*.ts` (run with `npx tsx`) |
+| `build-frdict.mjs` | `public/frdict.json`, `lib/data/fr-forms.ts`, `lib/data/fr-*.ts` |
 
-**Neither CEFR nor TOPIK levels are official word lists.** Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list and the Instituto Cervantes inventories are neither machine-readable nor freely redistributable. `lib/data/cefr-levels.ts` is therefore a **frequency approximation** — lemmas ranked by OpenSubtitles corpus frequency and cut at the cumulative vocabulary sizes commonly cited per tier. Useful as a study progression, but don't present it to users as an official mapping.
+**Neither CEFR nor TOPIK levels are official word lists.** (This applies to French as well as Spanish — both are graded on CEFR, but each gets its own prefs key, `cefrLevel` and `frLevel`, so the two studies stay independent.) Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list and the Instituto Cervantes inventories are neither machine-readable nor freely redistributable. `lib/data/cefr-levels.ts` is therefore a **frequency approximation** — lemmas ranked by OpenSubtitles corpus frequency and cut at the cumulative vocabulary sizes commonly cited per tier. Useful as a study progression, but don't present it to users as an official mapping.
 
 `lib/data/topik-levels.ts` has the same status, for the same reason — TOPIK publishes no vocabulary list either. Note that Korean needs an extra step the others don't: a raw Korean frequency list is mostly *inflected* forms (its top entries are 내가, 난, 있어, 할), so `build-kodic.mts` lemmatizes the corpus first and aggregates counts onto headwords before banding. The best-graded open data (a scrape combining the National Institute of Korean Language's 초급/중급 grading with a TOPIK A/B/C grading) carries **no license**, so it is deliberately not used.
 
 ### Client bundle
 
-The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB of source. They are loaded **on demand**, never imported statically:
+The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB, French 900 kB of source. They are loaded **on demand**, never imported statically:
 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `kodict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
