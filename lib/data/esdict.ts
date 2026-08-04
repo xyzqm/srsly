@@ -1,37 +1,38 @@
-import { CEFR_VOCAB } from './cefr-vocab';
-
 /** A Spanish dictionary entry. `reading` is always '' — Spanish has no pinyin/furigana
  *  analogue — but the field is kept so shared UI can treat every language alike. */
 export interface EsEntry { reading: string; meaning: string; baseForm?: string; baseReading?: string; }
 
-// CEFR vocab is small enough to keep in memory for synchronous lookups (the analogue of
-// the baked-in DICT in dict.ts and BASE in jadict.ts). The full Wiktionary-derived
-// dictionary (~108k lemmas) is fetched lazily — see preloadEsdict — and consulted first
-// once available.
-const BASE: Record<string, EsEntry> = {};
-for (const [text, e] of Object.entries(CEFR_VOCAB)) {
-  BASE[text] = { reading: '', meaning: e.meaning };
-}
-
 type RawEntry = { p: string; m: string };
-let esdictCache: Record<string, RawEntry> | null = null;
-let esdictLoading: Promise<Record<string, RawEntry>> | null = null;
+type VocabEntry = { reading: string; meaning: string };
 
-function getEsdict(): Promise<Record<string, RawEntry>> {
-  if (esdictCache) return Promise.resolve(esdictCache);
-  if (!esdictLoading) {
-    esdictLoading = fetch('/esdict.json')
-      .then(r => r.json())
-      .then(data => { esdictCache = data; esdictLoading = null; return data; })
-      .catch(() => { esdictLoading = null; return {}; });
+// Both sources load lazily. The full Wiktionary-derived dictionary (~108k lemmas) is
+// fetched as JSON, and the CEFR level vocab — which only serves as a fallback for words
+// the fetch hasn't covered — is dynamically imported rather than bundled. Statically
+// importing it put ~900 kB of Spanish vocabulary into the initial page bundle for every
+// user, including those studying another language entirely.
+let esdictCache: Record<string, RawEntry> | null = null;
+let baseCache: Record<string, VocabEntry> | null = null;
+let loading: Promise<void> | null = null;
+
+function load(): Promise<void> {
+  if (!loading) {
+    loading = Promise.all([
+      fetch('/esdict.json')
+        .then(r => r.json())
+        .then(data => { esdictCache = data; })
+        .catch(() => { /* offline or missing — fall back to the level vocab */ }),
+      import('./cefr-vocab')
+        .then(m => { baseCache = m.CEFR_VOCAB; })
+        .catch(() => { /* chunk failed to load — the JSON above still serves lookups */ }),
+    ]).then(() => undefined);
   }
-  return esdictLoading;
+  return loading;
 }
 
 /** Load the full Spanish dictionary into memory so the synchronous `lookupEs` can resolve
- *  any common word. Safe to call repeatedly — the fetch is cached. */
+ *  any common word. Safe to call repeatedly — the work is cached. */
 export async function preloadEsdict(): Promise<void> {
-  await getEsdict();
+  await load();
 }
 
 /** Dictionary headwords are lowercase; passage words may be capitalised at a sentence
@@ -51,18 +52,13 @@ export function lookupEs(text: string, fbReading = '', fbMeaning = ''): EsEntry 
   const key = normalize(text);
   const e = esdictCache?.[key];
   if (e?.m) return { reading: '', meaning: e.m };
-  const b = BASE[key];
+  const b = baseCache?.[key];
   if (b?.meaning) return { reading: '', meaning: b.meaning };
   return { reading: fbReading, meaning: fbMeaning };
 }
 
 /** Async lookup that ensures the dictionary is loaded before resolving. */
 export async function lookupEsAsync(text: string, fbReading = '', fbMeaning = ''): Promise<EsEntry> {
-  const dict = await getEsdict();
-  const key = normalize(text);
-  const e = dict[key];
-  if (e?.m) return { reading: '', meaning: e.m };
-  const b = BASE[key];
-  if (b?.meaning) return { reading: '', meaning: b.meaning };
-  return { reading: fbReading, meaning: fbMeaning };
+  await load();
+  return lookupEs(text, fbReading, fbMeaning);
 }

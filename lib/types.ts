@@ -1,8 +1,9 @@
 export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
-/** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese. */
-export type LanguageCode = 'zh' | 'ja' | 'es';
+/** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese,
+ *  'es' = Spanish, 'ko' = Korean. */
+export type LanguageCode = 'zh' | 'ja' | 'es' | 'ko';
 
 export interface DeckWord {
   id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
@@ -36,11 +37,13 @@ export interface DeckWord {
 
 export interface PassageToken {
   text: string;
-  reading?: string; // pinyin (zh) or hiragana furigana (ja)
+  reading?: string; // pinyin (zh) or hiragana furigana (ja); always '' for es/ko, which
+                    // are written in the same script they are read in
   meaning?: string; // only on vocab/free words
   type?: 'vocab' | 'free' | 'punct';
-  /** Japanese only: dictionary (lemma) form when `text` is a conjugated verb/adj that
-   *  matches a due vocab word. Used for cloze blank detection and grade attribution. */
+  /** Dictionary (lemma) form when `text` is inflected — a conjugated verb/adjective, a
+   *  plural, or a Korean stem carrying particles. Resolved server-side per language and
+   *  used for cloze blank detection and grade attribution. */
   baseForm?: string;
 }
 
@@ -89,6 +92,7 @@ export interface UserPrefs {
   hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
   jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')
   cefrLevel?: number;        // Spanish proficiency level 1–6, 1=A1 easiest (used when language === 'es')
+  topikLevel?: number;       // Korean proficiency level 1–6, 1 easiest (used when language === 'ko')
   srsRetention?: number; // desired retention 0.70–0.99 (default 0.90)
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
@@ -122,7 +126,7 @@ export interface DailyPassage {
 export interface DailyContent {
   date: string;           // YYYY-MM-DD
   language?: LanguageCode; // study language; absent = 'zh' (backward compat)
-  hskLevel: number;       // proficiency level in the active language (HSK 1–6 for zh, JLPT 1–5 for ja)
+  hskLevel: number;       // proficiency level in the active language (HSK 1–6 zh, JLPT 1–5 ja, CEFR 1–6 es, TOPIK 1–6 ko)
   passages: DailyPassage[];  // one per batch of ~5 due words
   fillItems: FillItem[];
   conversation: ConvoTurn[];

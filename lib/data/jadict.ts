@@ -1,35 +1,36 @@
-import { JLPT_VOCAB } from './jlpt-vocab';
-
 /** A Japanese dictionary entry: hiragana/katakana reading + English meaning. */
 export interface JaEntry { reading: string; meaning: string; baseForm?: string; baseReading?: string; }
 
-// JLPT vocab is small enough to keep in memory for synchronous lookups (the analogue of
-// the baked-in DICT in dict.ts). The full JMdict (~47k forms) is fetched lazily — see
-// preloadJmdict — and consulted first once available.
-const BASE: Record<string, JaEntry> = {};
-for (const [text, e] of Object.entries(JLPT_VOCAB)) {
-  BASE[text] = { reading: e.reading, meaning: e.meaning };
-}
-
 type RawEntry = { p: string; m: string };
-let jmdictCache: Record<string, RawEntry> | null = null;
-let jmdictLoading: Promise<Record<string, RawEntry>> | null = null;
+type VocabEntry = { reading: string; meaning: string };
 
-function getJmdict(): Promise<Record<string, RawEntry>> {
-  if (jmdictCache) return Promise.resolve(jmdictCache);
-  if (!jmdictLoading) {
-    jmdictLoading = fetch('/jmdict.json')
-      .then(r => r.json())
-      .then(data => { jmdictCache = data; jmdictLoading = null; return data; })
-      .catch(() => { jmdictLoading = null; return {}; });
+// Both sources load lazily. The full JMdict (~47k forms) is fetched as JSON, and the JLPT
+// level vocab — which only serves as a fallback for words the fetch hasn't covered — is
+// dynamically imported rather than bundled. Statically importing it put ~585 kB of
+// Japanese vocabulary into the initial page bundle for every user, whatever their language.
+let jmdictCache: Record<string, RawEntry> | null = null;
+let baseCache: Record<string, VocabEntry> | null = null;
+let loading: Promise<void> | null = null;
+
+function load(): Promise<void> {
+  if (!loading) {
+    loading = Promise.all([
+      fetch('/jmdict.json')
+        .then(r => r.json())
+        .then(data => { jmdictCache = data; })
+        .catch(() => { /* offline or missing — fall back to the level vocab */ }),
+      import('./jlpt-vocab')
+        .then(m => { baseCache = m.JLPT_VOCAB; })
+        .catch(() => { /* chunk failed to load — the JSON above still serves lookups */ }),
+    ]).then(() => undefined);
   }
-  return jmdictLoading;
+  return loading;
 }
 
 /** Load the full JMdict into memory so the synchronous `lookupJa` can resolve any common
- *  word. Safe to call repeatedly — the fetch is cached. */
+ *  word. Safe to call repeatedly — the work is cached. */
 export async function preloadJmdict(): Promise<void> {
-  await getJmdict();
+  await load();
 }
 
 function dictLookup(dict: Record<string, RawEntry> | null, text: string): RawEntry | undefined {
@@ -46,17 +47,13 @@ function dictLookup(dict: Record<string, RawEntry> | null, text: string): RawEnt
 export function lookupJa(text: string, fbReading = '', fbMeaning = ''): JaEntry {
   const j = dictLookup(jmdictCache, text);
   if (j) return { reading: j.p || fbReading, meaning: j.m || fbMeaning };
-  const b = BASE[text];
+  const b = baseCache?.[text];
   if (b?.meaning) return { reading: b.reading || fbReading, meaning: b.meaning };
   return { reading: fbReading, meaning: fbMeaning };
 }
 
 /** Async lookup that ensures JMdict is loaded before resolving. */
 export async function lookupJaAsync(text: string, fbReading = '', fbMeaning = ''): Promise<JaEntry> {
-  const dict = await getJmdict();
-  const j = dict[text];
-  if (j?.m) return { reading: j.p || fbReading, meaning: j.m };
-  const b = BASE[text];
-  if (b?.meaning) return { reading: b.reading || fbReading, meaning: b.meaning };
-  return { reading: fbReading, meaning: fbMeaning };
+  await load();
+  return lookupJa(text, fbReading, fbMeaning);
 }

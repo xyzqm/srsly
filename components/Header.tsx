@@ -43,7 +43,6 @@ export default function Header({ onOpenTheme, accountSlot, language, onLanguageC
             {SUPPORTED_LANGUAGES.map(cfg => (
               <option key={cfg.code} value={cfg.code}>{cfg.nativeName} · {cfg.name}</option>
             ))}
-            <option value="ko" disabled>한국어 · Korean (soon)</option>
           </select>
         </label>
 

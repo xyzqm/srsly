@@ -5,6 +5,7 @@ import type { LanguageCode } from '@/lib/types';
 import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
+import { segmentKo } from '@/lib/server/koreanSegmenter';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
@@ -325,23 +326,49 @@ every question and exclamation, and written accents on every word that takes one
 PROPER NAMES: list every person/place name in the "names" array (see schema) so they can be
 glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
 
+  // Korean: same contract as Japanese and Spanish — plain prose, segmented server-side by
+  // lib/server/koreanSegmenter.ts. The rules worth stating are the ones the model actually
+  // gets wrong: spacing (Korean is space-delimited, but the boundaries are not obvious) and
+  // consistent speech level, since mixing 해요체 and 합니다체 reads as an error to a learner.
+  const PIPE_RULES_KO = `
+OUTPUT FORMAT:
+Every field marked "WORDS" below is a SINGLE STRING of plain, natural, grammatically correct
+Korean — normal sentence text, exactly as it would appear in real writing. Do NOT insert any
+"|" bars or other markup, and do NOT add romanisation or English translations inline.
+
+  CORRECT:  "저는 친구와 함께 학교에서 공부했어요."
+  WRONG:    "저는|친구와|함께|학교에서|공부했어요|."   ← do not add bars or segment it yourself
+  WRONG:    "저는 (jeoneun) 친구와..."                 ← no romanisation
+
+SPACING: use standard Korean word spacing (띄어쓰기). Particles attach to the preceding noun
+with no space (학교에서, not 학교 에서); dependent nouns and auxiliary verbs take a space.
+
+SPEECH LEVEL: pick ONE politeness level for the whole passage (해요체 is best for beginners)
+and keep it consistent throughout.
+
+PROPER NAMES: list every person/place name in the "names" array (see schema) so they can be
+glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
+
   const PIPE_RULES = language === 'zh' ? PIPE_RULES_ZH
     : language === 'ja' ? PIPE_RULES_JA
+    : language === 'ko' ? PIPE_RULES_KO
     : PIPE_RULES_ES;
 
   // Side-channel for proper-name readings. `p` is the reading slot — empty for Spanish,
   // which has no pinyin/furigana analogue (see `hasReadings` in lib/languageConfig.ts).
   const NAME_EXAMPLE = language === 'zh' ? `{"h": "李明", "p": "Lǐ Míng", "m": "(name) Li Ming"}`
     : language === 'ja' ? `{"h": "田中", "p": "たなか", "m": "(name) Tanaka"}`
+    : language === 'ko' ? `{"h": "민수", "p": "", "m": "(name) Minsu"}`
     : `{"h": "María", "p": "", "m": "(name) María"}`;
   const NAMES_SCHEMA = `NAME = ${NAME_EXAMPLE}
   "names" must include EVERY person/place name that appears anywhere above. Use [] if there are none.${
-    langConfig.hasReadings ? '' : '\n  "p" is unused for Spanish — always pass "".'}`;
+    langConfig.hasReadings ? '' : `\n  "p" is unused for ${langConfig.name} — always pass "".`}`;
 
   // ── Prompt builders (one per section) ──────────────────────────────────────
 
   const exampleSentence = language === 'zh' ? '城市|的|经济|发展|离不开|科技|的|进步|。'
     : language === 'ja' ? '私は町の図書館で本を借りました。'
+    : language === 'ko' ? '어제 친구와 같이 시장에 가서 과일을 샀어요.'
     : 'Ayer fuimos al mercado del centro para comprar fruta fresca.';
 
   const passagePrompt = `You are a ${langName} language teacher generating a reading passage.
@@ -520,6 +547,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     if (langConfig.segmentation === 'pipe') return parseTokenString(s, map);
     if (typeof s !== 'string' || !s.trim()) return [];
     if (language === 'es') return segmentEs(s, map);
+    if (language === 'ko') return segmentKo(s, map);
     const tokens = await segmentJa(s, map);
     console.log('[kuromoji-debug] LLM sentence:', s);
     console.log('[kuromoji-debug] segmented:', tokens.map(t => t[0]));
@@ -532,7 +560,9 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
   async function resolveWord(raw: unknown, map: Map<string, { p: string; m: string }>): Promise<[string, string]> {
     const trimmed = typeof raw === 'string' ? raw.trim() : '';
     if (langConfig.segmentation === 'pipe') return [trimmed, map.get(trimmed)?.p ?? ''];
-    const tok = language === 'es' ? segmentEs(trimmed, map)[0] : (await segmentJa(trimmed, map))[0];
+    const tok = language === 'es' ? segmentEs(trimmed, map)[0]
+      : language === 'ko' ? segmentKo(trimmed, map)[0]
+      : (await segmentJa(trimmed, map))[0];
     if (!tok) return [trimmed, map.get(trimmed)?.p ?? ''];
     const baseForm = tok.length === 4 ? tok[3] : undefined;
     const canonical = baseForm && map.has(baseForm) ? baseForm : trimmed;

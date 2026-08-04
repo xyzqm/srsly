@@ -1,5 +1,3 @@
-import { HSK_VOCAB } from './hsk-vocab';
-
 export interface DictEntry { pinyin: string; meaning: string; }
 
 const DICT: Record<string, DictEntry> = {};
@@ -609,12 +607,26 @@ const COMMON: Record<string, DictEntry> = {
   '各个方面':    { pinyin: 'gège fāngmiàn',          meaning: 'every aspect; all aspects' },
 };
 
-// Merge: COMMON takes priority; HSK_VOCAB fills in anything COMMON doesn't have.
+// COMMON is small and always available synchronously. HSK_VOCAB is NOT merged here: at
+// ~338 kB it would sit in the initial page bundle for every user regardless of language.
+// It is dynamically imported by preloadCedict and merged in then — see mergeHskVocab.
 for (const [text, entry] of Object.entries(COMMON)) {
   DICT[text] = entry;
 }
-for (const [text, entry] of Object.entries(HSK_VOCAB)) {
-  if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
+
+let hskMerged = false;
+/** Fold the HSK level vocab into DICT. Only fills gaps — COMMON keeps priority. */
+async function mergeHskVocab(): Promise<void> {
+  if (hskMerged) return;
+  hskMerged = true;
+  try {
+    const { HSK_VOCAB } = await import('./hsk-vocab');
+    for (const [text, entry] of Object.entries(HSK_VOCAB)) {
+      if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
+    }
+  } catch {
+    hskMerged = false; // let a later call retry
+  }
 }
 
 /** Look up a word's pinyin + meaning. Falls back to provided values if not found.
@@ -682,7 +694,7 @@ async function getCedict(): Promise<Record<string, CedictEntry>> {
  * meaning here). Safe to call repeatedly — the fetch is cached.
  */
 export async function preloadCedict(): Promise<void> {
-  await getCedict();
+  await Promise.all([getCedict(), mergeHskVocab()]);
 }
 
 /**
