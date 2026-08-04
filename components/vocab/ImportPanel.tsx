@@ -2,26 +2,41 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { lookupReadingAsync } from '@/lib/data/lookup';
-import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
-import { HSK_LEVELS } from '@/lib/data/hsk-levels';
-import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
-import { JLPT_LEVELS } from '@/lib/data/jlpt-levels';
-import { CEFR_VOCAB } from '@/lib/data/cefr-vocab';
-import { CEFR_LEVELS } from '@/lib/data/cefr-levels';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
 import { useLanguage } from '@/lib/LanguageContext';
 import { inStudyDeck } from '@/lib/deck';
 import { getLanguageConfig, levelLabel, levelNumbers } from '@/lib/languageConfig';
 
-/** The bundled level word lists per language. `vocab` entries carry `pinyin` (zh) or
- *  `reading` (ja/es); the reading is always '' for Spanish. */
-const LEVEL_DATA: Record<LanguageCode, {
+/** A language's level word lists. `vocab` entries carry `pinyin` (zh) or `reading` (ja);
+ *  the reading is always '' for Spanish and Korean. */
+interface LevelData {
   vocab: Record<string, { pinyin?: string; reading?: string; meaning: string }>;
   words: Record<number, string[]>;
-}> = {
-  zh: { vocab: HSK_VOCAB,  words: HSK_LEVELS },
-  ja: { vocab: JLPT_VOCAB, words: JLPT_LEVELS },
-  es: { vocab: CEFR_VOCAB, words: CEFR_LEVELS },
+}
+
+/**
+ * Level tables are loaded ON DEMAND, not imported statically. Together they are ~1.8 MB of
+ * source — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB — and every one of them used
+ * to land in the initial page bundle even though they are only read inside this drawer's
+ * level-import mode, and then only for the single active language.
+ */
+const LEVEL_LOADERS: Record<LanguageCode, () => Promise<LevelData>> = {
+  zh: async () => ({
+    vocab: (await import('@/lib/data/hsk-vocab')).HSK_VOCAB,
+    words: (await import('@/lib/data/hsk-levels')).HSK_LEVELS,
+  }),
+  ja: async () => ({
+    vocab: (await import('@/lib/data/jlpt-vocab')).JLPT_VOCAB,
+    words: (await import('@/lib/data/jlpt-levels')).JLPT_LEVELS,
+  }),
+  es: async () => ({
+    vocab: (await import('@/lib/data/cefr-vocab')).CEFR_VOCAB,
+    words: (await import('@/lib/data/cefr-levels')).CEFR_LEVELS,
+  }),
+  ko: async () => ({
+    vocab: (await import('@/lib/data/topik-vocab')).TOPIK_VOCAB,
+    words: (await import('@/lib/data/topik-levels')).TOPIK_LEVELS,
+  }),
 };
 
 interface Props {
@@ -159,9 +174,11 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const wordRe = langConfig.wordCharRe;
-  // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1 / CEFR A1–C2).
-  const levelVocab = LEVEL_DATA[language].vocab;
-  const levelWords = LEVEL_DATA[language].words;
+  // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1 / CEFR A1–C2
+  // / TOPIK 1–6). The tables themselves stream in when the level tab is opened.
+  const [levelData, setLevelData] = useState<LevelData | null>(null);
+  const levelVocab = levelData?.vocab ?? {};
+  const levelWords = levelData?.words ?? {};
   const levelList = levelNumbers(language);
   // "HSK level" → "HSK levels" etc., so the tab and copy follow the active language.
   const levelSetLabel = `${langConfig.levelSectionLabel}s`;
@@ -207,8 +224,22 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
   const deckSet = new Set(deckScoped.map(d => d.h));                 // hanzi-level — HSK mode
   const deckIds = new Set(deckScoped.map(d => wordIdentity(d)));     // character+meaning — list/csv/quizlet
 
+  const loadLevelData = useCallback(async () => {
+    if (levelData) return;
+    try {
+      setLevelData(await LEVEL_LOADERS[language]());
+    } catch {
+      // Chunk failed to load — the level grid stays empty rather than crashing the drawer.
+    }
+  }, [language, levelData]);
+
+  // Drop cached tables when the language changes, so the grid can't show another
+  // language's levels while the new ones stream in.
+  useEffect(() => { setLevelData(null); }, [language]);
+
   function switchMode(m: ImportMode) {
     setMode(m);
+    if (m === 'hsk') void loadLevelData();
     setText(''); setWords([]); setLookupDone(false); setEditingIdx(null);
     setDupCount(0); setDroppedCount(0);
   }
@@ -319,6 +350,11 @@ export default function ImportPanel({ deck, studyDeck, onImport, onCancel }: Pro
           <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 18 }}>
             Add all vocabulary words from a specific {langConfig.levelSectionLabel.replace(/ level$/, '')} level. Words already in your deck are skipped.
           </p>
+          {!levelData && (
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', letterSpacing: '.06em', marginBottom: 14 }}>
+              loading {langConfig.name} word lists…
+            </div>
+          )}
           <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
             {levelList.map(level => {
               const all    = levelWords[level]?.length ?? 0;

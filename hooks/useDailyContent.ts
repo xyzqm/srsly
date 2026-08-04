@@ -21,10 +21,17 @@ const PUNCT_CHARS = new Set([
   '¿','¡','«','»',
 ]);
 
-/** A letter in any script srsly supports — CJK/kana, or Latin including the accented
- *  characters Spanish uses. Without the Latin-1 letter ranges a bare "á" or "ñ" would
- *  fall through the single-character test below and be misread as punctuation. */
-const LETTER_RE = /[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿa-zA-Z0-9À-ÖØ-öø-ÿ]/;
+/**
+ * A letter in any script srsly supports — CJK, kana, Hangul, or Latin including the
+ * accented characters Spanish uses. Without the Latin-1 letter ranges a bare "á" or "ñ"
+ * would fall through the single-character test below and be misread as punctuation.
+ *
+ * The Hangul ranges are listed explicitly even though the CJK range above happens to cover
+ * them today: `豈` is U+8C48 (the unified ideograph), not the U+F900 compatibility form, so
+ * `豈-﫿` silently spans U+8C48–U+FAFF and swallows the Hangul syllables block by accident.
+ * Relying on that would break the moment someone tightened that range.
+ */
+const LETTER_RE = /[一-鿿㐀-䶿豈-﫿＀-￯぀-ゟ゠-ヿ가-힣ᄀ-ᇿ㄰-㆏a-zA-Z0-9À-ÖØ-öø-ÿ]/;
 
 function isPunct(text: string): boolean {
   if (PUNCT_CHARS.has(text)) return true;
