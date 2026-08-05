@@ -3,8 +3,11 @@
 //
 // NOTE: unlike HSK_LEVELS and JLPT_LEVELS, which come from official published exam word
 // lists, the CEFR publishes no such list. These bands are a FREQUENCY APPROXIMATION —
-// lemmas ranked by OpenSubtitles corpus frequency, cut at the cumulative vocabulary sizes
-// commonly cited for each tier. Useful as a study progression, not authoritative.
+// lemmas ranked by frequency BLENDED ACROSS THREE REGISTERS (Tatoeba / Global Voices /
+// Wikimedia, median ipm, so a word must be common in at least two of them), cut at the
+// cumulative vocabulary sizes commonly cited for each tier. Headwords whose every sense is
+// slang, vulgar, obsolete or dialectal are excluded outright. Useful as a study
+// progression, not authoritative.
 //
 // The data lives in the sibling .json file, not as a TypeScript object literal, and is
 // imported through the @data alias so TypeScript never opens it — see

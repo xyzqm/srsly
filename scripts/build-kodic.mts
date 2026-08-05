@@ -10,25 +10,27 @@
  *
  * Sources:
  *   - Korean Wiktionary extract via kaikki.org (CC BY-SA 4.0) — definitions.
- *   - Word frequencies via hermitdave/FrequencyWords, from the OpenSubtitles 2018
- *     corpus (CC BY-SA 4.0).
+ *   - Word frequencies blended across three registers — Tatoeba (everyday), Global Voices
+ *     (news) and Wikimedia (reference) — by scripts/lib/corpusFreq.mjs. NOT subtitles: see
+ *     that file for why one register of film dialogue made bad study lists.
  *
  * !! TOPIK CAVEAT !!
  * TOPIK publishes no official vocabulary list, exactly as the CEFR does not (see
  * lib/data/cefr-levels.ts). The best-graded open data available — a scrape combining the
  * National Institute of Korean Language's 초급/중급 grading with a TOPIK A/B/C grading —
  * carries no license, so it is deliberately NOT used here. The 1–6 bands below are a
- * FREQUENCY APPROXIMATION: headwords ranked by corpus frequency and cut at the cumulative
- * vocabulary sizes commonly cited per TOPIK level. A usable study progression, not an
- * authoritative mapping.
+ * FREQUENCY APPROXIMATION: headwords ranked by cross-register corpus frequency and cut at
+ * the cumulative vocabulary sizes commonly cited per TOPIK level. A usable study
+ * progression, not an authoritative mapping. Korean gets no CEFR-style graded resource
+ * either: CEFRLex covers six European languages and none of them is Korean.
  *
  * WHY THIS SCRIPT RUNS THE LEMMATIZER
- * Korean is agglutinative, so a raw frequency list is mostly inflected forms — its top
- * entries are 내가 (나+가), 난, 있어, 거야, 할 — not dictionary words. Banding it directly
- * would produce a "vocabulary list" of conjugated fragments. So every token is run through
- * the REAL runtime lemmatizer and its count aggregated onto the resolved headword. That
- * also makes this script the lemmatizer's acceptance test: it reports coverage over all
- * 50k tokens at the end, which is the honest measure of how well the rules actually work.
+ * Korean is agglutinative, so raw corpus counts are mostly of inflected forms — 내가 (나+가),
+ * 난, 있어, 할 — not dictionary words. Banding them directly would produce a "vocabulary
+ * list" of conjugated fragments. So every surface is run through the REAL runtime
+ * lemmatizer and its score aggregated onto the resolved headword. That also makes this
+ * script the lemmatizer's acceptance test: it reports coverage over every surface the
+ * corpora yielded, which is the honest measure of how well the rules actually work.
  *
  * Run with: npx tsx scripts/build-kodic.mts
  * Requires `curl` on PATH (same network assumption as the other build scripts).
@@ -41,12 +43,13 @@ import { fileURLToPath } from 'url';
 import { lemmatizeKo, type LemmaDict } from '../lib/server/koreanLemmatizer.ts';
 import { emitData } from './lib/emitData.mjs';
 import { isNameSense } from './lib/nameFilter.mjs';
+import { blendedFrequency } from './lib/corpusFreq.mjs';
+import { isNonStandardSense, isExcludedHeadword, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
 const KAIKKI_URL = 'https://kaikki.org/dictionary/Korean/kaikki.org-dictionary-Korean.jsonl';
-const FREQ_URL = 'https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/ko/ko_50k.txt';
 
 /** Cumulative headword counts per TOPIK level — the vocabulary sizes commonly cited for
  *  each level. Bands are cut from the frequency ranking at these offsets. */
@@ -81,16 +84,6 @@ function curlStream(url: string) {
   return spawn('curl', ['-sL', '--max-time', '900', url], { stdio: ['ignore', 'pipe', 'inherit'] });
 }
 
-async function fetchText(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('curl', ['-sL', '--max-time', '180', url], { stdio: ['ignore', 'pipe', 'inherit'] });
-    let out = '';
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', c => { out += c; });
-    proc.on('close', code => (code === 0 ? resolve(out) : reject(new Error(`curl exited ${code} for ${url}`))));
-  });
-}
-
 /** Trim Wiktionary's parenthetical/encyclopedic detail down to a flashcard-sized gloss. */
 function cleanGloss(g: string): string {
   let s = String(g).replace(/\s+/g, ' ').replace(/^\((?:[^)]*)\)\s*/, '').trim();
@@ -107,19 +100,21 @@ function cleanGloss(g: string): string {
   return cut.replace(/[,;:]$/, '').trim();
 }
 
-interface Candidate { gloss: string; restricted: boolean; order: number }
+interface Candidate { gloss: string; restricted: boolean; excluded: boolean; order: number }
 
 async function main() {
-  // ── 1. Frequency list ──────────────────────────────────────────────────────
-  console.log('Downloading frequency list from', FREQ_URL, '...');
-  const freqText = await fetchText(FREQ_URL);
-  /** surface → corpus count, in rank order */
-  const freq: Array<[string, number]> = [];
-  for (const line of freqText.split('\n')) {
-    const [word, count] = line.trim().split(' ');
-    if (!word || !/^[가-힣]+$/.test(word)) continue;
-    freq.push([word, parseInt(count, 10) || 1]);
-  }
+  // ── 1. Cross-register frequency ────────────────────────────────────────────
+  // Replaces the old single OpenSubtitles list. A surface must clear the count threshold in
+  // at least two of the three registers to be scored — see scripts/lib/corpusFreq.mjs.
+  const { score } = await blendedFrequency('ko', /[가-힣]+/g);
+  // `score` is a mean rank, so LOWER is better. Carry each surface as reciprocal-rank
+  // weight instead, because the step below aggregates several inflected surfaces onto one
+  // headword and ranks do not add — 먹었어요 and 먹습니다 both landing at rank 400 should
+  // make 먹다 stronger than either, which summing 1/rank expresses and summing ranks does
+  // the exact opposite of.
+  const freq: Array<[string, number]> = [...score.entries()]
+    .map(([w, r]): [string, number] => [w, 1 / r])
+    .sort((a, b) => b[1] - a[1]);
   console.log(`  ${freq.length} ranked surface forms`);
 
   // ── 2. Stream the Wiktionary extract ───────────────────────────────────────
@@ -160,8 +155,11 @@ async function main() {
       if (/^(informal|formal|polite|plain|intimate|casual)\b[^.]*\bof\b/i.test(clean)) continue;
       const tags = (s.tags ?? []) as string[];
       const restricted = tags.some(t => RESTRICTED_TAGS.has(t)) || tags.some(t => /^[A-Z]/.test(t));
+      // Harder judgement than `restricted`: slang/vulgar/obsolete/dialectal senses do not
+      // count toward graded vocabulary. The gloss stays in the dictionary for lookups.
+      const excluded = isNonStandardSense(s as { tags?: string[]; raw_tags?: string[] }) || isMetalinguisticGloss(clean);
       if (!senses.has(word)) senses.set(word, []);
-      senses.get(word)!.push({ gloss: clean, restricted, order: senseOrder++ });
+      senses.get(word)!.push({ gloss: clean, restricted, excluded, order: senseOrder++ });
     }
   }
   await new Promise(res => proc.on('close', res));
@@ -193,10 +191,10 @@ async function main() {
   };
 
   console.log('Lemmatizing the frequency list …');
-  /** headword → aggregated corpus count */
+  /** headword → aggregated reciprocal-rank weight across all its surface forms */
   const lemmaFreq = new Map<string, number>();
   let direct = 0, viaLemma = 0, unresolved = 0;
-  for (const [surface, count] of freq) {
+  for (const [surface, weight] of freq) {
     let head: string | undefined;
     if (dict.has(surface)) { head = surface; direct++; }
     else {
@@ -204,7 +202,7 @@ async function main() {
       if (lemma && dict.has(lemma)) { head = lemma; viaLemma++; }
       else unresolved++;
     }
-    if (head) lemmaFreq.set(head, (lemmaFreq.get(head) ?? 0) + count);
+    if (head) lemmaFreq.set(head, (lemmaFreq.get(head) ?? 0) + weight);
   }
   const resolved = direct + viaLemma;
   const pct = (n: number) => `${((n / freq.length) * 100).toFixed(1)}%`;
@@ -215,13 +213,20 @@ async function main() {
   console.log(`  → ${lemmaFreq.size} distinct headwords carry corpus frequency`);
 
   // ── 5. TOPIK bands (frequency approximation — see the header caveat) ───────
+  // Headwords whose every sense is slang/vulgar/obsolete/dialectal never become study
+  // material; they stay in kodict.json so they remain looked-up-able.
+  const offRegister = new Set<string>();
+  for (const [word, cands] of senses) if (isExcludedHeadword(cands)) offRegister.add(word);
+
   const ranked = [...lemmaFreq.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([w]) => w)
-    .filter(w => dict.isCommonWord(w));
+    .filter(w => dict.isCommonWord(w) && !offRegister.has(w));
+  console.log(`  ${ranked.length} band-eligible headwords (${offRegister.size} excluded as slang/vulgar/obsolete/dialectal-only)`);
 
-  // The cutoffs above assume ~12k ranked headwords. Korean yields fewer (the corpus is
-  // colloquial and much of it is names, interjections and inflections we cannot resolve),
+  // The cutoffs above assume ~12k ranked headwords. Korean yields fewer (its corpora are
+  // the smallest of the three languages, and much of what they hold is names and
+  // inflections we cannot resolve),
   // so scale the bands to the vocabulary actually available. Without this the top level
   // ends up a stub of whatever is left over rather than a real band.
   const topCutoff = TOPIK_BANDS[TOPIK_BANDS.length - 1].upTo;
@@ -248,16 +253,18 @@ async function main() {
 //
 // NOTE: unlike HSK_LEVELS and JLPT_LEVELS, which come from official published exam word
 // lists, TOPIK publishes no such list — the same situation as CEFR_LEVELS. These bands are
-// a FREQUENCY APPROXIMATION: headwords ranked by OpenSubtitles corpus frequency (after
-// lemmatizing the corpus, since Korean surface forms are overwhelmingly inflected) and cut
-// at the cumulative vocabulary sizes commonly cited per level. Useful as a study
-// progression, not authoritative.`);
+// a FREQUENCY APPROXIMATION: headwords ranked by frequency BLENDED ACROSS THREE REGISTERS
+// (Tatoeba / Global Voices / Wikimedia, median ipm, so a surface must be common in at least
+// two of them) after lemmatizing the corpus, since Korean surface forms are overwhelmingly
+// inflected, and cut at the cumulative vocabulary sizes commonly cited per level. Headwords
+// whose every sense is slang, vulgar, obsolete or dialectal are excluded outright. Useful
+// as a study progression, not authoritative.`);
   console.log(`Wrote ${levelsPath} (${TOPIK_BANDS.map(b => `L${b.level}:${levels[b.level].length}`).join(' ')})`);
 
   const vocabPath = path.join(ROOT, 'lib', 'data', 'topik-vocab.ts');
   await emitData(vocabPath, 'TOPIK_VOCAB', 'Record<string, { reading: string; meaning: string }>', vocab, `// Auto-generated by scripts/build-kodic.mts — DO NOT EDIT BY HAND.
-// TOPIK 1–6 vocabulary (source: Korean Wiktionary glosses, banded by OpenSubtitles
-// frequency — see the caveat in topik-levels.ts about these bands being approximate).
+// TOPIK 1–6 vocabulary (source: Korean Wiktionary glosses, banded by blended cross-register
+// corpus frequency — see the caveat in topik-levels.ts about these bands being approximate).
 // 'reading' exists only to match the shape of HSK_VOCAB / JLPT_VOCAB / CEFR_VOCAB and is
 // always '' for Korean: Hangul is phonetic and needs no separate reading line.`);
   console.log(`Wrote ${vocabPath} (${Object.keys(vocab).length} entries)`);

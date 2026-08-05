@@ -17,16 +17,18 @@
  *     definitions AND the inflected-form → lemma map: Wiktionary records conjugations
  *     as `form_of` senses, so irregulars (fui → ser/ir, voy → ir) come out correct
  *     without hand-written rules.
- *   - Word frequencies via hermitdave/FrequencyWords, built from the OpenSubtitles
- *     2018 corpus (CC BY-SA 4.0).
+ *   - Word frequencies blended across three registers — Tatoeba (everyday), Global Voices
+ *     (news) and Wikimedia (reference) — by scripts/lib/corpusFreq.mjs. NOT subtitles:
+ *     see that file for why one register of film dialogue made bad study lists.
  *
  * !! CEFR CAVEAT !!
  * Unlike HSK and JLPT, the CEFR publishes no official vocabulary list. The Instituto
  * Cervantes "Plan Curricular" inventories are neither machine-readable nor freely
- * redistributable. The A1–C2 bands emitted here are therefore a FREQUENCY
- * APPROXIMATION: lemmas are ranked by corpus frequency and cut at the cumulative
- * vocabulary sizes commonly cited for each CEFR tier. They are a usable study
- * progression, not an authoritative mapping — treat them accordingly.
+ * redistributable, and CEFRLex/ELELex — which IS genuinely CEFR-graded — states no
+ * license at all, so it cannot be vendored. The A1–C2 bands emitted here are therefore a
+ * FREQUENCY APPROXIMATION: lemmas ranked by cross-register corpus frequency and cut at
+ * the cumulative vocabulary sizes commonly cited for each CEFR tier. They are a usable
+ * study progression, not an authoritative mapping — treat them accordingly.
  *
  * Run with: node scripts/build-esdict.mjs
  * Requires `curl` on PATH (same network assumption as build-cedict.mjs).
@@ -38,12 +40,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
+import { blendedFrequency } from './lib/corpusFreq.mjs';
+import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 
 const KAIKKI_URL = 'https://kaikki.org/dictionary/Spanish/kaikki.org-dictionary-Spanish.jsonl';
-const FREQ_URL = 'https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/es/es_50k.txt';
 
 /** Cumulative lemma counts per CEFR tier — the commonly cited receptive-vocabulary
  *  sizes for each level. Bands are cut from the frequency ranking at these offsets. */
@@ -77,16 +80,6 @@ function curlStream(url) {
   return proc;
 }
 
-async function fetchText(url) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('curl', ['-sL', '--max-time', '180', url], { stdio: ['ignore', 'pipe', 'inherit'] });
-    let out = '';
-    proc.stdout.setEncoding('utf8');
-    proc.stdout.on('data', c => { out += c; });
-    proc.on('close', code => (code === 0 ? resolve(out) : reject(new Error(`curl exited ${code} for ${url}`))));
-  });
-}
-
 /** Wiktionary glosses carry a lot of parenthetical/registry noise; trim to something
  *  that reads like the short definitions CC-CEDICT and JMdict give. */
 function cleanGloss(g) {
@@ -114,22 +107,14 @@ function cleanGloss(g) {
 
 const LETTER_RE = /^[a-záéíóúüñ]+(?:[ -][a-záéíóúüñ]+)*$/i;
 
+/** One corpus token. Applied to lowercased text, so no case range is needed. */
+const TOKEN_RE = /[a-záéíóúüñ]+/g;
+
 async function main() {
-  // ── 1. Frequency list ──────────────────────────────────────────────────────
-  console.log('Downloading frequency list from', FREQ_URL, '...');
-  const freqText = await fetchText(FREQ_URL);
-  /** surface → rank (1 = most frequent) */
-  const freqRank = new Map();
-  {
-    let rank = 0;
-    for (const line of freqText.split('\n')) {
-      const word = line.split(' ')[0]?.trim().toLowerCase();
-      if (!word || !LETTER_RE.test(word)) continue;
-      if (freqRank.has(word)) continue;
-      freqRank.set(word, ++rank);
-    }
-  }
-  console.log(`  ${freqRank.size} ranked surface forms`);
+  // ── 1. Cross-register frequency ────────────────────────────────────────────
+  // Replaces the old single OpenSubtitles list. A lemma must be common in at least two of
+  // the three registers to be ranked at all — see scripts/lib/corpusFreq.mjs.
+  const { rank: freqRank } = await blendedFrequency('es', TOKEN_RE);
 
   // ── 2. Stream the Wiktionary extract ───────────────────────────────────────
   // ~1 GB of JSONL, so it is parsed line-by-line and never held in memory whole.
@@ -139,6 +124,9 @@ async function main() {
   let senseOrder = 0;
   /** inflected form → lemma (only kept for forms that appear in the frequency list) */
   const forms = new Map();
+  /** lemmas that appear under at least one real part of speech, i.e. not only as a letter
+   *  name, symbol or bound affix — see isLexicalPos. */
+  const lexical = new Set();
 
   const proc = curlStream(KAIKKI_URL);
   const rl = createInterface({ input: proc.stdout, crlfDelay: Infinity });
@@ -155,6 +143,7 @@ async function main() {
     // Proper nouns are not vocabulary — see scripts/lib/nameFilter.mjs.
     if (isNamePos(e.pos)) continue;
     const lower = word.toLowerCase();
+    if (isLexicalPos(e.pos)) lexical.add(lower);
 
     for (const s of e.senses ?? []) {
       // Inflected form: record form → lemma. Wiktionary's own conjugation data means
@@ -182,8 +171,12 @@ async function main() {
         // A sense tagged with a country/region (e.g. "Chile") is regional even though the
         // tag itself is not in the list above; such tags are capitalised.
         || (s.tags ?? []).some(t => /^[A-Z]/.test(t));
+      // Harder judgement than `restricted`: slang/vulgar/obsolete/dialectal senses do not
+      // count toward graded vocabulary at all. The word still keeps the gloss in the
+      // dictionary — only the level tables below apply this.
+      const excluded = isNonStandardSense(s) || isMetalinguisticGloss(clean);
       if (!senses.has(lower)) senses.set(lower, []);
-      senses.get(lower).push({ gloss: clean, restricted, order: senseOrder++ });
+      senses.get(lower).push({ gloss: clean, restricted, excluded, order: senseOrder++ });
     }
   }
   await new Promise(res => proc.on('close', res));
@@ -212,17 +205,28 @@ async function main() {
   await emitData(formsPath, 'ES_FORMS', 'Record<string, string>', Object.fromEntries(usableForms), `// Auto-generated by scripts/build-esdict.mjs — DO NOT EDIT BY HAND.
 // Inflected Spanish form → dictionary (lemma) form, sourced from Spanish Wiktionary's
 // own \`form_of\` senses, so irregulars (fui → ser, voy → ir) are correct by construction.
-// Scoped to forms that appear in the OpenSubtitles 50k frequency list — shipping the full
+// Scoped to forms that clear the blended cross-register frequency ranking — shipping the full
 // conjugation table for every verb would be far larger than it is worth. Forms outside
 // this set fall back to the suffix rules in lib/server/spanishLemmatizer.ts.`);
   console.log(`Wrote ${formsPath} (${usableForms.length} forms)`);
 
   // ── 5. CEFR bands (frequency approximation — see the header caveat) ────────
-  // Rank lemmas only: an inflected form is not its own vocabulary item.
+  // Words whose every sense is slang/vulgar/obsolete/dialectal (or purely metalinguistic,
+  // like a letter name) are dropped here, not from the dictionary: they stay
+  // looked-up-able, they just never become something to study.
+  const offRegister = new Set();
+  for (const [word, cands] of senses) if (isExcludedHeadword(cands)) offRegister.add(word);
+
   const rankedLemmas = [...freqRank.entries()]
     .sort((a, b) => a[1] - b[1])
     .map(([w]) => w)
-    .filter(w => dict[w] && !forms.has(w));
+    // NOTE: no `!forms.has(w)` guard. It looks right — an inflected form is not its own
+    // vocabulary item — but it silently deleted much of the core vocabulary, because
+    // Wiktionary also lists `casa` as a form of `casar`, `agua` of `aguar`, `libro` of
+    // `librar` and `gracias` as the plural of `gracia`. `dict[w]` is the correct test on
+    // its own: it is only populated from LEMMA senses, so a pure inflection never has one.
+    .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w));
+  console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} headwords excluded as slang/vulgar/obsolete/dialectal-only)`);
 
   const levels = {};
   const vocab = {};
@@ -240,14 +244,17 @@ async function main() {
 //
 // NOTE: unlike HSK_LEVELS and JLPT_LEVELS, which come from official published exam word
 // lists, the CEFR publishes no such list. These bands are a FREQUENCY APPROXIMATION —
-// lemmas ranked by OpenSubtitles corpus frequency, cut at the cumulative vocabulary sizes
-// commonly cited for each tier. Useful as a study progression, not authoritative.`);
+// lemmas ranked by frequency BLENDED ACROSS THREE REGISTERS (Tatoeba / Global Voices /
+// Wikimedia, median ipm, so a word must be common in at least two of them), cut at the
+// cumulative vocabulary sizes commonly cited for each tier. Headwords whose every sense is
+// slang, vulgar, obsolete or dialectal are excluded outright. Useful as a study
+// progression, not authoritative.`);
   console.log(`Wrote ${levelsPath} (${CEFR_BANDS.map(b => `${b.code}:${levels[b.level].length}`).join(' ')})`);
 
   const vocabPath = path.join(ROOT, 'lib', 'data', 'cefr-vocab.ts');
   await emitData(vocabPath, 'CEFR_VOCAB', 'Record<string, { reading: string; meaning: string }>', vocab, `// Auto-generated by scripts/build-esdict.mjs — DO NOT EDIT BY HAND.
-// CEFR A1–C2 vocabulary (source: Spanish Wiktionary glosses, banded by OpenSubtitles
-// frequency — see the caveat in cefr-levels.ts about these bands being approximate).
+// CEFR A1–C2 vocabulary (source: Spanish Wiktionary glosses, banded by blended
+// cross-register corpus frequency — see the caveat in cefr-levels.ts about these bands being approximate).
 // 'reading' exists only to match the shape of HSK_VOCAB / JLPT_VOCAB and is always ''
 // for Spanish, which has no pinyin/furigana analogue.`);
   console.log(`Wrote ${vocabPath} (${Object.keys(vocab).length} entries)`);

@@ -4,10 +4,12 @@
 //
 // NOTE: unlike HSK_LEVELS and JLPT_LEVELS, which come from official published exam word
 // lists, TOPIK publishes no such list — the same situation as CEFR_LEVELS. These bands are
-// a FREQUENCY APPROXIMATION: headwords ranked by OpenSubtitles corpus frequency (after
-// lemmatizing the corpus, since Korean surface forms are overwhelmingly inflected) and cut
-// at the cumulative vocabulary sizes commonly cited per level. Useful as a study
-// progression, not authoritative.
+// a FREQUENCY APPROXIMATION: headwords ranked by frequency BLENDED ACROSS THREE REGISTERS
+// (Tatoeba / Global Voices / Wikimedia, median ipm, so a surface must be common in at least
+// two of them) after lemmatizing the corpus, since Korean surface forms are overwhelmingly
+// inflected, and cut at the cumulative vocabulary sizes commonly cited per level. Headwords
+// whose every sense is slang, vulgar, obsolete or dialectal are excluded outright. Useful
+// as a study progression, not authoritative.
 //
 // The data lives in the sibling .json file, not as a TypeScript object literal, and is
 // imported through the @data alias so TypeScript never opens it — see

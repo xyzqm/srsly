@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { dateInDays, todayStr } from '@/lib/deck';
+import { pruneDeckToCurriculum } from '@/lib/curriculum';
 import { fsrsSchedule, getSrsSettings, LEECH_THRESHOLD, type FsrsGrade } from '@/lib/fsrs';
 
 /**
@@ -65,7 +66,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
 
   useEffect(() => {
     setDeckLoaded(false);
-    storage.getVocabDeck(language).then(d => {
+    storage.getVocabDeck(language).then(async d => {
       let changed = false;
       const migrated = d.map(w => {
         let nw = w;
@@ -80,10 +81,15 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
         }
         return nw;
       });
-      deckRef.current = migrated;
-      setDeck(migrated);
+      // One-time removal of words that predate the current graded tables — see
+      // lib/curriculum.ts. Runs before the deck is published to the UI so an
+      // off-curriculum word never flashes into a review surface on the way out.
+      const pruned = await pruneDeckToCurriculum(language, migrated);
+      if (pruned !== migrated) changed = true;
+      deckRef.current = pruned;
+      setDeck(pruned);
       setDeckLoaded(true);
-      if (changed) storage.saveVocabDeck(language, migrated);
+      if (changed) storage.saveVocabDeck(language, pruned);
     });
   }, [language]);
 
