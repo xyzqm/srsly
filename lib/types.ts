@@ -2,8 +2,8 @@ export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
 export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
 
 /** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese,
- *  'es' = Spanish, 'ko' = Korean, 'fr' = French. */
-export type LanguageCode = 'zh' | 'ja' | 'es' | 'ko' | 'fr';
+ *  'es' = Spanish, 'fr' = French. */
+export type LanguageCode = 'zh' | 'ja' | 'es' | 'fr';
 
 export interface DeckWord {
   id?: string;   // stable unique id; lets the same hanzi hold multiple readings (e.g. 行 xíng / háng)
@@ -36,12 +36,12 @@ export interface DeckWord {
 
 export interface PassageToken {
   text: string;
-  reading?: string; // pinyin (zh) or hiragana furigana (ja); always '' for es/ko, which
+  reading?: string; // pinyin (zh) or hiragana furigana (ja); always '' for es/fr, which
                     // are written in the same script they are read in
   meaning?: string; // only on vocab/free words
   type?: 'vocab' | 'free' | 'punct';
   /** Dictionary (lemma) form when `text` is inflected — a conjugated verb/adjective, a
-   *  plural, or a Korean stem carrying particles. Resolved server-side per language and
+   *  plural, or an elided French proclitic. Resolved server-side per language and
    *  used for cloze blank detection and grade attribution. */
   baseForm?: string;
 }
@@ -91,7 +91,6 @@ export interface UserPrefs {
   hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
   jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')
   cefrLevel?: number;        // Spanish proficiency level 1–6, 1=A1 easiest (used when language === 'es')
-  topikLevel?: number;       // Korean proficiency level 1–6, 1 easiest (used when language === 'ko')
   // French also uses CEFR A1–C2, but gets its OWN key rather than sharing `cefrLevel` with
   // Spanish — the two are independent studies and one should not move the other's level.
   frLevel?: number;          // French proficiency level 1–6, 1=A1 easiest (used when language === 'fr')
@@ -125,7 +124,7 @@ export interface DailyPassage {
    * the sentence in front of them. The generator picks the one that applies and returns it
    * here; the hint highlights it and dims the rest.
    *
-   * A side-channel keyed by word rather than a per-token field, because for ja/es/ko/fr the
+   * A side-channel keyed by word rather than a per-token field, because for ja/es/fr the
    * model writes plain prose and the segmenting happens server-side afterwards — there is no
    * per-token slot for it to annotate. The cost is per-occurrence precision: a word used
    * twice with different senses gets one entry. Absent, or absent for a given word, means
@@ -138,7 +137,7 @@ export interface DailyPassage {
 export interface DailyContent {
   date: string;           // YYYY-MM-DD
   language?: LanguageCode; // study language; absent = 'zh' (backward compat)
-  hskLevel: number;       // proficiency level in the active language (HSK 1–6 zh, JLPT 1–5 ja, CEFR 1–6 es/fr, TOPIK 1–6 ko)
+  hskLevel: number;       // proficiency level in the active language (HSK 1–6 zh, JLPT 1–5 ja, CEFR 1–6 es/fr)
   passages: DailyPassage[];  // one per batch of ~5 due words
   fillItems: FillItem[];
   conversation: ConvoTurn[];

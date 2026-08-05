@@ -18,20 +18,23 @@
  *     so suis → être and mangé → manger come out correct with no hand-written rules.
  *     This is why no npm lemmatizer is used: the JS options are Snowball STEMMERS, which
  *     produce non-words (manger → mang) and so can never pass dictionary validation.
- *   - Word frequencies blended across three registers — Tatoeba (everyday), Global Voices
- *     (news) and Wikimedia (reference) — by scripts/lib/corpusFreq.mjs. NOT subtitles:
- *     see that file for why one register of film dialogue made bad study lists.
+ *   - Word frequencies from Lexique 3 (CC BY-SA 4.0), vendored at
+ *     scripts/data/Lexique383.tsv. French does NOT use the corpus blend Spanish does:
+ *     Lexique already ships lemma-level frequencies measured separately over film
+ *     subtitles and over books, and a word is scored by the SMALLER of the two, so it has
+ *     to earn its place in both registers. See scripts/lib/lexique.mjs.
  *
  * !! CEFR CAVEAT !!
  * Unlike HSK and JLPT, the CEFR publishes no official vocabulary list — the same caveat
  * that applies to Spanish (see lib/data/cefr-levels.ts). FLELex, which IS genuinely
  * CEFR-graded from learner textbooks, states no license anywhere and so cannot be
  * vendored. The A1–C2 bands emitted here are a FREQUENCY APPROXIMATION: lemmas ranked by
- * cross-register corpus frequency and cut at the cumulative vocabulary sizes commonly
+ * Lexique 3's film/book frequencies and cut at the cumulative vocabulary sizes commonly
  * cited for each tier. A usable study progression, not an authoritative mapping.
  *
  * Run with: node scripts/build-frdict.mjs
- * Requires `curl` on PATH (same network assumption as the other build scripts).
+ * Requires `curl` on PATH for the Wiktionary extract, and scripts/data/Lexique383.tsv
+ * to be present (the script prints the download command if it is not).
  */
 import { spawn } from 'child_process';
 import { writeFile } from 'fs/promises';
@@ -40,7 +43,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
-import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
+import { adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
+import { lexiqueRanking } from './lib/lexique.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
 import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
@@ -113,29 +117,11 @@ function cleanGloss(g) {
  *  separate concern, handled by the lemmatizer, not here. */
 const LETTER_RE = /^[a-zàâäçéèêëîïôöùûüÿœæ]+(?:[ '\u2019-][a-zàâäçéèêëîïôöùûüÿœæ]+)*$/i;
 
-/** One corpus token. Applied to lowercased text, so no case range is needed. */
-const TOKEN_RE = /[a-zàâäçéèêëîïôöùûüÿœæ]+(?:['\u2019][a-zàâäçéèêëîïôöùûüÿœæ]+)*/g;
-
-/** Elided proclitics, matching the set the runtime lemmatizer peels — see
- *  lib/server/frenchLemmatizer.ts. Anything not on this list stays whole, which is what
- *  keeps `aujourd'hui` intact (`aujourd` is not a proclitic). */
-const PROCLITIC_RE = /^(?:l|d|j|n|qu|s|c|m|t)['\u2019](?=.)/;
-
-/**
- * French text is full of elision, and `l'eau` is a different string from `eau`. Counting
- * them apart splits the frequency of every vowel-initial word across however many
- * proclitics happen to precede it, pushing real A1 vocabulary down the ranking. So peel a
- * KNOWN proclitic and let the count land on the headword the learner actually studies.
- */
-function stripElision(token) {
-  return token.replace(PROCLITIC_RE, '');
-}
-
 async function main() {
-  // ── 1. Cross-register frequency ────────────────────────────────────────────
-  // Replaces the old single OpenSubtitles list. A lemma must be common in at least two of
-  // the three registers to be ranked at all — see scripts/lib/corpusFreq.mjs.
-  const { rank: freqRank } = await blendedFrequency('fr', TOKEN_RE, { normalize: stripElision });
+  // ── 1. Frequency from Lexique 3 ────────────────────────────────────────────
+  // Lemma-level, dual-register, already computed — no corpus to download or tokenize.
+  const { rank: freqRank, forms: lexiqueForms, total } = lexiqueRanking();
+  console.log(`Lexique 3: ${total.toLocaleString()} rows → ${freqRank.size.toLocaleString()} lemmas attested in both films and books, ${lexiqueForms.size.toLocaleString()} surface forms`);
 
   // ── 2. Stream the Wiktionary extract ───────────────────────────────────────
   // ~570 MB of JSONL, so it is parsed line-by-line and never held in memory whole.
@@ -174,7 +160,7 @@ async function main() {
         const l = lemma.trim().toLowerCase();
         // Only forms we could plausibly meet in a passage are worth bundling — the full
         // form table for every Spanish verb is far too large to ship.
-        if (l && l !== lower && LETTER_RE.test(l) && freqRank.has(lower) && !forms.has(lower)) {
+        if (l && l !== lower && LETTER_RE.test(l) && lexiqueForms.has(lower) && !forms.has(lower)) {
           forms.set(lower, l);
         }
         continue;
@@ -233,9 +219,9 @@ async function main() {
   await emitData(formsPath, 'FR_FORMS', 'Record<string, string>', Object.fromEntries(usableForms), `// Auto-generated by scripts/build-frdict.mjs — DO NOT EDIT BY HAND.
 // Inflected French form → dictionary (lemma) form, sourced from French Wiktionary's own
 // \`form_of\` senses, so irregulars (suis → être, ai → avoir) are correct by construction.
-// Scoped to forms that clear the blended cross-register frequency ranking — shipping the full
-// conjugation table for every verb would be far larger than it is worth. Forms outside
-// this set fall back to the suffix rules in lib/server/frenchLemmatizer.ts.`);
+// Scoped to the surface forms Lexique 3 actually attests — shipping the full conjugation
+// table for every verb would be far larger than it is worth. Forms outside this set fall
+// back to the suffix rules in lib/server/frenchLemmatizer.ts.`);
   console.log(`Wrote ${formsPath} (${usableForms.length} forms)`);
 
   // ── 5. CEFR bands (frequency approximation — see the header caveat) ────────
@@ -286,17 +272,17 @@ async function main() {
 //
 // NOTE: unlike HSK_LEVELS and JLPT_LEVELS, which come from official published exam word
 // lists, the CEFR publishes no such list. These bands are a FREQUENCY APPROXIMATION —
-// lemmas ranked by frequency BLENDED ACROSS THREE REGISTERS (Tatoeba / Global Voices /
-// Wikimedia, median ipm, so a word must be common in at least two of them), cut at the
-// cumulative vocabulary sizes commonly cited for each tier. Headwords whose every sense is
-// slang, vulgar, obsolete or dialectal are excluded outright. Useful as a study
-// progression, not authoritative.`);
+// lemmas ranked by Lexique 3's dual-register frequency — scored on the SMALLER of its film
+// and book counts, so a word has to be common in both — and cut at the cumulative
+// vocabulary sizes commonly cited for each tier. Headwords whose every sense is slang,
+// vulgar, obsolete or dialectal are excluded outright. Useful as a study progression, not
+// authoritative.`);
   console.log(`Wrote ${levelsPath} (${CEFR_BANDS.map(b => `${b.code}:${levels[b.level].length}`).join(' ')})`);
 
   const vocabPath = path.join(ROOT, 'lib', 'data', 'fr-vocab.ts');
   await emitData(vocabPath, 'FR_VOCAB', 'Record<string, { reading: string; meaning: string }>', vocab, `// Auto-generated by scripts/build-frdict.mjs — DO NOT EDIT BY HAND.
-// CEFR A1–C2 vocabulary (source: French Wiktionary glosses, banded by blended
-// cross-register corpus frequency — see the caveat in cefr-levels.ts about these bands being approximate).
+// CEFR A1–C2 vocabulary (source: French Wiktionary glosses, banded by Lexique 3
+// dual-register frequency — see the caveat in cefr-levels.ts about these bands being approximate).
 // 'reading' exists only to match the shape of HSK_VOCAB / JLPT_VOCAB and is always ''
 // for French, which has no pinyin/furigana analogue.`);
   console.log(`Wrote ${vocabPath} (${Object.keys(vocab).length} entries)`);

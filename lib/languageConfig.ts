@@ -35,7 +35,7 @@ export interface LanguageConfig {
   defaultLevel: number;
   deckKey: string;       // localStorage suffix for the vocab deck (srsly-vocab-deck-<deckKey>)
   /** Where the user's chosen proficiency level is stored on UserPrefs. */
-  levelPrefKey: 'hskLevel' | 'jlptLevel' | 'cefrLevel' | 'topikLevel' | 'frLevel';
+  levelPrefKey: 'hskLevel' | 'jlptLevel' | 'cefrLevel' | 'frLevel';
   /** Whether the AI returns tokens with readings pre-annotated (true for ja). When false
    *  (zh) the client looks readings up from the bundled dictionary. Meaningless when
    *  `hasReadings` is false. */
@@ -111,17 +111,6 @@ const JA_LEVEL_SHAPE: Record<number, LevelShape> = {
 /** CEFR: 1 = A1 easiest … 6 = C2 hardest, same direction as HSK. Spanish sentences carry
  *  fewer characters per idea than Chinese, so passages run slightly longer per level. */
 const ES_LEVEL_SHAPE: Record<number, LevelShape> = {
-  1: { sentences: 6,  wordsMin: 3, wordsMax: 4 },
-  2: { sentences: 8,  wordsMin: 3, wordsMax: 5 },
-  3: { sentences: 10, wordsMin: 4, wordsMax: 6 },
-  4: { sentences: 11, wordsMin: 4, wordsMax: 6 },
-  5: { sentences: 13, wordsMin: 5, wordsMax: 7 },
-  6: { sentences: 14, wordsMin: 6, wordsMax: 8 },
-};
-
-/** TOPIK: 1 = easiest … 6 = hardest, same direction as HSK and CEFR. TOPIK I covers
- *  levels 1–2 and TOPIK II covers 3–6, which is why the labels carry both. */
-const KO_LEVEL_SHAPE: Record<number, LevelShape> = {
   1: { sentences: 6,  wordsMin: 3, wordsMax: 4 },
   2: { sentences: 8,  wordsMin: 3, wordsMax: 5 },
   3: { sentences: 10, wordsMin: 4, wordsMax: 6 },
@@ -286,58 +275,6 @@ export function defaultWordsPerPassage(lang: LanguageCode | undefined, level: nu
 }
 
 /**
- * Korean. Like Spanish it has no reading layer — Hangul is phonetic, so the `p` slot stays
- * empty and no annotation renders above tokens — and like Spanish it is space-delimited,
- * so it reuses the same spacing/rendering path rather than CJK's flush-token layout.
- *
- * What is unlike every other language here is the morphology: Korean is agglutinative, so
- * a single space-delimited word (eojeol) fuses a stem with particles and verb endings
- * (먹었어요 = 먹다 + past + polite). That work lives in lib/server/koreanLemmatizer.ts.
- *
- * Levels are TOPIK 1–6. As with CEFR, there is no official published word list — see the
- * caveat in lib/data/topik-levels.ts.
- */
-export const KO_CONFIG: LanguageConfig = {
-  code: 'ko',
-  name: 'Korean',
-  nativeName: '한국어',
-  htmlLang: 'ko',
-  bcp47: 'ko-KR',
-  levels: [
-    { level: 1, label: 'TOPIK 1', badge: '1', tier: 'beginner',     desc: 'TOPIK I · Absolute beginner · ~800 words · greetings, numbers, everyday objects' },
-    { level: 2, label: 'TOPIK 2', badge: '2', tier: 'beginner',     desc: 'TOPIK I · Beginner · ~1,500 words · routine exchanges on familiar topics' },
-    { level: 3, label: 'TOPIK 3', badge: '3', tier: 'intermediate', desc: 'TOPIK II · Intermediate · ~3,000 words · daily life, work, social situations' },
-    { level: 4, label: 'TOPIK 4', badge: '4', tier: 'intermediate', desc: 'TOPIK II · Upper-intermediate · ~5,000 words · news, abstract topics, idiom' },
-    { level: 5, label: 'TOPIK 5', badge: '5', tier: 'advanced',     desc: 'TOPIK II · Advanced · ~8,000 words · specialised and professional material' },
-    { level: 6, label: 'TOPIK 6', badge: '6', tier: 'advanced',     desc: 'TOPIK II · Mastery · ~12,000 words · near-native precision and nuance' },
-  ],
-  defaultLevel: 2,
-  deckKey: 'ko',
-  levelPrefKey: 'topikLevel',
-  aiProvidesReadings: false,
-  hasReadings: false,
-  usesBaseForms: true,
-  segmentation: 'server',
-  scriptIsUnspaced: false,
-  // Hangul syllables, plus the conjoining and compatibility jamo blocks.
-  wordCharRe: /[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]/,
-  levelSectionLabel: 'TOPIK level',
-  levelShape: KO_LEVEL_SHAPE,
-  glyph: '한',
-  countUnit: 'words',
-  dictName: 'Wiktionary',
-  sampleWords: ['공부하다', '친구', '학교'],
-  wordFieldLabel: 'Word',
-  wordFieldPlaceholder: '학교',
-  // Hangul is already phonetic — there is no reading layer to show.
-  readingLabel: '',
-  readingHelp: '',
-  readingHint: '',
-  shortSentenceLimit: 'under 12 words',
-  answerScriptNote: 'The answer MUST be written in Korean (Hangul).',
-};
-
-/**
  * French. Structurally the closest language to Spanish in this app: no reading layer
  * (`hasReadings: false`), space-delimited, server-segmented, and graded on CEFR — so it
  * reuses the same spacing/rendering and token paths rather than needing new ones.
@@ -392,12 +329,11 @@ export const LANGUAGE_CONFIGS: Record<LanguageCode, LanguageConfig> = {
   zh: ZH_CONFIG,
   ja: JA_CONFIG,
   es: ES_CONFIG,
-  ko: KO_CONFIG,
   fr: FR_CONFIG,
 };
 
 /** Every supported language, in the order the Header's picker lists them. */
-export const SUPPORTED_LANGUAGES: LanguageConfig[] = [ZH_CONFIG, JA_CONFIG, ES_CONFIG, KO_CONFIG, FR_CONFIG];
+export const SUPPORTED_LANGUAGES: LanguageConfig[] = [ZH_CONFIG, JA_CONFIG, ES_CONFIG, FR_CONFIG];
 
 export function getLanguageConfig(lang: LanguageCode | undefined): LanguageConfig {
   return LANGUAGE_CONFIGS[lang ?? 'zh'] ?? ZH_CONFIG;
@@ -431,7 +367,7 @@ export function levelNumbers(lang: LanguageCode | undefined): number[] {
 /** Read the user's proficiency level for a language from prefs, falling back to its default. */
 export function levelFor(
   lang: LanguageCode | undefined,
-  prefs: { hskLevel?: number; jlptLevel?: number; cefrLevel?: number; topikLevel?: number; frLevel?: number },
+  prefs: { hskLevel?: number; jlptLevel?: number; cefrLevel?: number; frLevel?: number },
 ): number {
   const cfg = getLanguageConfig(lang);
   return prefs[cfg.levelPrefKey] ?? cfg.defaultLevel;

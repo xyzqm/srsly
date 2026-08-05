@@ -115,10 +115,9 @@ export function isMetalinguisticGloss(gloss) {
  * At one character the cost/benefit is lopsided — the handful of genuine one-letter words
  * is small enough to simply enumerate, and everything else is noise.
  *
- * Languages absent from this map are NOT filtered. That is deliberate and load-bearing for
- * Korean: a Hangul syllable is a normal-sized word, and 561 of its banded headwords are one
- * character long — 네, 예, 왜, 이, 수, 것, 년, 일. Applying a single-character rule there
- * would delete the core of the language.
+ * Languages absent from this map are NOT filtered — the rule only makes sense where a
+ * one-character word is exceptional, which is true of the Latin-script languages and would
+ * not be of, say, a syllabic script.
  */
 const SINGLE_CHAR_WORDS = {
   es: new Set(['y', 'o', 'a', 'e', 'u']),   // and · or · to · and (before i-) · or (before o-)

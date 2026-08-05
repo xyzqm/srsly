@@ -3,20 +3,20 @@ import type { DeckWord, LanguageCode } from './types';
 /**
  * Pruning decks against the graded vocabulary tables.
  *
- * The es/fr/ko level tables used to be banded from OpenSubtitles frequency, which is one
+ * The es/fr level tables used to be banded from OpenSubtitles frequency, which is one
  * register of film dialogue. That put a lot of slang, profanity and spoken-only debris
  * into the study lists, and from there into people's decks — words the passage generator
  * then had to build sentences around, which it does badly because they are not prose
- * words. The tables are now banded across three registers with a slang/vulgar/obsolete/
- * dialectal filter (see scripts/lib/corpusFreq.mjs), so the words that came from the old
- * source need to leave the decks they landed in.
+ * words. Spanish now bands across three registers (scripts/lib/corpusFreq.mjs) and French
+ * off Lexique 3 (scripts/lib/lexique.mjs), so the words that came from the old source
+ * need to leave the decks they landed in.
  *
  * This is a HARD DELETE. There is no archive state and no undo: the app has no live users
  * yet, so preserving the review history of words we no longer consider vocabulary buys
  * nothing. If that changes, the honest version of this is `paused: true` plus a reason
  * flag, not a filter.
  *
- * Only es, fr and ko are pruned. Chinese and Japanese band from the published HSK and JLPT
+ * Only es and fr are pruned. Chinese and Japanese band from the published HSK and JLPT
  * exam lists, which never had a subtitle corpus behind them and are not being rebuilt.
  */
 
@@ -24,7 +24,7 @@ import type { DeckWord, LanguageCode } from './types';
 export const CURRICULUM_VERSION = 2;
 
 /** Languages whose tables came from the subtitle corpus and are therefore pruned. */
-const PRUNED_LANGUAGES: readonly LanguageCode[] = ['es', 'fr', 'ko'];
+const PRUNED_LANGUAGES: readonly LanguageCode[] = ['es', 'fr'];
 
 /** Per-device marker of the last version each language was pruned at.
  *  Deliberately NOT in `storage`/prefs: this records what has been done to the copy of the
@@ -68,7 +68,6 @@ export async function loadCurriculumWords(lang: LanguageCode): Promise<Set<strin
     switch (lang) {
       case 'es': return new Set(Object.keys((await import('./data/cefr-vocab')).CEFR_VOCAB));
       case 'fr': return new Set(Object.keys((await import('./data/fr-vocab')).FR_VOCAB));
-      case 'ko': return new Set(Object.keys((await import('./data/topik-vocab')).TOPIK_VOCAB));
       default: return null;
     }
   } catch {
@@ -93,7 +92,7 @@ export async function pruneDeckToCurriculum(lang: LanguageCode, deck: DeckWord[]
   const words = await loadCurriculumWords(lang);
   if (!words) return deck;
 
-  const key = (s: string) => (lang === 'ko' ? s.trim() : s.trim().toLowerCase());
+  const key = (s: string) => s.trim().toLowerCase();
   const kept = deck.filter(w => words.has(key(w.h)));
 
   // Only mark done once the table actually loaded and the filter ran, so a transient

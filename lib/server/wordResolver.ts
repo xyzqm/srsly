@@ -1,7 +1,6 @@
 import type { LanguageCode } from '@/lib/types';
 import { segmentJa } from './kuromojiSegmenter';
 import { segmentEs } from './spanishSegmenter';
-import { segmentKo } from './koreanSegmenter';
 import { segmentFr } from './frenchSegmenter';
 
 /**
@@ -42,7 +41,6 @@ export async function resolveWordServer(language: LanguageCode, raw: string): Pr
   let tokens;
   if (language === 'ja') tokens = await segmentJa(surface, NO_OVERRIDES);
   else if (language === 'es') tokens = segmentEs(surface, NO_OVERRIDES);
-  else if (language === 'ko') tokens = segmentKo(surface, NO_OVERRIDES);
   else if (language === 'fr') tokens = segmentFr(surface, NO_OVERRIDES);
   else return miss;   // zh — resolved client-side, see the note above
 

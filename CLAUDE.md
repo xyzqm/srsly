@@ -49,7 +49,7 @@ AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it (o
 
 ## Architecture
 
-**srsly** is a multi-language SRS (spaced repetition) app built with Next.js 15 (App Router), React 19, TypeScript, and Tailwind CSS v4. It supports Chinese (HSK 1–6), Japanese (JLPT N5–N1), Spanish (CEFR A1–C2), Korean (TOPIK 1–6) and French (CEFR A1–C2).
+**srsly** is a multi-language SRS (spaced repetition) app built with Next.js 15 (App Router), React 19, TypeScript, and Tailwind CSS v4. It supports Chinese (HSK 1–6), Japanese (JLPT N5–N1), Spanish (CEFR A1–C2) and French (CEFR A1–C2). Korean was removed.
 
 ### Adding or changing a language
 
@@ -59,10 +59,10 @@ Three flags drive most of the behaviour:
 
 | Flag | Meaning |
 |---|---|
-| `hasReadings` | Whether words carry a phonetic reading (pinyin/furigana). **False for Spanish, Korean and French** — the `p` slot stays empty, no ruby annotation renders, and a token qualifies as vocab on its *meaning* rather than on having resolved a reading |
-| `usesBaseForms` | Whether tokens can carry a lemma in `RawTok`'s 4th element (ja, es, ko, fr) |
-| `segmentation` | `'pipe'` = the model self-segments with `\|` (zh); `'server'` = the model writes plain prose and we segment server-side (ja, es, ko, fr) |
-| `scriptIsUnspaced` | Whether the script needs re-segmentation against the dictionary, word-boundary marks, and no inter-token spaces (zh, ja). Spanish, Korean and French are space-delimited and share the same spacing/rendering path |
+| `hasReadings` | Whether words carry a phonetic reading (pinyin/furigana). **False for Spanish and French** — the `p` slot stays empty, no ruby annotation renders, and a token qualifies as vocab on its *meaning* rather than on having resolved a reading |
+| `usesBaseForms` | Whether tokens can carry a lemma in `RawTok`'s 4th element (ja, es, fr) |
+| `segmentation` | `'pipe'` = the model self-segments with `\|` (zh); `'server'` = the model writes plain prose and we segment server-side (ja, es, fr) |
+| `scriptIsUnspaced` | Whether the script needs re-segmentation against the dictionary, word-boundary marks, and no inter-token spaces (zh, ja). Spanish and French are space-delimited and share the same spacing/rendering path |
 
 ### App structure
 
@@ -74,7 +74,7 @@ The core data primitive is `PassageToken` (`lib/types.ts`): `{ text, reading?, m
 
 **Rendering tokens back to text goes through `lib/tokenText.ts`, never through a local join.** `needsSpaceBefore()` decides whether a space precedes a token (nothing for unspaced scripts, nothing before closing punctuation, nothing after an opening `¿ ¡ « ( [ { " '`) and `tokensToText()` builds the whole string. Every renderer — `PassageText`, `FillInBlank`, `Question` — uses it, so the passage, the cloze sentence and the TTS plaintext can't disagree about spacing.
 
-**A token is interactive when it has a reading OR a meaning, never on reading alone.** `ClickableWord`, `TokenEl` and `useWordPopup.openPopup` all apply the same test. Gating on `reading` makes every Spanish/Korean/French token dead text, and in Chinese kills any token whose pinyin didn't resolve — that is exactly how lookup popups went missing in the extra modes.
+**A token is interactive when it has a reading OR a meaning, never on reading alone.** `ClickableWord`, `TokenEl` and `useWordPopup.openPopup` all apply the same test. Gating on `reading` makes every Spanish/French token dead text, and in Chinese kills any token whose pinyin didn't resolve — that is exactly how lookup popups went missing in the extra modes.
 
 **Decorative glyphs and language-facing copy live in `lib/uiStrings.ts`**, keyed by `LanguageCode` (`空/好/完/填` for Chinese, the equivalents elsewhere, plus the reply placeholder). Use `uiStrings(language)` and size the glyph with `stateGlyphSize()` — a hardcoded 空 in a shared component is a Chinese character sitting in the middle of a French session.
 
@@ -92,17 +92,6 @@ For Spanish, the model also writes plain prose, segmented server-side by `lib/se
 2. Suffix rules, each validated against the dictionary so a candidate is only accepted if it is a real word.
 
 A surface that is itself a **common word** short-circuits both tiers and stays as-is, because many frequent Spanish words are also inflections of something else (`mercado` is "market", not a participle of `mercar`; `para` is the preposition, not a form of `parar`). Headwords whose only sense is a proper noun don't count, so `casas` → `casa` still works. The accepted cost is that participles which double as listed adjectives (`vivido`, `hablado`) stay as themselves rather than resolving to their infinitive.
-
-For Korean, the model writes plain prose and `lib/server/koreanSegmenter.ts` splits it. Korean is space-delimited so the split itself is exact, but each space-delimited chunk (an **eojeol**) fuses a content word with its particles and verb endings — `학교에서` is 학교 + 에서, `먹었어요` is 먹다 conjugated. Resolving that is `lib/server/koreanLemmatizer.ts`, and it is the only language here whose morphology is written by hand:
-
-- Japanese has kuromoji, a real analyzer. Spanish had Wiktionary's `form_of` data, which supplied every irregular for free.
-- Korean has neither. Its Wiktionary `form_of` entries are almost entirely hanja→hangul spellings, and verb lemmas list only ~3 forms against a conjugation space of hundreds.
-
-So it works by rule, in the same generate-liberally/validate-strictly style as Spanish: strip a particle or ending, generate candidate stems, accept only what the dictionary confirms. Endings fuse *into* the stem's final syllable (만나 + 았어요 → 만났어요, where 았 survives only as a ㅆ batchim), so the candidate generation is jamo-level via `es-hangul` and the two transformation families **compose** — 왔어 → 왔 → 와 → 오 → 오다.
-
-⚠️ **`es-hangul` reports compound vowels decomposed**: `돼` comes back with jungseong `"ㅗㅐ"`, not `"ㅙ"`, and `combineCharacter` expects the same. Passing a precomposed vowel does not throw — it silently builds the *wrong* syllable (`combineCharacter('ㄷ','ㅚ')` returns `니`, not `되`). Compound vowels in that file go through the named `WA`/`WEO`/`WAE`/`OE` constants for exactly this reason.
-
-Coverage is measured, not assumed: `build-kodic.mts` runs the real lemmatizer over all 50k tokens of the frequency list and prints the resolution rate. It currently resolves **64% of distinct forms / 86.8% of running text**. The remainder is dominated by proper nouns and colloquial contractions (`어딨어`, `아녜요`). Two known limits: 들어요 is genuinely ambiguous between 들다 and 듣다, and words Wiktionary lists as headwords in their own right stop at themselves rather than resolving — 좋아요 is a real noun ("a like"), so it never reaches 좋다. Pseudo-headwords that exist only as pointers are dropped at build time instead: alongside the conjugation-label glosses, `nonstandard form of` is filtered because 해다 is listed that way and was catching 했습니다, 했어요 and 해요 — forms of the most common verb in the language.
 
 For French, the model writes plain prose and `lib/server/frenchSegmenter.ts` splits it — the same shape as Spanish. Lemmatization (`lib/server/frenchLemmatizer.ts`) is almost entirely **data-driven**: French Wiktionary records conjugation exhaustively (a sample slice held 28,609 `form_of` entries against 1,658 lemmas), so `lib/data/fr-forms.ts` supplies `suis` → `être` and `mangé` → `manger` outright, and the suffix rules only cover what falls outside it.
 
@@ -124,14 +113,19 @@ Each language's dictionary and level lists are generated by a script in `scripts
 | `build-cedict.mjs` | `public/cedict.json`, `lib/data/hsk-*.ts` |
 | `build-jmdict.mjs` | `public/jmdict.json`, `lib/data/jlpt-*.ts` |
 | `build-esdict.mjs` | `public/esdict.json`, `lib/data/es-forms.ts`, `lib/data/cefr-*.ts` |
-| `build-kodic.mts` | `public/kodict.json`, `lib/data/topik-*.ts` (run with `npx tsx`) |
 | `build-frdict.mjs` | `public/frdict.json`, `lib/data/fr-forms.ts`, `lib/data/fr-*.ts` |
 
 Proper nouns are filtered out at build time by `scripts/lib/nameFilter.mjs`, shared by every build script: `isNamePos()` rejects a `name`/`proper noun` headword outright, `isNameSense()` drops individual senses that gloss as a surname, given name or place ("a city in…", "a commune in…"). It runs per sense, not per entry, so `jean` keeps "denim" while losing the given name, and `casa`/`perro`/`ville`/`manger` are untouched. Filtering here rather than at lookup time is what keeps `mercado`-style over-lemmatization from being reintroduced — the lemmatizers ask the dictionary whether a candidate is a real word, and a dictionary full of names answers yes too often.
 
-#### How es/fr/ko words are ranked and banded
+#### How French is ranked and banded
 
-**Not from subtitles.** These three languages used to rank against hermitdave/FrequencyWords, which is OpenSubtitles and nothing else — one narrow register whose high-frequency band is interjections, profanity and slang, because that is what film characters say. It made study lists the passage generator could not write natural prose around. `scripts/lib/corpusFreq.mjs` replaced it with three registers:
+**French does not use the corpus blend below.** It ranks off **Lexique 3** (`scripts/data/Lexique383.tsv`, CC BY-SA 4.0, vendored — see `ATTRIBUTION.md` for the citation and download command), read by `scripts/lib/lexique.mjs`. Lexique ships 142,695 entries with hand-checked lemmas, POS tags, and frequency measured separately over **film subtitles** (`freqlemfilms2`) and **books** (`freqlemlivres`). Those are lemma-level, so there is no corpus to download, tokenize or lemmatize.
+
+**A word scores the MINIMUM of its two register frequencies** — it is only as strong as its weaker register. That one choice is what removes slang, and it beats the ratio test you might reach for first (`bonjour` has a films/books ratio of 11 and is obviously core). Measured on the top 500: `min` gives 20/20 core words and **zero** slang; geometric mean lets `mec` in; arithmetic lets `putain` and `mec` in. Subtitles being half the input is fine precisely *because* books get a veto. Lexique's `ortho` column also supplies the inflection inventory that scopes `FR_FORMS`.
+
+#### How Spanish words are ranked and banded
+
+**Not from subtitles.** Spanish used to rank against hermitdave/FrequencyWords, which is OpenSubtitles and nothing else — one narrow register whose high-frequency band is interjections, profanity and slang, because that is what film characters say. It made study lists the passage generator could not write natural prose around. `scripts/lib/corpusFreq.mjs` replaced it with three registers:
 
 | Register | Corpus | License |
 |---|---|---|
@@ -139,9 +133,9 @@ Proper nouns are filtered out at build time by `scripts/lib/nameFilter.mjs`, sha
 | news | Global Voices | CC BY |
 | reference | Wikimedia | CC BY-SA |
 
-A register may be backed by more than one corpus (counts are summed) — Korean's Tatoeba slice is ~50k tokens and cannot stand alone. **A word scores the mean of its two best per-register ranks.** Two properties matter and both are deliberate: needing two placements *is* the "common in more than one register" rule, and averaging **ranks rather than ipm** stops whichever corpus has the most extreme distribution from setting the order (an encyclopedia says "municipality" at a rate no conversation ever will). Taking the best two rather than all three keeps `gracias` from being punished for being rare in an encyclopedia. Set `SRSLY_CORPUS_CACHE=<dir>` to cache per-corpus counts and re-run a build with no downloads.
+A register may be backed by more than one corpus (counts are summed). **A word scores the mean of its two best per-register ranks.** Two properties matter and both are deliberate: needing two placements *is* the "common in more than one register" rule, and averaging **ranks rather than ipm** stops whichever corpus has the most extreme distribution from setting the order (an encyclopedia says "municipality" at a rate no conversation ever will). Taking the best two rather than all three keeps `gracias` from being punished for being rare in an encyclopedia. Set `SRSLY_CORPUS_CACHE=<dir>` to cache per-corpus counts and re-run a build with no downloads.
 
-**Single letters are filtered out of the bands** for es/fr by `isBandableLength()`, against a short whitelist per language (`y o a e u` for Spanish, `y à ô` for French). Wiktionary has an entry for every letter and encyclopedic text is full of bare ones, so `t`, `i`, `x`, `k` and `f` all reached Spanish A1/A2. The letter *sense* is already metalinguistic, but exclusion needs **every** sense to be excluded and these carry a stray abbreviation or musical-note sense that survives. Languages absent from the whitelist map are not filtered at all — that is load-bearing for Korean, where a Hangul syllable is a normal-sized word and 561 banded headwords are one character long.
+**Single letters are filtered out of the bands** for es/fr by `isBandableLength()`, against a short whitelist per language (`y o a e u` for Spanish, `y à ô` for French). Wiktionary has an entry for every letter and encyclopedic text is full of bare ones, so `t`, `i`, `x`, `k` and `f` all reached Spanish A1/A2. The letter *sense* is already metalinguistic, but exclusion needs **every** sense to be excluded and these carry a stray abbreviation or musical-note sense that survives. Languages absent from the whitelist map are not filtered at all — the rule only makes sense where a one-character word is exceptional, which would not hold for a syllabic script.
 
 **A second opinion from English.** After the bands are cut, `adjustBandsWithAnchor()` compares each word against the **CEFR-J Wordlist v1.5** (Yukio Tono, TUFS — free for research *and commercial* use with citation) plus the **Octanove Vocabulary Profile C1/C2** (CC BY-SA 4.0), vendored unmodified under `scripts/data/` with `ATTRIBUTION.md`. `scripts/lib/cefrjAnchor.mjs` reads a word's dictionary gloss and returns the level of the **easiest term of its primary sense** — everything before the first semicolon. Both halves are deliberate: a sense is a list of near-synonyms and a learner only needs one of them, so the median scored `además` at B1 on the strength of "furthermore"; and later senses are where Wiktionary keeps the colourful material, so reading the whole gloss scored `bueno` at B1 because "sexy" is in it.
 
@@ -155,23 +149,21 @@ One structural consequence: **A1 is frozen.** Promotion into band `b` needs `b -
 
 Keep the list short; it is not a place to express taste about A1. The one rule it does **not** bypass is the dictionary: a pinned word must be a real headword with a real gloss, and anything else is warned about and skipped, because the emitted tables carry that gloss. Pinned words are prepended in file order, so they are the first thing a learner meets. Band sizes are allowed to drift here (~20 words in 12,000) — honouring a pin by demoting some other real word to keep A1 at exactly 500 would trade one arbitrary call for another.
 
-This is deliberately a tie-breaker, never the ranking. Mapping English → target is one-to-many (96% of CEFR-J's A1 words find a Spanish candidate but 88% find more than one, median 5), and it is blind to vocabulary with no English headword — 6% of Spanish A1 (`los`, `del`, `había`) and 24% of Korean TOPIK 1 anchor to nothing. Each build writes `scripts/reports/{lang}-band-adjustments.tsv` (gitignored) listing every word that moved, so the swaps are reviewable before the tables are committed.
+This is deliberately a tie-breaker, never the ranking. Mapping English → target is one-to-many (96% of CEFR-J's A1 words find a Spanish candidate but 88% find more than one, median 5), and it is blind to vocabulary with no English headword — 6% of Spanish A1 (`los`, `del`, `había`) anchors to nothing. Each build writes `scripts/reports/{lang}-band-adjustments.tsv` (gitignored) listing every word that moved, so the swaps are reviewable before the tables are committed.
 
 Two filters gate **band eligibility only** — never the dictionary, which stays comprehensive because a learner who meets a slang word still needs to look it up:
 
 - `scripts/lib/registerFilter.mjs` — a headword is dropped when *every* sense is slang, vulgar, obsolete or dialectal. Note it is narrower than the `RESTRICTED_TAGS` lists in the build scripts, which only govern gloss *ordering*: `colloquial` and `informal` are deliberately absent (everyday speech is what a learner wants) and so is `historical` ("feudalism" is a current word for a past thing). `isLexicalPos()` additionally drops letter names, symbols and bound affixes, which is what keeps `p` and `n` out of Spanish A1.
 - **There is no `!forms.has(w)` guard**, and re-adding one will silently delete the core vocabulary. It reads as obviously correct — an inflected form is not its own vocabulary item — but Wiktionary also lists `casa` as a form of `casar`, `agua` of `aguar`, `libro` of `librar` and `gracias` as the plural of `gracia`. `dict[w]` is the correct test alone, since it is only ever populated from lemma senses.
 
-**Neither CEFR nor TOPIK levels are official word lists.** (This applies to French as well as Spanish — both are graded on CEFR, but each gets its own prefs key, `cefrLevel` and `frLevel`, so the two studies stay independent.) Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list: the Instituto Cervantes and Beacco Reference Level Descriptions are copyrighted books, and **CEFRLex** (FLELex for French, ELELex for Spanish) — which genuinely is CEFR-graded, from learner textbooks — states **no license anywhere**, so it is not vendored, exactly as the unlicensed Korean grading scrape is not. `lib/data/cefr-levels.ts` is therefore still a **frequency approximation**, now cross-register rather than subtitle-derived. Don't present it to users as an official mapping.
-
-`lib/data/topik-levels.ts` has the same status — TOPIK publishes no vocabulary list either, and CEFRLex covers six European languages, none of them Korean. Korean also needs an extra step the others don't: raw counts are mostly *inflected* forms (내가, 난, 있어, 할), so `build-kodic.mts` runs the real runtime lemmatizer over every surface and aggregates onto headwords before banding, which doubles as the lemmatizer's acceptance test. It aggregates **reciprocal rank** (`1/score`), not rank: several surfaces of 먹다 each landing at rank 400 should make the headword stronger, and summing ranks would do the opposite.
+**CEFR levels are not an official word list.** (This applies to French as well as Spanish — both are graded on CEFR, but each gets its own prefs key, `cefrLevel` and `frLevel`, so the two studies stay independent.) Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list: the Instituto Cervantes and Beacco Reference Level Descriptions are copyrighted books, and **CEFRLex** (FLELex for French, ELELex for Spanish) — which genuinely is CEFR-graded, from learner textbooks — states **no license anywhere**, so it is not vendored. `lib/data/cefr-levels.ts` (Spanish) is therefore still a **frequency approximation**, now cross-register rather than subtitle-derived, and `lib/data/fr-levels.ts` a Lexique-derived one. Don't present it to users as an official mapping.
 
 ### Client bundle
 
-The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB, French 900 kB of source. They are loaded **on demand**, never imported statically:
+The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 kB of source. They are loaded **on demand**, never imported statically:
 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
-- `dict.ts` / `jadict.ts` / `esdict.ts` / `kodict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
+- `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
 Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS at ~250 kB instead of ~890 kB — if you add a language, follow the same pattern.
 
@@ -182,7 +174,7 @@ Statically importing them put every language's vocabulary in the initial page bu
 LocalStorage keys:
 - `srsly-vocab-deck-{lang}` — user's `DeckWord[]`, namespaced per language. **One deck per language, full stop.** The multi-deck feature (a `decks: string[]` tag array on each word, a deck selector, per-deck study scoping) was removed; `useVocabDeck` strips the retired `deck`/`decks` fields from stored words on load. The `decks` jsonb column in `lib/storage/supabase.ts` is unrelated — it is keyed by `LanguageCode` and is how per-language decks are stored
 - `srsly-srs-state` — streak, todayScore, session count
-- `srsly-prefs` — theme, font, language, and the per-language level (`hskLevel` / `jlptLevel` / `cefrLevel`)
+- `srsly-prefs` — theme, font, language, and the per-language level (`hskLevel` / `jlptLevel` / `cefrLevel` / `frLevel`)
 - `srsly-claimed-words` — words added to deck or previewed
 - `srsly-curriculum-pruned` — per-language marker of the last `CURRICULUM_VERSION` the deck was pruned at (`lib/curriculum.ts`). Device-local on purpose: it records what has been done to this copy of the deck, not a preference worth syncing
 - `srsly-daily-{lang}-{level}-{YYYY-MM-DD}` — cached daily content

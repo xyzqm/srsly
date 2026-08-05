@@ -42,7 +42,7 @@ export async function preloadFrdict(): Promise<void> {
  */
 export function lookupFr(text: string, fbReading = '', fbMeaning = ''): FrEntry {
   // Dictionary headwords are lowercase; a passage word may open a sentence or a title, so
-  // every lookup normalises case first (Korean needed no such step — Hangul has no case).
+  // every lookup normalises case first.
   const key = text.trim().toLowerCase();
   const e = dictCache?.[key];
   if (e?.m) return { reading: '', meaning: e.m };

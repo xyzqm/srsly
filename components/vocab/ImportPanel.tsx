@@ -8,7 +8,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelLabel, levelNumbers } from '@/lib/languageConfig';
 
 /** A language's level word lists. `vocab` entries carry `pinyin` (zh) or `reading` (ja);
- *  the reading is always '' for Spanish and Korean. */
+ *  the reading is always '' for Spanish and French. */
 interface LevelData {
   vocab: Record<string, { pinyin?: string; reading?: string; meaning: string }>;
   words: Record<number, string[]>;
@@ -16,7 +16,7 @@ interface LevelData {
 
 /**
  * Level tables are loaded ON DEMAND, not imported statically. Together they are ~1.8 MB of
- * source — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, TOPIK 600 kB, French 900 kB — and every one of them used
+ * source — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 kB — and every one of them used
  * to land in the initial page bundle even though they are only read inside this drawer's
  * level-import mode, and then only for the single active language.
  */
@@ -32,10 +32,6 @@ const LEVEL_LOADERS: Record<LanguageCode, () => Promise<LevelData>> = {
   es: async () => ({
     vocab: (await import('@/lib/data/cefr-vocab')).CEFR_VOCAB,
     words: (await import('@/lib/data/cefr-levels')).CEFR_LEVELS,
-  }),
-  ko: async () => ({
-    vocab: (await import('@/lib/data/topik-vocab')).TOPIK_VOCAB,
-    words: (await import('@/lib/data/topik-levels')).TOPIK_LEVELS,
   }),
   fr: async () => ({
     vocab: (await import('@/lib/data/fr-vocab')).FR_VOCAB,
@@ -183,7 +179,7 @@ async function fetchBatch(surfaces: string[], lang: LanguageCode): Promise<Batch
  * Two transports behind one function, chosen the same way `useWordLookup` chooses for the
  * single-word form:
  *
- *   - Inflecting languages (ja, es, ko) go to /api/batch-word-lookup, because undoing
+ *   - Inflecting languages (ja, es, fr) go to /api/batch-word-lookup, because undoing
  *     conjugation needs the server-side lemmatizers.
  *   - Chinese stays on the client. It has no inflection to undo, and both CC-CEDICT and the
  *     polyphone table are already in the browser — sending it to the server would mean
@@ -251,7 +247,7 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
   const langConfig = getLanguageConfig(language);
   const wordRe = langConfig.wordCharRe;
   // Level data + labels switch with the active language (HSK 1–6 / JLPT N5–N1 / CEFR A1–C2
-  // / TOPIK 1–6). The tables themselves stream in when the level tab is opened.
+  // levels). The tables themselves stream in when the level tab is opened.
   const [levelData, setLevelData] = useState<LevelData | null>(null);
   const levelVocab = levelData?.vocab ?? {};
   const levelWords = levelData?.words ?? {};

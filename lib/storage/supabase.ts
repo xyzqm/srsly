@@ -21,7 +21,7 @@ interface UserDataRow {
   passage_state: Record<string, ClozeOccurrenceMap> | null;
 }
 
-const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja', 'es', 'ko', 'fr'];
+const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja', 'es', 'fr'];
 
 /** Pull a language's deck from a row, falling back to the legacy `deck` column for Chinese. */
 function deckFromRow(r: UserDataRow | null, lang: LanguageCode): DeckWord[] | null {

@@ -22,8 +22,7 @@ import path from 'path';
  *   news       Global Voices      — citizen journalism, edited prose
  *   reference  Wikimedia          — encyclopedic writing
  *
- * A register may be backed by more than one corpus (their counts are summed) — Korean's
- * Tatoeba slice is only ~50k tokens, far too thin to stand on its own.
+ * A register may be backed by more than one corpus; their counts are summed.
  *
  * SCORING: mean of the two best per-register RANKS.
  * Each register is ranked independently, then a word scores the average of its two best
@@ -49,9 +48,9 @@ import path from 'path';
 const OPUS = 'https://object.pouta.csc.fi';
 
 /**
- * Per-language register set. The register MIX is identical across languages so the bands
- * mean the same thing in each; only the individual corpora differ where a language has no
- * release (Korean has no News-Commentary, hence Global Voices for news everywhere).
+ * Per-language register set. Spanish is the only consumer left: French moved to Lexique 3
+ * (scripts/lib/lexique.mjs), which ships lemma-level film/book frequencies and needs no
+ * corpus pass at all, and Korean was removed from the app.
  */
 export const CORPORA = {
   es: {
@@ -59,18 +58,6 @@ export const CORPORA = {
                 { name: 'TED2020', url: `${OPUS}/OPUS-TED2020/v1/mono/es.txt.gz` }],
     news:      [{ name: 'GlobalVoices', url: `${OPUS}/OPUS-GlobalVoices/v2018q4/mono/es.txt.gz` }],
     reference: [{ name: 'wikimedia', url: `${OPUS}/OPUS-wikimedia/v20230407/mono/es.txt.gz` }],
-  },
-  fr: {
-    everyday:  [{ name: 'Tatoeba', url: `${OPUS}/OPUS-Tatoeba/v2023-04-12/mono/fr.txt.gz` },
-                { name: 'TED2020', url: `${OPUS}/OPUS-TED2020/v1/mono/fr.txt.gz` }],
-    news:      [{ name: 'GlobalVoices', url: `${OPUS}/OPUS-GlobalVoices/v2018q4/mono/fr.txt.gz` }],
-    reference: [{ name: 'wikimedia', url: `${OPUS}/OPUS-wikimedia/v20230407/mono/fr.txt.gz` }],
-  },
-  ko: {
-    everyday:  [{ name: 'Tatoeba', url: `${OPUS}/OPUS-Tatoeba/v2023-04-12/mono/ko.txt.gz` },
-                { name: 'TED2020', url: `${OPUS}/OPUS-TED2020/v1/mono/ko.txt.gz` }],
-    news:      [{ name: 'GlobalVoices', url: `${OPUS}/OPUS-GlobalVoices/v2018q4/mono/ko.txt.gz` }],
-    reference: [{ name: 'wikimedia', url: `${OPUS}/OPUS-wikimedia/v20230407/mono/ko.txt.gz` }],
   },
 };
 
@@ -150,11 +137,10 @@ async function countCorpus({ name, url }, lang, tokenRe, maxTokens, normalize) {
 /**
  * Rank a language's vocabulary by cross-register frequency.
  *
- * @param {'es'|'fr'|'ko'} lang
+ * @param {'es'} lang
  * @param {RegExp} tokenRe   global regex matching one token (must have the /g flag)
  * @param {{ maxTokens?: number, minCount?: number, normalize?: (t: string) => string }} [opts]
- *   `normalize` rewrites each matched token before counting — French uses it to peel the
- *   elided proclitic off `l'eau` so the count lands on `eau`, the actual headword.
+ *   `normalize` rewrites each matched token before counting.
  * @returns {Promise<{ rank: Map<string, number>, score: Map<string, number>, registers: Map<string, number> }>}
  *   `rank`      surface → 1-based rank, best first (only words placing in ≥2 registers)
  *   `score`     surface → blended score (mean of two best register ranks; LOWER is better)

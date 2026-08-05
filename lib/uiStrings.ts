@@ -29,8 +29,6 @@ const STRINGS: Record<LanguageCode, UiStrings> = {
         replyPlaceholder: 'Type your reply in Chinese…' },
   ja: { empty: '空',    caughtUp: '良',    complete: '完',  generating: '書',
         replyPlaceholder: 'Type your reply in Japanese…' },
-  ko: { empty: '없음',  caughtUp: '좋아',  complete: '완료', generating: '작성',
-        replyPlaceholder: 'Type your reply in Korean…' },
   es: { empty: 'Vacío', caughtUp: '¡Bien!', complete: 'Fin', generating: 'Creando',
         replyPlaceholder: 'Type your reply in Spanish…' },
   fr: { empty: 'Vide',  caughtUp: 'Bravo', complete: 'Fin', generating: 'Création',
