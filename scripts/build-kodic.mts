@@ -45,6 +45,7 @@ import { emitData } from './lib/emitData.mjs';
 import { isNameSense } from './lib/nameFilter.mjs';
 import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
+import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -252,8 +253,15 @@ async function main() {
   // both are six-point ORDINAL difficulty scales and the swap only ever compares a word's
   // anchor against its own band — no absolute equivalence between the two is claimed, and
   // none is needed, since a uniform offset between the scales cancels out in a trade.
-  const { levels, report } = adjustBandsWithAnchor(banded, (w: string) => dictOut[w]?.m ?? '', anchorLevelOf);
+  const { levels: adjusted, report } = adjustBandsWithAnchor(banded, (w: string) => dictOut[w]?.m ?? '', anchorLevelOf);
   writeAnchorReport('ko', report, path.join(__dirname, 'reports'));
+
+  // Last word goes to the hand-pinned list — greetings and politeness formulas the corpora
+  // structurally cannot rank. Applied after the anchor so pinning bypasses both signals.
+  const sizeBefore = adjusted[1].length;
+  const overridden = applyCoreOverrides('ko', adjusted, (w: string) => !!dictOut[w]?.m);
+  reportCoreOverrides(overridden, sizeBefore);
+  const levels = overridden.levels;
 
   const vocab: Record<string, { reading: string; meaning: string }> = {};
   for (const { level } of TOPIK_BANDS) {

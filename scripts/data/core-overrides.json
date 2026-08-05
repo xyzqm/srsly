@@ -1,0 +1,32 @@
+{
+  "_readme": "Headwords pinned to level 1 (A1 / TOPIK 1) regardless of what corpus frequency and the CEFR-J anchor say. These are almost all conversational: greetings, politeness formulas, yes/no and apologies. Written corpora structurally cannot rank them — Wikipedia and Global Voices never say hello — so `hola`, `bonjour` and `안녕하세요` came out at B1/B2, and multi-word ones like `por favor` and `s'il vous plaît` were never ranked at all, because the corpus tokenizer is single-token. Keep this list short and only for vocabulary whose absence from a beginner curriculum would be indefensible. Every entry must be a real dictionary headword; the build warns and skips anything that is not. See scripts/lib/coreOverrides.mjs.",
+
+  "es": [
+    "hola", "adiós", "hasta luego",
+    "buenos días", "buenas tardes", "buenas noches",
+    "por favor", "gracias", "de nada",
+    "sí", "no",
+    "perdón", "lo siento",
+    "cómo", "qué", "quién", "dónde", "cuándo", "por qué",
+    "señor", "señora"
+  ],
+
+  "fr": [
+    "bonjour", "bonsoir", "salut", "au revoir",
+    "s'il vous plaît", "merci", "de rien",
+    "oui", "non",
+    "pardon", "excusez-moi", "désolé",
+    "aimer",
+    "comment", "pourquoi", "où", "quand", "qui", "quoi",
+    "madame", "monsieur", "bienvenue"
+  ],
+
+  "ko": [
+    "안녕하세요", "안녕", "안녕히 가세요", "안녕히 계세요",
+    "감사합니다", "감사하다", "고맙다", "천만에요",
+    "네", "예", "아니요",
+    "죄송하다", "미안하다", "실례하다",
+    "반갑다", "여보세요", "괜찮다", "부탁하다",
+    "어떻게", "왜", "언제", "어디", "누구", "무엇"
+  ]
+}

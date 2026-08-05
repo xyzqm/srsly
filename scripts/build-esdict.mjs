@@ -42,6 +42,7 @@ import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
+import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -239,8 +240,15 @@ async function main() {
 
   // Second opinion from the English CEFR-J scale. Frequency decides the ordering; this only
   // trades words across a band boundary where the two disagree in opposite directions.
-  const { levels, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
+  const { levels: adjusted, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
   writeAnchorReport(LANG, report, path.join(__dirname, 'reports'));
+
+  // Last word goes to the hand-pinned list — greetings and politeness formulas the corpora
+  // structurally cannot rank. Applied after the anchor so pinning bypasses both signals.
+  const sizeBefore = adjusted[1].length;
+  const overridden = applyCoreOverrides(LANG, adjusted, w => !!dict[w]?.m);
+  reportCoreOverrides(overridden, sizeBefore);
+  const levels = overridden.levels;
 
   const vocab = {};
   for (const { level } of CEFR_BANDS) {

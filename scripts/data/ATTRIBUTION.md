@@ -36,3 +36,8 @@ Also obtained via <https://github.com/openlanguageprofiles/olp-en-cefrj>.
 
 CEFR-J covers A1–B2 only. Octanove extends the same scheme to C1/C2, and the two are
 designed to be used as one six-level scale — which is what `cefrjAnchor.mjs` builds.
+
+## core-overrides.json
+
+Not a vendored dataset — srsly's own hand-maintained list of headwords pinned to level 1.
+No third-party licence applies. See `scripts/lib/coreOverrides.mjs` for why it exists.
