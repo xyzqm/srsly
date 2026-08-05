@@ -40,11 +40,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
-import { blendedFrequency } from './lib/corpusFreq.mjs';
+import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
+import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
+const LANG = 'es';
 
 const KAIKKI_URL = 'https://kaikki.org/dictionary/Spanish/kaikki.org-dictionary-Spanish.jsonl';
 
@@ -228,14 +230,21 @@ async function main() {
     .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w));
   console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} headwords excluded as slang/vulgar/obsolete/dialectal-only)`);
 
-  const levels = {};
-  const vocab = {};
+  const banded = {};
   let cursor = 0;
   for (const { level, upTo } of CEFR_BANDS) {
-    const slice = rankedLemmas.slice(cursor, upTo);
+    banded[level] = rankedLemmas.slice(cursor, upTo);
     cursor = upTo;
-    levels[level] = slice;
-    for (const w of slice) vocab[w] = { reading: '', meaning: dict[w].m };
+  }
+
+  // Second opinion from the English CEFR-J scale. Frequency decides the ordering; this only
+  // trades words across a band boundary where the two disagree in opposite directions.
+  const { levels, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
+  writeAnchorReport(LANG, report, path.join(__dirname, 'reports'));
+
+  const vocab = {};
+  for (const { level } of CEFR_BANDS) {
+    for (const w of levels[level]) vocab[w] = { reading: '', meaning: dict[w].m };
   }
 
   const levelsPath = path.join(ROOT, 'lib', 'data', 'cefr-levels.ts');

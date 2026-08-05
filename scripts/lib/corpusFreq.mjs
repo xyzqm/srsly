@@ -211,3 +211,98 @@ export async function blendedFrequency(lang, tokenRe, opts = {}) {
   console.log(`  ${ranksByWord.size.toLocaleString()} types seen → ${rank.size.toLocaleString()} kept (in ≥2 registers; ${all.toLocaleString()} in all ${registerNames.length})`);
   return { rank, score, registers };
 }
+
+// ── CEFR-J cross-check ───────────────────────────────────────────────────────
+
+/**
+ * Nudge the frequency bands using the English CEFR-J anchor (scripts/lib/cefrjAnchor.mjs).
+ *
+ * WHY SWAPS ACROSS A BOUNDARY, RATHER THAN REASSIGNING EACH WORD
+ * The anchor has a large systematic bias: measured over the current bands its net pull is
+ * about -3,400 levels for Spanish and -3,100 for French — it thinks almost everything is
+ * easier than we banded it. That is structural, not an error: CEFR-J plus Octanove is
+ * 8,845 English headwords weighted heavily toward A1–B2, so a genuinely C1 Spanish word
+ * with a plain English gloss ("to gather") anchors at A2. Moving every word to its anchor,
+ * or even one step toward it, would empty the upper bands into the lower ones.
+ *
+ * Swapping pairs across a boundary cancels that bias by construction. A uniform pull is a
+ * no-op — if everything in B1 wants to be A2, nothing moves, because there is nothing
+ * coming the other way to trade with. Only RELATIVE disagreement moves a word: a B1 word
+ * whose gloss looks A1 trades places with an A2 word whose gloss looks B2. That also keeps
+ * every band exactly the size the curriculum expects, and makes the ±1 limit a structural
+ * property rather than something to check for afterwards — a word can only ever cross one
+ * boundary, and is locked once it has.
+ *
+ * WHY A DISAGREEMENT OF ONE LEVEL IS IGNORED
+ * `minDisagreement` defaults to 2. At 1 the anchor fires on noise and demotes core
+ * vocabulary: `algo` ("something, anything; rather, somewhat") reads A2, `bueno` reads A2,
+ * `trabajar` reads A2 — all of them unarguably A1 Spanish, all of them dropped out of A1 on
+ * a one-level difference. The signal worth acting on is a word frequency put in A1 whose
+ * translations look B1, not one that looks A2. Two levels is where the anchor stops being a
+ * coin-flip about English register and starts being evidence.
+ *
+ * @param {Record<number, string[]>} levels   band → words, in frequency order
+ * @param {(word: string) => string} glossOf  the dictionary gloss for a word
+ * @param {(gloss: string) => number|null} anchorLevelOf  from cefrjAnchor.mjs
+ * @param {number} [minDisagreement=2]  how far the anchor must differ before it is acted on
+ * @returns {{ levels: Record<number, string[]>, report: object }}
+ */
+export function adjustBandsWithAnchor(levels, glossOf, anchorLevelOf, minDisagreement = 2) {
+  const bandNums = Object.keys(levels).map(Number).sort((a, b) => a - b);
+
+  /** word → { band, rank (global, for restoring order), anchor } */
+  const info = new Map();
+  let rank = 0;
+  for (const b of bandNums) {
+    for (const w of levels[b]) info.set(w, { band: b, rank: rank++, anchor: anchorLevelOf(glossOf(w)) });
+  }
+
+  const members = new Map(bandNums.map(b => [b, new Set(levels[b])]));
+  const locked = new Set();
+  const moves = [];
+
+  for (let i = 0; i < bandNums.length - 1; i++) {
+    const b = bandNums[i], next = bandNums[i + 1];
+
+    // Words sitting in `b` whose gloss reads harder than `b` — candidates to move down.
+    // Nearest the boundary first: those are the ones frequency was least sure about.
+    // `anchor !== null` is load-bearing, not defensive: null coerces to 0 in the arithmetic
+    // below, so an UNANCHORED word reads as "easier than A1" and gets promoted into the
+    // beginner band on no evidence whatsoever. That is how `blanca` ("minim, half note")
+    // and `ca` ("initialism of corriente alterna") reached Spanish A1.
+    const down = [...members.get(b)]
+      .filter(w => !locked.has(w) && info.get(w).anchor !== null && info.get(w).anchor - b >= minDisagreement)
+      .sort((x, y) => (info.get(y).anchor - info.get(x).anchor) || (info.get(y).rank - info.get(x).rank));
+
+    // Words in `next` whose gloss reads easier — candidates to move up.
+    const up = [...members.get(next)]
+      .filter(w => !locked.has(w) && info.get(w).anchor !== null && next - info.get(w).anchor >= minDisagreement)
+      .sort((x, y) => (info.get(x).anchor - info.get(y).anchor) || (info.get(x).rank - info.get(y).rank));
+
+    const k = Math.min(down.length, up.length);
+    for (let j = 0; j < k; j++) {
+      const d = down[j], u = up[j];
+      members.get(b).delete(d);   members.get(next).add(d);
+      members.get(next).delete(u); members.get(b).add(u);
+      locked.add(d); locked.add(u);
+      moves.push({ word: d, from: b, to: next, anchor: info.get(d).anchor, gloss: glossOf(d) });
+      moves.push({ word: u, from: next, to: b, anchor: info.get(u).anchor, gloss: glossOf(u) });
+    }
+  }
+
+  // Rebuild each band in frequency order, so the only thing that changed is membership.
+  const out = {};
+  for (const b of bandNums) {
+    out[b] = [...members.get(b)].sort((x, y) => info.get(x).rank - info.get(y).rank);
+  }
+
+  const anchored = [...info.values()].filter(v => v.anchor !== null).length;
+  return {
+    levels: out,
+    report: {
+      total: info.size,
+      anchored,
+      moves: moves.sort((a, b) => a.from - b.from || a.word.localeCompare(b.word)),
+    },
+  };
+}

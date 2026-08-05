@@ -40,11 +40,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
-import { blendedFrequency } from './lib/corpusFreq.mjs';
+import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
+import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
+const LANG = 'fr';
 
 const KAIKKI_URL = 'https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl';
 
@@ -183,6 +185,13 @@ async function main() {
       const clean = cleanGloss(g);
       if (!clean) continue;
       if (/^(inflection|plural|feminine|masculine) of /i.test(clean)) continue;
+      // Contractions are headwords in French Wiktionary — `j'ai` is glossed "compound of je
+      // and ai", `c'est` "contraction of ce + est". Keeping them traps the lemmatizer: its
+      // first test is "is this surface already a headword?", so `j'ai` stopped at itself
+      // with a grammar note for a definition and never linked to the `avoir` card. Dropping
+      // the sense lets the proclitic peel and resolve. `aujourd'hui` and `d'accord` are
+      // ordinary headwords, not contractions, so they match neither pattern and survive.
+      if (/^(contraction|compound) of /i.test(clean)) continue;
       // Per-sense, so `mercado` keeps "market" and loses only "a locative surname".
       if (isNameSense(clean)) continue;
       const restricted = (s.tags ?? []).some(t => RESTRICTED_TAGS.has(t))
@@ -246,14 +255,21 @@ async function main() {
     .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w));
   console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} headwords excluded as slang/vulgar/obsolete/dialectal-only)`);
 
-  const levels = {};
-  const vocab = {};
+  const banded = {};
   let cursor = 0;
   for (const { level, upTo } of CEFR_BANDS) {
-    const slice = rankedLemmas.slice(cursor, upTo);
+    banded[level] = rankedLemmas.slice(cursor, upTo);
     cursor = upTo;
-    levels[level] = slice;
-    for (const w of slice) vocab[w] = { reading: '', meaning: dict[w].m };
+  }
+
+  // Second opinion from the English CEFR-J scale. Frequency decides the ordering; this only
+  // trades words across a band boundary where the two disagree in opposite directions.
+  const { levels, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
+  writeAnchorReport(LANG, report, path.join(__dirname, 'reports'));
+
+  const vocab = {};
+  for (const { level } of CEFR_BANDS) {
+    for (const w of levels[level]) vocab[w] = { reading: '', meaning: dict[w].m };
   }
 
   const levelsPath = path.join(ROOT, 'lib', 'data', 'fr-levels.ts');

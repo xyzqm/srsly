@@ -43,7 +43,8 @@ import { fileURLToPath } from 'url';
 import { lemmatizeKo, type LemmaDict } from '../lib/server/koreanLemmatizer.ts';
 import { emitData } from './lib/emitData.mjs';
 import { isNameSense } from './lib/nameFilter.mjs';
-import { blendedFrequency } from './lib/corpusFreq.mjs';
+import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
+import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
 import { isNonStandardSense, isExcludedHeadword, isMetalinguisticGloss } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -144,7 +145,11 @@ async function main() {
       if (!g) continue;
       const clean = cleanGloss(g);
       if (!clean) continue;
-      if (/^(alternative|hanja|synonym) (form|spelling) of /i.test(clean)) continue;
+      // `nonstandard` matters as much as the rest: Wiktionary lists 해다 as a "nonstandard
+      // form of 하다", and keeping it made the lemmatizer stop there — so 했습니다, 했어요 and
+      // 해요, forms of the single most common verb in the language, all resolved to a
+      // pseudo-headword glossed as a pointer instead of to 하다 itself.
+      if (/^(alternative|hanja|synonym|nonstandard) (form|spelling) of /i.test(clean)) continue;
       // Per-sense name filter, matching es/fr. CONTENT_POS above already drops pos:'name'.
       if (isNameSense(clean)) continue;
       // Korean Wiktionary also lists many CONJUGATED forms as headwords in their own right,
@@ -235,15 +240,24 @@ async function main() {
     console.log(`  only ${ranked.length} ranked headwords available — scaling bands by ${scale.toFixed(2)}`);
   }
 
-  const levels: Record<number, string[]> = {};
-  const vocab: Record<string, { reading: string; meaning: string }> = {};
+  const banded: Record<number, string[]> = {};
   let cursor = 0;
   for (const { level, upTo } of TOPIK_BANDS) {
     const end = Math.round(upTo * scale);
-    const slice = ranked.slice(cursor, end);
+    banded[level] = ranked.slice(cursor, end);
     cursor = end;
-    levels[level] = slice;
-    for (const w of slice) vocab[w] = { reading: '', meaning: dictOut[w].m };
+  }
+
+  // Same English cross-check as es/fr. TOPIK 1–6 and CEFR A1–C2 are different scales, but
+  // both are six-point ORDINAL difficulty scales and the swap only ever compares a word's
+  // anchor against its own band — no absolute equivalence between the two is claimed, and
+  // none is needed, since a uniform offset between the scales cancels out in a trade.
+  const { levels, report } = adjustBandsWithAnchor(banded, (w: string) => dictOut[w]?.m ?? '', anchorLevelOf);
+  writeAnchorReport('ko', report, path.join(__dirname, 'reports'));
+
+  const vocab: Record<string, { reading: string; meaning: string }> = {};
+  for (const { level } of TOPIK_BANDS) {
+    for (const w of levels[level]) vocab[w] = { reading: '', meaning: dictOut[w].m };
   }
 
   const levelsPath = path.join(ROOT, 'lib', 'data', 'topik-levels.ts');

@@ -41,6 +41,14 @@ const FORM_DOMINANT_LEMMAS = new Set([
 ]);
 
 /**
+ * Surfaces the rule above must NOT claim, because the non-verb reading is the common one
+ * even though the verb is high-frequency. `puis` is the everyday adverb "then"; `je puis`
+ * for "je peux" is literary and rare, so resolving `puis` to `pouvoir` mislabels almost
+ * every occurrence a learner will meet.
+ */
+const FORM_DOMINANT_EXCEPTIONS = new Set(['puis']);
+
+/**
  * Proclitics that elide onto the following word: l'eau, d'accord, j'ai, qu'il, n'est.
  * Splitting on the apostrophe is only safe when the prefix is one of these — plenty of
  * ordinary French words contain an apostrophe of their own (aujourd'hui, presqu'île), and
@@ -122,9 +130,14 @@ function stripElision(word: string, dict: LemmaDict): string | undefined {
   const prefix = word.slice(0, at);
   const rest = word.slice(at + 1);
   if (!rest || !ELIDED_PROCLITICS.has(prefix)) return undefined;
+  const restMapped = FR_FORMS[rest];
+  // The remainder gets the same dominant-verb treatment the whole word would have got.
+  // Without this, `n'est` peels to `est` and stops there because `est` is a headword —
+  // the noun meaning "east". It is "is not", so it has to reach `être`.
+  if (restMapped && FORM_DOMINANT_LEMMAS.has(restMapped)) return restMapped;
   if (dict.has(rest)) return rest;
   // The remainder may itself be inflected — j'ai → ai → avoir.
-  return FR_FORMS[rest] ?? applySuffixRules(rest, dict);
+  return restMapped ?? applySuffixRules(rest, dict);
 }
 
 /**
@@ -140,7 +153,7 @@ export function lemmatizeFr(word: string, dict: LemmaDict): string | undefined {
 
   // A form of one of the very high-frequency verbs wins outright, even against a
   // homographic noun — see FORM_DOMINANT_LEMMAS.
-  if (mapped && FORM_DOMINANT_LEMMAS.has(mapped)) {
+  if (mapped && FORM_DOMINANT_LEMMAS.has(mapped) && !FORM_DOMINANT_EXCEPTIONS.has(lower)) {
     return mapped === lower ? undefined : mapped;
   }
 
