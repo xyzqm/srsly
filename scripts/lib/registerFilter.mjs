@@ -98,7 +98,10 @@ export function isLexicalPos(pos) {
  */
 export function isMetalinguisticGloss(gloss) {
   return /^(?:the\s+)?(?:\w+\s+)?letter of the\b/i.test(gloss)
-    || /^(?:abbreviation|initialism|acronym|misspelling|contraction|symbol|romanization|alternative spelling|alternative form|obsolete spelling) (?:of|for)\b/i.test(gloss);
+    || /^(?:abbreviation|initialism|acronym|misspelling|contraction|symbol|romanization|alternative spelling|alternative form|obsolete spelling|apocopic form|clipping) (?:of|for)\b/i.test(gloss)
+    // "only used in acerca de" — Wiktionary's marker for a bound fragment. `acerca` is not a
+    // word a learner can use; its corpus frequency belongs to the phrase `acerca de`.
+    || /^only used in\b/i.test(gloss);
 }
 
 /**

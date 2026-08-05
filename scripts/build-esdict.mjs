@@ -42,7 +42,7 @@ import { emitData } from './lib/emitData.mjs';
 import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
-import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
+import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -220,6 +220,59 @@ async function main() {
   const offRegister = new Set();
   for (const [word, cands] of senses) if (isExcludedHeadword(cands)) offRegister.add(word);
 
+  /**
+   * Surfaces whose corpus frequency belongs to a DIFFERENT word they are spelled like.
+   *
+   * Spanish frequency is counted over raw lowercased surfaces, so a surface that is mostly
+   * an inflection of something else gets credited to whatever homograph the dictionary
+   * happens to gloss. That produced genuinely wrong A1 cards — not merely redundant ones:
+   * `haya` ranked on haber's subjunctive and was taught as "beech tree", `partes` on the
+   * plural of `parte` and taught as "genitalia", `alta` as "certificate of discharge",
+   * `segunda` as "second gear", `nueva` as "news", `era` as "threshing floor".
+   *
+   * French needs none of this — Lexique gives POS-disambiguated lemma frequencies, so the
+   * count on `porte` is the noun's and never the verb's.
+   *
+   * Three conditions, all required, each earning its place against a 37-word labelled set:
+   *
+   *   1. HIGH-FREQUENCY LEMMA. Only a very common paradigm generates enough count on one
+   *      form to band it. Without this, `viaje` and `apoyo` were lost to `viajar`/`apoyar`.
+   *   2. SMALL RANK GAP. If `casa` were merely "he/she marries" it could not be 37× more
+   *      frequent than `casar` itself; that gap proves it is its own word. Every correct
+   *      keep sits at ≥10.8×, every correct drop below 2.9×.
+   *   3. UNRELATED GLOSSES. `trabajo`/`trabajar` both say "work", so the card is right even
+   *      though the ranks are neighbours — that is a deverbal noun, not a homograph. This
+   *      is the condition that separates a redundant entry from a WRONG one, and only the
+   *      wrong ones are worth deleting.
+   */
+  const COLLISION_LEMMA_TOP = 800;   // lemma must be at least this frequent
+  const COLLISION_RATIO = 5;         // …and within this factor of the form
+  const GLOSS_STOP = new Set(['a', 'an', 'the', 'of', 'to', 'in', 'on', 'for', 'with', 'or',
+    'and', 'be', 'is', 'it', 'that', 'something', 'someone', 'used', 'as', 'by', 'at', 'from',
+    'one', 'act', 'make', 'made', 'person', 'who', 'which', 'not']);
+
+  /** Content words of a gloss's primary sense, for a crude relatedness test. */
+  const glossTerms = (g) => new Set(String(g ?? '').toLowerCase().split(';')[0]
+    .replace(/\([^)]*\)/g, '').split(/[,\s]+/)
+    .map(t => t.replace(/^to$/, '').trim())
+    .filter(t => t.length > 2 && !GLOSS_STOP.has(t)));
+
+  const sharesMeaning = (a, b) => {
+    const B = glossTerms(dict[b]?.m);
+    for (const t of glossTerms(dict[a]?.m)) if (B.has(t)) return true;
+    return false;
+  };
+
+  const collidesWithLemma = (w) => {
+    const lemma = forms.get(w);
+    if (!lemma) return false;
+    const rw = freqRank.get(w), rl = freqRank.get(lemma);
+    if (!rw || !rl) return false;                       // lemma unranked → surface stands alone
+    if (rl > COLLISION_LEMMA_TOP) return false;         // 1
+    if (rl / rw >= COLLISION_RATIO) return false;       // 2
+    return !sharesMeaning(w, lemma);                    // 3
+  };
+
   const rankedLemmas = [...freqRank.entries()]
     .sort((a, b) => a[1] - b[1])
     .map(([w]) => w)
@@ -228,8 +281,10 @@ async function main() {
     // Wiktionary also lists `casa` as a form of `casar`, `agua` of `aguar`, `libro` of
     // `librar` and `gracias` as the plural of `gracia`. `dict[w]` is the correct test on
     // its own: it is only populated from LEMMA senses, so a pure inflection never has one.
-    .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w) && isBandableLength(w, LANG));
-  console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} headwords excluded as slang/vulgar/obsolete/dialectal-only)`);
+    .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w) && isBandableLength(w, LANG)
+              && !collidesWithLemma(w));
+  const collided = [...freqRank.keys()].filter(w => dict[w] && collidesWithLemma(w)).length;
+  console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} excluded as slang/vulgar/obsolete/dialectal-only, ${collided} as inflections sharing a lemma's frequency)`);
 
   const banded = {};
   let cursor = 0;
@@ -243,10 +298,13 @@ async function main() {
   const { levels: adjusted, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
   writeAnchorReport(LANG, report, path.join(__dirname, 'reports'));
 
-  // Last word goes to the hand-pinned list — greetings and politeness formulas the corpora
-  // structurally cannot rank. Applied after the anchor so pinning bypasses both signals.
-  const sizeBefore = adjusted[1].length;
-  const overridden = applyCoreOverrides(LANG, adjusted, w => !!dict[w]?.m);
+  // Then the two hand-set lists, after the anchor so both bypass it. Demote first, pin
+  // second, so pinning wins if a word ever appears in both.
+  const demoted = applyDemotions(LANG, adjusted, w => !!dict[w]?.m);
+  reportDemotions(demoted);
+
+  const sizeBefore = demoted.levels[1].length;
+  const overridden = applyCoreOverrides(LANG, demoted.levels, w => !!dict[w]?.m);
   reportCoreOverrides(overridden, sizeBefore);
   const levels = overridden.levels;
 

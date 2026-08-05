@@ -46,7 +46,7 @@ import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { lexiqueRanking } from './lib/lexique.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
-import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
+import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -254,10 +254,14 @@ async function main() {
   const { levels: adjusted, report } = adjustBandsWithAnchor(banded, w => dict[w]?.m ?? '', anchorLevelOf);
   writeAnchorReport(LANG, report, path.join(__dirname, 'reports'));
 
-  // Last word goes to the hand-pinned list — greetings and politeness formulas the corpora
-  // structurally cannot rank. Applied after the anchor so pinning bypasses both signals.
-  const sizeBefore = adjusted[1].length;
-  const overridden = applyCoreOverrides(LANG, adjusted, w => !!dict[w]?.m);
+  // Then the two hand-set lists, after the anchor so both bypass it. Demote first, pin
+  // second: pinning is the more explicit statement, so it gets the final say if a word
+  // ever appears in both lists.
+  const demoted = applyDemotions(LANG, adjusted, w => !!dict[w]?.m);
+  reportDemotions(demoted);
+
+  const sizeBefore = demoted.levels[1].length;
+  const overridden = applyCoreOverrides(LANG, demoted.levels, w => !!dict[w]?.m);
   reportCoreOverrides(overridden, sizeBefore);
   const levels = overridden.levels;
 
