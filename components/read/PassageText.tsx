@@ -8,6 +8,8 @@ import { lookupReadingAsync } from '@/lib/data/lookup';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { pickReading, type ReadingHint } from '@/lib/readings';
+import { needsSpaceBefore } from '@/lib/tokenText';
+import GlossText from '@/components/shared/GlossText';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
 function findCompoundHints(token: PassageToken, sentence: Sentence, tokenIdx: number): CompoundHint[] {
@@ -63,6 +65,8 @@ interface Props {
   restoredClozeGrades?: Map<string, ClozeGradeEntry>;
   /** When false, hides underlines and collapses inter-word spacing so the user practices word segmentation. */
   showWordBoundaries?: boolean;
+  /** Per-word sense that applies in THIS passage, keyed by word — see DailyPassage. */
+  contextualMeanings?: Record<string, string>;
 }
 
 function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBoundaries, reserveGap, onClick }: {
@@ -142,30 +146,11 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
   );
 }
 
-/**
- * Punctuation that OPENS something and therefore takes a space before it but none after —
- * Spanish's inverted marks plus the usual brackets and quotes.
- */
-const OPENING_PUNCT = new Set(['¿', '¡', '«', '(', '[', '{', '“', '‘']);
-
-/**
- * Whether a space should be rendered before token `ti`. Unspaced scripts (zh, ja) never get
- * one — their tokens butt together the way the script is actually written. Spaced scripts
- * get a space between words, but not before closing punctuation and not after an opening
- * mark, so `¿Dónde está la biblioteca?` comes out with its marks tight against the words.
- */
-function needsSpaceBefore(tokens: PassageToken[], ti: number, scriptIsUnspaced: boolean): string {
-  if (scriptIsUnspaced || ti === 0) return '';
-  const token = tokens[ti];
-  const prev = tokens[ti - 1];
-  if (token.type === 'punct' && !OPENING_PUNCT.has(token.text)) return '';
-  if (prev.type === 'punct' && OPENING_PUNCT.has(prev.text)) return '';
-  return ' ';
-}
-
-function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
+function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade, onWordClick }: {
   token: PassageToken;
   showHint: boolean;
+  /** The sense of this word that applies in this sentence, if the generator found one. */
+  contextualMeaning?: string;
   onGrade: (correct: boolean) => void;
   initialGrade?: { correct: boolean };
   onWordClick?: (e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => void;
@@ -235,8 +220,12 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
             bottom: 'calc(100% + 6px)',
             left: '50%',
             transform: 'translateX(-50%)',
-            whiteSpace: 'nowrap',
+            whiteSpace: 'normal',
+            maxWidth: 260,
+            width: 'max-content',
+            textAlign: 'center',
             fontSize: 10,
+            lineHeight: 1.45,
             fontFamily: 'var(--f-mono)',
             color: 'var(--ink-soft)',
             background: 'var(--card)',
@@ -249,7 +238,7 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
             transition: 'opacity .12s',
           }}
         >
-          {token.meaning}
+          <GlossText gloss={token.meaning} contextual={contextualMeaning} highlightColor="var(--accent)" />
         </span>
       )}
       {/* Real-time prefix-match overlay: green for matching prefix, red for mismatches/extra */}
@@ -303,7 +292,7 @@ function ClozeBlank({ token, showHint, onGrade, initialGrade, onWordClick }: {
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true, contextualMeanings }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -456,6 +445,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     <ClozeBlank
                       token={token}
                       showHint={showClozeHints ?? true}
+                      contextualMeaning={contextualMeanings?.[reviewKey] ?? contextualMeanings?.[token.text]}
                       onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
                       initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
                       onWordClick={openTokenPopup}

@@ -123,6 +123,21 @@ export interface DailyPassage {
   sentences: Sentence[];
   vocabWords: string[];   // hanzi of the words targeted by this passage
   questions?: Question[];
+  /**
+   * Which dictionary sense each target word carries IN THIS PASSAGE, keyed by the word.
+   *
+   * A dictionary gloss is often several senses joined by ';' ("to want, wish, desire; to
+   * expect; to think"), and dumping all of them into a hint tells the learner nothing about
+   * the sentence in front of them. The generator picks the one that applies and returns it
+   * here; the hint highlights it and dims the rest.
+   *
+   * A side-channel keyed by word rather than a per-token field, because for ja/es/ko/fr the
+   * model writes plain prose and the segmenting happens server-side afterwards — there is no
+   * per-token slot for it to annotate. The cost is per-occurrence precision: a word used
+   * twice with different senses gets one entry. Absent, or absent for a given word, means
+   * "no single sense applies" and the full gloss is shown unhighlighted.
+   */
+  contextualMeanings?: Record<string, string>;
 }
 
 /** AI-generated daily practice content, cached in localStorage per day+level. */

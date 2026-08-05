@@ -307,7 +307,7 @@ function collectVocabWords(
 }
 
 function buildPassage(
-  rawPassage: { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[] },
+  rawPassage: { title: RawTok[]; sentences: RawTok[][]; questions?: unknown[]; contextualMeanings?: Record<string, string> },
   vocabWords: string[],
   dueSet: Set<string>,
   deckReadings: Map<string, ReadingHint[]>,
@@ -320,6 +320,7 @@ function buildPassage(
     sentences: buildSentences(rawPassage.sentences, dueSet, deckReadings, lang),
     vocabWords,
     questions: aiQs,
+    contextualMeanings: rawPassage.contextualMeanings,
   };
 }
 

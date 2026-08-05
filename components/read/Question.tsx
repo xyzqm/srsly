@@ -1,11 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { Question as Q, FRResponse, ResponseMode } from '@/lib/types';
 import type { FsrsGrade } from '@/lib/fsrs';
 import { speak } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { getLanguageConfig } from '@/lib/languageConfig';
+import { needsSpaceBefore, tokensToText } from '@/lib/tokenText';
 import { useLanguage } from '@/lib/LanguageContext';
 import type { ReadingHint } from '@/lib/readings';
 
@@ -25,6 +27,7 @@ interface Props {
 
 export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, onMcGrade }: Props) {
   const language = useLanguage();
+  const { scriptIsUnspaced } = getLanguageConfig(language);
   // MC state
   const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
   const [mcDone, setMcDone]             = useState(false);
@@ -41,7 +44,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
   const claimKind = (text: string) =>
     (vocabClaimed.has(text) && deckWords?.has(text)) ? 'vocab' as const : null;
 
-  const questionText = question.q.map(t => t.text).join('');
+  const questionText = tokensToText(question.q, scriptIsUnspaced);
 
   // ─── MC handler ────────────────────────────────────────────────────────────
   function handleMcClick(oi: number, isCorrect: boolean) {
@@ -139,7 +142,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
             {index + 1}.
           </span>
           {question.q.map((t, i) => (
-            <ClickableWord key={i} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />
+            <Fragment key={i}>{needsSpaceBefore(question.q, i, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t.text)} /></Fragment>
           ))}
         </div>
       </div>
@@ -191,7 +194,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
                   }}
                 >
                   {opt.tokens.map((t, ti) => (
-                    <ClickableWord key={ti} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />
+                    <Fragment key={ti}>{needsSpaceBefore(opt.tokens, ti, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t.text)} /></Fragment>
                   ))}
                 </div>
               </div>

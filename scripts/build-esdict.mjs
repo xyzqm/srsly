@@ -37,6 +37,7 @@ import { createInterface } from 'readline';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { emitData } from './lib/emitData.mjs';
+import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -151,6 +152,8 @@ async function main() {
     if (e.lang_code !== 'es' || typeof e.word !== 'string') continue;
     const word = e.word.trim();
     if (!word || !LETTER_RE.test(word)) continue;
+    // Proper nouns are not vocabulary — see scripts/lib/nameFilter.mjs.
+    if (isNamePos(e.pos)) continue;
     const lower = word.toLowerCase();
 
     for (const s of e.senses ?? []) {
@@ -173,6 +176,8 @@ async function main() {
       const clean = cleanGloss(g);
       if (!clean) continue;
       if (/^(inflection|plural|feminine|masculine) of /i.test(clean)) continue;
+      // Per-sense, so `mercado` keeps "market" and loses only "a locative surname".
+      if (isNameSense(clean)) continue;
       const restricted = (s.tags ?? []).some(t => RESTRICTED_TAGS.has(t))
         // A sense tagged with a country/region (e.g. "Chile") is regional even though the
         // tag itself is not in the list above; such tags are capitalised.

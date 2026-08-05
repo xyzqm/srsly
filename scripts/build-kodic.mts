@@ -40,6 +40,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { lemmatizeKo, type LemmaDict } from '../lib/server/koreanLemmatizer.ts';
 import { emitData } from './lib/emitData.mjs';
+import { isNameSense } from './lib/nameFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -149,6 +150,8 @@ async function main() {
       const clean = cleanGloss(g);
       if (!clean) continue;
       if (/^(alternative|hanja|synonym) (form|spelling) of /i.test(clean)) continue;
+      // Per-sense name filter, matching es/fr. CONTENT_POS above already drops pos:'name'.
+      if (isNameSense(clean)) continue;
       // Korean Wiktionary also lists many CONJUGATED forms as headwords in their own right,
       // glossed as e.g. "informal polite declarative of 모르다". Those are not vocabulary —
       // and worse, keeping them makes the lemmatizer stop at 몰라요 instead of resolving it

@@ -411,8 +411,23 @@ Generate a JSON object with EXACTLY this structure:
 
 PASSAGE = {
   "title": "WORDS",
-  "sentences": ["WORDS", "WORDS", ...]
+  "sentences": ["WORDS", "WORDS", ...],
+  "contextualMeanings": { "<word>": "<the one matching segment, copied verbatim>" }
 }
+
+CONTEXTUAL MEANINGS — this is what makes the hints useful, so read it carefully:
+Each word in WORDS above is listed with its dictionary definition. That definition is often
+SEVERAL senses joined by semicolons, e.g. "to want, wish, desire; to expect; to think".
+For each word you used, decide which single segment matches how YOU used it in this passage,
+and copy that segment EXACTLY as written — same words, same order, no rewording, no trailing
+punctuation. It must be a character-for-character copy of one semicolon-separated segment.
+  - Omit the word entirely (or map it to null) when several segments apply equally, when the
+    segments all mean essentially the same thing, or when the definition has only one segment.
+  - The map holds ONE sense per word for the whole passage. So if you used a word in two
+    different senses (e.g. "livre" as both "book" and "pound"), omit it — a single entry
+    would mislabel the other occurrence. Only list a word whose sense is consistent throughout.
+  - Never invent a meaning that is not already in the definition string.
+Use {} if there is nothing worth marking.
 Example of a single correctly-formatted sentence string:
   "${exampleSentence}"
   ${words.length > 0 ? 'Use ALL the words above naturally in a coherent story or description' : 'Write a coherent story or description'} (${sentenceCount}–${sentenceCount + 2} sentences).
@@ -596,9 +611,31 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     return [canonical, map.get(canonical)?.p ?? tok[1] ?? ''];
   }
 
+  /**
+   * Keep only entries whose value is VERBATIM one semicolon-separated segment of that word's
+   * own dictionary gloss. The model is told to copy a segment exactly; anything it reworded
+   * or invented is dropped rather than shown, since the hint highlights by string match and
+   * a near-miss would simply fail to highlight while implying we had an answer.
+   */
+  function cleanContextualMeanings(raw: unknown): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const [word, sense] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof sense !== 'string' || !sense.trim()) continue;   // null = "no single sense"
+      const gloss = inputMap.get(word)?.m;
+      if (!gloss) continue;
+      const segments = gloss.split(';').map(x => x.trim()).filter(Boolean);
+      if (segments.length < 2) continue;                          // nothing to disambiguate
+      const match = segments.find(seg => seg.toLowerCase() === sense.trim().toLowerCase());
+      if (match) out[word] = match;
+    }
+    return out;
+  }
+
   async function expandPassage(p: Record<string, unknown>, map: Map<string, { p: string; m: string }>) {
     const qs = Array.isArray(p.questions) ? p.questions : [];
     return {
+      contextualMeanings: cleanContextualMeanings(p.contextualMeanings),
       title: await expandTokens(p.title, map),
       sentences: await Promise.all((Array.isArray(p.sentences) ? p.sentences : []).map(s => expandTokens(s, map))),
       questions: await Promise.all(qs.map(async q => {

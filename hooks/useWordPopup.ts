@@ -41,7 +41,12 @@ export function useWordPopup(
   const closePopup = useCallback(() => setPopup(null), []);
 
   const openPopup = useCallback((e: React.MouseEvent, token: PassageToken) => {
-    if (!token.reading) return;
+    // "reading OR meaning", never reading alone. This gate is what kept the lookup popup
+    // from ever opening in the extra modes (fill-in-the-blank, conversation, questions):
+    // Spanish, Korean and French have no reading layer at all, so every token failed it,
+    // and in Chinese any token whose pinyin didn't resolve was dead too. PassageText's own
+    // handler uses the same test — the two must agree or Read and Extras behave differently.
+    if (token.type === 'punct' || !(token.reading || token.meaning)) return;
     e.stopPropagation();
     e.nativeEvent.stopImmediatePropagation();
     // Capture the anchor rect synchronously before anything async happens.

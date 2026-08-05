@@ -4,8 +4,10 @@ import type { DeckWord, ConvoTurn, PassageToken } from '@/lib/types';
 import { speak } from '@/lib/speech';
 import { useMic } from '@/hooks/useSpeech';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { useLanguage } from '@/lib/LanguageContext';
+import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { groupReadings } from '@/lib/readings';
-import { todayStr } from '@/lib/deck';
+import { todayStr, isDueToday } from '@/lib/deck';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import ConvoReport from './ConvoReport';
@@ -41,17 +43,35 @@ const SpeakerIcon = () => (
 );
 
 export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns }: Props) {
+  const language = useLanguage();
+  const ui = uiStrings(language);
   const ACTIVE_CONVO = turns ?? [];
   // Use a ref so showTutor always reads the current conversation without
   // needing to be recreated whenever ACTIVE_CONVO reference changes.
   const activeConvoRef = useRef(ACTIVE_CONVO);
   activeConvoRef.current = ACTIVE_CONVO;
 
-  // Only show today's SRS-due words in the scorecard
+  // The scorecard tracks the words THIS conversation was generated around — each turn's
+  // `key` list — intersected with the deck, mirroring how ReadTab scopes its cloze blanks
+  // to the passage's own target words.
+  //
+  // It previously counted every due card, which meant a 500-word import showed "0 / 500":
+  // a card with no `dueAt` counts as due, so "the due queue" and "the whole deck" are the
+  // same set right after an import. The session only ever practises a handful of words, so
+  // the denominator has to come from the generated content, not the queue.
   const TARGET_WORDS = useMemo(() => {
     const today = todayStr();
-    return deck.filter(w => !w.dueAt || w.dueAt <= today).map(d => d.h);
-  }, [deck]);
+    const inDeckAndDue = new Set(
+      deck.filter(w => isDueToday(w, today)).map(d => d.h),
+    );
+    const fromTurns = new Set<string>();
+    for (const turn of ACTIVE_CONVO) {
+      for (const k of turn.key ?? []) if (inDeckAndDue.has(k)) fromTurns.add(k);
+    }
+    // Before the conversation loads there are no turns; fall back to the due set so the
+    // scorecard isn't briefly "0 / 0".
+    return fromTurns.size > 0 ? [...fromTurns] : [...inDeckAndDue];
+  }, [deck, ACTIVE_CONVO]);
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
   const deckReadings = useMemo(() => groupReadings(deck), [deck]);
   const { popup, openPopup, closePopup, handleAddVocab, vocabClaimed } = useWordPopup(onAddVocab, deckWords, deckReadings);
@@ -160,7 +180,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
   if (deck.length === 0) {
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
           Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
@@ -173,7 +193,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
   if (ACTIVE_CONVO.length === 0) {
     return (
       <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
           No conversation generated yet.
         </p>
@@ -188,7 +208,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
     }, null);
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.caughtUp), color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.caughtUp}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>All caught up!</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
           No words are due for conversation practice today.
@@ -387,7 +407,7 @@ export default function Conversation({ onScore, deck, onAddVocab, onGrade, turns
           value={inputVal}
           onChange={e => setInputVal(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) sendTyped(); }}
-          placeholder={listening ? 'Edit or press Send →' : 'Type your reply in Chinese…'}
+          placeholder={listening ? 'Edit or press Send →' : ui.replyPlaceholder}
           className="flex-1 rounded-[10px] px-4 py-3 transition-all duration-150"
           style={{
             fontFamily: 'var(--f-han)', fontSize: 16, background: 'var(--card)',

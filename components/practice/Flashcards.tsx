@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
+import { useLanguage } from '@/lib/LanguageContext';
+import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { isDueToday, isActive, todayStr } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
@@ -59,6 +61,8 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
 ];
 
 export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, cram = false }: Props) {
+  const language = useLanguage();
+  const ui = uiStrings(language);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
   useEffect(() => { setSettings(getSrsSettings()); }, []);
 
@@ -171,7 +175,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
   if (deck.length === 0) {
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
           Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
@@ -191,7 +195,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     }, null);
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.caughtUp), color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.caughtUp}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>
           {hiddenByLimit > 0 ? "That's your limit for today" : 'All caught up!'}
         </h3>
@@ -219,7 +223,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     const dueNow  = deck.filter(w => isDueToday(w)).length;
     return (
       <div className="text-center py-10">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 60, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>完</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.complete), color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.complete}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 8 }}>Session complete.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 4px' }}>
           {okCount} / {total} recalled

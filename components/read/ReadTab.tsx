@@ -740,6 +740,7 @@ export default function ReadTab({ onScore, onRequireSignIn, studyScope, onExitSt
             onClozeAnswer={handleClozeAnswer}
             restoredClozeGrades={clozeGrades}
             showWordBoundaries={showWordBoundaries}
+            contextualMeanings={currentPassage?.contextualMeanings}
           />
 
           <LookupSummary

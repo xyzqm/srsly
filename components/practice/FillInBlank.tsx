@@ -1,11 +1,15 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import { Fragment, useState, useMemo, useEffect } from 'react';
 import type { DeckWord } from '@/lib/types';
 import type { FillItem } from '@/lib/types';
 import { speak, speakWithBlank } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
+import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
+import { needsSpaceBefore, tokensToText } from '@/lib/tokenText';
 import { groupReadings } from '@/lib/readings';
 import { isDueToday, todayStr } from '@/lib/deck';
 
@@ -33,6 +37,9 @@ interface ItemState {
 }
 
 export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, loading }: Props) {
+  const language = useLanguage();
+  const ui = uiStrings(language);
+  const { scriptIsUnspaced } = getLanguageConfig(language);
   const activeItems = items ?? [];
   const itemsKey = activeItems.map(it => it.answer[0]).join(',');
 
@@ -62,7 +69,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
   if (deck.length === 0) {
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
           Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
@@ -76,7 +83,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
   if (dueToday.length === 0) {
     return (
       <div className="text-center py-14">
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>好</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.caughtUp), color: 'var(--jade)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.caughtUp}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No vocab due today.</h3>
         <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
           All your words are scheduled for future review. Come back tomorrow!
@@ -89,7 +96,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
   if (loading) {
     return (
       <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-        <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>填</div>
+        <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.generating), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.generating}</div>
         <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
           Generating fill-in-the-blank for your due words…
         </p>
@@ -101,7 +108,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
   if (activeItems.length === 0) {
     return (
       <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-        <div style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>空</div>
+        <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
           No fill-in-the-blank items yet.
         </p>
@@ -171,8 +178,8 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
 
       {shuffledItems.map((item, idx) => {
         const state = itemStates[idx];
-        const beforeText = item.before.map(t => t.text).join('');
-        const afterText  = item.after.map(t => t.text).join('');
+        const beforeText = tokensToText(item.before, scriptIsUnspaced);
+        const afterText  = tokensToText(item.after, scriptIsUnspaced);
         const fullText   = beforeText + item.answer[0] + afterText;
 
         const blankColor = state?.resolved
@@ -193,7 +200,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
                 </svg>
               </button>
               <div style={{ fontFamily: 'var(--f-han)', fontSize: 21, lineHeight: 1.9, fontWeight: 'var(--han-weight)' as 'bold' }}>
-                {item.before.map((t, i) => <ClickableWord key={`b${i}`} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />)}
+                {item.before.map((t, i) => <Fragment key={`b${i}`}>{needsSpaceBefore(item.before, i, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t.text)} /></Fragment>)}
                 <span
                   className="inline-block text-center mx-1 px-1"
                   style={{
@@ -209,7 +216,7 @@ export default function FillInBlank({ onDone, deck, onAddVocab, onGrade, items, 
                 >
                   {state?.resolved ? item.answer[0] : '＿＿'}
                 </span>
-                {item.after.map((t, i) => <ClickableWord key={`a${i}`} token={t} onOpen={openPopup} claimKind={claimKind(t.text)} />)}
+                {item.after.map((t, i) => <Fragment key={`a${i}`}>{needsSpaceBefore(item.after, i, scriptIsUnspaced) || (i === 0 && !scriptIsUnspaced ? ' ' : '')}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t.text)} /></Fragment>)}
               </div>
             </div>
 
