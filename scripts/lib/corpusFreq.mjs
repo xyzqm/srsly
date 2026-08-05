@@ -227,6 +227,20 @@ export async function blendedFrequency(lang, tokenRe, opts = {}) {
  * translations look B1, not one that looks A2. Two levels is where the anchor stops being a
  * coin-flip about English register and starts being evidence.
  *
+ * …EXCEPT AT THE ENDS OF THE SCALE, WHERE THE ANCHOR CANNOT SHOUT LOUDER
+ * A two-level rule silently freezes the outermost boundaries. Moving a word UP into A1
+ * would need an anchor of "A1 minus one", and there is no such level; moving one DOWN into
+ * C2 would need "C2 plus one". So A1↔A2 and C1↔C2 had no candidates on one side, `k` was
+ * always 0, and nothing ever crossed. For Spanish that went unnoticed, because its bands
+ * come from a three-register blend that already had A1 about right. French exposed it: it
+ * ranks off Lexique, whose two registers are film subtitles and books — BOTH narrative
+ * fiction, which agree with each other about drama — so A1 filled with `souffrir`, `arme`
+ * and `âme`, and the anchor was powerless to move them.
+ *
+ * An anchor sitting ON the floor is already disagreeing as hard as it can express. So a
+ * saturated anchor (A1 when moving up, C2 when moving down) counts as sufficient
+ * disagreement on its own. The rule is unchanged everywhere in the middle.
+ *
  * @param {Record<number, string[]>} levels   band → words, in frequency order
  * @param {(word: string) => string} glossOf  the dictionary gloss for a word
  * @param {(gloss: string) => number|null} anchorLevelOf  from cefrjAnchor.mjs
@@ -235,6 +249,14 @@ export async function blendedFrequency(lang, tokenRe, opts = {}) {
  */
 export function adjustBandsWithAnchor(levels, glossOf, anchorLevelOf, minDisagreement = 2) {
   const bandNums = Object.keys(levels).map(Number).sort((a, b) => a - b);
+  const floor = bandNums[0], ceiling = bandNums[bandNums.length - 1];
+
+  /** Does the anchor say this word is harder than band `b` — clearly, or as hard as it can say? */
+  const wantsHarder = (anchor, b) =>
+    anchor !== null && anchor > b && (anchor - b >= minDisagreement || anchor === ceiling);
+  /** …and the mirror, for a word the anchor says is easier than band `b`. */
+  const wantsEasier = (anchor, b) =>
+    anchor !== null && anchor < b && (b - anchor >= minDisagreement || anchor === floor);
 
   /** word → { band, rank (global, for restoring order), anchor } */
   const info = new Map();
@@ -257,12 +279,12 @@ export function adjustBandsWithAnchor(levels, glossOf, anchorLevelOf, minDisagre
     // beginner band on no evidence whatsoever. That is how `blanca` ("minim, half note")
     // and `ca` ("initialism of corriente alterna") reached Spanish A1.
     const down = [...members.get(b)]
-      .filter(w => !locked.has(w) && info.get(w).anchor !== null && info.get(w).anchor - b >= minDisagreement)
+      .filter(w => !locked.has(w) && wantsHarder(info.get(w).anchor, b))
       .sort((x, y) => (info.get(y).anchor - info.get(x).anchor) || (info.get(y).rank - info.get(x).rank));
 
     // Words in `next` whose gloss reads easier — candidates to move up.
     const up = [...members.get(next)]
-      .filter(w => !locked.has(w) && info.get(w).anchor !== null && next - info.get(w).anchor >= minDisagreement)
+      .filter(w => !locked.has(w) && wantsEasier(info.get(w).anchor, next))
       .sort((x, y) => (info.get(x).anchor - info.get(y).anchor) || (info.get(x).rank - info.get(y).rank));
 
     const k = Math.min(down.length, up.length);
