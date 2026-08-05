@@ -29,13 +29,12 @@ function set(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/** Cache key for daily content, scoped by language + proficiency level + study deck + date. */
-function dailyKey(lang: LanguageCode, level: number, deck: string | undefined, date: string): string {
-  const d = deck && deck.trim() ? deck.trim() : 'all';
-  return `srsly-daily-${lang}-${level}-${d}-${date}`;
+/** Cache key for daily content, scoped by language + proficiency level + date. */
+function dailyKey(lang: LanguageCode, level: number, date: string): string {
+  return `srsly-daily-${lang}-${level}-${date}`;
 }
 
-/** Storage key for per-passage cloze state. contentKey = "${date}|${language}|${level}|${deck}". */
+/** Storage key for per-passage cloze state. contentKey = "${date}|${language}|${level}". */
 function clozeStateKey(contentKey: string, passageIdx: number): string {
   return `srsly-cloze|${contentKey}|${passageIdx}`;
 }
@@ -85,12 +84,12 @@ export class LocalStorage implements DataService {
     set(KEYS.claimed, claimed);
   }
 
-  async getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null> {
+  async getDailyContent(lang: LanguageCode, level: number): Promise<DailyContent | null> {
     const today = todayStr();
-    return get<DailyContent | null>(dailyKey(lang, level, deck, today), null);
+    return get<DailyContent | null>(dailyKey(lang, level, today), null);
   }
   async saveDailyContent(content: DailyContent): Promise<void> {
-    set(dailyKey(content.language ?? 'zh', content.hskLevel, content.deck, content.date), content);
+    set(dailyKey(content.language ?? 'zh', content.hskLevel, content.date), content);
     // Prune stale per-day localStorage entries: daily content, passage index, passage-finished
     // flags, and cloze state. All keyed with the date so we can compare against today.
     const today = content.date;

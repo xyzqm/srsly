@@ -43,7 +43,7 @@ import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { blendedFrequency, adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
 import { applyCoreOverrides, reportCoreOverrides } from './lib/coreOverrides.mjs';
-import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss } from './lib/registerFilter.mjs';
+import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -253,7 +253,7 @@ async function main() {
     // Wiktionary also lists `casa` as a form of `casar`, `agua` of `aguar`, `libro` of
     // `librar` and `gracias` as the plural of `gracia`. `dict[w]` is the correct test on
     // its own: it is only populated from LEMMA senses, so a pure inflection never has one.
-    .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w));
+    .filter(w => dict[w] && lexical.has(w) && !offRegister.has(w) && isBandableLength(w, LANG));
   console.log(`  ${rankedLemmas.length} band-eligible lemmas (${offRegister.size} headwords excluded as slang/vulgar/obsolete/dialectal-only)`);
 
   const banded = {};

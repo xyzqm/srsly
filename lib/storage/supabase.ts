@@ -101,7 +101,7 @@ export class SupabaseStorage implements DataService {
   // Ephemeral / per-device — never synced.
   getClaimedWords(): Promise<ClaimedWords> { return this.local.getClaimedWords(); }
   saveClaimedWords(claimed: ClaimedWords): Promise<void> { return this.local.saveClaimedWords(claimed); }
-  getDailyContent(lang: LanguageCode, level: number, deck?: string): Promise<DailyContent | null> { return this.local.getDailyContent(lang, level, deck); }
+  getDailyContent(lang: LanguageCode, level: number): Promise<DailyContent | null> { return this.local.getDailyContent(lang, level); }
   saveDailyContent(content: DailyContent): Promise<void> { return this.local.saveDailyContent(content); }
 
   async getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null> {

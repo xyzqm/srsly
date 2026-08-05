@@ -8,12 +8,11 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { todayStr, dateInDays, deckNames, inSelectedDecks, decksSignature, isDueToday, isActive } from '@/lib/deck';
+import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
-import DeckSelector from '@/components/shared/DeckSelector';
 
 const UNDO_DURATION_MS = 5000;
 
@@ -41,7 +40,7 @@ function dueLabel(w: DeckWord, today: string): string | null {
 
 type PendingUndo =
   | { kind: 'single'; word: DeckWord }
-  | { kind: 'clear';  count: number; decks: string[] | null }; // null = delete all; [...] = untag these decks
+  | { kind: 'clear';  count: number };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -331,22 +330,16 @@ function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
 interface CardManageProps {
   word: DeckWord;
   today: string;
-  deckOptions: string[];
   onPause: (paused: boolean) => void;
   onSnooze: () => void;
   onUnsnooze: () => void;
   onReschedule: (date: string) => void;
   onReset: () => void;
-  onAddDeck: (deck: string) => void;
-  onRemoveDeck: (deck: string) => void;
   onRelease?: () => void;
   onClose: () => void;
 }
 
-function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onAddDeck, onRemoveDeck, onRelease, onClose }: CardManageProps) {
-  const [addingDeck, setAddingDeck] = useState(false);
-  const [deckDraft, setDeckDraft] = useState('');
-  const wordDecks = word.decks ?? [];
+function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, onReset, onRelease, onClose }: CardManageProps) {
   const snoozed = !!word.snoozeUntil && word.snoozeUntil > today;
   const status =
     word.pool ? 'In pool'
@@ -402,35 +395,6 @@ function CardManage({ word, today, deckOptions, onPause, onSnooze, onUnsnooze, o
             style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)' }}
           />
         </label>
-        {/* Decks — a word can belong to several at once; chips remove, the input adds. */}
-        <div className="inline-flex items-center gap-1.5 flex-wrap" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '4px 6px' }}>
-          <span style={{ marginRight: 1 }}>Decks</span>
-          {wordDecks.map(d => (
-            <span key={d} className="inline-flex items-center gap-1" style={{ background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 5, padding: '2px 4px 2px 7px' }}>
-              {d}
-              <button onClick={() => onRemoveDeck(d)} title={`Remove from ${d}`} className="cursor-pointer" style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
-            </span>
-          ))}
-          {wordDecks.length === 0 && !addingDeck && <span style={{ color: 'var(--ink-faint)' }}>none</span>}
-          {addingDeck ? (
-            <input
-              autoFocus
-              list="srsly-deck-names"
-              value={deckDraft}
-              placeholder="deck name"
-              onChange={e => setDeckDraft(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') { onAddDeck(deckDraft); setDeckDraft(''); setAddingDeck(false); }
-                if (e.key === 'Escape') { setDeckDraft(''); setAddingDeck(false); }
-              }}
-              onBlur={() => { if (deckDraft.trim()) onAddDeck(deckDraft); setDeckDraft(''); setAddingDeck(false); }}
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--paper-2)', border: '1px solid var(--accent)', borderRadius: 5, outline: 'none', color: 'var(--ink)', width: '11ch', padding: '1px 5px' }}
-            />
-          ) : (
-            <button onClick={() => setAddingDeck(true)} title="Add to a deck" className="cursor-pointer" style={{ background: 'none', border: '1px dashed var(--line)', color: 'var(--ink-faint)', borderRadius: 5, padding: '2px 6px', fontSize: 11 }}>+</button>
-          )}
-          <datalist id="srsly-deck-names">{deckOptions.map(d => <option key={d} value={d} />)}</datalist>
-        </div>
         {actBtn('Reset progress', onReset, 'danger')}
         <div className="ml-auto">{actBtn('Close', onClose, 'ghost')}</div>
       </div>
@@ -476,94 +440,19 @@ function CrossFade({ id, children }: { id: string; children: React.ReactNode }) 
   );
 }
 
-// ─── Bulk "add visible words to a deck" ───────────────────────────────────────
-// Lets you tag everything currently shown into another deck (e.g. AP Chinese → Food,
-// or All → AP Chinese) without leaving the view.
-
-function AddToDeckButton({ count, options, onAdd }: {
-  count: number;
-  options: string[]; // decks the words aren't already all in
-  onAdd: (name: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false); }
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
-  }, [open]);
-
-  if (count === 0) return null;
-
-  return (
-    <div ref={ref} className="ml-auto" style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="cursor-pointer transition-all duration-150"
-        style={{
-          fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
-          background: 'none', color: 'var(--accent)',
-          border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
-          borderRadius: 7, padding: '5px 11px',
-        }}
-      >
-        + Add {count} to deck ▾
-      </button>
-      {open && (
-        <div className="vocab-menu" style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 30,
-          minWidth: 160, background: 'var(--card)', border: '1px solid var(--line)',
-          borderRadius: 9, boxShadow: '0 8px 28px rgba(0,0,0,.14)', padding: 4, transformOrigin: 'top right',
-        }}>
-          {options.map(d => (
-            <button key={d} onClick={() => { onAdd(d); setOpen(false); }}
-              className="cursor-pointer" style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                fontFamily: 'var(--f-mono)', fontSize: 11.5, background: 'none', color: 'var(--ink)',
-                border: 'none', borderRadius: 6, padding: '7px 9px',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-            >
-              {d}
-            </button>
-          ))}
-          <button
-            onClick={() => { const n = window.prompt('New deck name'); if (n && n.trim()) onAdd(n.trim()); setOpen(false); }}
-            className="cursor-pointer" style={{
-              display: 'block', width: '100%', textAlign: 'left',
-              fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)',
-              background: 'none', border: 'none', borderTop: options.length ? '1px solid var(--line-soft)' : 'none',
-              borderRadius: 6, padding: '7px 9px', marginTop: options.length ? 2 : 0,
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--paper-2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-          >
-            + New deck…
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 interface VocabTabProps {
-  /** Launch a focused, session-only study session scoped to these decks (routes to Practice).
-   *  'flash' reviews due cards; 'cram' drills the whole deck ignoring due dates. */
-  onStudyDeck: (decks: string[], mode: 'flash' | 'cram') => void;
+  /** Hand off to the Practice tab. 'flash' reviews what is due; 'cram' drills the whole
+   *  deck ignoring due dates. */
+  onStudy: (mode: 'flash' | 'cram') => void;
 }
 
-export default function VocabTab({ onStudyDeck }: VocabTabProps) {
+export default function VocabTab({ onStudy }: VocabTabProps) {
   const language = useLanguage();
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
-    addWordToDeck, removeWordFromDeck, addWordsToDeck,
-    resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck, releaseFromPool,
+    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool,
   } = useVocabDeck(language);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -572,62 +461,6 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
   const today = todayStr();
-
-  // BROWSE-ONLY deck filter — scopes this management list only. It deliberately does NOT
-  // touch study state (Read/Practice always pull the global queue unless you hit "Study this
-  // deck"). Kept local + ephemeral: starts at "all decks" each visit. null = all · [] = none.
-  const [studyDecks, setStudyDecks] = useState<string[] | null>(null);
-  const [customDecks, setCustomDecks] = useState<string[]>([]);
-  const [addingDeck, setAddingDeck] = useState(false);
-  const [newDeckName, setNewDeckName] = useState('');
-  useEffect(() => { storage.getPrefs().then(p => setCustomDecks(p.decks ?? [])); }, []);
-
-  const changeStudyDecks = useCallback((next: string[] | null) => setStudyDecks(next), []);
-
-  // The one specific deck when exactly one real deck is selected (else null). Drives
-  // single-deck affordances: import tagging, delete-deck, "add to THIS deck" defaults.
-  const singleDeck = studyDecks && studyDecks.length === 1 && studyDecks[0] ? studyDecks[0] : null;
-  // Real decks (drop the '' default) currently filtered to — the target of "Study this deck".
-  const browsingDecks = (studyDecks ?? []).filter(Boolean);
-
-  // All deck names = explicitly-created decks ∪ decks derived from words.
-  const allDeckNames = useMemo(
-    () => [...new Set([...customDecks, ...deckNames(deck)])].sort((a, b) => a.localeCompare(b)),
-    [customDecks, deck],
-  );
-
-  // Decks the Study/Cram buttons target: the explicit browse selection, or — when nothing
-  // specific is selected but the whole collection is a single deck — that one deck (so you
-  // can always Study/Cram it; the selector collapses "the only deck" to "all"). Empty when
-  // "all" is selected across multiple decks, since that's just the global queue.
-  const studyTargetDecks = browsingDecks.length ? browsingDecks
-    : allDeckNames.length === 1 ? allDeckNames
-    : [];
-  const studyTargetLabel = studyTargetDecks.length === 1 ? studyTargetDecks[0] : `${studyTargetDecks.length} decks`;
-
-  // Persist the explicit deck-name list (so empty decks survive a reload) and set the local
-  // browse selection. The selection itself is not persisted — it's a browse filter.
-  const saveDeckState = useCallback((names: string[], selected: string[] | null) => {
-    setCustomDecks(names);
-    setStudyDecks(selected);
-    storage.getPrefs().then(p => storage.savePrefs({ ...p, decks: names.length ? names : undefined }));
-  }, []);
-
-  const createDeck = useCallback((raw: string) => {
-    const name = raw.trim();
-    setAddingDeck(false);
-    setNewDeckName('');
-    if (!name) return;
-    const names = allDeckNames.includes(name) ? customDecks : [...customDecks, name];
-    saveDeckState(names, [name]); // select just the new deck
-  }, [allDeckNames, customDecks, saveDeckState]);
-
-  const deleteDeck = useCallback(async (name: string) => {
-    if (!name) return;
-    if (!window.confirm(`Delete the deck “${name}”? Its words stay in your collection but lose this deck tag.`)) return;
-    await clearWordsDeck(name);
-    saveDeckState(customDecks.filter(d => d !== name), null); // back to all decks
-  }, [clearWordsDeck, customDecks, saveDeckState]);
 
   // ── Unified undo state ──────────────────────────────────────────────────────
   const [pendingUndo, setPendingUndo] = useState<PendingUndo | null>(null);
@@ -639,12 +472,10 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   // Keep fresh refs so timer closures never go stale
   const removeWordRef     = useRef(removeWord);
   const clearDeckRef      = useRef(clearDeck);
-  const clearWordsDeckRef = useRef(clearWordsDeck);
   const pendingUndoRef    = useRef<PendingUndo | null>(null);
   const deckRef           = useRef(deck);
   useEffect(() => { removeWordRef.current     = removeWord;     }, [removeWord]);
   useEffect(() => { clearDeckRef.current      = clearDeck;      }, [clearDeck]);
-  useEffect(() => { clearWordsDeckRef.current = clearWordsDeck; }, [clearWordsDeck]);
   useEffect(() => { pendingUndoRef.current    = pendingUndo;    }, [pendingUndo]);
   useEffect(() => { deckRef.current           = deck;          }, [deck]);
 
@@ -669,11 +500,8 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
     if (pending.kind === 'single') {
       const idx = deck.findIndex(w => w.id === pending.word.id);
       if (idx !== -1) removeWordRef.current(idx);
-    } else if (pending.decks) {
-      // scoped clear — untag each selected deck (cards stay in your collection)
-      pending.decks.forEach(d => clearWordsDeckRef.current(d));
     } else {
-      clearDeckRef.current(); // all decks → delete everything
+      clearDeckRef.current();
     }
   }, [deck]);
 
@@ -703,23 +531,11 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
 
   const handleRemove  = useCallback((word: DeckWord) => startUndo({ kind: 'single', word }), [startUndo]);
   const handleClearAll = useCallback(() => {
-    // Scope the clear to the selected deck(s). "All decks" deletes the cards outright;
-    // a specific deck selection only removes those deck tags (cards stay).
-    const scoped = deck.filter(w => inSelectedDecks(w, studyDecks));
-    const count = scoped.length;
+    const count = deck.length;
     if (count === 0) return;
-    const isAll = studyDecks == null;
-    const realDecks = isAll ? null : studyDecks.filter(Boolean); // drop the '' default
-    if (!isAll && (!realDecks || realDecks.length === 0)) return; // nothing to untag (default-only)
-    const where = realDecks
-      ? (realDecks.length === 1 ? `the “${realDecks[0]}” deck` : `${realDecks.length} decks`)
-      : '';
-    const msg = isAll
-      ? `Delete all ${count} words from your collection? You'll have 5 seconds to undo.`
-      : `Remove all ${count} words from ${where}? They stay in your collection. 5 seconds to undo.`;
-    if (!window.confirm(msg)) return;
-    startUndo({ kind: 'clear', count, decks: realDecks });
-  }, [deck, studyDecks, startUndo]);
+    if (!window.confirm(`Delete all ${count} words from your deck? You'll have 5 seconds to undo.`)) return;
+    startUndo({ kind: 'clear', count });
+  }, [deck, startUndo]);
 
   // Clean up on unmount — cancel animation frame, and COMMIT any pending deletion
   // so switching tabs before the timer expires still removes the word.
@@ -731,8 +547,6 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
     if (pending.kind === 'single') {
       const idx = deckRef.current.findIndex(w => w.id === pending.word.id);
       if (idx !== -1) removeWordRef.current(idx);
-    } else if (pending.decks) {
-      pending.decks.forEach(d => clearWordsDeckRef.current(d));
     } else {
       clearDeckRef.current();
     }
@@ -742,31 +556,23 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   const displayDeck = useMemo(() => {
     if (!pendingUndo) return deck;
     if (pendingUndo.kind === 'single') return deck.filter(w => w.id !== pendingUndo.word.id);
-    // pending clear — hide words in the cleared decks (or everything for an all-decks clear)
-    if (pendingUndo.decks) return deck.filter(w => !inSelectedDecks(w, pendingUndo.decks));
-    return [];
+    return []; // pending clear — the whole deck is on its way out
   }, [deck, pendingUndo]);
-
-  // Scope to the selected deck(s) first, then apply the focus/paused/snoozed chip filter.
-  const deckScoped = useMemo(
-    () => displayDeck.filter(w => inSelectedDecks(w, studyDecks)),
-    [displayDeck, studyDecks],
-  );
   const isNewCard = (w: DeckWord) => !w.pool && (w.reviews ?? 0) === 0 && w.stability === undefined;
   const chipFiltered = useMemo(() => {
     switch (filter) {
-      case 'due':       return deckScoped.filter(w => isDueToday(w, today));
-      case 'soon':      { const lim = dateInDays(7); return deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= lim && isActive(w, today)); }
-      case 'new':       return deckScoped.filter(isNewCard);
-      case 'pool':      return deckScoped.filter(w => !!w.pool);
-      case 'focus':     return deckScoped.filter(w => w.focus);
-      case 'forgotten': return deckScoped.filter(w => (w.lapses ?? 0) > 0);
-      case 'leech':     return deckScoped.filter(w => w.leech);
-      case 'paused':    return deckScoped.filter(w => w.paused);
-      case 'snoozed':   return deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today);
-      default:          return deckScoped;
+      case 'due':       return displayDeck.filter(w => isDueToday(w, today));
+      case 'soon':      { const lim = dateInDays(7); return displayDeck.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= lim && isActive(w, today)); }
+      case 'new':       return displayDeck.filter(isNewCard);
+      case 'pool':      return displayDeck.filter(w => !!w.pool);
+      case 'focus':     return displayDeck.filter(w => w.focus);
+      case 'forgotten': return displayDeck.filter(w => (w.lapses ?? 0) > 0);
+      case 'leech':     return displayDeck.filter(w => w.leech);
+      case 'paused':    return displayDeck.filter(w => w.paused);
+      case 'snoozed':   return displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today);
+      default:          return displayDeck;
     }
-  }, [deckScoped, filter, today]);
+  }, [displayDeck, filter, today]);
 
   // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(() => {
@@ -778,17 +584,17 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   const counts = useMemo(() => {
     const soonLim = dateInDays(7);
     return ({
-    due:       deckScoped.filter(w => isDueToday(w, today)).length,
-    soon:      deckScoped.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= soonLim && isActive(w, today)).length,
-    new:       deckScoped.filter(isNewCard).length,
-    pool:      deckScoped.filter(w => !!w.pool).length,
-    focus:     deckScoped.filter(w => w.focus).length,
-    forgotten: deckScoped.filter(w => (w.lapses ?? 0) > 0).length,
-    leech:     deckScoped.filter(w => w.leech).length,
-    paused:    deckScoped.filter(w => w.paused).length,
-    snoozed:   deckScoped.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
+    due:       displayDeck.filter(w => isDueToday(w, today)).length,
+    soon:      displayDeck.filter(w => !!w.dueAt && w.dueAt > today && w.dueAt <= soonLim && isActive(w, today)).length,
+    new:       displayDeck.filter(isNewCard).length,
+    pool:      displayDeck.filter(w => !!w.pool).length,
+    focus:     displayDeck.filter(w => w.focus).length,
+    forgotten: displayDeck.filter(w => (w.lapses ?? 0) > 0).length,
+    leech:     displayDeck.filter(w => w.leech).length,
+    paused:    displayDeck.filter(w => w.paused).length,
+    snoozed:   displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
     });
-  }, [deckScoped, today]);
+  }, [displayDeck, today]);
 
   // ── Other handlers ──────────────────────────────────────────────────────────
   // A single word typed in by hand is due today (you added it deliberately to study now).
@@ -799,9 +605,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
 
   // Bulk imports go to the pool — words stay inactive until explicitly released into circulation.
   async function handleBulkImport(words: Array<{ h: string; p: string; m: string }>) {
-    // Staged in the pool AND tagged with the deck you're focused on (only when exactly one
-    // deck is selected); existing words just gain the tag (no dupes). Otherwise untagged.
-    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, pool: true })), singleDeck ?? undefined);
+    await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, pool: true })));
     setShowImport(false);
   }
 
@@ -817,7 +621,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
   };
 
   // Show clear button only when there are words and no full-deck clear is pending
-  const showClearBtn = !showAdd && deckScoped.length > 0 && pendingUndo?.kind !== 'clear';
+  const showClearBtn = !showAdd && displayDeck.length > 0 && pendingUndo?.kind !== 'clear';
 
   return (
     <div
@@ -831,51 +635,22 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <span style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>Word deck</span>
-            {allDeckNames.length > 0 && (
-              <DeckSelector deck={deck} customDecks={customDecks} selected={studyDecks} onChange={changeStudyDecks} />
-            )}
-            {addingDeck ? (
-              <input
-                autoFocus
-                value={newDeckName}
-                onChange={e => setNewDeckName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') createDeck(newDeckName); if (e.key === 'Escape') { setAddingDeck(false); setNewDeckName(''); } }}
-                onBlur={() => createDeck(newDeckName)}
-                placeholder="deck name"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--paper-2)', border: '1px solid var(--accent)', borderRadius: 7, padding: '5px 9px', color: 'var(--ink)', outline: 'none', width: 130 }}
-              />
-            ) : (
-              <button onClick={() => { setAddingDeck(true); setNewDeckName(''); }} style={btnGhost} title="Create a new deck">
-                + New deck
-              </button>
-            )}
-            {singleDeck && !addingDeck && (
-              <button
-                onClick={() => deleteDeck(singleDeck)}
-                style={{ ...btnGhost }}
-                title={`Delete deck ${singleDeck}`}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-faint)'; }}
-              >
-                Delete deck
-              </button>
-            )}
-            {studyTargetDecks.length > 0 && !addingDeck && (
+            {deck.length > 0 && (
               <>
                 <button
-                  onClick={() => onStudyDeck(studyTargetDecks, 'flash')}
+                  onClick={() => onStudy('flash')}
                   className="cursor-pointer transition-all duration-150"
-                  title="Review this deck's due cards in a focused session"
+                  title="Review the cards that are due"
                   style={{
                     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
                     background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
                     padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
                   }}
                 >
-                  ▸ Study {studyTargetLabel}
+                  ▸ Study
                 </button>
                 <button
-                  onClick={() => onStudyDeck(studyTargetDecks, 'cram')}
+                  onClick={() => onStudy('cram')}
                   className="cursor-pointer transition-all duration-150"
                   title="Drill the whole deck now, ignoring due dates (doesn't change scheduling)"
                   style={{
@@ -885,17 +660,13 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                     padding: '6px 13px',
                   }}
                 >
-                  ⚡ Cram {studyTargetLabel}
+                  ⚡ Cram
                 </button>
               </>
             )}
           </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
-            {deckScoped.length} word{deckScoped.length === 1 ? '' : 's'}
-            {singleDeck ? <> in <strong>{singleDeck}</strong></>
-              : studyDecks == null ? ' in your deck'
-              : studyDecks.length === 0 ? ' — no decks selected'
-              : <> in <strong>{studyDecks.filter(Boolean).length} decks</strong></>}
+            {displayDeck.length} word{displayDeck.length === 1 ? '' : 's'} in your deck
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -944,11 +715,11 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
       </div>
 
       {showAdd && (
-        <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} deckOptions={allDeckNames} defaultDeck={singleDeck ?? ''} />
+        <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
       )}
 
       {showImport && (
-        <ImportPanel deck={deck} studyDeck={singleDeck ?? ''} onImport={handleBulkImport} onCancel={() => setShowImport(false)} />
+        <ImportPanel deck={deck} onImport={handleBulkImport} onCancel={() => setShowImport(false)} />
       )}
 
       {!showImport && <div style={{ borderTop: '1px solid var(--line-soft)' }}>
@@ -962,7 +733,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
         )}
 
         {/* Search — text + is:/lapses>/deck: filters */}
-        {deckScoped.length > 0 && (
+        {displayDeck.length > 0 && (
           <div className="relative pt-3">
             <input
               value={query}
@@ -991,10 +762,10 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
 
         {/* Filter chips — always shown (when the deck has words) so you can always
             switch back to the full deck, even after emptying a filtered view. */}
-        {deckScoped.length > 0 && (
+        {displayDeck.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 py-3" style={{ borderBottom: '1px solid var(--line-soft)' }}>
             {([
-              ['all', `All ${deckScoped.length}`],
+              ['all', `All ${displayDeck.length}`],
               ['due', `Due ${counts.due}`],
               ['soon', `Due soon ${counts.soon}`],
               ['new', `New ${counts.new}`],
@@ -1025,17 +796,11 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
             {filter === 'focus'   && counts.focus   > 0 && <BulkBtn label="Unfocus all"   onClick={unfocusAll} />}
             {filter === 'paused'  && counts.paused  > 0 && <BulkBtn label="Resume all"    onClick={resumeAll} />}
             {filter === 'snoozed' && counts.snoozed > 0 && <BulkBtn label="Un-snooze all" onClick={unsnoozeAll} />}
-            {/* Add everything currently shown to another deck */}
-            <AddToDeckButton
-              count={visibleDeck.length}
-              options={allDeckNames.filter(d => !(studyDecks ?? []).includes(d))}
-              onAdd={name => addWordsToDeck(visibleDeck.map(w => w.id!).filter(Boolean), name)}
-            />
           </div>
         )}
 
         {/* Cross-fade the whole list (rows + empty states) when the deck changes. */}
-        <CrossFade id={decksSignature(studyDecks) || 'all'}>
+        <CrossFade id={language}>
         {visibleDeck.map((w) => {
           // Map display index back to real deck index for editing/saving
           const realIdx = deck.findIndex(d => d.id === w.id);
@@ -1063,7 +828,6 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                     <span style={{ fontSize: 14, color: 'var(--ink)' }}>
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
                       {sdm(w.m)}
-                      {!singleDeck && w.decks?.map(d => <StatusChip key={d} label={d} />)}
                       {w.pool && <StatusChip label="pool" />}
                       {w.leech && <StatusChip label="stuck" />}
                       {w.paused && <StatusChip label="paused" />}
@@ -1116,14 +880,11 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
                     <CardManage
                       word={w}
                       today={today}
-                      deckOptions={allDeckNames}
                       onPause={(p) => setPaused(w.id!, p)}
                       onSnooze={() => snoozeWord(w.id!)}
                       onUnsnooze={() => unsnoozeWord(w.id!)}
                       onReschedule={(d) => rescheduleWord(w.id!, d)}
                       onReset={() => resetProgress(w.id!)}
-                      onAddDeck={(d) => addWordToDeck(w.id!, d)}
-                      onRemoveDeck={(d) => removeWordFromDeck(w.id!, d)}
                       onRelease={w.pool ? () => { releaseFromPool(1); setManagingId(null); } : undefined}
                       onClose={() => setManagingId(null)}
                     />
@@ -1139,14 +900,7 @@ export default function VocabTab({ onStudyDeck }: VocabTabProps) {
             Your deck is empty. Add words from the Read tab or above.
           </p>
         )}
-        {displayDeck.length > 0 && deckScoped.length === 0 && studyDecks != null && (
-          <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
-            {singleDeck
-              ? <>No words in <strong>{singleDeck}</strong> yet — add a word above (it&apos;ll default to this deck), or assign one via Manage.</>
-              : 'No words in the selected decks. Pick different decks above, or assign words via Manage.'}
-          </p>
-        )}
-        {deckScoped.length > 0 && visibleDeck.length === 0 && (
+        {displayDeck.length > 0 && visibleDeck.length === 0 && (
           <p style={{ color: 'var(--ink-faint)', fontSize: 14, padding: '24px 0', textAlign: 'center', fontStyle: 'italic' }}>
             {query.trim() ? `No words match “${query.trim()}”.` : `No ${filter === 'leech' ? 'stuck' : filter} words.`}
           </p>

@@ -44,8 +44,6 @@ function genId(): string {
 // independently. Pinyin isn't used here because the dictionary returns one reading per
 // character, so meaning is the reliable distinguisher for polyphones on import.
 function identity(w: { h: string; m: string }): string {
-  // Global: one card per (character + meaning). Decks are tags layered on top, so the
-  // same word is never duplicated across decks — it just gains another tag.
   return w.h + '\u001f' + w.m.trim();
 }
 
@@ -72,12 +70,15 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
         let nw = w;
         // Backfill stable ids (pre multi-reading support).
         if (!nw.id) { changed = true; nw = { ...nw, id: genId() }; }
-        // Migrate the legacy single `deck` string → `decks` tag array.
-        const legacy = (nw as { deck?: string }).deck;
-        if (legacy !== undefined) {
+        // Strip the retired multi-deck tags. srsly has one deck per language; the `deck`
+        // string and the `decks` array that replaced it are both dead weight now, and
+        // leaving them in localStorage would keep re-saving fields nothing reads.
+        const stale = nw as { deck?: string; decks?: string[] };
+        if (stale.deck !== undefined || stale.decks !== undefined) {
           changed = true;
-          nw = { ...nw, decks: legacy ? [legacy] : (nw.decks ?? undefined) };
+          nw = { ...nw };
           delete (nw as { deck?: string }).deck;
+          delete (nw as { decks?: string[] }).decks;
         }
         return nw;
       });
@@ -93,63 +94,34 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
     });
   }, [language]);
 
-  // Merge a deck tag into a word's `decks`, returning a new array (or the same ref if
-  // already present / no tag to add).
-  function withDeckTag(w: DeckWord, deck?: string): DeckWord {
-    if (!deck) return w;
-    if (w.decks?.includes(deck)) return w;
-    return { ...w, decks: [...(w.decks ?? []), deck] };
-  }
-
-  /**
-   * Add one word. If a card with the same (character + meaning) already exists, it's not
-   * duplicated — instead the target deck tag (if any) is merged into the existing card.
-   */
+  /** Add one word. A card with the same (character + meaning) already in the deck is left
+   *  alone rather than duplicated. */
   const addWord = useCallback(async (word: DeckWord) => {
     const cur = deckRef.current;
-    const targetDeck = word.decks?.[0];
-    const existing = cur.findIndex(d => identity(d) === identity(word));
-    if (existing !== -1) {
-      const merged = withDeckTag(cur[existing], targetDeck);
-      if (merged === cur[existing]) return; // already present in this deck — nothing to do
-      await commit(cur.map((d, i) => i === existing ? merged : d));
-      return;
-    }
+    if (cur.some(d => identity(d) === identity(word))) return;
     const withId = word.id ? word : { ...word, id: genId() };
     await commit([withId, ...cur]); // prepend so newest appears first
   }, [commit]);
 
   /**
-   * Bulk add (import) into an optional target deck. Words that already exist (by character
-   * + meaning) aren't duplicated — they just gain the target deck tag. Brand-new words are
-   * created tagged with the target deck. Dedups within the batch. One atomic save. Returns
-   * how many words were newly added OR newly tagged into the target deck.
+   * Bulk add (import). Words already in the deck (by character + meaning) are skipped
+   * rather than duplicated, and duplicates within the batch collapse. One atomic save.
+   * Returns how many words were newly added.
    */
-  const addWords = useCallback(async (words: DeckWord[], targetDeck?: string) => {
+  const addWords = useCallback(async (words: DeckWord[]) => {
     const cur = deckRef.current;
-    const byIdentity = new Map(cur.map((d, i) => [identity(d), i]));
-    const next = cur.slice();
+    const known = new Set(cur.map(identity));
     const prepend: DeckWord[] = [];
-    const batchSeen = new Set<string>();
-    let count = 0;
     for (const w of words) {
       const key = identity(w);
-      if (batchSeen.has(key)) continue;
-      batchSeen.add(key);
-      const at = byIdentity.get(key);
-      if (at !== undefined) {
-        const merged = withDeckTag(next[at], targetDeck);
-        if (merged !== next[at]) { next[at] = merged; count++; } // gained the tag
-        continue;
-      }
-      const decks = targetDeck ? [targetDeck] : undefined;
-      prepend.push({ ...w, decks, id: w.id ?? genId() });
-      count++;
+      if (known.has(key)) continue;
+      known.add(key);
+      prepend.push({ ...w, id: w.id ?? genId() });
     }
-    if (count === 0) return 0;
-    // Reverse the new cards so the batch keeps its original order once prepended newest-first.
-    await commit([...prepend.reverse(), ...next]);
-    return count;
+    if (prepend.length === 0) return 0;
+    // Reverse so the batch keeps its original order once prepended newest-first.
+    await commit([...prepend.reverse(), ...cur]);
+    return prepend.length;
   }, [commit]);
 
   const removeWord = useCallback(async (idx: number) => {
@@ -267,41 +239,6 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
     await commit(deckRef.current.map(d => d.focus ? { ...d, focus: false } : d));
   }, [commit]);
 
-  /** Add a deck tag to one word (no-op if already tagged / blank name). */
-  const addWordToDeck = useCallback((id: string, name: string) => {
-    const tag = name.trim();
-    const w = deckRef.current.find(d => d.id === id);
-    if (!tag || !w || w.decks?.includes(tag)) return Promise.resolve();
-    return patchCard(id, { decks: [...(w.decks ?? []), tag] });
-  }, [patchCard]);
-
-  /** Remove a deck tag from one word (the card stays in your collection). */
-  const removeWordFromDeck = useCallback((id: string, name: string) => {
-    const w = deckRef.current.find(d => d.id === id);
-    if (!w?.decks?.includes(name)) return Promise.resolve();
-    const next = w.decks.filter(d => d !== name);
-    return patchCard(id, { decks: next.length ? next : undefined });
-  }, [patchCard]);
-
-  /** Bulk: add a deck tag to many words at once ("add these to deck X"). */
-  const addWordsToDeck = useCallback(async (ids: string[], name: string) => {
-    const tag = name.trim();
-    if (!tag) return;
-    const set = new Set(ids);
-    await commit(deckRef.current.map(d =>
-      set.has(d.id!) && !d.decks?.includes(tag) ? { ...d, decks: [...(d.decks ?? []), tag] } : d,
-    ));
-  }, [commit]);
-
-  /** Remove a deck tag from every word that has it (empties the deck; keeps the cards). */
-  const clearWordsDeck = useCallback(async (name: string) => {
-    await commit(deckRef.current.map(d => {
-      if (!d.decks?.includes(name)) return d;
-      const next = d.decks.filter(x => x !== name);
-      return { ...d, decks: next.length ? next : undefined };
-    }));
-  }, [commit]);
-
   /** Reset a word to "new": clears FSRS scheduling/history but keeps content + focus. */
   const resetProgress = useCallback((id: string) =>
     patchCard(id, {
@@ -336,7 +273,6 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   return {
     deck, deckLoaded, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
-    addWordToDeck, removeWordFromDeck, addWordsToDeck,
-    resumeAll, unsnoozeAll, unfocusAll, clearWordsDeck, releaseFromPool,
+    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool,
   };
 }

@@ -100,3 +100,39 @@ export function isMetalinguisticGloss(gloss) {
   return /^(?:the\s+)?(?:\w+\s+)?letter of the\b/i.test(gloss)
     || /^(?:abbreviation|initialism|acronym|misspelling|contraction|symbol|romanization|alternative spelling|alternative form|obsolete spelling) (?:of|for)\b/i.test(gloss);
 }
+
+/**
+ * One-letter words that are real vocabulary, per language.
+ *
+ * Wiktionary has an entry for every letter of the alphabet ("The third letter of the
+ * Spanish alphabet"), and encyclopedic text is full of bare letters — axis labels, initials,
+ * variable names — so they clear the frequency threshold easily. `t`, `i`, `x`, `k` and `f`
+ * all reached Spanish A1/A2 that way, and `c`, `t`, `o`, `x` reached French.
+ *
+ * The letter SENSE is already excluded by isMetalinguisticGloss, but that is not enough on
+ * its own: exclusion only drops a headword when EVERY sense is excluded, and these letters
+ * carry an extra sense or two (an abbreviation, a symbol, a musical note) that survives.
+ * At one character the cost/benefit is lopsided — the handful of genuine one-letter words
+ * is small enough to simply enumerate, and everything else is noise.
+ *
+ * Languages absent from this map are NOT filtered. That is deliberate and load-bearing for
+ * Korean: a Hangul syllable is a normal-sized word, and 561 of its banded headwords are one
+ * character long — 네, 예, 왜, 이, 수, 것, 년, 일. Applying a single-character rule there
+ * would delete the core of the language.
+ */
+const SINGLE_CHAR_WORDS = {
+  es: new Set(['y', 'o', 'a', 'e', 'u']),   // and · or · to · and (before i-) · or (before o-)
+  fr: new Set(['y', 'à', 'ô']),             // there/it · to · O (vocative)
+};
+
+/**
+ * Is this headword long enough — or one of the enumerated exceptions — to be studied?
+ *
+ * @param {string} word  the headword, already lowercased
+ * @param {string} lang  language code; unknown languages are never filtered
+ */
+export function isBandableLength(word, lang) {
+  const allowed = SINGLE_CHAR_WORDS[lang];
+  if (!allowed) return true;
+  return [...word].length > 1 || allowed.has(word);
+}

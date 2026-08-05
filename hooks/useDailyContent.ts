@@ -5,7 +5,7 @@ import { storage } from '@/lib/storage';
 import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
-import { isDueToday, inSelectedDecks, decksSignature, todayStr, shuffle } from '@/lib/deck';
+import { isDueToday, todayStr, shuffle } from '@/lib/deck';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 import { defaultWordsPerPassage, getLanguageConfig } from '@/lib/languageConfig';
 
@@ -445,7 +445,6 @@ function mergeSection(
 export function useDailyContent(
   hskLevel: number,
   deck: DeckWord[],
-  studyDecks: string[] | null = null,
   want: ContentSection[] = ALL_SECTIONS,
   language: LanguageCode = 'zh',
   wordsPerPassage?: number,
@@ -460,13 +459,6 @@ export function useDailyContent(
 
   const deckRef = useRef(deck);
   deckRef.current = deck;
-  // Stable string key for the selected decks — used for the cache scope and as an effect
-  // dep (the array itself changes identity every render). A ref lets callbacks read the
-  // latest selection without re-subscribing.
-  const deckKey = decksSignature(studyDecks);
-  const studyDecksRef = useRef(studyDecks);
-  studyDecksRef.current = studyDecks;
-
   // How many due words to build each passage/fill/convo batch around. Falls back to a
   // level-scaled recommendation (harder levels support longer passages, so more words fit
   // without overwhelming the reader) when the user hasn't set an explicit preference.
@@ -495,7 +487,6 @@ export function useDailyContent(
         date: today,
         language,
         hskLevel,
-        deck: deckKey || undefined,
         passages: [],
         fillItems: [],
         conversation: [],
@@ -508,7 +499,7 @@ export function useDailyContent(
       // land in the same top group — otherwise the same overdue words keep getting bundled
       // into every passage together.
       const dueWords = shuffle(
-        currentDeck.filter(w => isDueToday(w, today) && inSelectedDecks(w, studyDecksRef.current)),
+        currentDeck.filter(w => isDueToday(w, today)),
       ).sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
@@ -519,7 +510,7 @@ export function useDailyContent(
       // Restore the FULL cached set of passages — every one the user generated today via
       // "+ new passage" persists across reloads and tab switches (the cache is date-keyed,
       // so a new day still starts fresh). Don't truncate; that's what was erasing extras.
-      const cached = await storage.getDailyContent(language, hskLevel, deckKey);
+      const cached = await storage.getDailyContent(language, hskLevel);
       if (cancelled) return;
       let base: DailyContent | null = null;
       if (cached) {
@@ -640,11 +631,11 @@ export function useDailyContent(
 
           if (cancelled) return;
 
-          const disk = await storage.getDailyContent(language, hskLevel, deckKey);
+          const disk = await storage.getDailyContent(language, hskLevel);
           if (cancelled) return;
           const diskBase = disk ? (migrateContent(disk as unknown as Record<string, unknown>) ?? content) : content;
           const merged = mergeSection(
-            { ...diskBase, date: today, language, hskLevel, deck: deckKey || undefined },
+            { ...diskBase, date: today, language, hskLevel },
             section, built, done,
           );
           await storage.saveDailyContent(merged);
@@ -669,7 +660,7 @@ export function useDailyContent(
 
     load();
     return () => { cancelled = true; };
-  }, [hskLevel, deckKey, wantKey, language]);
+  }, [hskLevel, wantKey, language]);
 
   const loadMore = useCallback(async () => {
     if (!dailyContent || loadingMore || hskLevel === 0) return;
@@ -684,7 +675,7 @@ export function useDailyContent(
       // merely appearing in an earlier passage's text isn't enough (that passage's blank may
       // still be sitting unanswered). Read each passage's persisted grades to find out which
       // due words were genuinely reviewed today.
-      const contentKey = `${dailyContent.date}|${dailyContent.language ?? 'zh'}|${dailyContent.hskLevel}|${dailyContent.deck ?? ''}`;
+      const contentKey = `${dailyContent.date}|${dailyContent.language ?? 'zh'}|${dailyContent.hskLevel}`;
       const passageStates = await Promise.all(
         dailyContent.passages.map((_, idx) => storage.getPassageState(contentKey, idx)),
       );
@@ -693,8 +684,7 @@ export function useDailyContent(
         if (!state) continue;
         for (const entry of Object.values(state)) coveredWords.add(entry.word);
       }
-      const inScope = currentDeck.filter(w => inSelectedDecks(w, studyDecksRef.current));
-      const dueWords = shuffle(inScope.filter(w => isDueToday(w, today))).sort((a, b) => {
+      const dueWords = shuffle(currentDeck.filter(w => isDueToday(w, today))).sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
       });

@@ -50,7 +50,7 @@ export class FirebaseStorage implements DataService {
   async saveClaimedWords(_claimed: ClaimedWords): Promise<void> {
     throw new Error('FirebaseStorage not yet configured');
   }
-  async getDailyContent(_lang: LanguageCode, _level: number, _deck?: string): Promise<DailyContent | null> {
+  async getDailyContent(_lang: LanguageCode, _level: number): Promise<DailyContent | null> {
     throw new Error('FirebaseStorage not yet configured');
   }
   async saveDailyContent(_content: DailyContent): Promise<void> {

@@ -6,8 +6,7 @@ import { useDailyContent } from '@/hooks/useDailyContent';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
 import { levelFor, getLanguageConfig } from '@/lib/languageConfig';
-import { inSelectedDecks, decksSignature, dateInDays } from '@/lib/deck';
-import StudyScopeBanner from '@/components/shared/StudyScopeBanner';
+import { dateInDays } from '@/lib/deck';
 import Flashcards from './Flashcards';
 import FillInBlank from './FillInBlank';
 import Conversation from './Conversation';
@@ -23,14 +22,11 @@ type CramScope = 'all' | 'focus' | 'leech' | 'forgotten' | 'soon';
 
 interface Props {
   onScore: (score: number) => void;
-  /** Ephemeral focused-study scope (from Vocab's "Study this deck"). null = global queue. */
-  studyScope: string[] | null;
-  onExitStudyScope: () => void;
   /** Mode to open in — 'flash' for review-due, 'cram' for a whole-deck drill. */
   initialMode?: PracticeMode;
 }
 
-export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initialMode = 'flash' }: Props) {
+export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
   const language = useLanguage();
   const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck(language);
   const [mode, setMode] = useState<PracticeMode>(initialMode);
@@ -46,11 +42,8 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
     });
   }, [language]);
 
-  // Practice pulls from the GLOBAL due queue by default; a focused "Study this deck"
-  // session (studyScope) temporarily narrows every mode to that deck. null = all.
-  const scopedDeck = useMemo(() => deck.filter(w => inSelectedDecks(w, studyScope)), [deck, studyScope]);
-  // Remount key so a scope change rebuilds the flashcard/cram session.
-  const deckSig = decksSignature(studyScope) || 'all';
+  // One deck per language, so practice always pulls from the whole of it.
+  const scopedDeck = deck;
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');
@@ -70,7 +63,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
     () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
     [mode],
   );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, studyScope, want, language, wordsPerPassage);
+  const { dailyContent, generating } = useDailyContent(hskLevel, deck, want, language, wordsPerPassage);
 
   // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
   // passage adds — you just encountered them in context, so the first review is the next day.
@@ -98,9 +91,6 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
-      {/* Focused-session banner (only during a "Study this deck" session) */}
-      {studyScope && <StudyScopeBanner decks={studyScope} onExit={onExitStudyScope} />}
-
       {/* Mode switcher */}
       <div className="flex justify-between items-center gap-3 mb-6 flex-wrap">
         <div className="inline-flex gap-1 p-[5px] rounded-[11px] flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
@@ -112,7 +102,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
 
       {/* A focused "Study this deck" scope is STICKY — finishing a session flows on to
           fill-in-the-blank (still scoped to the deck) and only the banner's Exit clears it. */}
-      {mode === 'flash' && <Flashcards key={`review-${deckSig}`} deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
+      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
       {mode === 'fill'  && (
         <FillInBlank
           onDone={() => setMode('convo')}
@@ -181,7 +171,7 @@ export default function ExtrasTab({ onScore, studyScope, onExitStudyScope, initi
               No words in this set.
             </div>
           ) : (
-            <Flashcards key={`cram-${cramScope}-${deckSig}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
+            <Flashcards key={`cram-${cramScope}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
           )}
         </div>
       )}

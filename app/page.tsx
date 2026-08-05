@@ -94,19 +94,13 @@ function AppShell() {
     await storage.savePrefs({ ...prefs, language: lang });
   }, []);
 
-  // Ephemeral, session-only study scope. null = the global due queue (default). Set by the
-  // Vocab tab's "Study this deck" shortcut; cleared on Exit or when a focused session ends.
-  // Deliberately NOT persisted — it's a temporary focus, not a saved preference.
-  const [studyScope, setStudyScope] = useState<string[] | null>(null);
-  // Which Practice mode to open in when a focused session launches: 'flash' = review due
-  // cards, 'cram' = drill the whole deck ignoring due dates.
+  // Which Practice mode to open in when the Vocab tab hands off: 'flash' = review what is
+  // due, 'cram' = drill the whole deck ignoring due dates.
   const [studyStartMode, setStudyStartMode] = useState<PracticeMode>('flash');
-  const startDeckStudy = useCallback((decks: string[], mode: PracticeMode) => {
-    setStudyScope(decks.length ? decks : null);
+  const startStudy = useCallback((mode: PracticeMode) => {
     setStudyStartMode(mode);
     setTab('practice');
   }, []);
-  const exitDeckStudy = useCallback(() => setStudyScope(null), []);
 
   return (
     <LanguageProvider value={language}>
@@ -123,19 +117,17 @@ function AppShell() {
             <ReadTab
               onScore={recordScore}
               onRequireSignIn={requireSignIn}
-              studyScope={studyScope}
-              onExitStudyScope={exitDeckStudy}
               onNavigateVocab={() => setTab('vocab')}
             />
           )}
           {tab === 'practice' && (
-            <ExtrasTab onScore={recordScore} studyScope={studyScope} onExitStudyScope={exitDeckStudy} initialMode={studyStartMode} />
+            <ExtrasTab onScore={recordScore} initialMode={studyStartMode} />
           )}
           {tab === 'dash' && (
             <StatsTab onNavigateRead={() => setTab('read')} />
           )}
           {tab === 'vocab' && (
-            <VocabTab onStudyDeck={startDeckStudy} />
+            <VocabTab onStudy={startStudy} />
           )}
           {tab === 'settings' && (
             <SettingsTab />

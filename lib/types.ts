@@ -30,7 +30,6 @@ export interface DeckWord {
   focus?: boolean;       // ★ user-starred "focus" word; filterable, never auto-cleared
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
-  decks?: string[];      // deck/group memberships (tags); a word can be in several at once. absent/[] = untagged ("All" only)
   leech?: boolean;       // auto-flagged after too many lapses (then auto-paused; re-suspends periodically)
   pool?: boolean;        // staged — added to deck but not yet in circulation; excluded from all review
 }
@@ -102,11 +101,6 @@ export interface UserPrefs {
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
   wordsPerPassage?: number;  // vocab words to build each AI passage around; absent = level-based recommendation
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
-  studyDeck?: string;    // LEGACY single-deck selection; migrated to studyDecks on load. absent/'' = all
-  // Decks selected for the learning modes (read / fill / flashcards / conversation / cram).
-  // '' represents the default (untagged) deck. Absent or empty array = all decks.
-  studyDecks?: string[];
-  decks?: string[];      // explicitly-created deck names (so empty decks persist)
 }
 
 export interface ClaimedWords {
@@ -157,9 +151,6 @@ export interface DailyContent {
   // generation: each block is generated independently the first time its tab/mode
   // is opened, and merged into this cache. Absent = legacy cache (see migrateContent).
   sections?: { passage?: boolean; fill?: boolean; convo?: boolean };
-  // The study deck this content was generated for (absent/'' = all decks). Part of
-  // the cache identity so switching decks serves/generates the right passage.
-  deck?: string;
 }
 
 /** A single independently-generated daily content block. */

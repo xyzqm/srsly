@@ -141,6 +141,8 @@ Proper nouns are filtered out at build time by `scripts/lib/nameFilter.mjs`, sha
 
 A register may be backed by more than one corpus (counts are summed) — Korean's Tatoeba slice is ~50k tokens and cannot stand alone. **A word scores the mean of its two best per-register ranks.** Two properties matter and both are deliberate: needing two placements *is* the "common in more than one register" rule, and averaging **ranks rather than ipm** stops whichever corpus has the most extreme distribution from setting the order (an encyclopedia says "municipality" at a rate no conversation ever will). Taking the best two rather than all three keeps `gracias` from being punished for being rare in an encyclopedia. Set `SRSLY_CORPUS_CACHE=<dir>` to cache per-corpus counts and re-run a build with no downloads.
 
+**Single letters are filtered out of the bands** for es/fr by `isBandableLength()`, against a short whitelist per language (`y o a e u` for Spanish, `y à ô` for French). Wiktionary has an entry for every letter and encyclopedic text is full of bare ones, so `t`, `i`, `x`, `k` and `f` all reached Spanish A1/A2. The letter *sense* is already metalinguistic, but exclusion needs **every** sense to be excluded and these carry a stray abbreviation or musical-note sense that survives. Languages absent from the whitelist map are not filtered at all — that is load-bearing for Korean, where a Hangul syllable is a normal-sized word and 561 banded headwords are one character long.
+
 **A second opinion from English.** After the bands are cut, `adjustBandsWithAnchor()` compares each word against the **CEFR-J Wordlist v1.5** (Yukio Tono, TUFS — free for research *and commercial* use with citation) plus the **Octanove Vocabulary Profile C1/C2** (CC BY-SA 4.0), vendored unmodified under `scripts/data/` with `ATTRIBUTION.md`. `scripts/lib/cefrjAnchor.mjs` reads a word's dictionary gloss and returns the level of the **easiest term of its primary sense** — everything before the first semicolon. Both halves are deliberate: a sense is a list of near-synonyms and a learner only needs one of them, so the median scored `además` at B1 on the strength of "furthermore"; and later senses are where Wiktionary keeps the colourful material, so reading the whole gloss scored `bueno` at B1 because "sexy" is in it.
 
 The adjustment **swaps pairs across a band boundary** rather than reassigning words to their anchor. That matters: the anchor has a large systematic bias (net pull ≈ −3,400 levels for Spanish), because CEFR-J + Octanove is 8,845 English headwords weighted toward A1–B2, so a genuinely C1 word with a plain English gloss anchors at A2. Reassigning would empty the upper bands. Trading pairs cancels a uniform pull by construction — if everything in B1 wants to be A2 and nothing comes back the other way, nothing moves — so only *relative* disagreement has an effect. It also keeps every band exactly its curriculum size and makes the ±1 limit structural: a word crosses at most one boundary and is then locked.
@@ -178,12 +180,12 @@ Statically importing them put every language's vocabulary in the initial page bu
 `lib/storage/types.ts` defines the `DataService` interface. `lib/storage/index.ts` exports a singleton `storage` pointing at `LocalStorage` (all data lives in `localStorage`). A commented-out Firebase implementation exists in `lib/storage/firebase.ts` — swap the import in `index.ts` to enable it.
 
 LocalStorage keys:
-- `srsly-vocab-deck-{lang}` — user's `DeckWord[]`, namespaced per language
+- `srsly-vocab-deck-{lang}` — user's `DeckWord[]`, namespaced per language. **One deck per language, full stop.** The multi-deck feature (a `decks: string[]` tag array on each word, a deck selector, per-deck study scoping) was removed; `useVocabDeck` strips the retired `deck`/`decks` fields from stored words on load. The `decks` jsonb column in `lib/storage/supabase.ts` is unrelated — it is keyed by `LanguageCode` and is how per-language decks are stored
 - `srsly-srs-state` — streak, todayScore, session count
 - `srsly-prefs` — theme, font, language, and the per-language level (`hskLevel` / `jlptLevel` / `cefrLevel`)
 - `srsly-claimed-words` — words added to deck or previewed
 - `srsly-curriculum-pruned` — per-language marker of the last `CURRICULUM_VERSION` the deck was pruned at (`lib/curriculum.ts`). Device-local on purpose: it records what has been done to this copy of the deck, not a preference worth syncing
-- `srsly-daily-{hskLevel}-{YYYY-MM-DD}` — cached daily content
+- `srsly-daily-{lang}-{level}-{YYYY-MM-DD}` — cached daily content
 
 ### Theming
 
