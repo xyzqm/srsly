@@ -119,8 +119,13 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       prepend.push({ ...w, id: w.id ?? genId() });
     }
     if (prepend.length === 0) return 0;
-    // Reverse so the batch keeps its original order once prepended newest-first.
-    await commit([...prepend.reverse(), ...cur]);
+    // Batch order is PRESERVED, and that matters well beyond cosmetics. A level import
+    // arrives in curriculum order — `hola`, `adiós`, `hasta luego` first — and
+    // releaseFromPool activates cards in array order. Reversing the batch here (which this
+    // line used to do, for symmetry with addWord's newest-first prepend) meant "Activate 5"
+    // handed out `precio`, `vía`, `necesidad`: the rarest tail of A1 instead of its easiest
+    // opening. The batch still goes on top of older cards; only its internal order is kept.
+    await commit([...prepend, ...cur]);
     return prepend.length;
   }, [commit]);
 
