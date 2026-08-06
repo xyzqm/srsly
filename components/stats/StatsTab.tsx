@@ -3,6 +3,7 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
+import MemoryGarden from './MemoryGarden';
 
 interface Props { onNavigateRead: () => void; }
 
@@ -29,6 +30,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       </p>
 
       <PieChart deck={deck} />
+
+      <MemoryGarden deck={deck} />
 
       <div
         className="grid mt-8 overflow-hidden rounded-[11px]"
