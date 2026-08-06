@@ -76,6 +76,29 @@ export async function loadCurriculumWords(lang: LanguageCode): Promise<Set<strin
 }
 
 /**
+ * The language's level table: level (1 = easiest) → its word list.
+ *
+ * Dynamically imported for the same reason `loadCurriculumWords` is — these tables run
+ * 340–900 kB of source each and must never reach the initial bundle. Unlike that function
+ * this covers all four languages, because the Stats progress bars are worth showing to a
+ * Chinese or Japanese learner too. Returns null when the chunk fails to load; callers must
+ * render nothing rather than a bar reading zero.
+ */
+export async function loadLevelTable(lang: LanguageCode): Promise<Record<number, string[]> | null> {
+  try {
+    switch (lang) {
+      case 'zh': return (await import('./data/hsk-levels')).HSK_LEVELS;
+      case 'ja': return (await import('./data/jlpt-levels')).JLPT_LEVELS;
+      case 'es': return (await import('./data/cefr-levels')).CEFR_LEVELS;
+      case 'fr': return (await import('./data/fr-levels')).FR_LEVELS;
+      default: return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Drop every deck word that is no longer in the language's graded vocabulary.
  *
  * Matching is on the headword, lowercased for the two Latin-script languages (deck entries

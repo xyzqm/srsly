@@ -4,6 +4,7 @@ import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
 import MemoryGarden from './MemoryGarden';
+import LevelProgress from './LevelProgress';
 
 interface Props { onNavigateRead: () => void; }
 
@@ -30,6 +31,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       </p>
 
       <PieChart deck={deck} />
+
+      <LevelProgress deck={deck} language={language} />
 
       <MemoryGarden deck={deck} />
 
