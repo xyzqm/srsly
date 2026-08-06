@@ -19,7 +19,10 @@ const FILE = path.join(__dirname, '..', 'data', 'core-overrides.json');
  *
  *   Nobody writes "hello" in an encyclopedia. `hola` and `bonjour` landed at B1, and
  *   `por favor` / `s'il vous plaît` were never ranked at all, being multi-word where the
- *   tokenizer counts single tokens.
+ *   tokenizer counts single tokens. Nor does anyone write "fork", "Thursday", "purple" or
+ *   "yogurt" often: `tenedor`, `zumo` and `verdura` reached C2, `bolígrafo` C1, `cuchillo`
+ *   B2, three of the seven weekdays B1. Against an external A1 reference only 49% of a
+ *   real beginner vocabulary was in our A1 — hence the thematic `beginner` sets.
  *
  *   Narrative fiction is full of death. French ranks off Lexique, whose two registers are
  *   film subtitles and books, so `mourir`, `tuer`, `guerre` and `sang` are genuinely
@@ -45,8 +48,20 @@ function read(section, lang) {
   return Array.isArray(list) ? list : [];
 }
 
-/** @returns {string[]} headwords pinned to level 1 for `lang`, in the order they should appear */
-export function coreOverridesFor(lang) { return read('pin', lang); }
+/**
+ * Headwords pinned to level 1 for `lang`, in the order they should appear: the greetings
+ * first, then the thematic beginner sets.
+ *
+ * `beginner` is kept grouped by category in the JSON rather than flattened, because the
+ * grouping is the point — it is a syllabus, and a future "study by topic" feature wants
+ * exactly this shape. Flattening happens here, at the last moment.
+ */
+export function coreOverridesFor(lang) {
+  const all = JSON.parse(readFileSync(FILE, 'utf8'));
+  const themed = Object.values(all?.beginner?.[lang] ?? {}).flat();
+  const seen = new Set();
+  return [...read('pin', lang), ...themed].filter(w => !seen.has(w) && seen.add(w));
+}
 
 /** @returns {string[]} headwords for `lang` that may not sit above DEMOTE_FLOOR */
 export function demotionsFor(lang) { return read('demote', lang); }
