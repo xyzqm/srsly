@@ -5,13 +5,14 @@ import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
 import MemoryGarden from './MemoryGarden';
 import LevelProgress from './LevelProgress';
+import AccuracyTrend from './AccuracyTrend';
 
 interface Props { onNavigateRead: () => void; }
 
 export default function StatsTab({ onNavigateRead }: Props) {
   const language = useLanguage();
   const { deck } = useVocabDeck(language);
-  const { streak, sessions } = useSRS();
+  const { streak, sessions, accuracy } = useSRS();
 
   return (
     <div
@@ -33,6 +34,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       <PieChart deck={deck} />
 
       <LevelProgress deck={deck} language={language} />
+
+      <AccuracyTrend history={accuracy} />
 
       <MemoryGarden deck={deck} />
 

@@ -82,7 +82,14 @@ export interface SRSState {
   todayScore: number;  // -1 = not set
   todayScoreDate: string;
   sessions?: number;
+  /** Per-day tally of passage cloze answers, oldest first, trimmed to ACCURACY_WINDOW days.
+   *  Each blank is exactly one free-typed attempt (ClozeBlank refuses to re-grade), so this
+   *  is a first-try figure by construction — a measure of recall, not of effort. */
+  accuracy?: DailyAccuracy[];
 }
+
+/** One day's cloze tally. Short keys because this array is written on every answer. */
+export interface DailyAccuracy { d: string; right: number; total: number }
 
 export interface UserPrefs {
   theme: Theme;

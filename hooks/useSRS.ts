@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
+import type { DailyAccuracy } from '@/lib/types';
 import { todayStr, dateInDays } from '@/lib/deck';
 
 interface EmojiState { emoji: string; tip: string }
@@ -25,10 +26,23 @@ function yesterday(): string {
   return dateInDays(-1);
 }
 
+/** Days of cloze history kept. Long enough for a 7-day rolling figure to survive a gap. */
+const ACCURACY_WINDOW = 30;
+
+/** Right/total over the last `days` calendar days, and the percentage (null if untested). */
+export function rollingAccuracy(history: DailyAccuracy[] | undefined, days: number) {
+  const cutoff = dateInDays(-(days - 1));
+  const recent = (history ?? []).filter(e => e.d >= cutoff);
+  const right = recent.reduce((n, e) => n + e.right, 0);
+  const total = recent.reduce((n, e) => n + e.total, 0);
+  return { right, total, pct: total ? Math.round((right / total) * 100) : null, days: recent.length };
+}
+
 export function useSRS() {
   const [emojiState, setEmojiState] = useState<EmojiState>({ emoji: '🤔', tip: '' });
   const [streak, setStreak] = useState(0);
   const [sessions, setSessions] = useState(0);
+  const [accuracy, setAccuracy] = useState<DailyAccuracy[]>([]);
 
   useEffect(() => {
     const today = todayStr();
@@ -56,6 +70,7 @@ export function useSRS() {
 
       setStreak(displayStreak);
       setSessions(safeSessions);
+      setAccuracy(state.accuracy ?? []);
 
       // daysSince last visit (for emoji)
       let daysSince = 0;
@@ -104,5 +119,21 @@ export function useSRS() {
     setEmojiState(pickEmoji(newStreak, 0, score, true));
   }, []);
 
-  return { ...emojiState, recordScore, streak, sessions };
+  /**
+   * Log one passage-cloze answer. Called per blank rather than per session so a passage
+   * abandoned half-way still counts what was actually attempted.
+   */
+  const recordAnswer = useCallback(async (correct: boolean) => {
+    const today = todayStr();
+    const state = await storage.getSRSState();
+    const hist = [...(state.accuracy ?? [])];
+    const i = hist.findIndex(e => e.d === today);
+    if (i >= 0) hist[i] = { ...hist[i], right: hist[i].right + (correct ? 1 : 0), total: hist[i].total + 1 };
+    else hist.push({ d: today, right: correct ? 1 : 0, total: 1 });
+    const trimmed = hist.slice(-ACCURACY_WINDOW);
+    await storage.saveSRSState({ ...state, accuracy: trimmed });
+    setAccuracy(trimmed);
+  }, []);
+
+  return { ...emojiState, recordScore, recordAnswer, streak, sessions, accuracy };
 }

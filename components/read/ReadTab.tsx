@@ -25,6 +25,8 @@ import MissedWordReview from './MissedWordReview';
 
 interface Props {
   onScore: (score: number) => void;
+  /** One passage-cloze answer, logged per blank so a half-finished passage still counts. */
+  onAnswer: (correct: boolean) => void;
   onRequireSignIn?: (reason?: string) => void;
   onNavigateVocab?: () => void;
 }
@@ -43,7 +45,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onRequireSignIn, onNavigateVocab }: Props) {
+export default function ReadTab({ onScore, onAnswer, onRequireSignIn, onNavigateVocab }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -415,13 +417,18 @@ export default function ReadTab({ onScore, onRequireSignIn, onNavigateVocab }: P
   }, [addWord, trackAdded]);
 
   const handleClozeAnswer = useCallback((occurrenceId: string, word: string, correct: boolean) => {
+    let firstTime = false;
     setClozeGrades(prev => {
       if (prev.has(occurrenceId)) return prev; // already graded (ClozeBlank prevents re-grade, but be safe)
+      firstTime = true;
       const next = new Map(prev);
       next.set(occurrenceId, { word, grade: correct ? 3 : 1 });
       return next;
     });
-  }, []);
+    // Only the first grading of a blank counts, so restoring a passage you already answered
+    // cannot inflate the figure.
+    if (firstTime) onAnswer(correct);
+  }, [onAnswer]);
 
   const handleAddToDeck = useCallback((word: DeckWord) => {
     addWord({ ...word, dueAt: word.dueAt ?? dateInDays(1) });
