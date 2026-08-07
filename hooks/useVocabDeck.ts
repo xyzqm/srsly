@@ -49,7 +49,18 @@ function identity(w: { h: string; m: string }): string {
 
 export function useVocabDeck(language: LanguageCode = 'zh') {
   const [deck, setDeck] = useState<DeckWord[]>([]);
-  const [deckLoaded, setDeckLoaded] = useState(false);
+  /**
+   * Which language the deck in state actually belongs to — null until the first load.
+   *
+   * `deckLoaded` is derived from this DURING RENDER rather than flipped in an effect, and
+   * that timing is the whole point. A `setDeckLoaded(false)` inside the language effect
+   * lands too late: React runs child effects before the parent's, so on the first render
+   * after a language switch a consumer still saw deckLoaded=true next to the outgoing
+   * language's deck. Flashcards latches its queue in exactly that window, which is how a
+   * Spanish card ended up on screen in a Japanese session.
+   */
+  const [loadedLang, setLoadedLang] = useState<LanguageCode | null>(null);
+  const deckLoaded = loadedLang === language;
 
   // Mirror of deck that's always current — lets mutators compute from the latest
   // state even when several fire in one synchronous pass (e.g. ReadTab grading
@@ -63,7 +74,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   }, [language]);
 
   useEffect(() => {
-    setDeckLoaded(false);
+    let live = true;
     storage.getVocabDeck(language).then(async d => {
       let changed = false;
       const migrated = d.map(w => {
@@ -87,11 +98,14 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       // off-curriculum word never flashes into a review surface on the way out.
       const pruned = await pruneDeckToCurriculum(language, migrated);
       if (pruned !== migrated) changed = true;
+      // A switch away mid-load must not publish the language we just left.
+      if (!live) return;
       deckRef.current = pruned;
       setDeck(pruned);
-      setDeckLoaded(true);
+      setLoadedLang(language);
       if (changed) storage.saveVocabDeck(language, pruned);
     });
+    return () => { live = false; };
   }, [language]);
 
   /** Add one word. A card with the same (character + meaning) already in the deck is left

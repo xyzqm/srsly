@@ -62,7 +62,20 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
         </div>
       </div>
 
-      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onGrade={gradeCard} onScore={onScore} onDone={() => setMode('cram')} />}
+      {/* Keyed by language, and both instances gated on deckLoaded.
+          Flashcards latches its queue on first load and never rebuilds it — deliberately, so
+          grading a card can't reshuffle the session underneath you. That made switching
+          language while practising leave the OLD language's cards on screen: `hola` sitting
+          in a Japanese session. A key makes the switch a new session, which it is; passing
+          deckLoaded stops the fresh mount latching the outgoing deck, which useVocabDeck
+          still holds for the tick between the language changing and the new deck arriving. */}
+      {mode === 'flash' && (
+        <Flashcards
+          key={`flash-${language}`}
+          deck={scopedDeck} deckLoaded={deckLoaded}
+          onGrade={gradeCard} onScore={onScore} onDone={() => setMode('cram')}
+        />
+      )}
       {mode === 'cram' && (
         <div>
           <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 14 }}>
@@ -99,7 +112,7 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
               No words in this set.
             </div>
           ) : (
-            <Flashcards key={`cram-${cramScope}`} deck={cramDeck} cram onDone={() => setMode('flash')} />
+            <Flashcards key={`cram-${language}-${cramScope}`} deck={cramDeck} deckLoaded={deckLoaded} cram onDone={() => setMode('flash')} />
           )}
         </div>
       )}
