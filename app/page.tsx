@@ -88,6 +88,9 @@ function AppShell() {
   useEffect(() => {
     storage.getPrefs().then(async p => {
       const list = await resolveLanguages(p);
+      // Persist the migration once. Left underived, a language removed in Settings would be
+      // resurrected on the next load by the deck-derived fallback.
+      if (!p.languages) await storage.savePrefs({ ...p, languages: list });
       setLanguages(list);
       // Fall back to the first added language, not 'zh' — after onboarding, 'zh' may well
       // be a language this learner never chose.
@@ -157,7 +160,19 @@ function AppShell() {
             <VocabTab onStudy={startStudy} />
           )}
           {tab === 'settings' && (
-            <SettingsTab />
+            <SettingsTab
+              languages={languages ?? []}
+              onAddLanguage={() => setAddingLanguage(true)}
+              onLanguagesChanged={(list, active) => {
+                setLanguages(list);
+                if (active) {
+                  setLanguage(active);
+                  const cfg = getLanguageConfig(active);
+                  document.documentElement.setAttribute('lang', cfg.htmlLang);
+                  setSpeechLang(cfg.bcp47);
+                }
+              }}
+            />
           )}
         </main>
         <footer className="text-center pb-10 text-xs" style={{ color: 'var(--ink-faint)' }}>

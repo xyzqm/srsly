@@ -67,6 +67,26 @@ export async function addLanguage(lang: LanguageCode, placedLevel: number): Prom
   return next;
 }
 
+/**
+ * Stop studying a language. The DECK IS KEPT — this is "hide it from the picker", not
+ * "throw away three months of cards" — so re-adding it later finds everything intact.
+ * That is also why the resolved list must be persisted: the deck-derived migration would
+ * otherwise put a removed language straight back on the next load.
+ */
+export async function removeLanguage(lang: LanguageCode): Promise<UserPrefs> {
+  const prefs = await storage.getPrefs();
+  const remaining = (await resolveLanguages(prefs)).filter(l => l !== lang);
+  const next: UserPrefs = {
+    ...prefs,
+    languages: remaining,
+    // Re-adding should re-place the learner rather than silently reusing an old verdict.
+    placementSeen: { ...prefs.placementSeen, [lang]: undefined },
+    language: prefs.language === lang ? remaining[0] : prefs.language,
+  };
+  await storage.savePrefs(next);
+  return next;
+}
+
 /** Languages not yet added — what the "add a language" picker offers. */
 export function availableToAdd(added: LanguageCode[]): typeof SUPPORTED_LANGUAGES {
   return SUPPORTED_LANGUAGES.filter(cfg => !added.includes(cfg.code));

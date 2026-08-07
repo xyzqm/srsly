@@ -7,6 +7,9 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor, levelLabel, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
 import { todayStr } from '@/lib/deck';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import type { LanguageCode } from '@/lib/types';
+import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
+import { removeLanguage } from '@/lib/onboarding';
 import { loadLevelTable } from '@/lib/curriculum';
 import { levelStandings, wordsToUnlockNext, gateFor, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
@@ -27,7 +30,16 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function SettingsTab() {
+interface Props {
+  /** Languages the learner has added. */
+  languages: LanguageCode[];
+  /** Opens the add-a-language flow, which runs the placement test. */
+  onAddLanguage: () => void;
+  /** Reports a changed list, and the language to switch to when the active one was removed. */
+  onLanguagesChanged: (languages: LanguageCode[], active?: LanguageCode) => void;
+}
+
+export default function SettingsTab({ languages, onAddLanguage, onLanguagesChanged }: Props) {
   const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -62,6 +74,13 @@ export default function SettingsTab() {
   /** Which locked level the learner is challenging, or null. Placement lives in the
    *  onboarding flow now (components/level/AddLanguage.tsx) and never starts from here. */
   const [test, setTest] = useState<number | null>(null);
+  const [removing, setRemoving] = useState<LanguageCode | null>(null);
+
+  async function confirmRemove(lang: LanguageCode) {
+    const next = await removeLanguage(lang);
+    setRemoving(null);
+    onLanguagesChanged(next.languages ?? [], next.language);
+  }
 
   useEffect(() => {
     let live = true;
@@ -251,6 +270,51 @@ export default function SettingsTab() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Languages ─────────────────────────────────────────────────────── */}
+      <SectionLabel>Languages</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
+        Adding a language starts with a placement test, so the reading begins at the right
+        level. Removing one hides it here — your deck is kept, and re-adding it finds
+        everything where you left it.
+      </p>
+      <div className="flex flex-col gap-2 mb-4" style={{ maxWidth: 540 }}>
+        {SUPPORTED_LANGUAGES.filter(cfg => languages.includes(cfg.code)).map(cfg => (
+          <div key={cfg.code} className="flex items-center gap-3 rounded-[10px] px-4 py-3"
+            style={{ background: 'var(--card)', border: `1px solid ${cfg.code === language ? 'var(--accent)' : 'var(--line)'}` }}>
+            <span style={{ fontFamily: 'var(--f-han)', fontSize: 17, minWidth: 58 }}>{cfg.nativeName}</span>
+            <span className="flex-1" style={{ fontFamily: 'var(--f-display)', fontSize: 15 }}>{cfg.name}</span>
+            {cfg.code === language && (
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--accent)' }}>
+                studying
+              </span>
+            )}
+            {removing === cfg.code ? (
+              <span className="flex items-center gap-1.5">
+                <button onClick={() => confirmRemove(cfg.code)} className="cursor-pointer"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px' }}>
+                  Remove
+                </button>
+                <button onClick={() => setRemoving(null)} className="cursor-pointer"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', background: 'none', color: 'var(--ink-faint)', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px' }}>
+                  Keep
+                </button>
+              </span>
+            ) : (
+              <button onClick={() => setRemoving(cfg.code)} className="cursor-pointer"
+                style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', background: 'none', color: 'var(--ink-faint)', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px' }}>
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {languages.length < SUPPORTED_LANGUAGES.length && (
+        <button onClick={onAddLanguage} className="cursor-pointer mb-10"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 18px', boxShadow: '0 2px 0 var(--accent-deep)' }}>
+          + Add a language
+        </button>
       )}
 
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
