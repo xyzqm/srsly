@@ -819,6 +819,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                     onAddVocab={handleAddVocabQuestion}
                     deckWords={deckWords}
                     deckReadings={deckReadings}
+                    pendingDeckWords={pendingDeckWords}
+                    claimsStore={claimsStore}
                     onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
                   />
                 ))}

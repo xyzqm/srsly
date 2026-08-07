@@ -27,8 +27,12 @@ export interface PopupData {
   baseForm?: string;
   baseReading?: string;
   /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);
-   *  lookup = added to vocab deck (definition only); pool = staged but not yet in play */
+   *  lookup = already in the vocab deck (definition only); pool = staged but not yet in play */
   type: 'vocab' | 'free' | 'lookup' | 'pool';
+  /** For 'lookup': whether the word was added JUST NOW rather than already being in the
+   *  deck. "Added to your deck" is a confirmation of something you just did; saying it
+   *  about a word you banked weeks ago reads as if the click did something. */
+  justAdded?: boolean;
   anchorRect: DOMRect;
   /** Adjacent compound words this character belongs to (e.g. 已 → 已经) */
   compounds?: CompoundHint[];
@@ -262,7 +266,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
               className="mt-2 pt-2 text-[11px]"
               style={{ borderTop: '1px solid rgba(255,255,255,.1)', color: 'rgba(120,210,120,.85)', fontFamily: 'var(--f-mono)', letterSpacing: '.05em' }}
             >
-              + Added to your deck
+              {displayData.justAdded ? '+ Added to your deck' : '✓ Already in your deck'}
             </div>
           )}
 

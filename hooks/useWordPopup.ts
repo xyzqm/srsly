@@ -72,9 +72,11 @@ export function useWordPopup(
 
       // Popup type priority:
       //   1. In pool (staged, not yet in play) → 'pool' (definition, release button)
-      //   2. Added to deck this session / already in deck → 'lookup' (definition, +Added badge)
+      //   2. Added this session, or already in the deck → 'lookup' (definition + a badge
+      //      that distinguishes the two: one confirms an action, the other states a fact)
       //   3. Unknown word → 'free' (show Add to vocab)
       const type: PopupData['type'] = isInPool ? 'pool' : (isVocabThisSession || isInDeck) ? 'lookup' : 'free';
+      const justAdded = isVocabThisSession && !isInDeck;
 
       // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
       // dictionary's). For a polyphone, headline the reading matching this token's pinyin
@@ -95,7 +97,7 @@ export function useWordPopup(
       }
 
       setPopup({
-        word: token.text, pinyin, meaning, type, anchorRect: rect, otherReadings,
+        word: token.text, pinyin, meaning, type, justAdded, anchorRect: rect, otherReadings,
         baseForm: token.baseForm, baseReading: token.baseForm ? entry.reading : undefined,
       });
     });
