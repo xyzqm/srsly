@@ -8,10 +8,17 @@ interface Props {
   onOpenTheme: () => void;
   accountSlot?: ReactNode;
   language: LanguageCode;
+  /** Only the languages the learner has added — the picker is no longer a menu of
+   *  everything srsly supports. Adding one goes through the placement flow instead. */
+  languages: LanguageCode[];
   onLanguageChange: (lang: LanguageCode) => void;
+  onAddLanguage: () => void;
 }
 
-export default function Header({ onOpenTheme, accountSlot, language, onLanguageChange }: Props) {
+/** Sentinel option value; a language code can never collide with it. */
+const ADD = '__add__';
+
+export default function Header({ onOpenTheme, accountSlot, language, languages, onLanguageChange, onAddLanguage }: Props) {
   const { emoji, tip } = useSRS();
 
   return (
@@ -29,22 +36,31 @@ export default function Header({ onOpenTheme, accountSlot, language, onLanguageC
       </div>
 
       <div className="flex gap-2 items-center flex-wrap">
-        <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ink-soft)' }}>
-          Studying
-          <select
-            value={language}
-            onChange={e => onLanguageChange(e.target.value as LanguageCode)}
-            style={{
-              fontFamily: 'var(--f-ui)', fontSize: 13, color: 'var(--ink)',
-              background: 'var(--card)', border: '1px solid var(--line)',
-              borderRadius: 7, padding: '7px 11px', cursor: 'pointer', fontWeight: 500,
-            }}
-          >
-            {SUPPORTED_LANGUAGES.map(cfg => (
-              <option key={cfg.code} value={cfg.code}>{cfg.nativeName} · {cfg.name}</option>
-            ))}
-          </select>
-        </label>
+        {languages.length > 0 && (
+          <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ink-soft)' }}>
+            Studying
+            <select
+              value={language}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === ADD) { onAddLanguage(); return; }
+                onLanguageChange(v as LanguageCode);
+              }}
+              style={{
+                fontFamily: 'var(--f-ui)', fontSize: 13, color: 'var(--ink)',
+                background: 'var(--card)', border: '1px solid var(--line)',
+                borderRadius: 7, padding: '7px 11px', cursor: 'pointer', fontWeight: 500,
+              }}
+            >
+              {SUPPORTED_LANGUAGES.filter(cfg => languages.includes(cfg.code)).map(cfg => (
+                <option key={cfg.code} value={cfg.code}>{cfg.nativeName} · {cfg.name}</option>
+              ))}
+              {languages.length < SUPPORTED_LANGUAGES.length && (
+                <option value={ADD}>+ Add a language…</option>
+              )}
+            </select>
+          </label>
+        )}
 
         <button
           onClick={onOpenTheme}

@@ -120,9 +120,17 @@ export interface UserPrefs {
    *  unlocked by retention are derived from the deck and deliberately not stored — a
    *  persisted copy could disagree with the deck it was computed from. */
   testedLevels?: Partial<Record<LanguageCode, number>>;
-  /** Languages where the placement test has been taken or dismissed, so the prompt to take
-   *  it appears once rather than on every visit. */
+  /** Languages where the placement test has been taken or skipped. */
   placementSeen?: Partial<Record<LanguageCode, boolean>>;
+  /**
+   * Languages the learner has actually added, in the order they added them.
+   *
+   * The app used to offer all four at all times, which made "what am I studying?" a
+   * question with no answer and meant a level could never be established up front.
+   * Absent means a pre-onboarding install — lib/onboarding.ts derives the list from the
+   * decks that already exist rather than wiping anyone back to a blank slate.
+   */
+  languages?: LanguageCode[];
 }
 
 export interface ClaimedWords {

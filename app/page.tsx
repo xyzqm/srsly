@@ -3,6 +3,8 @@ import { useState, useCallback, useEffect } from 'react';
 import type { TabId, PracticeMode, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
+import { addLanguage, resolveLanguages } from '@/lib/onboarding';
+import AddLanguage from '@/components/level/AddLanguage';
 import { setSpeechLang } from '@/lib/speech';
 import { storage } from '@/lib/storage';
 import Header from '@/components/Header';
@@ -78,12 +80,33 @@ function AppShell() {
   // Active study language. Persisted in prefs; drives deck namespacing, dictionary
   // lookups, proficiency labels and TTS locale via LanguageProvider below.
   const [language, setLanguage] = useState<LanguageCode>('zh');
+  /** Languages the learner has added. null until prefs load — distinct from [], which is a
+   *  genuinely empty account and the one state that forces onboarding. */
+  const [languages, setLanguages] = useState<LanguageCode[] | null>(null);
+  const [addingLanguage, setAddingLanguage] = useState(false);
+
   useEffect(() => {
-    storage.getPrefs().then(p => {
-      const lang = p.language ?? 'zh';
-      setLanguage(lang);
-      setSpeechLang(getLanguageConfig(lang).bcp47);
+    storage.getPrefs().then(async p => {
+      const list = await resolveLanguages(p);
+      setLanguages(list);
+      // Fall back to the first added language, not 'zh' — after onboarding, 'zh' may well
+      // be a language this learner never chose.
+      const lang = (p.language && list.includes(p.language)) ? p.language : list[0];
+      if (lang) {
+        setLanguage(lang);
+        setSpeechLang(getLanguageConfig(lang).bcp47);
+      }
     });
+  }, []);
+
+  const handleAddLanguage = useCallback(async (lang: LanguageCode, placedLevel: number) => {
+    const next = await addLanguage(lang, placedLevel);
+    setLanguages(next.languages ?? [lang]);
+    setLanguage(lang);
+    const cfg = getLanguageConfig(lang);
+    document.documentElement.setAttribute('lang', cfg.htmlLang);
+    setSpeechLang(cfg.bcp47);
+    setAddingLanguage(false);
   }, []);
   const handleLanguageChange = useCallback(async (lang: LanguageCode) => {
     setLanguage(lang);
@@ -109,7 +132,9 @@ function AppShell() {
           onOpenTheme={() => setSheetOpen(true)}
           accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} />}
           language={language}
+          languages={languages ?? []}
           onLanguageChange={handleLanguageChange}
+          onAddLanguage={() => setAddingLanguage(true)}
         />
         <TabNav active={tab} onChange={setTab} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
@@ -139,6 +164,15 @@ function AppShell() {
           srsly.
         </footer>
       </div>
+
+      {languages !== null && (addingLanguage || languages.length === 0) && (
+        <AddLanguage
+          added={languages}
+          onDone={handleAddLanguage}
+          // No cancel with nothing added: there is no app to go back to yet.
+          onCancel={languages.length > 0 ? () => setAddingLanguage(false) : undefined}
+        />
+      )}
 
       <ThemeSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
       
