@@ -25,6 +25,12 @@ import MissedWordReview from './MissedWordReview';
 
 interface Props {
   onScore: (score: number) => void;
+  /**
+   * Mark today as studied. Fired when a passage is FINISHED, separately from onScore —
+   * onScore only fires when the passage had comprehension questions, so reading was not
+   * keeping the streak alive on its own. Reading is studying; it counts.
+   */
+  onActivity: () => void;
   /** One passage-cloze answer, logged per blank so a half-finished passage still counts. */
   onAnswer: (correct: boolean) => void;
   onRequireSignIn?: (reason?: string) => void;
@@ -45,7 +51,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onAnswer, onRequireSignIn, onNavigateVocab }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -543,10 +549,14 @@ export default function ReadTab({ onScore, onAnswer, onRequireSignIn, onNavigate
           localStorage.setItem(passageFinishedKey + '|results', JSON.stringify([...rows, ...anchorRows]));
         } catch { /* ignore */ }
       }
+      // Finishing the passage is the activity, whether or not it carried questions. Sits
+      // beside the `srsly-done` write so the two can never disagree about what "finished"
+      // means; recordActivity is idempotent for the day.
+      onActivity();
       setAlreadyFinished(true);
     }
     if (!alreadyFinished) setShowResults(v => !v);
-  }, [resultsBuilt, alreadyFinished, passageFinishedKey, frResponses, mcGrades, wordGrades, onScore, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
+  }, [resultsBuilt, alreadyFinished, passageFinishedKey, frResponses, mcGrades, wordGrades, onScore, onActivity, targetWords, deck, QUESTIONS, updateWordReview, passageAnchors, gradeCard]);
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,

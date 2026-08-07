@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
-import type { DailyAccuracy } from '@/lib/types';
+import type { DailyAccuracy, DeckWord, LanguageCode } from '@/lib/types';
 import { todayStr, dateInDays } from '@/lib/deck';
+import { applyActivity, forgivenInStreak, reconcileStreak } from '@/lib/streak';
+import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
 interface EmojiState { emoji: string; tip: string }
 
@@ -26,6 +28,20 @@ function yesterday(): string {
   return dateInDays(-1);
 }
 
+/**
+ * Every deck the learner has, across languages.
+ *
+ * The streak is one global number but decks are per-language, so a rest day has to mean
+ * "nothing owed anywhere". Judging it against the active language alone would forgive a
+ * gap while another language's reviews piled up.
+ */
+async function allDecks(): Promise<DeckWord[]> {
+  const decks = await Promise.all(
+    SUPPORTED_LANGUAGES.map(c => storage.getVocabDeck(c.code as LanguageCode)),
+  );
+  return decks.flat();
+}
+
 /** Days of cloze history kept. Long enough for a 7-day rolling figure to survive a gap. */
 const ACCURACY_WINDOW = 30;
 
@@ -43,34 +59,38 @@ export function useSRS() {
   const [streak, setStreak] = useState(0);
   const [sessions, setSessions] = useState(0);
   const [accuracy, setAccuracy] = useState<DailyAccuracy[]>([]);
+  const [forgiven, setForgiven] = useState(0);
 
   useEffect(() => {
     const today = todayStr();
     const yest = yesterday();
 
-    storage.getSRSState().then(state => {
-      const { streak: s, lastVisit, todayScore, todayScoreDate } = state;
+    (async () => {
+      let state = await storage.getSRSState();
+      const lastVisit = state.lastVisit;
 
-      // Update lastVisit without touching streak (streak only changes on recordScore)
-      if (!lastVisit || lastVisit !== today) {
-        storage.saveSRSState({ ...state, lastVisit: today });
-      }
-
-      // Displayed streak: valid only if user completed reading today or yesterday
-      // If they skipped days (last score > 1 day ago), show 0
-      const displayStreak =
-        todayScoreDate === today || todayScoreDate === yest ? s : 0;
+      // Settle any gap FIRST, and before the day's reviews move any due dates — that
+      // ordering is what makes the retroactive check trustworthy (see lib/streak.ts).
+      const settled = reconcileStreak(state, await allDecks(), today, yest);
+      if (settled) state = settled;
 
       // Guard against a corrupted runaway counter (caused by a past render-loop bug)
       const rawSessions = state.sessions ?? 0;
-      const safeSessions = rawSessions > 9999 ? 0 : rawSessions;
-      if (rawSessions !== safeSessions) {
-        storage.saveSRSState({ ...state, sessions: safeSessions });
-      }
+      if (rawSessions > 9999) state = { ...state, sessions: 0 };
+
+      // lastVisit is "opened the app", which the streak deliberately no longer keys off.
+      if (lastVisit !== today) state = { ...state, lastVisit: today };
+      await storage.saveSRSState(state);
+
+      const lastActive = state.lastActive ?? state.todayScoreDate;
+      // A streak is live only while it reaches today or yesterday — after reconcile,
+      // forgiven rest days have already been folded into lastActive.
+      const displayStreak = lastActive === today || lastActive === yest ? state.streak : 0;
 
       setStreak(displayStreak);
-      setSessions(safeSessions);
+      setSessions(state.sessions ?? 0);
       setAccuracy(state.accuracy ?? []);
+      setForgiven(forgivenInStreak(state, today));
 
       // daysSince last visit (for emoji)
       let daysSince = 0;
@@ -80,26 +100,47 @@ export function useSRS() {
         );
       }
 
-      const scoreFresh = todayScoreDate === today && todayScore >= 0;
-      setEmojiState(pickEmoji(displayStreak, daysSince, todayScore, scoreFresh));
-    });
+      const scoreFresh = state.todayScoreDate === today && state.todayScore >= 0;
+      setEmojiState(pickEmoji(displayStreak, daysSince, state.todayScore, scoreFresh));
+    })();
+  }, []);
+
+  /**
+   * Mark today as studied. Extends the streak, and nothing else.
+   *
+   * Split out from recordScore because the two questions are different: "did you study
+   * today" and "how well did you do". Finishing the daily reading answers the first and
+   * often not the second — a passage with no comprehension questions has no score to
+   * report — and folding them together is exactly why reading used to leave the streak
+   * untouched.
+   */
+  const recordActivity = useCallback(async () => {
+    const today = todayStr();
+    const yest = yesterday();
+    let state = await storage.getSRSState();
+    if ((state.lastActive ?? state.todayScoreDate) === today) return; // already counted
+
+    // A gap can open between mount and now (midnight, or a long-lived tab), so settle again.
+    const settled = reconcileStreak(state, await allDecks(), today, yest);
+    if (settled) state = settled;
+
+    state = applyActivity(state, today, yest);
+    await storage.saveSRSState(state);
+    setStreak(state.streak);
+    setForgiven(forgivenInStreak(state, today));
+    return state.streak;
   }, []);
 
   const recordScore = useCallback(async (score: number) => {
     const today = todayStr();
     const yest = yesterday();
-    const state = await storage.getSRSState();
+    let state = await storage.getSRSState();
 
-    let newStreak: number;
-    if (state.todayScoreDate === today) {
-      // Already recorded a score today — don't increment again
-      newStreak = state.streak;
-    } else if (state.todayScoreDate === yest) {
-      // Did reading yesterday and again today → extend streak
-      newStreak = state.streak + 1;
-    } else {
-      // Missed one or more days, or first time ever → reset to 1
-      newStreak = 1;
+    const firstToday = (state.lastActive ?? state.todayScoreDate) !== today;
+    if (firstToday) {
+      const settled = reconcileStreak(state, await allDecks(), today, yest);
+      if (settled) state = settled;
+      state = applyActivity(state, today, yest);
     }
 
     // Only count a new session if this is the first score recorded today
@@ -108,15 +149,15 @@ export function useSRS() {
       : (state.sessions ?? 0) + 1;
     const updated = {
       ...state,
-      streak: newStreak,
       todayScore: score,
       todayScoreDate: today,
       sessions: newSessions,
     };
     await storage.saveSRSState(updated);
     setSessions(newSessions);
-    setStreak(newStreak);
-    setEmojiState(pickEmoji(newStreak, 0, score, true));
+    setStreak(updated.streak);
+    setForgiven(forgivenInStreak(updated, today));
+    setEmojiState(pickEmoji(updated.streak, 0, score, true));
   }, []);
 
   /**
@@ -135,5 +176,5 @@ export function useSRS() {
     setAccuracy(trimmed);
   }, []);
 
-  return { ...emojiState, recordScore, recordAnswer, streak, sessions, accuracy };
+  return { ...emojiState, recordScore, recordActivity, recordAnswer, streak, sessions, accuracy, forgiven };
 }

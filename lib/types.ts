@@ -82,6 +82,15 @@ export interface SRSState {
   todayScore: number;  // -1 = not set
   todayScoreDate: string;
   sessions?: number;
+  /** Last day the learner actually studied — a flashcard session OR finishing the daily
+   *  reading. The streak is measured against this, NOT `todayScoreDate`: that one only
+   *  moves when something is *graded*, so reading a passage with no comprehension
+   *  questions left the streak untouched. Absent on states written before the honest
+   *  streak; useSRS falls back to `todayScoreDate` once. See lib/streak.ts. */
+  lastActive?: string;
+  /** Missed days forgiven because nothing was due — kept so the UI can say how much of a
+   *  streak was rest rather than silently implying every day was studied. */
+  forgivenDays?: string[];
   /** Per-day tally of passage cloze answers, oldest first, trimmed to ACCURACY_WINDOW days.
    *  Each blank is exactly one free-typed attempt (ClozeBlank refuses to re-grade), so this
    *  is a first-try figure by construction — a measure of recall, not of effort. */

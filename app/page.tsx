@@ -72,7 +72,7 @@ function AppShell() {
   const [tab, setTab] = useState<TabId>('read');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
-  const { recordScore, recordAnswer } = useSRS();
+  const { recordScore, recordActivity, recordAnswer } = useSRS();
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
   // Active study language. Persisted in prefs; drives deck namespacing, dictionary
@@ -116,6 +116,7 @@ function AppShell() {
           {tab === 'read' && (
             <ReadTab
               onScore={recordScore}
+              onActivity={recordActivity}
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => setTab('vocab')}

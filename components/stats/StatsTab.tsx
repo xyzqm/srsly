@@ -12,7 +12,7 @@ interface Props { onNavigateRead: () => void; }
 export default function StatsTab({ onNavigateRead }: Props) {
   const language = useLanguage();
   const { deck } = useVocabDeck(language);
-  const { streak, sessions, accuracy } = useSRS();
+  const { streak, sessions, accuracy, forgiven } = useSRS();
 
   return (
     <div
@@ -66,6 +66,14 @@ export default function StatsTab({ onNavigateRead }: Props) {
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
             {streak}<small style={{ fontSize: 14, color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontWeight: 400 }}>d</small>
           </div>
+          {/* Say which days were rest. A streak that quietly counts days you did nothing is
+              the dishonest kind; naming them is what makes counting them defensible. */}
+          {forgiven > 0 && (
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', marginTop: 5, lineHeight: 1.4 }}>
+              incl. {forgiven} rest day{forgiven === 1 ? '' : 's'}
+              <span style={{ opacity: 0.75 }}> · nothing was due</span>
+            </div>
+          )}
         </div>
         <div className="px-5 py-5" style={{ background: 'var(--card)' }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Total sessions</div>
