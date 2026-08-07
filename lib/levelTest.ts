@@ -59,6 +59,71 @@ export function primarySense(gloss: string): string {
   return first.length > 64 ? first.slice(0, 61).trimEnd() + '…' : first;
 }
 
+/**
+ * Romance→English suffix pairs that make a cognate look less like one than it is.
+ * Applied to both sides before comparing, longest first so `ción` beats `ón`.
+ */
+const COGNATE_SUFFIXES: [RegExp, string][] = [
+  [/cion$/, 'tion'], [/sion$/, 'sion'], [/ncia$/, 'nce'], [/encia$/, 'ence'],
+  [/mente$/, 'ly'], [/dad$/, 'ty'], [/tad$/, 'ty'], [/te$/, 'ty'],
+  [/ismo$/, 'ism'], [/ista$/, 'ist'], [/ario$/, 'ary'], [/orio$/, 'ory'],
+  [/ico$/, 'ic'], [/ica$/, 'ic'], [/ique$/, 'ic'], [/oso$/, 'ous'], [/eux$/, 'ous'],
+  [/ivo$/, 'ive'], [/iva$/, 'ive'], [/if$/, 'ive'], [/eur$/, 'or'], [/aire$/, 'ary'],
+  [/[oaeé]$/, ''],   // the commonest difference of all: a bare trailing vowel
+];
+
+/** Accent-stripped, lowercased, letters only. */
+function plain(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function foldCognate(s: string): string {
+  const base = plain(s);
+  for (const [re, to] of COGNATE_SUFFIXES) {
+    if (re.test(base)) return base.replace(re, to);
+  }
+  return base;
+}
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** How close a word is to its own gloss once suffixes are folded, 0–1. */
+function cognateSimilarity(word: string, term: string): number {
+  const a = foldCognate(word), b = foldCognate(term);
+  if (a.length < 4 || b.length < 4) return 0;
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length);
+}
+
+/** Above this, the spelling gives the answer away. */
+const COGNATE_THRESHOLD = 0.72;
+
+/**
+ * Whether the word's own gloss can be read straight off its spelling.
+ *
+ * `territorio = territory`, `federal = federal`, `innovación = innovation` — nearly a third
+ * of Spanish B1 measured this way. A test made of those measures whether the learner can
+ * recognise Latin roots, which an English speaker can do without studying a word of Spanish,
+ * so it tells you nothing about their level. Chinese and Japanese are unaffected: nothing in
+ * a non-Latin script survives `plain()` to be compared.
+ */
+export function isCognate(word: string, gloss: string): boolean {
+  return primarySense(gloss)
+    .split(/[,/]| or /)
+    .map(t => t.replace(/^(to|a|an|the)\s+/i, '').trim())
+    .some(t => t && cognateSimilarity(word, t) >= COGNATE_THRESHOLD);
+}
+
 function shuffle<T>(arr: T[], rnd: () => number): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -83,15 +148,23 @@ export function buildBlock(
 ): TestBlock {
   // Only words the dictionary can actually gloss, deduped by primary sense so a question
   // can never have two right answers among its options.
-  const bySense = new Map<string, { word: string; sense: string; reading: string }>();
+  const bySense = new Map<string, { word: string; sense: string; reading: string; cognate: boolean }>();
   for (const word of levelWords) {
     const entry = vocab[word];
     if (!entry?.meaning) continue;
     const sense = primarySense(entry.meaning);
     if (!sense || bySense.has(sense.toLowerCase())) continue;
-    bySense.set(sense.toLowerCase(), { word, sense, reading: entry.reading ?? entry.pinyin ?? '' });
+    bySense.set(sense.toLowerCase(), {
+      word, sense,
+      reading: entry.reading ?? entry.pinyin ?? '',
+      cognate: isCognate(word, entry.meaning),
+    });
   }
-  const pool = [...bySense.values()];
+  // Cognates are dropped — but only while enough real words remain. A level too small to
+  // fill a question without them is better tested with them than not tested at all.
+  const all = [...bySense.values()];
+  const earned = all.filter(c => !c.cognate);
+  const pool = earned.length >= Math.max(4, count + 3) ? earned : all;
   if (pool.length < 4) return { level, questions: [] };
 
   const picked = shuffle(pool, rnd).slice(0, count);
