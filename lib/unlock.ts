@@ -30,6 +30,8 @@ export const RETAINED_FRACTION = 0.6;
 
 export interface LevelStanding {
   level: number;
+  /** Position in the curriculum, 0 = easiest. THE ordering — see levelStandings. */
+  rank: number;
   total: number;
   retained: number;
   /** Words in the deck for this level that haven't reached RETAINED_DAYS yet. */
@@ -49,17 +51,25 @@ export function testedThrough(prefs: Pick<UserPrefs, 'testedLevels'>, lang: Lang
 }
 
 /**
- * Per-level standing for a deck, in level order.
+ * Per-level standing for a deck, easiest first.
  *
- * `table` is the language's level → words map (curriculum.ts `loadLevelTable`). Levels are
- * numbered so that 1 is easiest for every language — including Japanese, where the *label*
- * counts down (N5 is level 1). Nothing here needs to know that.
+ * `table` is the language's level → words map (curriculum.ts `loadLevelTable`) and `levels`
+ * comes from the config in curriculum order, EASIEST FIRST.
+ *
+ * ORDERING IS BY POSITION, NEVER BY LEVEL NUMBER. Japanese counts down — level 5 is N5, the
+ * easiest, and level 1 is N1, the hardest — so arithmetic like `level + 1` or `level <=
+ * openThrough` means the opposite there than it does for HSK and CEFR. That is precisely
+ * how every JLPT level came to render unlocked: the walk started at `rows[0].level` = 5 and
+ * `r.level <= 5` is true of all five. The config array is documented as easiest → hardest
+ * for every language, so its index is the one ordering that holds everywhere.
  */
 export function levelStandings(
   deck: DeckWord[],
   table: Record<number, string[]>,
   levels: number[],
-  testedLevel: number,
+  /** Levels the learner may open regardless of retention: any passed test, and whatever
+   *  they already had selected before unlocking existed. Compared BY RANK, not by number. */
+  opened: { testedLevel?: number; selectedLevel?: number } = {},
 ): LevelStanding[] {
   // A character can hold several readings as separate cards; credit the strongest.
   const byWord = new Map<string, DeckWord>();
@@ -70,7 +80,7 @@ export function levelStandings(
     if (!prev || (w.stability ?? 0) > (prev.stability ?? 0)) byWord.set(k, w);
   }
 
-  const rows = levels.map(level => {
+  const rows = levels.map((level, rank) => {
     const words = table[level] ?? [];
     let retained = 0, started = 0;
     for (const word of words) {
@@ -81,36 +91,49 @@ export function levelStandings(
     }
     const fraction = words.length ? retained / words.length : 0;
     return {
-      level, total: words.length, retained, started, fraction,
+      level, rank, total: words.length, retained, started, fraction,
       meetsThreshold: words.length > 0 && fraction >= RETAINED_FRACTION,
       unlocked: false, via: null as LevelStanding['via'],
     };
   }).filter(r => r.total > 0);
 
-  // Walk upward: the first level is always open, and each subsequent one opens when the
-  // level below it is full enough. The chain stops at the first level that isn't — you
+  // Re-rank after the filter, so `rank` stays contiguous if a level had no words.
+  rows.forEach((r, i) => { r.rank = i; });
+
+  // Walk upward by POSITION: the easiest level is always open, and each next one opens when
+  // the one below it is full enough. The chain stops at the first level that isn't — you
   // cannot earn your way past a gap, only test past it.
-  let earnedThrough = rows.length ? rows[0].level : 0;
+  let earnedRank = 0;
   for (const r of rows) {
-    if (r.level > earnedThrough) break;
-    if (r.meetsThreshold) earnedThrough = r.level + 1;
+    if (r.rank > earnedRank) break;
+    if (r.meetsThreshold) earnedRank = r.rank + 1;
   }
 
-  // Passing a level's test opens that level and everything under it.
-  const openThrough = Math.max(earnedThrough, testedLevel);
+  // Passing a level's test opens that level and everything easier than it. Resolved through
+  // rank so it is right for a descending curriculum too.
+  const rankOf = (level?: number) =>
+    level === undefined ? -1 : (rows.find(r => r.level === level)?.rank ?? -1);
+  const openRank = Math.max(earnedRank, rankOf(opened.testedLevel), rankOf(opened.selectedLevel));
+
   for (const r of rows) {
-    r.unlocked = r.level <= openThrough;
+    r.unlocked = r.rank <= openRank;
     r.via = !r.unlocked ? null
-      : r.level === rows[0].level ? 'first'
-      : r.level <= earnedThrough ? 'earned'
+      : r.rank === 0 ? 'first'
+      : r.rank <= earnedRank ? 'earned'
       : 'tested';
   }
   return rows;
 }
 
-/** The highest level the learner may currently select. */
-export function highestUnlocked(rows: LevelStanding[]): number {
-  return rows.reduce((m, r) => (r.unlocked ? Math.max(m, r.level) : m), rows[0]?.level ?? 1);
+/** The hardest level the learner may currently select — by rank, not by number. */
+export function highestUnlocked(rows: LevelStanding[]): number | undefined {
+  const open = rows.filter(r => r.unlocked);
+  return open.length ? open[open.length - 1].level : rows[0]?.level;
+}
+
+/** The level whose retention gates `row` — the one immediately easier, or undefined. */
+export function gateFor(rows: LevelStanding[], row: LevelStanding): LevelStanding | undefined {
+  return rows[row.rank - 1];
 }
 
 /** How many more words of `row` must be retained before the next level opens. */

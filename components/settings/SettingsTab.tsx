@@ -8,7 +8,7 @@ import { getLanguageConfig, levelFor, levelLabel, recommendedWordsPerPassage, de
 import { todayStr } from '@/lib/deck';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { loadLevelTable } from '@/lib/curriculum';
-import { levelStandings, highestUnlocked, wordsToUnlockNext, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
+import { levelStandings, wordsToUnlockNext, gateFor, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
 
@@ -46,15 +46,19 @@ export default function SettingsTab() {
   const [saved,      setSaved]      = useState(false);
 
   // ── Level unlocking ──────────────────────────────────────────────────────
-  const { deck, deckLoaded } = useVocabDeck(language);
+  const { deck } = useVocabDeck(language);
   const [levelTable, setLevelTable] = useState<Record<number, string[]> | null>(null);
   const [testedLevel, setTestedLevel] = useState(0);
-  const [placementSeen, setPlacementSeen] = useState(true); // assume seen until prefs load
-  const [test, setTest] = useState<'placement' | number | null>(null);
+  /** Which locked level the learner is challenging, or null. Placement lives in the
+   *  onboarding flow now (components/level/AddLanguage.tsx) and never starts from here. */
+  const [test, setTest] = useState<number | null>(null);
 
   useEffect(() => {
     let live = true;
     setLevelTable(null);
+    // Close any open challenge: "test out of B1" is a Spanish intention, and carrying it
+    // into Japanese would silently start an N3 test the learner never asked for.
+    setTest(null);
     loadLevelTable(language).then(t => { if (live) setLevelTable(t); });
     return () => { live = false; };
   }, [language]);
@@ -64,7 +68,7 @@ export default function SettingsTab() {
     // B2 before unlocking existed would otherwise be demoted by this feature shipping, which
     // is not a thing a settings screen should do to you on upgrade.
     () => (levelTable
-      ? levelStandings(deck, levelTable, langConfig.levels.map(l => l.level), Math.max(testedLevel, level))
+      ? levelStandings(deck, levelTable, langConfig.levels.map(l => l.level), { testedLevel, selectedLevel: level })
       : []),
     [levelTable, deck, langConfig, testedLevel, level],
   );
@@ -73,27 +77,19 @@ export default function SettingsTab() {
   const isLocked = (lvl: number) => standings.length > 0 && !byLevel.get(lvl)?.unlocked;
 
   async function recordTestResult(through: number) {
-    if (through <= testedLevel) { await markPlacementSeen(); return; }
+    if (through <= testedLevel) return;
     setTestedLevel(through);
     const prefs = await storage.getPrefs();
     await storage.savePrefs({
       ...prefs,
       testedLevels: { ...prefs.testedLevels, [language]: through },
-      placementSeen: { ...prefs.placementSeen, [language]: true },
     });
-  }
-
-  async function markPlacementSeen() {
-    setPlacementSeen(true);
-    const prefs = await storage.getPrefs();
-    await storage.savePrefs({ ...prefs, placementSeen: { ...prefs.placementSeen, [language]: true } });
   }
 
   useEffect(() => {
     storage.getPrefs().then(p => {
       setLevel(levelFor(language, p));
       setTestedLevel(p.testedLevels?.[language] ?? 0);
-      setPlacementSeen(!!p.placementSeen?.[language]);
       const r = p.srsRetention ?? 0.90;
       setRetention(r);
       const md = p.srsMaxDays ?? 365;
@@ -249,43 +245,16 @@ export default function SettingsTab() {
       <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
         A level opens once you hold {Math.round(RETAINED_FRACTION * 100)}% of the one below it
-        for a week or more — or as soon as you pass its test. Testing is a shortcut, never a
-        requirement.
+        for a week or more — or as soon as you pass its test. Click a locked level to take
+        one; testing is a shortcut, never a requirement.
       </p>
-
-      {/* Offered once per language. Grinding from A1 is the wrong first experience for
-          someone who already speaks some of the language. */}
-      {!placementSeen && deckLoaded && test === null && (
-        <div className="rounded-[11px] px-5 py-4 mb-4 flex items-center justify-between gap-4 flex-wrap"
-          style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--card))', border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--line))' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 600 }}>
-              Not sure where to start?
-            </div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.45, maxWidth: '44ch' }}>
-              Take the placement test. It works up from the easiest level and stops as soon as
-              you miss — a few questions if you&apos;re new, a few minutes if you&apos;re not.
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setTest('placement')} className="cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 16px', boxShadow: '0 2px 0 var(--accent-deep)' }}>
-              Take it
-            </button>
-            <button onClick={markPlacementSeen} className="cursor-pointer whitespace-nowrap"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', color: 'var(--ink-faint)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 16px' }}>
-              No thanks
-            </button>
-          </div>
-        </div>
-      )}
 
       {test !== null && (
         <LevelTest
           language={language}
           mode={test}
           onFinish={recordTestResult}
-          onClose={() => { setTest(null); void markPlacementSeen(); }}
+          onClose={() => setTest(null)}
         />
       )}
 
@@ -293,7 +262,11 @@ export default function SettingsTab() {
         {langConfig.levels.map(({ level: lvl, label, badge, desc }) => {
           const active = level === lvl;
           const locked = isLocked(lvl);
-          const below  = byLevel.get(lvl - 1);
+          // The gate is the level one step EASIER, which is `lvl - 1` only for the
+          // ascending curricula. Japanese counts down, so this named N3 as the gate for N4
+          // and left N1 with none at all.
+          const row    = byLevel.get(lvl);
+          const below  = row ? gateFor(standings, row) : undefined;
           return (
             <button
               key={lvl}
@@ -322,7 +295,7 @@ export default function SettingsTab() {
                   <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2, lineHeight: 1.4 }}>
                     {locked
                       ? below
-                        ? <>Locked — {wordsToUnlockNext(below)} more {levelLabel(language, below.level)} word{wordsToUnlockNext(below) === 1 ? '' : 's'} to retain, or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>test out of it</span>.</>
+                        ? <>Locked — {wordsToUnlockNext(below)} more {levelLabel(language, below.level)} word{wordsToUnlockNext(below) === 1 ? '' : 's'} to retain, or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take a test to unlock it</span>.</>
                         : <>Locked — <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take the test</span> to unlock.</>
                       : desc}
                   </div>
@@ -383,16 +356,6 @@ export default function SettingsTab() {
             </button>
           );
         })()}
-      </div>
-
-      <div className="mb-10">
-        <button
-          onClick={() => setTest('placement')}
-          className="cursor-pointer"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--ink-faint)', textDecoration: 'underline', textUnderlineOffset: 3, padding: 0 }}
-        >
-          {highestUnlocked(standings) > (standings[0]?.level ?? 1) ? 'Retake the placement test' : 'Take the placement test'}
-        </button>
       </div>
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}

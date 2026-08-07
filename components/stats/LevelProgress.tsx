@@ -4,7 +4,7 @@ import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { loadLevelTable } from '@/lib/curriculum';
 import { levelLabel, levelNumbers, levelFor } from '@/lib/languageConfig';
-import { levelStandings, wordsToUnlockNext, RETAINED_FRACTION, RETAINED_DAYS, type LevelStanding } from '@/lib/unlock';
+import { levelStandings, wordsToUnlockNext, gateFor, RETAINED_FRACTION, RETAINED_DAYS, type LevelStanding } from '@/lib/unlock';
 
 /**
  * How much of each proficiency band the learner holds — and which bands that has opened.
@@ -38,7 +38,9 @@ export default function LevelProgress({ deck, language }: Props) {
   }, [language]);
 
   const rows: LevelStanding[] = useMemo(
-    () => (table ? levelStandings(deck, table, levelNumbers(language), Math.max(testedLevel, selected)) : []),
+    // Never Math.max these two: Japanese counts down, so the bigger number is the EASIER
+    // level. levelStandings resolves both by rank.
+    () => (table ? levelStandings(deck, table, levelNumbers(language), { testedLevel, selectedLevel: selected }) : []),
     [table, deck, language, testedLevel, selected],
   );
 
@@ -46,7 +48,7 @@ export default function LevelProgress({ deck, language }: Props) {
 
   const grand = rows.reduce((a, r) => ({ retained: a.retained + r.retained, total: a.total + r.total }), { retained: 0, total: 0 });
   const nextLocked = rows.find(r => !r.unlocked);
-  const gateRow = nextLocked ? rows.find(r => r.level === nextLocked.level - 1) : undefined;
+  const gateRow = nextLocked ? gateFor(rows, nextLocked) : undefined;
 
   return (
     <div className="mt-8">
@@ -98,7 +100,7 @@ export default function LevelProgress({ deck, language }: Props) {
         <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 12, lineHeight: 1.5 }}>
           <span style={{ color: 'var(--accent)' }}>{wordsToUnlockNext(gateRow).toLocaleString()}</span>
           {' '}more {levelLabel(language, gateRow.level)} word{wordsToUnlockNext(gateRow) === 1 ? '' : 's'} retained
-          unlocks {levelLabel(language, nextLocked.level)} — or test out of it in Settings.
+          unlocks {levelLabel(language, nextLocked.level)} — or take a test to unlock it.
         </p>
       )}
     </div>

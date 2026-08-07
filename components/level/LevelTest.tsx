@@ -24,11 +24,14 @@ interface Props {
   /** Called with the highest level passed (0 = none). Fires once, when the run ends. */
   onFinish: (through: number) => void;
   onClose: () => void;
+  /** Onboarding only: offer a way out for someone who knows they're a beginner. Given,
+   *  a Skip button replaces Cancel and calls this instead of abandoning the run. */
+  onSkip?: () => void;
 }
 
 type Phase = 'loading' | 'unavailable' | 'asking' | 'blockDone' | 'finished';
 
-export default function LevelTest({ language, mode, onFinish, onClose }: Props) {
+export default function LevelTest({ language, mode, onFinish, onClose, onSkip }: Props) {
   const levels = useMemo(() => levelNumbers(language), [language]);
   const queue  = useMemo(
     () => (mode === 'placement' ? levels.slice() : [mode]),
@@ -48,8 +51,33 @@ export default function LevelTest({ language, mode, onFinish, onClose }: Props) 
   const [results, setResults]     = useState<BlockResult[]>([]);
   const [picked, setPicked]       = useState<string | null>(null);
 
+  /**
+   * Everything below belongs to ONE (language, mode) run, and both have to clear it.
+   *
+   * Two leaks came from not doing this. Switching language kept the previous language's
+   * loaded tables, so a Chinese test rendered under Spanish. And starting a different
+   * level's challenge mid-run changed `mode` but nothing else, while the block builder
+   * only rebuilds when `questions` is empty — so "test out of B2" stayed showing A2. It
+   * also made every test look identical on a retake, because the questions were simply
+   * never regenerated; the generator itself picks at random.
+   *
+   * Declared before the loader so it runs first: effects fire in declaration order, and
+   * this must not wipe tables the loader has just set.
+   */
+  useEffect(() => {
+    setPhase('loading');
+    setQuestions([]);
+    setAnswers([]);
+    setResults([]);
+    setQi(0);
+    setBi(0);
+    setPicked(null);
+  }, [language, mode]);
+
   useEffect(() => {
     let live = true;
+    // Clear first: the old language's tables must never survive into the new run.
+    setTables(null);
     Promise.all([loadLevelTable(language), loadVocabTable(language)]).then(([levelTable, vocab]) => {
       if (!live) return;
       // No tables means no definitions, and a test must never invent one.
@@ -204,9 +232,9 @@ export default function LevelTest({ language, mode, onFinish, onClose }: Props) 
         <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
           {levelLabel(language, q.level)} · {qi + 1} of {questions.length}
         </div>
-        <button onClick={onClose} className="cursor-pointer"
+        <button onClick={onSkip ?? onClose} className="cursor-pointer"
           style={{ ...mono, fontSize: 11, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--ink-faint)' }}>
-          Cancel
+          {onSkip ? 'Skip — I\u2019m new to this' : 'Cancel'}
         </button>
       </div>
 
