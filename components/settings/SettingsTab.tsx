@@ -1,12 +1,16 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor, levelLabel, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
 import { todayStr } from '@/lib/deck';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { loadLevelTable } from '@/lib/curriculum';
+import { levelStandings, highestUnlocked, wordsToUnlockNext, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
+import LevelTest from '@/components/level/LevelTest';
 
 const RETENTION_PRESETS = [
   { value: 0.70, label: '70%', desc: 'Relaxed — longer intervals, more forgetting accepted' },
@@ -41,9 +45,55 @@ export default function SettingsTab() {
   const [wordsPerPassageRaw, setWordsPerPassageRaw]  = useState(String(wordsPerPassage));
   const [saved,      setSaved]      = useState(false);
 
+  // ── Level unlocking ──────────────────────────────────────────────────────
+  const { deck, deckLoaded } = useVocabDeck(language);
+  const [levelTable, setLevelTable] = useState<Record<number, string[]> | null>(null);
+  const [testedLevel, setTestedLevel] = useState(0);
+  const [placementSeen, setPlacementSeen] = useState(true); // assume seen until prefs load
+  const [test, setTest] = useState<'placement' | number | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLevelTable(null);
+    loadLevelTable(language).then(t => { if (live) setLevelTable(t); });
+    return () => { live = false; };
+  }, [language]);
+
+  const standings: LevelStanding[] = useMemo(
+    // The level already selected counts as unlocked, whatever the deck says. Anyone who set
+    // B2 before unlocking existed would otherwise be demoted by this feature shipping, which
+    // is not a thing a settings screen should do to you on upgrade.
+    () => (levelTable
+      ? levelStandings(deck, levelTable, langConfig.levels.map(l => l.level), Math.max(testedLevel, level))
+      : []),
+    [levelTable, deck, langConfig, testedLevel, level],
+  );
+  const byLevel = useMemo(() => new Map(standings.map(r => [r.level, r])), [standings]);
+  // Until the tables load, don't lock anything — a slow chunk must never look like a wall.
+  const isLocked = (lvl: number) => standings.length > 0 && !byLevel.get(lvl)?.unlocked;
+
+  async function recordTestResult(through: number) {
+    if (through <= testedLevel) { await markPlacementSeen(); return; }
+    setTestedLevel(through);
+    const prefs = await storage.getPrefs();
+    await storage.savePrefs({
+      ...prefs,
+      testedLevels: { ...prefs.testedLevels, [language]: through },
+      placementSeen: { ...prefs.placementSeen, [language]: true },
+    });
+  }
+
+  async function markPlacementSeen() {
+    setPlacementSeen(true);
+    const prefs = await storage.getPrefs();
+    await storage.savePrefs({ ...prefs, placementSeen: { ...prefs.placementSeen, [language]: true } });
+  }
+
   useEffect(() => {
     storage.getPrefs().then(p => {
       setLevel(levelFor(language, p));
+      setTestedLevel(p.testedLevels?.[language] ?? 0);
+      setPlacementSeen(!!p.placementSeen?.[language]);
       const r = p.srsRetention ?? 0.90;
       setRetention(r);
       const md = p.srsMaxDays ?? 365;
@@ -197,13 +247,57 @@ export default function SettingsTab() {
 
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
       <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
-      <div className="flex flex-col gap-2.5 mb-10" style={{ maxWidth: 540 }}>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
+        A level opens once you hold {Math.round(RETAINED_FRACTION * 100)}% of the one below it
+        for a week or more — or as soon as you pass its test. Testing is a shortcut, never a
+        requirement.
+      </p>
+
+      {/* Offered once per language. Grinding from A1 is the wrong first experience for
+          someone who already speaks some of the language. */}
+      {!placementSeen && deckLoaded && test === null && (
+        <div className="rounded-[11px] px-5 py-4 mb-4 flex items-center justify-between gap-4 flex-wrap"
+          style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--card))', border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--line))' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 600 }}>
+              Not sure where to start?
+            </div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.45, maxWidth: '44ch' }}>
+              Take the placement test. It works up from the easiest level and stops as soon as
+              you miss — a few questions if you&apos;re new, a few minutes if you&apos;re not.
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setTest('placement')} className="cursor-pointer whitespace-nowrap"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 16px', boxShadow: '0 2px 0 var(--accent-deep)' }}>
+              Take it
+            </button>
+            <button onClick={markPlacementSeen} className="cursor-pointer whitespace-nowrap"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', color: 'var(--ink-faint)', border: '1px solid var(--line)', borderRadius: 8, padding: '10px 16px' }}>
+              No thanks
+            </button>
+          </div>
+        </div>
+      )}
+
+      {test !== null && (
+        <LevelTest
+          language={language}
+          mode={test}
+          onFinish={recordTestResult}
+          onClose={() => { setTest(null); void markPlacementSeen(); }}
+        />
+      )}
+
+      <div className="flex flex-col gap-2.5 mb-4" style={{ maxWidth: 540 }}>
         {langConfig.levels.map(({ level: lvl, label, badge, desc }) => {
           const active = level === lvl;
+          const locked = isLocked(lvl);
+          const below  = byLevel.get(lvl - 1);
           return (
             <button
               key={lvl}
-              onClick={() => handleSelectLevel(lvl)}
+              onClick={() => (locked ? setTest(lvl) : handleSelectLevel(lvl))}
               className="text-left cursor-pointer transition-all duration-150 rounded-[11px] px-5 py-4"
               style={{
                 background: active
@@ -211,6 +305,7 @@ export default function SettingsTab() {
                   : 'var(--card)',
                 border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`,
                 boxShadow: active ? '0 2px 8px rgba(0,0,0,.06)' : 'none',
+                opacity: locked ? 0.72 : 1,
               }}
             >
               <div className="flex items-center gap-3">
@@ -218,16 +313,25 @@ export default function SettingsTab() {
                   className="shrink-0 flex items-center justify-center rounded-full"
                   style={{ width: 28, height: 28, background: active ? 'var(--accent)' : 'var(--line-soft)', color: active ? '#fff' : 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 11, fontWeight: 600, transition: 'all .15s' }}
                 >
-                  {badge}
+                  {locked ? '🔒' : badge}
                 </div>
-                <div>
-                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', color: active ? 'var(--accent)' : 'var(--ink)' }}>
+                <div className="min-w-0">
+                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, fontWeight: 600, letterSpacing: '.04em', color: active ? 'var(--accent)' : locked ? 'var(--ink-soft)' : 'var(--ink)' }}>
                     {label}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2, lineHeight: 1.4 }}>
-                    {desc}
+                    {locked
+                      ? below
+                        ? <>Locked — {wordsToUnlockNext(below)} more {levelLabel(language, below.level)} word{wordsToUnlockNext(below) === 1 ? '' : 's'} to retain, or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>test out of it</span>.</>
+                        : <>Locked — <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take the test</span> to unlock.</>
+                      : desc}
                   </div>
                 </div>
+                {!locked && byLevel.get(lvl)?.via === 'tested' && (
+                  <span className="ml-auto shrink-0" style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--jade)', border: '1px solid color-mix(in srgb, var(--jade) 45%, transparent)', borderRadius: 5, padding: '2px 6px' }}>
+                    tested
+                  </span>
+                )}
               </div>
             </button>
           );
@@ -279,6 +383,16 @@ export default function SettingsTab() {
             </button>
           );
         })()}
+      </div>
+
+      <div className="mb-10">
+        <button
+          onClick={() => setTest('placement')}
+          className="cursor-pointer"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--ink-faint)', textDecoration: 'underline', textUnderlineOffset: 3, padding: 0 }}
+        >
+          {highestUnlocked(standings) > (standings[0]?.level ?? 1) ? 'Retake the placement test' : 'Take the placement test'}
+        </button>
       </div>
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}

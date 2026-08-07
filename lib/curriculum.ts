@@ -99,6 +99,30 @@ export async function loadLevelTable(lang: LanguageCode): Promise<Record<number,
 }
 
 /**
+ * The language's word → { meaning, reading } table.
+ *
+ * Same lazy-import discipline as the two loaders above, and for the same reason. Used by
+ * the level tests, which need glosses to build their options — the level tables carry only
+ * the headwords. Returns null when the chunk fails to load; a test cannot be built without
+ * definitions and must not fall back to inventing them.
+ */
+export async function loadVocabTable(
+  lang: LanguageCode,
+): Promise<Record<string, { meaning: string; reading?: string; pinyin?: string }> | null> {
+  try {
+    switch (lang) {
+      case 'zh': return (await import('./data/hsk-vocab')).HSK_VOCAB;
+      case 'ja': return (await import('./data/jlpt-vocab')).JLPT_VOCAB;
+      case 'es': return (await import('./data/cefr-vocab')).CEFR_VOCAB;
+      case 'fr': return (await import('./data/fr-vocab')).FR_VOCAB;
+      default: return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Drop every deck word that is no longer in the language's graded vocabulary.
  *
  * Matching is on the headword, lowercased for the two Latin-script languages (deck entries

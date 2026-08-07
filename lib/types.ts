@@ -107,6 +107,13 @@ export interface UserPrefs {
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
   wordsPerPassage?: number;  // vocab words to build each AI passage around; absent = level-based recommendation
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
+  /** Highest level unlocked by PASSING ITS TEST, per language (see lib/unlock.ts). Levels
+   *  unlocked by retention are derived from the deck and deliberately not stored — a
+   *  persisted copy could disagree with the deck it was computed from. */
+  testedLevels?: Partial<Record<LanguageCode, number>>;
+  /** Languages where the placement test has been taken or dismissed, so the prompt to take
+   *  it appears once rather than on every visit. */
+  placementSeen?: Partial<Record<LanguageCode, boolean>>;
 }
 
 export interface ClaimedWords {
