@@ -1,20 +1,13 @@
 'use client';
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import type { PracticeMode, ContentSection } from '@/lib/types';
+import { useState, useMemo } from 'react';
+import type { PracticeMode } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
-import { useDailyContent } from '@/hooks/useDailyContent';
-import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor, getLanguageConfig } from '@/lib/languageConfig';
 import { dateInDays } from '@/lib/deck';
 import Flashcards from './Flashcards';
-import FillInBlank from './FillInBlank';
-import Conversation from './Conversation';
 
 const MODES: { id: PracticeMode; label: string }[] = [
   { id: 'flash', label: 'Flashcards' },
-  { id: 'fill',  label: 'Fill-in-the-blank' },
-  { id: 'convo', label: 'Conversation' },
   { id: 'cram',  label: 'Cram' },
 ];
 
@@ -28,19 +21,8 @@ interface Props {
 
 export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
   const language = useLanguage();
-  const { deck, deckLoaded, addWord, gradeCard, updateWordReview } = useVocabDeck(language);
+  const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
   const [mode, setMode] = useState<PracticeMode>(initialMode);
-
-  // Proficiency level — start at 0 (same as ReadTab) so we don't load the wrong
-  // level's cache before prefs arrive; useDailyContent skips when level=0
-  const [hskLevel, setHskLevel] = useState(0);
-  const [wordsPerPassage, setWordsPerPassage] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    storage.getPrefs().then(p => {
-      setHskLevel(levelFor(language, p));
-      setWordsPerPassage(p.wordsPerPassage);
-    });
-  }, [language]);
 
   // One deck per language, so practice always pulls from the whole of it.
   const scopedDeck = deck;
@@ -56,26 +38,6 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
       default:          return scopedDeck;
     }
   }, [scopedDeck, cramScope]);
-
-  // Generate only the block the active mode needs: Fill → fill, Convo → convo,
-  // Flashcards → nothing. The hook generates lazily and caches per day.
-  const want = useMemo<ContentSection[]>(
-    () => (mode === 'fill' ? ['fill'] : mode === 'convo' ? ['convo'] : []),
-    [mode],
-  );
-  const { dailyContent, generating } = useDailyContent(hskLevel, deck, want, language, wordsPerPassage);
-
-  // Words added while practicing (fill-in-blank / conversation) are due tomorrow, same as
-  // passage adds — you just encountered them in context, so the first review is the next day.
-  const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
-    addWord({ h: word, p: pinyin, m: meaning, dueAt: dateInDays(1) });
-  }, [addWord]);
-
-  // Stable key for the Conversation so it remounts when the turns change — include
-  // whether the convo block is AI-generated so it remounts when lazy AI turns arrive.
-  const convoKey = dailyContent
-    ? `${dailyContent.sections?.convo ? 'ai' : 'static'}-${dailyContent.date}-${hskLevel}`
-    : `static-${hskLevel}`;
 
   const toggleStyle = (on: boolean) => ({
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase' as const,
@@ -100,41 +62,7 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
         </div>
       </div>
 
-      {/* A focused "Study this deck" scope is STICKY — finishing a session flows on to
-          fill-in-the-blank (still scoped to the deck) and only the banner's Exit clears it. */}
-      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onDone={() => setMode('fill')} onGrade={gradeCard} />}
-      {mode === 'fill'  && (
-        <FillInBlank
-          onDone={() => setMode('convo')}
-          deck={scopedDeck}
-          onAddVocab={handleAddVocab}
-          onGrade={updateWordReview}
-          items={dailyContent?.fillItems}
-          loading={generating.has('fill')}
-        />
-      )}
-      {mode === 'convo' && (
-        // Mount only once the convo block is final — Conversation seeds its chat from
-        // turn 0 on mount and won't remount, so mounting mid-generation would pin the
-        // static first turn.
-        generating.has('convo') ? (
-          <div className="text-center py-14" style={{ color: 'var(--ink-soft)' }}>
-            <div className="animate-pulse" style={{ fontFamily: 'var(--f-han)', fontSize: 52, color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{getLanguageConfig(language).glyph}</div>
-            <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, letterSpacing: '.06em', marginTop: 12 }}>
-              Generating a conversation for your due words…
-            </p>
-          </div>
-        ) : (
-          <Conversation
-            key={convoKey}
-            onScore={onScore}
-            deck={scopedDeck}
-            onAddVocab={handleAddVocab}
-            onGrade={updateWordReview}
-            turns={dailyContent?.conversation}
-          />
-        )
-      )}
+      {mode === 'flash' && <Flashcards deck={scopedDeck} deckLoaded={deckLoaded} onGrade={gradeCard} onScore={onScore} onDone={() => setMode('cram')} />}
       {mode === 'cram' && (
         <div>
           <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 14 }}>
