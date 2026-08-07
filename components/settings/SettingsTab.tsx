@@ -44,6 +44,16 @@ export default function SettingsTab() {
   const [wordsPerPassage,    setWordsPerPassage]    = useState(defaultWordsPerPassage(language, langConfig.defaultLevel));
   const [wordsPerPassageRaw, setWordsPerPassageRaw]  = useState(String(wordsPerPassage));
   const [saved,      setSaved]      = useState(false);
+  /**
+   * Whether prefs have arrived. Until they have, NOTHING renders as selected.
+   *
+   * The initial values above are placeholders — `langConfig.defaultLevel`, 0.90, 365 — and
+   * showing them as the active choice makes the first frame a lie that then animates away:
+   * Japanese defaults to N4, so opening Settings highlighted N4 and slid to N5 a moment
+   * later, and the same held for anyone whose retention or maximum interval wasn't the
+   * default. An unhighlighted frame is imperceptible; the wrong one is not.
+   */
+  const [loaded, setLoaded] = useState(false);
 
   // ── Level unlocking ──────────────────────────────────────────────────────
   const { deck } = useVocabDeck(language);
@@ -87,6 +97,7 @@ export default function SettingsTab() {
   }
 
   useEffect(() => {
+    setLoaded(false);
     storage.getPrefs().then(p => {
       setLevel(levelFor(language, p));
       setTestedLevel(p.testedLevels?.[language] ?? 0);
@@ -101,6 +112,7 @@ export default function SettingsTab() {
       setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
       const wpp = p.wordsPerPassage ?? defaultWordsPerPassage(language, levelFor(language, p));
       setWordsPerPassage(wpp); setWordsPerPassageRaw(String(wpp));
+      setLoaded(true);
     });
   }, [language]);
 
@@ -260,7 +272,7 @@ export default function SettingsTab() {
 
       <div className="flex flex-col gap-2.5 mb-4" style={{ maxWidth: 540 }}>
         {langConfig.levels.map(({ level: lvl, label, badge, desc }) => {
-          const active = level === lvl;
+          const active = loaded && level === lvl;
           const locked = isLocked(lvl);
           // The gate is the level one step EASIER, which is `lvl - 1` only for the
           // ascending curricula. Japanese counts down, so this named N3 as the gate for N4
@@ -365,7 +377,7 @@ export default function SettingsTab() {
       </p>
       <div className="flex flex-col gap-2 mb-10" style={{ maxWidth: 540 }}>
         {RETENTION_PRESETS.map(preset => {
-          const active = Math.abs(retention - preset.value) < 0.001;
+          const active = loaded && Math.abs(retention - preset.value) < 0.001;
           return (
             <button
               key={preset.value}
@@ -435,7 +447,7 @@ export default function SettingsTab() {
             key={d}
             onClick={() => { setMaxDays(d); setMaxDaysRaw(String(d)); savePrefs({ srsMaxDays: d }); }}
             className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
-            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: maxDays === d ? 'var(--ink)' : 'var(--card)', color: maxDays === d ? 'var(--paper)' : 'var(--ink-soft)', border: `1px solid ${maxDays === d ? 'var(--ink)' : 'var(--line)'}` }}
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: loaded && maxDays === d ? 'var(--ink)' : 'var(--card)', color: loaded && maxDays === d ? 'var(--paper)' : 'var(--ink-soft)', border: `1px solid ${loaded && maxDays === d ? 'var(--ink)' : 'var(--line)'}` }}
           >
             {d === 30 ? '1 mo' : d === 90 ? '3 mo' : d === 180 ? '6 mo' : '1 yr'}
           </button>
