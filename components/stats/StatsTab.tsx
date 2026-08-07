@@ -3,7 +3,6 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
-import MemoryGarden from './MemoryGarden';
 import LevelProgress from './LevelProgress';
 import AccuracyTrend from './AccuracyTrend';
 
@@ -37,7 +36,6 @@ export default function StatsTab({ onNavigateRead }: Props) {
 
       <AccuracyTrend history={accuracy} />
 
-      <MemoryGarden deck={deck} />
 
       <div
         className="grid mt-8 overflow-hidden rounded-[11px]"
