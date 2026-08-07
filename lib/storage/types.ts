@@ -1,4 +1,4 @@
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 
 export interface DataService {
   // Vocab decks are per-language (a Chinese deck and a Japanese deck are independent).
@@ -17,6 +17,11 @@ export interface DataService {
   // Daily content is cached per language + level + day.
   getDailyContent(lang: LanguageCode, level: number): Promise<DailyContent | null>;
   saveDailyContent(content: DailyContent): Promise<void>;
+
+  // The passage shelf: finished passages, kept after the daily cache is pruned. Per
+  // language, newest first. See lib/shelf.ts.
+  getShelf(lang: LanguageCode): Promise<ShelfEntry[]>;
+  saveShelf(lang: LanguageCode, entries: ShelfEntry[]): Promise<void>;
 
   // Per-passage cloze blank progress. contentKey = "${date}|${language}|${level}".
   getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null>;

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DataService } from './types';
-import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap } from '@/lib/types';
+import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import { LocalStorage } from './local';
 import { todayStr } from '@/lib/deck';
 
@@ -8,6 +8,10 @@ import { todayStr } from '@/lib/deck';
 //   alter table user_data add column if not exists decks jsonb;
 // `decks` is shaped { zh: DeckWord[], ja: DeckWord[] }. The legacy single `deck` column
 // is treated as the Chinese deck and folded into `decks.zh` on read/migration.
+//
+// The passage shelf requires:
+//   alter table user_data add column if not exists shelf jsonb;
+// `shelf` is shaped { es: ShelfEntry[], fr: ShelfEntry[] } — per language, like `decks`.
 //
 // Cloze blank progress requires:
 //   alter table user_data add column if not exists passage_state jsonb;
@@ -19,6 +23,7 @@ interface UserDataRow {
   prefs: UserPrefs | null;
   srs_state: SRSState | null;
   passage_state: Record<string, ClozeOccurrenceMap> | null;
+  shelf: Partial<Record<LanguageCode, ShelfEntry[]>> | null;
 }
 
 const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja', 'es', 'fr'];
@@ -102,7 +107,26 @@ export class SupabaseStorage implements DataService {
   getClaimedWords(): Promise<ClaimedWords> { return this.local.getClaimedWords(); }
   saveClaimedWords(claimed: ClaimedWords): Promise<void> { return this.local.saveClaimedWords(claimed); }
   getDailyContent(lang: LanguageCode, level: number): Promise<DailyContent | null> { return this.local.getDailyContent(lang, level); }
-  saveDailyContent(content: DailyContent): Promise<void> { return this.local.saveDailyContent(content); }
+  async saveDailyContent(content: DailyContent): Promise<void> {
+    // LocalStorage.saveDailyContent also archives finished passages onto the LOCAL shelf,
+    // writing straight to localStorage — it has no way to reach this backend. Mirror the
+    // result up afterwards, or a signed-in user's shelf would never leave their device.
+    await this.local.saveDailyContent(content);
+    const lang = content.language ?? 'zh';
+    await this.saveShelf(lang, await this.local.getShelf(lang));
+  }
+
+  async getShelf(lang: LanguageCode): Promise<ShelfEntry[]> {
+    const r = await this.row();
+    const cloud = r?.shelf?.[lang];
+    if (cloud) { await this.local.saveShelf(lang, cloud); return cloud; }
+    return this.local.getShelf(lang);
+  }
+  async saveShelf(lang: LanguageCode, entries: ShelfEntry[]): Promise<void> {
+    await this.local.saveShelf(lang, entries);
+    const r = await this.row();
+    await this.patch({ shelf: { ...(r?.shelf ?? {}), [lang]: entries } });
+  }
 
   async getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null> {
     // Fast path: local cache (same device, reload)

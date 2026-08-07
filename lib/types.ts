@@ -176,6 +176,23 @@ export interface FRResponse {
   wordsHit: string[];
 }
 
+/**
+ * One passage kept on the shelf (lib/shelf.ts). Plain text rather than tokens — see the
+ * note there on why the full DailyContent is not what gets archived.
+ */
+export interface ShelfEntry {
+  /** "${date}|${language}|${level}|${passageIdx}" — stable, so re-shelving replaces. */
+  id: string;
+  date: string;            // YYYY-MM-DD
+  language: LanguageCode;
+  level: number;
+  title: string;
+  text: string;
+  vocabWords: string[];    // the target words this passage was built around
+  /** First-try blanks, when the passage had any. */
+  score?: { correct: number; total: number };
+}
+
 export interface ClozeGradeEntry { word: string; grade: number }
 /** Per-passage cloze state keyed by occurrence ID "${sentenceIdx}-${tokenIdx}". */
 export type ClozeOccurrenceMap = Record<string, ClozeGradeEntry>;

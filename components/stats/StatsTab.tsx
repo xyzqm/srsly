@@ -4,6 +4,7 @@ import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
 import LevelProgress from './LevelProgress';
+import PassageShelf from './PassageShelf';
 import AccuracyTrend from './AccuracyTrend';
 
 interface Props { onNavigateRead: () => void; }
@@ -35,6 +36,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       <LevelProgress deck={deck} language={language} />
 
       <AccuracyTrend history={accuracy} />
+
+      <PassageShelf language={language} />
 
 
       <div
