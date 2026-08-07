@@ -121,9 +121,9 @@ function updateStabilityFail(d: number, s: number, r: number): number {
 
 // ── Learning phase ────────────────────────────────────────────────────────────
 
-// Step intervals in minutes; Hard bypasses these and uses HARD_MIN
+// Step intervals in minutes. Hard advances a step like Good but uses HARD_MIN for the gap.
 const LEARNING_STEPS_MIN = [1, 10] as const;
-const HARD_MIN = 5; // Hard in learning is always 5 min regardless of step
+const HARD_MIN = 5;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
@@ -180,35 +180,35 @@ export function fsrsSchedule(
       };
     }
 
-    if (grade === 2) {
-      // Hard: keep current step, always 5 min (regardless of step)
+    // Good and Hard both ADVANCE a step. Hard differs by coming back sooner (5 min rather
+    // than the step's own gap) and by graduating on its own lower initial stability.
+    //
+    // Hard used to repeat the current step instead. That is what Anki does, and it was
+    // harmless while a re-queued card came straight back round — you pressed Good eventually
+    // and moved on. Now that the queue actually honours `dueAtMs`, repeating the step is a
+    // dead end: a learner answering Hard honestly gets a 5:00 countdown, forever, with
+    // `stability` pinned at 0 and `reviews` never incrementing, so the card is permanently
+    // new and never reaches the review phase where the FSRS growth curve lives.
+    const nextStep = step + 1;
+    if (nextStep < LEARNING_STEPS_MIN.length) {
       return {
-        phase: 'learning', learningStep: step,
-        dueAtMs: nowMs + HARD_MIN * 60_000,
+        phase: 'learning', learningStep: nextStep,
+        dueAtMs: nowMs + (grade === 2 ? HARD_MIN : LEARNING_STEPS_MIN[nextStep]) * 60_000,
         dueAt: today, lastReview: today,
       };
     }
 
-    // Good: advance step, graduate from step 1
-    const nextStep = step + 1;
-    if (nextStep >= LEARNING_STEPS_MIN.length) {
-      // Graduate — use preserved stability for relapsed cards, else initial Good stability
-      const s = word.stability ?? initStability(3);
-      const d = word.difficulty ?? initDifficulty(3);
-      return {
-        stability: s, difficulty: d, lapses,
-        reviews: (word.reviews ?? 0) + 1,
-        phase: 'review', learningStep: undefined, dueAtMs: undefined,
-        dueAt: dateInDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
-        lastReview: today,
-      };
-    }
-
-    // Advance to next step (step 0 → step 1 = 10 min)
+    // Graduate. A relapsed card keeps the stability it already earned; a fresh one starts
+    // from this grade's own initial value, which is where Hard stays harder than Good —
+    // ~1 day out against ~2, and a slower curve from there.
+    const s = word.stability ?? initStability(grade);
+    const d = word.difficulty ?? initDifficulty(grade);
     return {
-      phase: 'learning', learningStep: nextStep,
-      dueAtMs: nowMs + LEARNING_STEPS_MIN[nextStep] * 60_000,
-      dueAt: today, lastReview: today,
+      stability: s, difficulty: d, lapses,
+      reviews: (word.reviews ?? 0) + 1,
+      phase: 'review', learningStep: undefined, dueAtMs: undefined,
+      dueAt: dateInDays(fz(nextInterval(s, settings.desiredRetention, settings.maxIntervalDays))),
+      lastReview: today,
     };
   }
 

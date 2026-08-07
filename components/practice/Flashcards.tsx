@@ -39,8 +39,14 @@ function cardSpeechText(card: DeckWord): string {
 interface Props {
   deck: DeckWord[];
   deckLoaded?: boolean;
-  onDone: () => void;
+  /** Optional next-step CTA shown when the session ends. Omitted = no button. */
+  onDone?: () => void;
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
+  /** Reports the session's recall rate (0–1) once, when it completes, to extend the daily
+   *  streak. Fill-in-the-blank and Conversation used to be what marked Practice as "studied
+   *  today"; with those gone, flashcards are the only thing left that can. Withheld for cram,
+   *  same as onGrade — a stateless drill should not move the streak either. */
+  onScore?: (score: number) => void;
   /** Cram mode: drill the given words regardless of due date or daily limits, and
    *  WITHOUT changing their schedule (Again re-queues within the session; safe before a test). */
   cram?: boolean;
@@ -60,7 +66,7 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, cram = false }: Props) {
+export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, onScore, cram = false }: Props) {
   const language = useLanguage();
   const ui = uiStrings(language);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
@@ -72,8 +78,13 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
   const [hiddenByLimit, setHiddenByLimit] = useState(0);
   const [results, setResults] = useState<{ label: string; color: string }[]>([]);
   const [revealed, setRevealed] = useState(false);
-  // Tick increments every second when waiting, triggering countdown re-render
-  const [tick, setTick] = useState(0);
+  // Bumped once a second while waiting on a learning card; its only job is to re-render so
+  // the countdown advances, so it is read for its side effect rather than its value.
+  const [, setTick] = useState(0);
+  /** Cards the user explicitly chose to study before their delay elapsed, by stable key.
+   *  Cleared for a card as soon as it is graded, so pulling one forward is a one-off
+   *  decision and never turns the delay off for the rest of the session. */
+  const [aheadKeys, setAheadKeys] = useState<Set<string>>(new Set());
 
   // "Flip cards" / reverse study: show the meaning on the front, recall the word on the
   // back. Persisted (localStorage prefs) so it survives across sessions/days.
@@ -125,7 +136,25 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     setHiddenByLimit(hidden);
   }, [deck, deckLoaded, queue, cram]);
 
-  // (No countdown timer needed — learning cards are shown immediately regardless of dueAtMs)
+  // Report the session once, on completion. Guarded by a ref so a later re-render (a hover,
+  // a settings read) cannot extend the streak a second time.
+  const scored = useRef(false);
+  useEffect(() => {
+    if (scored.current || !onScore || cram) return;
+    if (queue === null || queue.length > 0 || results.length === 0) return;
+    scored.current = true;
+    onScore(results.filter(r => r.label === 'Good' || r.label === 'Easy').length / results.length);
+  }, [queue, results, onScore, cram]);
+
+  // Re-render once a second ONLY while every remaining card is still on its delay, so the
+  // countdown stays live without costing a render per second during normal grading.
+  const waiting = queue !== null && queue.length > 0 &&
+    !cram && queue.every(c => c.dueAtMs && c.dueAtMs > Date.now() && !aheadKeys.has(c.id ?? c.h));
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => setTick(n => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [waiting]);
 
   // Keyboard shortcuts: Space/Enter reveals the answer, then grades Good; 1–4 pick a
   // grade directly. A single listener reads live handlers from a ref so it always
@@ -184,8 +213,15 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     );
   }
 
-  const readyCards  = queue;
-  const futureCards: typeof queue = [];
+  // A learning card re-queued with `dueAtMs` is NOT ready until that moment arrives.
+  // This partition is the whole point of the learning steps: without it a card graded
+  // "Good (10m)" came straight back round, so nothing ever graduated and the interval
+  // growth the scheduler was computing was never visible.
+  const nowMs = Date.now();
+  const keyOf = (c: DeckWord) => c.id ?? c.h;
+  const isReady = (c: DeckWord) => cram || !c.dueAtMs || c.dueAtMs <= nowMs || aheadKeys.has(keyOf(c));
+  const readyCards  = queue.filter(isReady);
+  const futureCards = queue.filter(c => !isReady(c));
 
   // All caught up — no cards were due today
   if (queue.length === 0 && results.length === 0) {
@@ -205,13 +241,15 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
             : <>No cards are due for review right now.{nextDue && <> Next review scheduled for <strong>{nextDue}</strong>.</>}</>
           }
         </p>
-        <button
-          onClick={onDone}
-          className="cursor-pointer transition-all duration-150 mt-6 inline-block"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
-        >
-          Go to fill-in-blank →
-        </button>
+        {onDone && (
+          <button
+            onClick={onDone}
+            className="cursor-pointer transition-all duration-150 mt-6 inline-block"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+          >
+            Cram instead →
+          </button>
+        )}
       </div>
     );
   }
@@ -242,17 +280,48 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
             <div key={i} style={{ width: 10, height: 10, borderRadius: 2, background: r.color }} title={r.label} />
           ))}
         </div>
-        <button
-          onClick={onDone}
-          className="cursor-pointer transition-all duration-150"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex', alignItems: 'center', gap: 10 }}
-        >
-          Continue to fill-in →
-        </button>
+        {onDone && (
+          <button
+            onClick={onDone}
+            className="cursor-pointer transition-all duration-150"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex', alignItems: 'center', gap: 10 }}
+          >
+            Done
+          </button>
+        )}
       </div>
     );
   }
 
+
+  // Every remaining card is still counting down. Show the wait rather than silently
+  // serving a card early — but never trap the user: they can pull the next one forward.
+  if (readyCards.length === 0 && futureCards.length > 0) {
+    const soonest = futureCards.reduce((a, b) => ((a.dueAtMs ?? 0) < (b.dueAtMs ?? 0) ? a : b));
+    const secs = Math.max(0, Math.ceil(((soonest.dueAtMs ?? 0) - Date.now()) / 1000));
+    const mm = Math.floor(secs / 60), ss = secs % 60;
+    return (
+      <div className="text-center py-14">
+        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 40, fontWeight: 500, letterSpacing: '.02em', color: 'var(--accent)' }}>
+          {mm}:{String(ss).padStart(2, '0')}
+        </div>
+        <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 500, marginTop: 10 }}>
+          {futureCards.length} card{futureCards.length === 1 ? '' : 's'} coming back
+        </h3>
+        <p style={{ color: 'var(--ink-soft)', margin: '8px auto 0', maxWidth: '38ch', lineHeight: 1.6 }}>
+          Learning cards return after a short gap — that spacing is what makes them stick.
+          {results.length > 0 && <> You&apos;ve graded {results.length} so far.</>}
+        </p>
+        <button
+          onClick={() => setAheadKeys(prev => new Set(prev).add(soonest.id ?? soonest.h))}
+          className="cursor-pointer transition-all duration-150 mt-6"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '11px 20px' }}
+        >
+          Study the next one now
+        </button>
+      </div>
+    );
+  }
 
   const card          = readyCards[0];
   const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length)) * 100)) : 0;
@@ -260,8 +329,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
-    // Cram: no scheduling, no counters. "Again" re-drills at the end of the session;
-    // anything else removes the card. The card's saved state is never touched.
+    // Cram is STATELESS, and this early return is the whole mechanism: it lands before
+    // onGrade (the only FSRS write) and before bumpCount (the only daily-limit write), so a
+    // crammed card keeps its stability, its due date, its review count and its status.
+    // ExtrasTab also declines to pass onGrade for the cram instance, so it is guarded twice.
+    // "Again" re-drills at the end of this session and nothing else changes.
     if (cram) {
       setResults(prev => [...prev, { label, color }]);
       setQueue(prev => {
@@ -278,6 +350,12 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
     if (card.phase === undefined && (card.reviews ?? 0) === 0 && card.stability === undefined) bumpCount('new');
     else if (card.phase === 'review') bumpCount('review');
     setResults(prev => [...prev, { label, color }]);
+
+    setAheadKeys(prev => {
+      const k = card.id ?? card.h;
+      if (!prev.has(k)) return prev;
+      const next = new Set(prev); next.delete(k); return next;
+    });
 
     const newState    = fsrsSchedule(card, fsrsGrade, settings);
     const updatedCard: DeckWord = { ...card, ...newState };
@@ -411,7 +489,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
         )}
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
           {cram
-            ? (revealed ? 'Did you know it?' : 'Press space or click to reveal')
+            ? (revealed ? 'Did you know it?' : 'Click to reveal')
             : (revealed ? 'How well did you remember?' : (reverse ? 'Recall the word, then reveal' : 'Think of the meaning, then reveal'))}
         </div>
 
@@ -442,14 +520,16 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
         {cram ? (
           // Cram: Quizlet-style two-way outcome — no scheduling, no intervals.
           !revealed ? (
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-faint)', padding: '11px 0' }}>
-              Press <strong style={{ color: 'var(--ink-soft)' }}>space</strong> or click the card to reveal
-            </div>
+            // A spacer, not a second prompt — the card face already says "Click to reveal".
+            // It holds the grade buttons' height so revealing doesn't shift the layout.
+            <div style={{ height: 39 }} aria-hidden />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginTop: 22 }}>
               {([
-                { label: 'Again',  color: 'var(--accent)', sub: '← or 1', onClick: () => handleGrade(1, 'Again', 'var(--accent)') },
-                { label: 'Got it', color: 'var(--jade)',   sub: '→ or 2', onClick: () => handleGrade(3, 'Got it', 'var(--jade)') },
+                // No `sub` hint text: the cram face stays clean. The ←/1 and →/2 bindings
+                // are still live — see the `kbd` handler, which is deliberately untouched.
+                { label: 'Again',  color: 'var(--accent)', onClick: () => handleGrade(1, 'Again', 'var(--accent)') },
+                { label: 'Got it', color: 'var(--jade)',   onClick: () => handleGrade(3, 'Got it', 'var(--jade)') },
               ]).map(b => (
                 <button
                   key={b.label}
@@ -458,7 +538,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, c
                   style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${b.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
                 >
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: b.color }}>{b.label}</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 3 }}>{b.sub}</div>
                 </button>
               ))}
             </div>
