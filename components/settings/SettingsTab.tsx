@@ -341,7 +341,18 @@ export default function SettingsTab() {
           {maxDays >= 365 ? `(${(maxDays / 365).toFixed(maxDays % 365 === 0 ? 0 : 1)} yr${maxDays >= 730 ? 's' : ''})` : maxDays >= 30 ? `(${Math.round(maxDays / 30)} mo)` : ''}
         </span>
       </div>
-      <div className="flex gap-2 flex-wrap mb-10">
+      {maxDays > 365 && (
+        // Above a year the setting still works — it is the user's call — but it stops being
+        // a study aid. FSRS keeps ~90% recall by reviewing you just before you would forget;
+        // pushing the ceiling out means the scheduler can't do that any more, and by the time
+        // a card comes back a miss costs a full relearn.
+        <p style={{ fontSize: 12.5, color: 'var(--gold)', fontFamily: 'var(--f-mono)', lineHeight: 1.5, maxWidth: '46ch', marginTop: 8 }}>
+          Not recommended above a year. Gaps this long mean a card you have half-forgotten
+          waits {(maxDays / 365).toFixed(maxDays % 365 === 0 ? 0 : 1)} years before you find out — and
+          then costs a full relearn.
+        </p>
+      )}
+      <div className="flex gap-2 flex-wrap mb-10 mt-3">
         {[30, 90, 180, 365].map(d => (
           <button
             key={d}
