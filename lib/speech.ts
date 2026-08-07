@@ -3,67 +3,128 @@
 // ─── Voice selection ──────────────────────────────────────────────────────────
 
 /**
- * Preferred Chinese voice names, ranked best-first.
- * Each entry is a substring match against the voice name.
+ * Preferred voice names per language, ranked best-first; each is a substring match.
+ *
+ * This used to be a single Chinese list, and everything that wasn't Japanese fell through
+ * to it. Since the list is only consulted *within* the matching-language voices now, an
+ * unlisted language simply gets the generic ranking below — never another language's voice.
  */
-const VOICE_PRIORITY = [
-  // Microsoft neural (Edge / Windows) — best quality browser voice
-  'Microsoft Xiaoxiao Online (Natural)',
-  'Microsoft Yunxi Online (Natural)',
-  'Microsoft Yaoyao Online (Natural)',
-  'Microsoft Kangkang Online (Natural)',
-  'Microsoft Huihui Online (Natural)',
-  // Google (Chrome on any OS) — cloud-backed, very natural
-  'Google 普通话（中国大陆）',
-  'Google 普通话',
-  'Google Chinese',
-  // macOS enhanced voices (System Preferences → Accessibility → Speech → Manage Voices)
-  'Tingting',     // macOS zh-CN enhanced
-  'Meijia',       // macOS zh-TW enhanced (still clear Mandarin)
-  'Sinji',        // macOS zh-HK (Cantonese, but still recognisable)
-];
+const VOICE_PRIORITY: Record<string, string[]> = {
+  zh: [
+    // Microsoft neural (Edge / Windows) — best quality browser voice
+    'Microsoft Xiaoxiao Online (Natural)',
+    'Microsoft Yunxi Online (Natural)',
+    'Microsoft Yaoyao Online (Natural)',
+    'Microsoft Kangkang Online (Natural)',
+    'Microsoft Huihui Online (Natural)',
+    // Google (Chrome on any OS) — cloud-backed, very natural
+    'Google 普通话（中国大陆）',
+    'Google 普通话',
+    'Google Chinese',
+    // macOS (System Settings → Accessibility → Spoken Content → Manage Voices)
+    'Tingting',     // macOS zh-CN
+    'Meijia',       // macOS zh-TW (still clear Mandarin)
+  ],
+  ja: [
+    'Microsoft Nanami Online (Natural)',
+    'Google 日本語',
+    'Kyoko',        // Apple's standard ja-JP voice
+    'O-Ren',
+    'Hattori',
+  ],
+  es: [
+    'Microsoft Elvira Online (Natural)',
+    'Microsoft Alvaro Online (Natural)',
+    'Google español',
+    'Mónica',       // Apple's standard es-ES voice
+    'Monica',
+    'Paulina',      // es-MX
+  ],
+  fr: [
+    'Microsoft Denise Online (Natural)',
+    'Microsoft Henri Online (Natural)',
+    'Google français',
+    'Thomas',       // Apple's standard fr-FR voice
+    'Audrey',
+    'Marie',
+    'Amélie',       // fr-CA
+  ],
+};
 
-let cachedVoice: SpeechSynthesisVoice | null | undefined = undefined; // undefined = not yet resolved
+/**
+ * macOS ships a large set of joke voices — Eddy, Grandma, Bubbles, Zarvox — in EVERY
+ * language, and they sort ahead of the real ones alphabetically. Picking "the first
+ * Spanish voice" lands on "Eddy (Spanish (Spain))", which is a cartoon. They are only
+ * excluded when a real voice exists, never outright: a locale that has nothing else
+ * should still speak.
+ */
+const NOVELTY_VOICE = /\b(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Hysterical|Jester|Junior|Kathy|Organ|Princess|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
 
-// Active TTS locale (BCP-47). Set once by the app when the study language changes; the
-// TTS API route auto-detects from the text, so this only drives browser-voice selection.
+/**
+ * Speaking rate per language. Chinese is slowed most because tone contours are what a
+ * learner is straining to hear; the Latin-script languages only need a light slowdown, and
+ * the old blanket 0.82 made Spanish and French sound sluggish.
+ */
+const RATE: Record<string, number> = { zh: 0.82, ja: 0.9, es: 0.95, fr: 0.95 };
+
+/** Resolved voice, tagged with the locale it was resolved FOR. The tag matters: voice
+ *  resolution is async (it may wait on `voiceschanged`), so without it a resolve still in
+ *  flight when the study language changes would cache a voice for the language just left. */
+let cachedVoice: { locale: string; voice: SpeechSynthesisVoice } | null = null;
+
+/** Active TTS locale (BCP-47). Set by the app when the study language changes; drives both
+ *  browser-voice selection and the `lang` sent to the TTS API route. */
 let currentLocale = 'zh-CN';
-/** Set the speech locale (e.g. 'zh-CN' or 'ja-JP'). Clears the cached voice so the next
- *  utterance re-resolves the best voice for the new language. */
+
+/** Set the speech locale (e.g. 'zh-CN' or 'es-ES'). */
 export function setSpeechLang(bcp47: string): void {
   if (bcp47 === currentLocale) return;
   currentLocale = bcp47;
-  cachedVoice = undefined;
+  cachedVoice = null;
 }
 
+/**
+ * Best available voice for `currentLocale`, or null if the platform has none.
+ *
+ * Returning null is a real answer and the important one: it means "let the platform pick
+ * from `utterance.lang`". This function must NEVER return a voice in a different language.
+ * It used to — everything that wasn't Japanese fell through to the Chinese branch, so
+ * Spanish and French flashcards were read aloud by Tingting, a Mandarin voice, which is
+ * exactly as strange as it sounds. An assigned `voice` overrides `lang`, so the locale
+ * being set correctly did nothing to save it.
+ */
 function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  if (currentLocale.startsWith('ja')) {
-    const ja = voices.filter(v => /ja|Japanese/i.test(v.lang + ' ' + v.name));
-    if (ja.length === 0) return null;
-    return ja.find(v => v.lang === 'ja-JP') ?? ja[0];
-  }
-  const zh = voices.filter(v => /zh|cmn|Chinese|Mandarin/i.test(v.lang + ' ' + v.name));
-  if (zh.length === 0) return null;
+  const base = currentLocale.slice(0, 2).toLowerCase();
+  // Match on lang only. Matching the NAME too is what let "Sinji" (a zh-HK voice) answer a
+  // search for Japanese, and would let any voice called e.g. "Frank" answer one for French.
+  const sameLang = voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(base));
+  if (sameLang.length === 0) return null;
 
-  for (const name of VOICE_PRIORITY) {
-    const match = zh.find(v => v.name.includes(name));
+  for (const name of VOICE_PRIORITY[base] ?? []) {
+    const match = sameLang.find(v => v.name.includes(name));
     if (match) return match;
   }
 
-  // Fall back: prefer zh-CN locale over other Chinese locales
-  return zh.find(v => v.lang === 'zh-CN') ?? zh[0];
+  // Nothing named: prefer the exact locale over a regional sibling (es-ES over es-MX), and
+  // a real voice over a novelty one, but take a novelty voice rather than nothing.
+  const exact = sameLang.filter(v => v.lang.replace('_', '-').toLowerCase() === currentLocale.toLowerCase());
+  const real  = (list: SpeechSynthesisVoice[]) => list.filter(v => !NOVELTY_VOICE.test(v.name));
+  return real(exact)[0] ?? real(sameLang)[0] ?? exact[0] ?? sameLang[0];
 }
 
 function resolveVoice(): Promise<SpeechSynthesisVoice | null> {
-  // Only reuse the cache if we actually found a voice — don't short-circuit on null
-  if (cachedVoice) return Promise.resolve(cachedVoice);
+  // Only reuse the cache if we found a voice FOR THIS LOCALE — never short-circuit on null.
+  if (cachedVoice?.locale === currentLocale) return Promise.resolve(cachedVoice.voice);
+  const forLocale = currentLocale;
+  const remember = (v: SpeechSynthesisVoice | null) => {
+    if (v && forLocale === currentLocale) cachedVoice = { locale: forLocale, voice: v };
+    return v;
+  };
 
   return new Promise(resolve => {
     const immediate = speechSynthesis.getVoices();
     if (immediate.length > 0) {
-      const v = rankVoices(immediate);
-      if (v) cachedVoice = v; // only cache positive hits
-      resolve(v);
+      resolve(remember(rankVoices(immediate)));
       return;
     }
 
@@ -71,9 +132,7 @@ function resolveVoice(): Promise<SpeechSynthesisVoice | null> {
     const onChanged = () => {
       speechSynthesis.removeEventListener('voiceschanged', onChanged);
       clearTimeout(timeout);
-      const v = rankVoices(speechSynthesis.getVoices());
-      if (v) cachedVoice = v;
-      resolve(v);
+      resolve(remember(rankVoices(speechSynthesis.getVoices())));
     };
     speechSynthesis.addEventListener('voiceschanged', onChanged);
 
@@ -87,7 +146,9 @@ function resolveVoice(): Promise<SpeechSynthesisVoice | null> {
 
 // ─── API-backed TTS (OpenAI, requires OPENAI_API_KEY on the server) ───────────
 
-/** Blob URL cache: text → object URL */
+/** Blob URL cache, keyed by locale AND text. Keying on text alone made homographs across
+ *  languages collide — French `pain` and Spanish `pan` are distinct words that a shared key
+ *  would have served the same audio for. */
 const apiCache = new Map<string, string>();
 
 /**
@@ -95,20 +156,23 @@ const apiCache = new Map<string, string>();
  * no API key is configured or the request fails.
  */
 async function fetchApiAudio(text: string): Promise<string | null> {
-  if (apiCache.has(text)) return apiCache.get(text)!;
+  const key = currentLocale + '\u001f' + text;
+  if (apiCache.has(key)) return apiCache.get(key)!;
 
   try {
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      // The locale matters most for the single words flashcards speak: "no", "pan" and
+      // "casa" are all real words in more than one language, so text alone is ambiguous.
+      body: JSON.stringify({ text, lang: currentLocale }),
     });
 
     if (!res.ok) return null; // 501 = no key, 500 = error — both fall back
 
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    apiCache.set(text, url);
+    apiCache.set(key, url);
     return url;
   } catch {
     return null;
@@ -154,7 +218,12 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
   speakBrowser(text, gen, onEnd);
 }
 
-/** Browser-only fallback using the best available Chinese voice. */
+/** Speaking rate for the active locale. */
+function currentRate(): number {
+  return RATE[currentLocale.slice(0, 2).toLowerCase()] ?? 0.95;
+}
+
+/** Browser-only fallback, using the best voice for the ACTIVE language (never another's). */
 async function speakBrowser(
   text: string,
   gen: number,
@@ -165,8 +234,10 @@ async function speakBrowser(
 
   const u = new SpeechSynthesisUtterance(text);
   u.lang = currentLocale;
-  u.rate = 0.82;    // Slightly slower → clearer tones
+  u.rate = currentRate();
   u.pitch = 1.0;
+  // Leaving `voice` unset when none matched is deliberate: the platform then picks from
+  // `lang`, which is right. Assigning a wrong-language voice would silently override it.
   if (voice) u.voice = voice;
   if (onEnd) { u.onend = onEnd; u.onerror = onEnd; }
   speechSynthesis.speak(u);
@@ -218,7 +289,7 @@ export function speakSequence(
 
     const u = new SpeechSynthesisUtterance(texts[idx]);
     u.lang = currentLocale;
-    u.rate = 0.82;
+    u.rate = currentRate();
     u.pitch = 1.0;
     if (voice) u.voice = voice;
     u.onend = () => { if (gen === currentGen) speakAt(idx + 1); };
