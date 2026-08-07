@@ -10,7 +10,6 @@ import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch } from '@/lib/deckSearch';
-import { storage } from '@/lib/storage';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -56,29 +55,69 @@ function sdm(m: string) {
   ));
 }
 
-function ActivatePoolBtn({ poolCount, onActivate }: { poolCount: number; onActivate: (n: number) => Promise<number> }) {
-  const [n, setN] = useState(Math.min(5, poolCount));
-  const [msg, setMsg] = useState('');
-  return msg ? (
-    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--jade)', letterSpacing: '.04em' }}>{msg}</span>
-  ) : (
+function ActivatePoolBtn({ poolCount, onActivate, onUndo }: {
+  poolCount: number;
+  onActivate: (n: number) => Promise<string[]>;
+  onUndo: (ids: string[]) => Promise<void>;
+}) {
+  // Held as a STRING, not a number. Clamping on every keystroke made the field impossible
+  // to type into: with `Number(e.target.value) || 1` an empty field snapped back to 1, so
+  // you could never clear it to type a new value, and two-digit entries were fought
+  // character by character. Validation happens once, on submit.
+  const [draft, setDraft] = useState('5');
+  const [undo, setUndo] = useState<{ ids: string[] } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const n = Math.max(1, Math.min(poolCount, parseInt(draft, 10) || 1));
+
+  const activate = () => {
+    void onActivate(n).then(ids => {
+      if (ids.length === 0) return;
+      setUndo({ ids });
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setUndo(null), 8000);
+    });
+  };
+
+  if (undo) {
+    return (
+      <span className="inline-flex items-center gap-2" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em' }}>
+        <span style={{ color: 'var(--jade)' }}>
+          {undo.ids.length} word{undo.ids.length === 1 ? '' : 's'} added to today&apos;s queue
+        </span>
+        <button
+          onClick={() => { void onUndo(undo.ids); setUndo(null); if (timer.current) clearTimeout(timer.current); }}
+          className="cursor-pointer"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 7, padding: '4px 10px' }}
+        >
+          Undo
+        </button>
+      </span>
+    );
+  }
+
+  return (
     <span className="inline-flex items-center gap-1.5">
       <label style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
         Activate
         <input
-          type="number"
-          value={n}
-          min={1}
-          max={poolCount}
-          onChange={e => setN(Math.max(1, Math.min(poolCount, Number(e.target.value) || 1)))}
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, background: 'transparent', border: 'none', borderBottom: '1px solid var(--line)', outline: 'none', color: 'var(--accent)', width: '3.5ch', textAlign: 'center', padding: 0 }}
+          type="text"
+          inputMode="numeric"
+          value={draft}
+          aria-label={`How many of the ${poolCount} pooled words to activate`}
+          onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+          onBlur={() => setDraft(String(n))}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setDraft(String(n)); activate(); } }}
+          // Wide enough for four digits. `type=text` rather than `number` on purpose: the
+          // number spinner ate most of the box, which is why a two-digit entry showed only
+          // its last character.
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, background: 'transparent', border: 'none', borderBottom: '1px solid var(--line)', outline: 'none', color: 'var(--accent)', width: '4.5ch', textAlign: 'center', padding: 0 }}
         />
+        <span style={{ color: 'var(--ink-faint)' }}>of {poolCount}</span>
       </label>
       <button
-        onClick={() => onActivate(Math.min(n, poolCount)).then(released => {
-          setMsg(`${released} word${released === 1 ? '' : 's'} added to today's queue`);
-          setTimeout(() => setMsg(''), 2500);
-        })}
+        onClick={activate}
         className="cursor-pointer"
         style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 11px' }}
       >
@@ -452,7 +491,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   const {
     deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
-    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool,
+    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
   } = useVocabDeck(language);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -792,7 +831,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
               </button>
             ))}
             {/* Bulk action for the active filter */}
-            {filter === 'pool'    && counts.pool    > 0 && <ActivatePoolBtn poolCount={counts.pool} onActivate={releaseFromPool} />}
+            {filter === 'pool'    && counts.pool    > 0 && <ActivatePoolBtn poolCount={counts.pool} onActivate={releaseFromPool} onUndo={restoreToPool} />}
             {filter === 'focus'   && counts.focus   > 0 && <BulkBtn label="Unfocus all"   onClick={unfocusAll} />}
             {filter === 'paused'  && counts.paused  > 0 && <BulkBtn label="Resume all"    onClick={resumeAll} />}
             {filter === 'snoozed' && counts.snoozed > 0 && <BulkBtn label="Un-snooze all" onClick={unsnoozeAll} />}
@@ -885,7 +924,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                       onUnsnooze={() => unsnoozeWord(w.id!)}
                       onReschedule={(d) => rescheduleWord(w.id!, d)}
                       onReset={() => resetProgress(w.id!)}
-                      onRelease={w.pool ? () => { releaseFromPool(1); setManagingId(null); } : undefined}
+                      onRelease={w.pool ? () => { releaseWord(w.id!); setManagingId(null); } : undefined}
                       onClose={() => setManagingId(null)}
                     />
                   )}

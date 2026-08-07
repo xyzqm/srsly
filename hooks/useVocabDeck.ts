@@ -262,22 +262,53 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   }, [commit]);
 
   /** Release the first `count` pool (staged) words into circulation (due today). Returns # released. */
-  const releaseFromPool = useCallback(async (count: number): Promise<number> => {
+  /**
+   * Move the first `count` pooled cards into circulation, in deck order — which is
+   * curriculum order, so a level import hands out its easiest words first.
+   *
+   * Returns the ids it released so the caller can offer an undo. Ids rather than a count:
+   * undoing has to put back exactly those cards, and a second release in between would
+   * make "the first N" mean something different by the time undo is pressed.
+   */
+  const releaseFromPool = useCallback(async (count: number): Promise<string[]> => {
     const cur = deckRef.current;
     const today = todayStr();
-    let released = 0;
+    const released: string[] = [];
     const next = cur.map(w => {
-      if (!w.pool || released >= count) return w;
-      released++;
+      if (!w.pool || released.length >= count) return w;
+      released.push(w.id ?? w.h);
       return { ...w, pool: undefined, dueAt: today }; // undefined drops from storage on save
     });
-    if (released > 0) await commit(next);
+    if (released.length > 0) await commit(next);
     return released;
+  }, [commit]);
+
+  /** Activate one specific pooled card. The per-card Release button used releaseFromPool(1),
+   *  which activates the FIRST pooled card in deck order — so opening `zumo` and pressing
+   *  Release quietly activated `hola` instead. */
+  const releaseWord = useCallback(async (id: string) => {
+    const today = todayStr();
+    let touched = false;
+    const next = deckRef.current.map(w => {
+      if ((w.id ?? w.h) !== id || !w.pool) return w;
+      touched = true;
+      return { ...w, pool: undefined, dueAt: today };
+    });
+    if (touched) await commit(next);
+  }, [commit]);
+
+  /** Put specific cards back in the pool — the undo for releaseFromPool. */
+  const restoreToPool = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const set = new Set(ids);
+    await commit(deckRef.current.map(w =>
+      set.has(w.id ?? w.h) ? { ...w, pool: true, dueAt: undefined } : w,
+    ));
   }, [commit]);
 
   return {
     deck, deckLoaded, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
-    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool,
+    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
   };
 }
