@@ -3,6 +3,7 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
+import Orbit from './Orbit';
 import LevelProgress from './LevelProgress';
 import PassageShelf from './PassageShelf';
 import AccuracyTrend from './AccuracyTrend';
@@ -32,6 +33,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       </p>
 
       <PieChart deck={deck} />
+
+      <Orbit deck={deck} language={language} />
 
       <LevelProgress deck={deck} language={language} />
 
