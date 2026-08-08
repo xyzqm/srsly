@@ -66,10 +66,38 @@ export class SupabaseStorage implements DataService {
     return (data as UserDataRow | null) ?? null;
   }
 
+  /**
+   * Columns this database turned out not to have. `row()` already tolerates a missing
+   * column by selecting `*`, but a WRITE naming one fails the whole upsert — so a user who
+   * hasn't run a migration lost the rest of the patch too, and got a console error on every
+   * save. A schema error won't fix itself mid-session, so each column is learned once.
+   */
+  private missingColumns = new Set<string>();
+
   private async patch(patch: Record<string, unknown>): Promise<void> {
+    const send = Object.fromEntries(
+      Object.entries(patch).filter(([k]) => !this.missingColumns.has(k)),
+    );
+    if (Object.keys(send).length === 0) return;
+
     const { error } = await this.sb.from('user_data')
-      .upsert({ user_id: this.userId, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-    if (error) console.error('[SupabaseStorage] write', error.message);
+      .upsert({ user_id: this.userId, ...send, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    if (!error) return;
+
+    // "Could not find the 'shelf' column of 'user_data' in the schema cache"
+    const missing = /Could not find the '(\w+)' column/.exec(error.message)?.[1];
+    if (missing && missing in send) {
+      this.missingColumns.add(missing);
+      console.warn(
+        `[SupabaseStorage] no '${missing}' column — that feature stays on this device. ` +
+        'See the migrations at the top of lib/storage/supabase.ts to enable syncing it.',
+      );
+      // Land everything else rather than dropping the whole write on the floor.
+      const rest = Object.fromEntries(Object.entries(send).filter(([k]) => k !== missing));
+      if (Object.keys(rest).length > 0) await this.patch(rest);
+      return;
+    }
+    console.error('[SupabaseStorage] write', error.message);
   }
 
   async getVocabDeck(lang: LanguageCode): Promise<DeckWord[]> {
