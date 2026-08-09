@@ -9,7 +9,7 @@ import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
-import { matchesSearch } from '@/lib/deckSearch';
+import { matchesSearch, searchRank } from '@/lib/deckSearch';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -615,8 +615,16 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
 
   // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(() => {
-    const filtered = query.trim() ? chipFiltered.filter(w => matchesSearch(w, query, today)) : chipFiltered;
-    return [...filtered].sort((a, b) => dueSortKey(a, today).localeCompare(dueSortKey(b, today)));
+    if (!query.trim()) {
+      return [...chipFiltered].sort((a, b) => dueSortKey(a, today).localeCompare(dueSortKey(b, today)));
+    }
+    // With a query, relevance leads and the due order is only the tiebreak. Sorting purely
+    // by due date made the word you actually typed land wherever the scheduler put it.
+    const filtered = chipFiltered.filter(w => matchesSearch(w, query, today));
+    return filtered
+      .map(w => ({ w, rank: searchRank(w, query) }))
+      .sort((a, b) => b.rank - a.rank || dueSortKey(a.w, today).localeCompare(dueSortKey(b.w, today)))
+      .map(x => x.w);
   }, [chipFiltered, query, today]);
 
   // Counts for the filter chips (within the selected deck)

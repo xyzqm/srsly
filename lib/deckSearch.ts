@@ -52,3 +52,44 @@ function matchTerm(w: DeckWord, term: string, today: string): boolean {
   const hay = deaccent(`${w.h} ${w.p} ${w.m}`.toLowerCase());
   return hay.includes(deaccent(term));
 }
+
+/**
+ * How well a word answers a plain-text query, higher is better. 0 = no textual match.
+ *
+ * Search used to be a pure filter, with results always ordered by due date — so typing "no"
+ * returned `noroeste`, `nombre`, `conocer` and `no` in whatever order the scheduler
+ * happened to want, and the word you typed could land last. A filter answers "does this
+ * match"; a search has to answer "which of these did you mean".
+ *
+ * Operator terms (is:due, lapses>3) carry no relevance signal and are skipped — a query
+ * made only of operators keeps the plain due-date ordering it always had.
+ */
+export function searchRank(w: DeckWord, query: string): number {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    .filter(t => !t.startsWith('is:') && !/^(lapses|reviews)(>=|<=|>|<|=)\d+$/.test(t));
+  if (terms.length === 0) return 0;
+
+  const head = deaccent(w.h.toLowerCase());
+  const reading = deaccent((w.p ?? '').toLowerCase());
+  const meaning = deaccent((w.m ?? '').toLowerCase());
+
+  let best = 0;
+  for (const raw of terms) {
+    const t = deaccent(raw);
+    // The word itself outranks anything it merely appears inside: `no` beats `noroeste`.
+    const score =
+      head === t                                        ? 100
+      : head.startsWith(t)                              ? 70
+      : reading === t                                   ? 60
+      : new RegExp(`(^|[^a-z])${escapeRe(t)}([^a-z]|$)`).test(meaning) ? 40  // a whole word in the gloss
+      : head.includes(t)                                ? 25
+      : meaning.includes(t) || reading.includes(t)      ? 10
+      : 0;
+    best = Math.max(best, score);
+  }
+  return best;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
