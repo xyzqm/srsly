@@ -41,26 +41,3 @@ export function isMetalinguisticGloss(gloss: string): boolean {
 export function isProperNounGloss(gloss: string): boolean {
   return /^\s*\((?:name|proper noun)\)/i.test(gloss.trim());
 }
-
-/**
- * Whether a stored card gloss looks like one WE shipped rather than one the learner wrote.
- *
- * Every sense of the card must appear somewhere in the dictionary's own text. An older
- * build split senses differently — `y` was stored as "…alphabet; and; plus; and" where the
- * dictionary now says "and; …alphabet; plus, and" — so comparing sense SETS declares them
- * unrelated and leaves the card broken forever. Containment survives that reshaping while
- * still rejecting anything typed by hand.
- */
-export function isDictionaryDerived(stored: string, dictionary: string): boolean {
-  const hay = dictionary.toLowerCase();
-  return stored
-    .split(';')
-    .map(s => s.trim())
-    .filter(Boolean)
-    // Metalinguistic senses are exactly what the new gloss is dropping, so requiring them to
-    // survive would veto every replacement that removes one. `a` is the clearest case: its
-    // curated gloss is "to, at; bishop", and demanding that "The first letter of the Spanish
-    // alphabet" still appear would reject it forever.
-    .filter(s => !isMetalinguisticGloss(s))
-    .every(s => hay.includes(s.toLowerCase().replace(/[.]$/, '')));
-}
