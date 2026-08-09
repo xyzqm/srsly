@@ -1,3 +1,4 @@
+import { DICT_VERSION } from './dictVersion';
 /** A French dictionary entry. `reading` is always '' — French is written in the same alphabet it is read in, so there is no
  *  pinyin/furigana analogue — but the field is kept so shared UI treats every language alike. */
 export interface FrEntry { reading: string; meaning: string; baseForm?: string; baseReading?: string; }
@@ -16,7 +17,7 @@ let loading: Promise<void> | null = null;
 function load(): Promise<void> {
   if (!loading) {
     loading = Promise.all([
-      fetch('/frdict.json')
+      fetch(`/frdict.json?v=${DICT_VERSION}`)
         .then(r => r.json())
         .then(data => { dictCache = data; })
         .catch(() => { /* offline or missing — fall back to the level vocab */ }),

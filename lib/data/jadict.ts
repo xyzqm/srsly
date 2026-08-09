@@ -1,3 +1,4 @@
+import { DICT_VERSION } from './dictVersion';
 /** A Japanese dictionary entry: hiragana/katakana reading + English meaning. */
 export interface JaEntry { reading: string; meaning: string; baseForm?: string; baseReading?: string; }
 
@@ -15,7 +16,7 @@ let loading: Promise<void> | null = null;
 function load(): Promise<void> {
   if (!loading) {
     loading = Promise.all([
-      fetch('/jmdict.json')
+      fetch(`/jmdict.json?v=${DICT_VERSION}`)
         .then(r => r.json())
         .then(data => { jmdictCache = data; })
         .catch(() => { /* offline or missing — fall back to the level vocab */ }),

@@ -1,3 +1,4 @@
+import { DICT_VERSION } from './dictVersion';
 export interface DictEntry { pinyin: string; meaning: string; }
 
 const DICT: Record<string, DictEntry> = {};
@@ -680,7 +681,7 @@ let cedictLoading: Promise<Record<string, CedictEntry>> | null = null;
 async function getCedict(): Promise<Record<string, CedictEntry>> {
   if (cedictCache) return cedictCache;
   if (!cedictLoading) {
-    cedictLoading = fetch('/cedict.json')
+    cedictLoading = fetch(`/cedict.json?v=${DICT_VERSION}`)
       .then(r => r.json())
       .then(data => { cedictCache = data; cedictLoading = null; return data; })
       .catch(() => { cedictLoading = null; return {}; });

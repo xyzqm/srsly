@@ -21,7 +21,19 @@ import { lookupReadingAsync } from './data/lookup';
  */
 
 /** Bump when the dictionaries are re-ranked in a way decks should pick up. */
-export const CARD_GLOSS_VERSION = 1;
+export const CARD_GLOSS_VERSION = 2;
+
+/**
+ * Passed as the lookup's fallback so a miss is DISTINGUISHABLE from a hit.
+ *
+ * lookupReadingAsync echoes the fallback back when it finds nothing — and it also finds
+ * nothing when the dictionary failed to load, since that failure is swallowed on purpose so
+ * the rest of the app keeps working offline. Handing it the card's own gloss made those two
+ * cases identical, so a run where the dictionary never arrived looked like "checked
+ * everything, nothing to change" and wrote the done-marker. One slow or cached fetch and the
+ * migration was permanently finished having done nothing. A sentinel tells them apart.
+ */
+const MISS = '\u0000no-dictionary-entry';
 
 const MARKER_KEY = 'srsly-gloss-synced';
 
@@ -65,14 +77,16 @@ export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Pro
   if (!needsGlossSync(lang) || deck.length === 0) return deck;
 
   let changed = 0;
+  let answered = 0;   // cards the dictionary actually had an entry for
   const next = await Promise.all(deck.map(async w => {
     if (!w.m) return w;
     try {
-      const entry = await lookupReadingAsync(lang, w.h, w.p ?? '', w.m);
-      const fresh = entry?.meaning;
+      const fresh = (await lookupReadingAsync(lang, w.h, w.p ?? '', MISS))?.meaning;
+      if (!fresh || fresh === MISS) return w;   // not in the dictionary, or it never loaded
+      answered++;
       // Same senses, different order → ours is the stale ranking. Different senses → the
-      // learner's own wording, or a word the dictionary no longer has. Leave both alone.
-      if (!fresh || fresh === w.m || senseKey(fresh) !== senseKey(w.m)) return w;
+      // learner's own wording. Leave both alone.
+      if (fresh === w.m || senseKey(fresh) !== senseKey(w.m)) return w;
       changed++;
       return { ...w, m: fresh };
     } catch {
@@ -80,6 +94,9 @@ export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Pro
     }
   }));
 
+  // No entry resolved for ANY card in a non-empty deck means the dictionary isn't there,
+  // not that every word is unknown. Leave the marker unset so this retries next load.
+  if (answered === 0) return deck;
   writeMarker(lang);
   if (changed === 0) return deck;
   console.info(`[gloss] re-ranked ${changed} ${lang} card definition(s) to match the dictionary`);

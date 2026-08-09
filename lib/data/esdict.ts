@@ -1,3 +1,4 @@
+import { DICT_VERSION } from './dictVersion';
 /** A Spanish dictionary entry. `reading` is always '' — Spanish has no pinyin/furigana
  *  analogue — but the field is kept so shared UI can treat every language alike. */
 export interface EsEntry { reading: string; meaning: string; baseForm?: string; baseReading?: string; }
@@ -17,7 +18,7 @@ let loading: Promise<void> | null = null;
 function load(): Promise<void> {
   if (!loading) {
     loading = Promise.all([
-      fetch('/esdict.json')
+      fetch(`/esdict.json?v=${DICT_VERSION}`)
         .then(r => r.json())
         .then(data => { esdictCache = data; })
         .catch(() => { /* offline or missing — fall back to the level vocab */ }),
