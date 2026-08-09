@@ -4,6 +4,7 @@ import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { dateInDays, todayStr } from '@/lib/deck';
 import { pruneDeckToCurriculum } from '@/lib/curriculum';
+import { syncDeckGlosses } from '@/lib/deckGloss';
 import { fsrsSchedule, getSrsSettings, LEECH_THRESHOLD, type FsrsGrade } from '@/lib/fsrs';
 
 /**
@@ -98,12 +99,18 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       // off-curriculum word never flashes into a review surface on the way out.
       const pruned = await pruneDeckToCurriculum(language, migrated);
       if (pruned !== migrated) changed = true;
+      // Re-rank stale card definitions against the current dictionary. A card stores its own
+      // copy of the gloss, so improving the dictionary does nothing for words already added
+      // — see lib/deckGloss.ts, which only touches glosses that are a reordering of what we
+      // shipped, never one the learner rewrote.
+      const resynced = await syncDeckGlosses(language, pruned);
+      if (resynced !== pruned) changed = true;
       // A switch away mid-load must not publish the language we just left.
       if (!live) return;
-      deckRef.current = pruned;
-      setDeck(pruned);
+      deckRef.current = resynced;
+      setDeck(resynced);
       setLoadedLang(language);
-      if (changed) storage.saveVocabDeck(language, pruned);
+      if (changed) storage.saveVocabDeck(language, resynced);
     });
     return () => { live = false; };
   }, [language]);
