@@ -5,7 +5,8 @@ import { lookupReadingAsync } from '@/lib/data/lookup';
 import { toneNumToMark, splitLeadingPinyin } from '@/lib/pinyin';
 import { POLYPHONES } from '@/lib/polyphones';
 import { useLanguage } from '@/lib/LanguageContext';
-import { getLanguageConfig, levelLabel, levelNumbers } from '@/lib/languageConfig';
+import { getLanguageConfig, levelFor, levelLabel, levelNumbers } from '@/lib/languageConfig';
+import { storage } from '@/lib/storage';
 
 /** A language's level word lists. `vocab` entries carry `pinyin` (zh) or `reading` (ja);
  *  the reading is always '' for Spanish and French. */
@@ -261,6 +262,16 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
   const [lookupError, setLookupError] = useState(false);
   const abortRef = useRef(0);
 
+  // The learner's current target level, for the advisory banner below. Read straight from
+  // prefs rather than passed in, so the banner cannot disagree with Settings.
+  const [targetLevel, setTargetLevel] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    setTargetLevel(null);
+    storage.getPrefs().then(p => { if (live) setTargetLevel(levelFor(language, p)); });
+    return () => { live = false; };
+  }, [language]);
+
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
   const [debugCopied, setDebugCopied] = useState(false);
   const [dupCount, setDupCount] = useState(0);     // duplicate hanzi merged out of the paste
@@ -409,6 +420,34 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
           ← Back
         </button>
       </div>
+
+      {/* Advisory only — deliberately not a gate.
+          Importing above your level is a legitimate thing to want (a class list, a book's
+          vocabulary, a trip next month), and blocking it would be the app overruling the
+          learner about their own study. What it can honestly do is name the consequence,
+          which is not obvious: every imported word enters the SRS queue, so a large list far
+          above your level turns into daily reviews you cannot answer. */}
+      {targetLevel !== null && (
+        <div
+          className="rounded-[10px] px-4 py-3 mb-5 flex items-start gap-3"
+          style={{ background: 'color-mix(in srgb, var(--accent) 6%, var(--card))', border: '1px solid color-mix(in srgb, var(--accent) 28%, var(--line))' }}
+          role="note"
+        >
+          <span aria-hidden style={{ fontSize: 14, lineHeight: 1.4 }}>💡</span>
+          <div>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--accent)', fontWeight: 600 }}>
+              Current target · {levelLabel(language, targetLevel)}
+            </div>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.5, marginTop: 3, maxWidth: '58ch' }}>
+              Import whatever you like — nothing here is restricted. Just note that every word
+              you add joins your review queue, so a large list well above{' '}
+              {levelLabel(language, targetLevel)} can bury your daily reviews in words you
+              haven&apos;t met yet. You can stage a big import in the pool and release it
+              gradually instead.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mode switcher */}
       <div className="inline-flex gap-1 p-[5px] rounded-[11px] mb-5 flex-wrap" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
