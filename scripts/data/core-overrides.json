@@ -766,5 +766,20 @@
       "embargo",
       "san"
     ]
+  },
+  "leadSense": {
+    "_why": "Which of a word's OWN senses should lead, for the few where Wiktionary's order misleads. This invents nothing: the value must match a sense the dictionary already lists, and the only effect is to move it to the front. Needed because Wiktionary glosses an abbreviation's expansion as an ordinary word — `no` carries both 'abbreviation of noroeste' AND 'northwest', so demoting metalinguistic TEXT still left the learner told that `no` means northwest. Confined to high-frequency function words, where the wrong lead is met constantly and is also the answer shown in flashcards, popups and level tests. Only reordering is possible here: `a` is left alone because the extract has no preposition sense for it at all, and inventing one would break the rule that a definition comes from the dictionary or not at all.",
+    "es": {
+      "no": "not",
+      "se": "A reflexive or reciprocal pronoun",
+      "u": "or",
+      "y": "and",
+      "so": "whoa"
+    },
+    "fr": {
+      "ne": "not, no",
+      "se": "The third-person reflexive",
+      "ci": "alternative form of ici"
+    }
   }
 }

@@ -46,7 +46,7 @@ import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { lexiqueRanking } from './lib/lexique.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
-import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions } from './lib/coreOverrides.mjs';
+import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions, leadSenseFor } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -73,6 +73,7 @@ const CEFR_BANDS = [
  *  discarding it would leave a word defined only by its regional or slang senses. */
 const MAX_MEANING = 90;
 const MAX_SENSES = 3;
+const LEAD_SENSE = leadSenseFor('fr');
 
 /** Tags marking a sense as non-core. Such senses are kept, but always rank below plain
  *  ones, so `perro` leads with "dog" rather than with its Chilean or derogatory senses. */
@@ -188,9 +189,10 @@ async function main() {
       // Harder judgement than `restricted`: slang/vulgar/obsolete/dialectal senses do not
       // count toward graded vocabulary at all. The word still keeps the gloss in the
       // dictionary — only the level tables below apply this.
-      const excluded = isNonStandardSense(s) || isMetalinguisticGloss(clean);
+      const meta = isMetalinguisticGloss(clean);
+      const excluded = isNonStandardSense(s) || meta;
       if (!senses.has(lower)) senses.set(lower, []);
-      senses.get(lower).push({ gloss: clean, restricted, excluded, order: senseOrder++ });
+      senses.get(lower).push({ gloss: clean, restricted, excluded, meta, order: senseOrder++ });
     }
   }
   await new Promise(res => proc.on('close', res));
@@ -201,10 +203,25 @@ async function main() {
   // same RawEntry type, but Spanish has no reading to put there.
   const dict = {};
   for (const [word, cands] of senses) {
-    // Core senses first, original Wiktionary order within each group, then dedupe.
+    // Three tiers, original Wiktionary order within each, then dedupe:
+    //   0 a plain meaning · 1 regional/slang/dated · 2 metalinguistic
+    //
+    // The third tier is what stops a word being defined by a description of its spelling.
+    // Wiktionary lists `no` as "abbreviation of noroeste; northwest; not; no" — the actual
+    // word is third — and `a` leads with "The first letter of the Spanish alphabet". These
+    // were already detected (the `excluded` flag has always been computed here) but only
+    // ever used to gate band eligibility, never to order the gloss the learner reads. That
+    // gloss is the flashcard answer, the popup definition, and the level test's options.
+    const tier = c => (c.meta ? 2 : c.restricted ? 1 : 0);
     const ranked = cands
-      .sort((a, b) => (a.restricted === b.restricted ? a.order - b.order : a.restricted ? 1 : -1))
+      .sort((a, b) => tier(a) - tier(b) || a.order - b.order)
       .map(c => c.gloss);
+    // Last word: a hand-set preference, which can only ever promote a sense already here.
+    const want = LEAD_SENSE.get(word);
+    if (want) {
+      const i = ranked.findIndex(g => g.toLowerCase().includes(want.toLowerCase()));
+      if (i > 0) ranked.unshift(...ranked.splice(i, 1));
+    }
     const m = [...new Set(ranked)].slice(0, MAX_SENSES).join('; ');
     if (m) dict[word] = { p: '', m };
   }

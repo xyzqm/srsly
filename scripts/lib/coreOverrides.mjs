@@ -56,6 +56,23 @@ function read(section, lang) {
  * grouping is the point — it is a syllabus, and a future "study by topic" feature wants
  * exactly this shape. Flattening happens here, at the last moment.
  */
+/**
+ * Which of a word's own senses should lead, for the handful where Wiktionary's order
+ * misleads. See the `_why` in core-overrides.json — the short version is that Wiktionary
+ * glosses an abbreviation's expansion as an ordinary word ("northwest" for `no`), so no
+ * test of the gloss text can tell it from a real meaning.
+ *
+ * A Map, not a plain object: dictionary words include `constructor` and `toString`, which
+ * a plain-object lookup would resolve against Object.prototype.
+ *
+ * @param {string} lang
+ * @returns {Map<string, string>}
+ */
+export function leadSenseFor(lang) {
+  const prefs = JSON.parse(readFileSync(FILE, 'utf8')).leadSense?.[lang];
+  return new Map(prefs && typeof prefs === 'object' ? Object.entries(prefs) : []);
+}
+
 export function coreOverridesFor(lang) {
   const all = JSON.parse(readFileSync(FILE, 'utf8'));
   const themed = Object.values(all?.beginner?.[lang] ?? {}).flat();

@@ -98,6 +98,10 @@ export function isLexicalPos(pos) {
  */
 export function isMetalinguisticGloss(gloss) {
   return /^(?:the\s+)?(?:\w+\s+)?letter of the\b/i.test(gloss)
+    // "Name of the letter A.", "The name of the Latin script letter I/i.", "a, the name of
+    // the Latin-script letter A" — the same fact stated the other way round, with a variable
+    // amount of script pedantry in between and sometimes the letter itself in front.
+    || /\bname of the .{0,24}\bletter\b/i.test(gloss)
     || /^(?:abbreviation|initialism|acronym|misspelling|contraction|symbol|romanization|alternative spelling|alternative form|obsolete spelling) (?:of|for)\b/i.test(gloss)
     // "only used in acerca de" — Wiktionary's marker for a bound fragment. `acerca` is not a
     // word a learner can use; its corpus frequency belongs to the phrase `acerca de`.
