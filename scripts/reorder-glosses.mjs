@@ -40,35 +40,70 @@ const CURATED = byLang(OVERRIDES.curatedGloss);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK = process.argv.includes('--check');
 
+/** "abbreviation of noroeste" → "noroeste". Also initialisms and acronyms. */
+const ABBREV_OF = /^(?:abbreviation|initialism|acronym) of ([^(,;]+)/i;
+
 /**
- * The generators' `restricted` flag comes from Wiktionary tags, which are gone by the time
- * a gloss is a string in a `;`-joined list. Only the metalinguistic tier can be recovered
- * here — which is the tier that was actually mis-ordered, so the reorder is a stable sort
- * that moves metalinguistic senses to the back and leaves everything else as the build
- * ranked it.
+ * Senses that belong to an abbreviation reading rather than to the word itself.
+ *
+ * Wiktionary lists `no` as BOTH "abbreviation of noroeste" AND "northwest" — two senses for
+ * one fact, and only the first is recognisable as metalinguistic from its text. The second
+ * is what made `no` look like it meant northwest.
+ *
+ * Resolving the abbreviation's target in the same dictionary settles it without guesswork:
+ * `noroeste` is itself a headword glossed "northwest", so a sibling sense equal to one of
+ * ITS senses is the expansion and travels with it. Measured across Spanish this fires on
+ * exactly the five compass abbreviations and nothing else.
  */
-function reorder(meaning, word, lang) {
-  // A curated gloss wins outright — it exists precisely because reordering cannot help.
+function expansionSenses(parts, dict) {
+  const drop = new Set();
+  for (const p of parts) {
+    const target = ABBREV_OF.exec(p)?.[1]?.trim().toLowerCase();
+    const entry = target && (dict[target]?.m ?? dict[target]?.meaning);
+    if (!entry) continue;
+    const targetSenses = new Set(entry.split(';').map(t => t.trim().toLowerCase()));
+    // Also the abbreviation written out as bare initials: French lists `ne` as both
+    // "abbreviation of nord-est" and "NE", and nord-est is glossed "northeast", so the
+    // sense-text comparison alone misses it.
+    const initials = target.split(/[\s-]+/).filter(Boolean).map(w => w[0]).join('').toUpperCase();
+    for (const q of parts) {
+      if (q === p) continue;
+      if (targetSenses.has(q.toLowerCase()) || (initials.length > 1 && q.trim() === initials)) drop.add(q);
+    }
+  }
+  return drop;
+}
+
+/**
+ * Clean one entry: DELETE the senses a learner should never be shown, then order the rest.
+ *
+ * Demoting these was not enough. A gloss is read as a whole in the vocabulary list and the
+ * flashcard, so "abbreviation of noroeste" sitting fourth is still four words of noise on
+ * every card, and it is still a candidate answer in a level test. They are removed.
+ *
+ * An entry is never emptied: if every sense would go, the original is kept. A word whose
+ * only meaning is metalinguistic is genuinely a letter name, and saying so beats saying
+ * nothing.
+ */
+function reorder(meaning, word, lang, dict) {
+  // A curated gloss wins outright — it exists precisely because the source cannot be fixed
+  // by rearranging it. Senses omitted from the curated value are deleted deliberately.
   const curated = CURATED.get(lang)?.get(word);
   if (curated) return curated;
 
   const parts = meaning.split(';').map(s => s.trim()).filter(Boolean);
   if (parts.length < 2) return meaning;
 
-  const real = parts.filter(p => !isMetalinguisticGloss(p));
-  // Never empty an entry: a word whose every sense is metalinguistic keeps them in order.
-  if (real.length === 0) return meaning;
-  const ordered = [...real, ...parts.filter(p => isMetalinguisticGloss(p))];
+  const expansions = expansionSenses(parts, dict);
+  const kept = parts.filter(p => !isMetalinguisticGloss(p) && !expansions.has(p));
+  if (kept.length === 0) return meaning;   // nothing else to say — keep what there is
 
-  // A hand-set preference wins, but only ever by promoting a sense already present —
-  // Wiktionary glosses an abbreviation's expansion as a plain word ("northwest" for `no`),
-  // which no test of the gloss TEXT can distinguish from a real meaning.
   const want = LEAD_SENSE.get(lang)?.get(word);
   if (want) {
-    const i = ordered.findIndex(p => p.toLowerCase().includes(want.toLowerCase()));
-    if (i > 0) ordered.unshift(...ordered.splice(i, 1));
+    const i = kept.findIndex(p => p.toLowerCase().includes(want.toLowerCase()));
+    if (i > 0) kept.unshift(...kept.splice(i, 1));
   }
-  return ordered.join('; ');
+  return kept.join('; ');
 }
 
 /** @param {string} rel @param {string} lang @param {(e: unknown) => string|undefined} get @param {(e: unknown, m: string) => void} set */
@@ -79,7 +114,7 @@ async function repair(rel, lang, get, set) {
   for (const [word, entry] of Object.entries(data)) {
     const before = get(entry);
     if (!before) continue;
-    const after = reorder(before, word, lang);
+    const after = reorder(before, word, lang, data);
     if (after !== before) { changed.push([word, before, after]); set(entry, after); }
   }
   console.log(`${rel}: ${changed.length.toLocaleString()} of ${Object.keys(data).length.toLocaleString()} entries re-ranked`);

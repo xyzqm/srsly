@@ -213,8 +213,14 @@ async function main() {
     // were already detected (the `excluded` flag has always been computed here) but only
     // ever used to gate band eligibility, never to order the gloss the learner reads. That
     // gloss is the flashcard answer, the popup definition, and the level test's options.
-    const tier = c => (c.meta ? 2 : c.restricted ? 1 : 0);
-    const ranked = cands
+    // Metalinguistic senses are DROPPED, not demoted. A gloss is read whole on a flashcard
+    // and in the vocabulary list, so "abbreviation of noroeste" sitting fourth is still four
+    // words of noise on every card — and still a candidate answer in a level test. An entry
+    // is never emptied: a word with nothing else to say keeps them.
+    const usable = cands.filter(c => !c.meta);
+    const pool = usable.length > 0 ? usable : cands;
+    const tier = c => (c.restricted ? 1 : 0);
+    const ranked = pool
       .sort((a, b) => tier(a) - tier(b) || a.order - b.order)
       .map(c => c.gloss);
     // A curated gloss replaces the entry outright — it exists because this source is

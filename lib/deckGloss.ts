@@ -1,6 +1,6 @@
 import type { DeckWord, LanguageCode } from './types';
 import { lookupReadingAsync } from './data/lookup';
-import { isDictionaryDerived, isMetalinguisticGloss, isProperNounGloss } from './glossQuality';
+import { isMetalinguisticGloss, isProperNounGloss } from './glossQuality';
 
 /**
  * Re-sync deck glosses with the dictionary, for words whose definition we shipped.
@@ -22,7 +22,7 @@ import { isDictionaryDerived, isMetalinguisticGloss, isProperNounGloss } from '.
  */
 
 /** Bump when the dictionaries are re-ranked in a way decks should pick up. */
-export const CARD_GLOSS_VERSION = 4;
+export const CARD_GLOSS_VERSION = 5;
 
 /**
  * Passed as the lookup's fallback so a miss is DISTINGUISHABLE from a hit.
@@ -62,24 +62,24 @@ function writeMarker(lang: LanguageCode): void {
 /**
  * Should this card's stored gloss be replaced by the dictionary's?
  *
- * Only when BOTH hold, which is what keeps it off anything the learner wrote:
+ * Yes exactly when the card carries a sense that describes its own spelling — "abbreviation
+ * of noroeste", "The first letter of the Spanish alphabet", "alternative spelling of éste".
+ * That is a sufficient signal on its own, because nobody writes a definition like that. It
+ * is the fingerprint of a gloss we shipped.
  *
- *   1. Its leading sense is metalinguistic — i.e. it is exactly the bug being fixed, a card
- *      currently defined by a description of its own spelling.
- *   2. Every one of its senses appears in the dictionary's text, so the gloss demonstrably
- *      came from us.
+ * This replaced a containment test — every stored sense had to reappear in the new gloss —
+ * which worked while the fix was a reordering and broke the moment it became a DELETION.
+ * `a` is curated down to "to, at" and `no` to "not; no", so their old senses are gone by
+ * design; demanding they survive would veto the very updates the card needs.
  *
- * Condition 2 replaced an exact set comparison, which was too strict: an older build split
- * senses differently, storing `y` as "...alphabet; and; plus; and" where the dictionary now
- * says "and; ...alphabet; plus, and". Those sets never match, so the card stayed broken.
- *
- * Condition 1 does the narrowing. Without it, a learner who had trimmed "dog; lazy person"
- * down to just "dog" would satisfy condition 2 and get the long version forced back.
+ * What protects a hand-written definition is that it contains no such sense: "MY OWN NOTE:
+ * the house where I grew up" is untouched, and so is a gloss trimmed to "dog". The residual
+ * risk is a learner who deliberately typed "abbreviation of …" as their own note, whose card
+ * would revert to the dictionary — a trade worth making for a rule this simple.
  */
 function shouldReplace(stored: string, fresh: string): boolean {
   if (stored === fresh) return false;
-  if (!isMetalinguisticGloss(stored.split(';')[0].trim())) return false;
-  return isDictionaryDerived(stored, fresh);
+  return stored.split(';').some(sense => isMetalinguisticGloss(sense.trim()));
 }
 
 /**
