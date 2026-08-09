@@ -1,5 +1,6 @@
 import type { DeckWord, LanguageCode } from './types';
 import { lookupReadingAsync } from './data/lookup';
+import { isDictionaryDerived, isMetalinguisticGloss, isProperNounGloss } from './glossQuality';
 
 /**
  * Re-sync deck glosses with the dictionary, for words whose definition we shipped.
@@ -21,7 +22,7 @@ import { lookupReadingAsync } from './data/lookup';
  */
 
 /** Bump when the dictionaries are re-ranked in a way decks should pick up. */
-export const CARD_GLOSS_VERSION = 2;
+export const CARD_GLOSS_VERSION = 3;
 
 /**
  * Passed as the lookup's fallback so a miss is DISTINGUISHABLE from a hit.
@@ -58,14 +59,27 @@ function writeMarker(lang: LanguageCode): void {
   } catch { /* private mode / quota — the sync simply runs again next load */ }
 }
 
-/** Senses as a comparable set: order-insensitive, whitespace- and case-insensitive. */
-function senseKey(meaning: string): string {
-  return meaning
-    .split(';')
-    .map(s => s.trim().toLowerCase())
-    .filter(Boolean)
-    .sort()
-    .join('');
+/**
+ * Should this card's stored gloss be replaced by the dictionary's?
+ *
+ * Only when BOTH hold, which is what keeps it off anything the learner wrote:
+ *
+ *   1. Its leading sense is metalinguistic — i.e. it is exactly the bug being fixed, a card
+ *      currently defined by a description of its own spelling.
+ *   2. Every one of its senses appears in the dictionary's text, so the gloss demonstrably
+ *      came from us.
+ *
+ * Condition 2 replaced an exact set comparison, which was too strict: an older build split
+ * senses differently, storing `y` as "...alphabet; and; plus; and" where the dictionary now
+ * says "and; ...alphabet; plus, and". Those sets never match, so the card stayed broken.
+ *
+ * Condition 1 does the narrowing. Without it, a learner who had trimmed "dog; lazy person"
+ * down to just "dog" would satisfy condition 2 and get the long version forced back.
+ */
+function shouldReplace(stored: string, fresh: string): boolean {
+  if (stored === fresh) return false;
+  if (!isMetalinguisticGloss(stored.split(';')[0].trim())) return false;
+  return isDictionaryDerived(stored, fresh);
 }
 
 /**
@@ -75,6 +89,17 @@ function senseKey(meaning: string): string {
  */
 export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Promise<DeckWord[]> {
   if (!needsGlossSync(lang) || deck.length === 0) return deck;
+
+  // Proper nouns first, and they are REMOVED rather than re-glossed: a character's name from
+  // a passage is not vocabulary, will not recur, and cannot be studied. Keyed on the
+  // generator's own "(name) …" marker, so this can only catch cards it produced.
+  const named = deck.filter(w => w.m && isProperNounGloss(w.m));
+  const kept = named.length > 0 ? deck.filter(w => !(w.m && isProperNounGloss(w.m))) : deck;
+  if (named.length > 0) {
+    console.info(`[gloss] removed ${named.length} proper-noun card(s) from the ${lang} deck: ${named.map(w => w.h).join(', ')}`);
+  }
+  deck = kept;
+  if (deck.length === 0) { writeMarker(lang); return kept; }
 
   let changed = 0;
   let answered = 0;   // cards the dictionary actually had an entry for
@@ -86,7 +111,7 @@ export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Pro
       answered++;
       // Same senses, different order → ours is the stale ranking. Different senses → the
       // learner's own wording. Leave both alone.
-      if (fresh === w.m || senseKey(fresh) !== senseKey(w.m)) return w;
+      if (!shouldReplace(w.m, fresh)) return w;
       changed++;
       return { ...w, m: fresh };
     } catch {
@@ -96,9 +121,9 @@ export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Pro
 
   // No entry resolved for ANY card in a non-empty deck means the dictionary isn't there,
   // not that every word is unknown. Leave the marker unset so this retries next load.
-  if (answered === 0) return deck;
+  if (answered === 0) return named.length > 0 ? kept : deck;
   writeMarker(lang);
-  if (changed === 0) return deck;
+  if (changed === 0) return named.length > 0 ? kept : deck;
   console.info(`[gloss] re-ranked ${changed} ${lang} card definition(s) to match the dictionary`);
   return next;
 }

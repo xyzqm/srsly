@@ -7,4 +7,4 @@
  *
  * Bump on every change to public/*dict.json.
  */
-export const DICT_VERSION = 2;
+export const DICT_VERSION = 3;

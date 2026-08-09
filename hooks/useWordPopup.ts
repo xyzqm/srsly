@@ -6,6 +6,7 @@ import { lookupReadingAsync } from '@/lib/data/lookup';
 import { useLanguage } from '@/lib/LanguageContext';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { storage } from '@/lib/storage';
+import { isProperNounGloss } from '@/lib/glossQuality';
 import type { ClaimsStore } from '@/hooks/useClaims';
 
 /**
@@ -75,7 +76,14 @@ export function useWordPopup(
       //   2. Added this session, or already in the deck → 'lookup' (definition + a badge
       //      that distinguishes the two: one confirms an action, the other states a fact)
       //   3. Unknown word → 'free' (show Add to vocab)
-      const type: PopupData['type'] = isInPool ? 'pool' : (isVocabThisSession || isInDeck) ? 'lookup' : 'free';
+      // A proper noun still gets a popup — knowing "María is a name" is the point of the
+      // marker — but never an Add button. A character's name is not vocabulary: it will not
+      // recur, and there is nothing to review. 'lookup' shows the gloss with no action.
+      const isName = isProperNounGloss(token.meaning || entry.meaning || '');
+      const type: PopupData['type'] = isInPool ? 'pool'
+        : (isVocabThisSession || isInDeck) ? 'lookup'
+        : isName ? 'lookup'
+        : 'free';
       const justAdded = isVocabThisSession && !isInDeck;
 
       // For a word in the user's deck, show THEIR customized pinyin + meaning (not the
