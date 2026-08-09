@@ -48,6 +48,53 @@ function identity(w: { h: string; m: string }): string {
   return w.h + '\u001f' + w.m.trim();
 }
 
+/** How much study a card is carrying, for deciding which of two copies to keep. */
+function progress(w: DeckWord): number {
+  return (w.reviews ?? 0) * 1e6 + (w.stability ?? 0) * 1e3 + (w.lapses ?? 0);
+}
+
+/**
+ * Collapse cards that are the same card twice, and re-id any that still collide.
+ *
+ * addWord/addWords both dedup on the way in, so nothing should ever get here — but decks
+ * arrive from four writers (localStorage, the Supabase row, the guest→cloud merge, and an
+ * older build's format) and the Spanish deck came back holding `no` three times, same id and
+ * same gloss. Identical ids are the worse half: React keys off `id`, so the duplicates were
+ * also a "two children with the same key" error, and a patch by id would silently land on
+ * whichever copy React had rendered.
+ *
+ * A semantic duplicate keeps the copy with the most study on it rather than the first one —
+ * losing a card is recoverable, losing its review history is not. An id collision that is
+ * NOT a semantic duplicate is a genuinely different card that happens to share an id, so it
+ * is re-issued one instead of being dropped.
+ *
+ * Returns the original array when the deck was already clean, so the caller skips the write.
+ */
+function dedupeDeck(deck: DeckWord[]): DeckWord[] {
+  const byWord = new Map<string, DeckWord>();
+  for (const w of deck) {
+    const key = identity(w);
+    const prev = byWord.get(key);
+    if (!prev || progress(w) > progress(prev)) byWord.set(key, w);
+  }
+
+  const ids = new Set<string>();
+  let reissued = 0;
+  const out = [...byWord.values()].map(w => {
+    if (!w.id) return w;
+    if (!ids.has(w.id)) { ids.add(w.id); return w; }
+    reissued++;
+    const id = genId();
+    ids.add(id);
+    return { ...w, id };
+  });
+
+  const dropped = deck.length - out.length;
+  if (dropped === 0 && reissued === 0) return deck;
+  console.info(`[deck] removed ${dropped} duplicate card(s)${reissued > 0 ? `, re-issued ${reissued} colliding id(s)` : ''}`);
+  return out;
+}
+
 export function useVocabDeck(language: LanguageCode = 'zh') {
   const [deck, setDeck] = useState<DeckWord[]>([]);
   /**
@@ -94,15 +141,18 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
         }
         return nw;
       });
+      // Before anything reads the deck by id: collapse cards that are in it twice.
+      const unique = dedupeDeck(migrated);
+      if (unique !== migrated) changed = true;
       // One-time removal of words that predate the current graded tables — see
       // lib/curriculum.ts. Runs before the deck is published to the UI so an
       // off-curriculum word never flashes into a review surface on the way out.
-      const pruned = await pruneDeckToCurriculum(language, migrated);
-      if (pruned !== migrated) changed = true;
-      // Re-rank stale card definitions against the current dictionary. A card stores its own
-      // copy of the gloss, so improving the dictionary does nothing for words already added
-      // — see lib/deckGloss.ts, which only touches glosses that are a reordering of what we
-      // shipped, never one the learner rewrote.
+      const pruned = await pruneDeckToCurriculum(language, unique);
+      if (pruned !== unique) changed = true;
+      // Repair card definitions that describe the word's spelling rather than teaching it.
+      // A card stores its own copy of the gloss, so improving the dictionary does nothing
+      // for words already added — see lib/deckGloss.ts, which only touches glosses carrying
+      // that fingerprint, never one the learner rewrote.
       const resynced = await syncDeckGlosses(language, pruned);
       if (resynced !== pruned) changed = true;
       // A switch away mid-load must not publish the language we just left.
