@@ -36,12 +36,30 @@ const RINGS = [
 const SIZE = 400;
 const C = SIZE / 2;
 
-/** Colour per ring: fragile at the core, solid at the rim. Theme variables, never literals. */
+/**
+ * One hue, four strengths — pale near the centre, saturated at the rim.
+ *
+ * This was a red → amber → green ramp, which is an alert scale: it says the inner ring is a
+ * problem. It isn't. A word one day old is not failing, it is new, and the only thing the
+ * distance means is how long it will hold. Encoding that in saturation of a single colour
+ * says exactly that much and nothing more, and it stays legible for the ~8% of men with
+ * red–green colour blindness, for whom the old ramp collapsed at both ends.
+ *
+ * Built from theme variables so it follows all six themes rather than fixing a palette.
+ */
 const RING_COLOR = [
-  'color-mix(in srgb, var(--accent) 78%, var(--paper))',
-  'color-mix(in srgb, var(--gold) 82%, var(--paper))',
-  'color-mix(in srgb, var(--jade) 62%, var(--paper))',
+  'color-mix(in srgb, var(--jade) 22%, var(--ink-faint))',
+  'color-mix(in srgb, var(--jade) 55%, var(--ink-faint))',
+  'color-mix(in srgb, var(--jade) 82%, var(--ink-soft))',
   'var(--jade)',
+];
+
+/** The ring outline, tinted with its own dots so each band reads as a unit. */
+const RING_STROKE = [
+  'color-mix(in srgb, var(--jade) 16%, var(--line))',
+  'color-mix(in srgb, var(--jade) 28%, var(--line))',
+  'color-mix(in srgb, var(--jade) 40%, var(--line))',
+  'color-mix(in srgb, var(--jade) 55%, var(--line))',
 ];
 
 /** FNV-1a. Cheap, well-spread, and identical every run — which is the whole requirement. */
@@ -134,7 +152,8 @@ export default function Orbit({ deck, language }: Props) {
           >
             {RINGS.map((r, i) => (
               <circle key={i} cx={C} cy={C} r={r.radius} fill="none"
-                stroke="var(--line)" strokeWidth={1} strokeDasharray={i === RINGS.length - 1 ? undefined : '2 5'} />
+                stroke={RING_STROKE[i]} strokeWidth={i === RINGS.length - 1 ? 1.3 : 1}
+                strokeDasharray={i === RINGS.length - 1 ? undefined : '2 5'} />
             ))}
 
             {/* The core: words that have never held a review yet. Distinct from a weak
@@ -151,7 +170,7 @@ export default function Orbit({ deck, language }: Props) {
             </text>
 
             {dots.map((d, i) => (
-              <circle key={d.word.id ?? d.word.h + i} cx={d.x} cy={d.y} r={dotR}
+              <circle key={d.word.id ?? d.word.h + i} cx={d.x} cy={d.y} r={dotR + d.ring * 0.35}
                 fill={RING_COLOR[d.ring]}
                 opacity={hover && hover !== d ? 0.35 : 1}
                 style={{ transition: 'opacity .12s' }} />
