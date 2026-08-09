@@ -97,15 +97,16 @@ export default function AddLanguage({ added, onDone, onCancel }: Props) {
               Let&apos;s find your level
             </h2>
             <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.55, maxWidth: '46ch' }}>
-              Pick the meaning of each word. Skip if you&apos;re starting from zero — that puts
-              you at {levelLabel(chosen, easiestLevel(chosen))}.
+              Pick the meaning of each word. Each level you pass opens the one above it.
+              Skip at any point to stop — you keep whatever you&apos;ve already passed, and
+              skipping straight away starts you at {levelLabel(chosen, easiestLevel(chosen))}.
             </p>
             <LevelTest
               language={chosen}
               mode="placement"
               onFinish={setPlaced}
               onClose={() => onDone(chosen, placed ?? 0)}
-              onSkip={() => onDone(chosen, 0)}
+              onSkip={through => onDone(chosen, through)}
             />
           </>
         )}

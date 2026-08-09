@@ -24,9 +24,13 @@ interface Props {
   /** Called with the highest level passed (0 = none). Fires once, when the run ends. */
   onFinish: (through: number) => void;
   onClose: () => void;
-  /** Onboarding only: offer a way out for someone who knows they're a beginner. Given,
-   *  a Skip button replaces Cancel and calls this instead of abandoning the run. */
-  onSkip?: () => void;
+  /**
+   * Onboarding only: a way to stop early. Receives the levels PASSED SO FAR, not zero —
+   * skipping the A2 block after acing A1 must keep the A1 result, or the learner is
+   * silently demoted for declining to be tested further. Given, a Skip button replaces
+   * Cancel.
+   */
+  onSkip?: (passedThrough: number) => void;
 }
 
 type Phase = 'loading' | 'unavailable' | 'asking' | 'blockDone' | 'finished';
@@ -232,7 +236,7 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
         <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
           {levelLabel(language, q.level)} · {qi + 1} of {questions.length}
         </div>
-        <button onClick={onSkip ?? onClose} className="cursor-pointer"
+        <button onClick={onSkip ? () => onSkip(placementResult(results)) : onClose} className="cursor-pointer"
           style={{ ...mono, fontSize: 11, letterSpacing: '.06em', background: 'none', border: 'none', color: 'var(--ink-faint)' }}>
           {onSkip ? 'Skip — I\u2019m new to this' : 'Cancel'}
         </button>

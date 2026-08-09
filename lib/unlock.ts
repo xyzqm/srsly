@@ -19,6 +19,12 @@ import type { DeckWord, LanguageCode, UserPrefs } from './types';
  *
  * A level is open if EITHER holds, so the test is a shortcut and never a barrier — someone
  * who ignores it entirely still unlocks everything by studying.
+ *
+ * BOTH PATHS OPEN THE LEVEL ABOVE THE ONE YOU DEMONSTRATED, and they must, because they are
+ * claims about the same thing. Retention at A1 opens A2; passing A1's test therefore opens
+ * A2 as well. Making the test open only the level it examined quietly broke the placement
+ * run: A1 is open to everyone already, so acing the A1 block and skipping it produced
+ * identical results and the first question of the whole test could not matter.
  */
 
 /** Stability (days) at which a card counts as retained rather than merely met. Matches the
@@ -45,7 +51,7 @@ export interface LevelStanding {
   via: 'first' | 'earned' | 'tested' | null;
 }
 
-/** Highest level ever unlocked by passing a test, for this language. */
+/** Highest level whose test the learner has PASSED — which opens the level above it. */
 export function testedThrough(prefs: Pick<UserPrefs, 'testedLevels'>, lang: LanguageCode): number {
   return prefs.testedLevels?.[lang] ?? 0;
 }
@@ -67,8 +73,9 @@ export function levelStandings(
   deck: DeckWord[],
   table: Record<number, string[]>,
   levels: number[],
-  /** Levels the learner may open regardless of retention: any passed test, and whatever
-   *  they already had selected before unlocking existed. Compared BY RANK, not by number. */
+  /** Levels the learner may open regardless of retention: the highest test they passed
+   *  (which opens the level ABOVE it, exactly as retention does), and whatever they already
+   *  had selected before unlocking existed. Compared BY RANK, not by number. */
   opened: { testedLevel?: number; selectedLevel?: number } = {},
 ): LevelStanding[] {
   // A character can hold several readings as separate cards; credit the strongest.
@@ -109,11 +116,17 @@ export function levelStandings(
     if (r.meetsThreshold) earnedRank = r.rank + 1;
   }
 
-  // Passing a level's test opens that level and everything easier than it. Resolved through
-  // rank so it is right for a descending curriculum too.
+  // Resolved through rank so it is right for a descending curriculum too. A passed test
+  // opens the NEXT level up, mirroring retention; a level already selected opens only itself,
+  // since that is grandfathering rather than an achievement.
   const rankOf = (level?: number) =>
     level === undefined ? -1 : (rows.find(r => r.level === level)?.rank ?? -1);
-  const openRank = Math.max(earnedRank, rankOf(opened.testedLevel), rankOf(opened.selectedLevel));
+  const testedRank = rankOf(opened.testedLevel);
+  const openRank = Math.max(
+    earnedRank,
+    testedRank < 0 ? -1 : testedRank + 1,
+    rankOf(opened.selectedLevel),
+  );
 
   for (const r of rows) {
     r.unlocked = r.rank <= openRank;
@@ -131,9 +144,22 @@ export function highestUnlocked(rows: LevelStanding[]): number | undefined {
   return open.length ? open[open.length - 1].level : rows[0]?.level;
 }
 
-/** The level whose retention gates `row` — the one immediately easier, or undefined. */
+/**
+ * The level that gates `row` — the one immediately easier, or undefined for the first.
+ *
+ * This is what BOTH paths measure: retain enough of it, or pass its test, and `row` opens.
+ * It is therefore also the level a challenge test must examine — testing the locked level's
+ * own words would set a different bar from the one the copy beside it promises.
+ */
 export function gateFor(rows: LevelStanding[], row: LevelStanding): LevelStanding | undefined {
   return rows[row.rank - 1];
+}
+
+/** The level a placement result should select: one above the hardest test passed. */
+export function levelAfter(levels: number[], passed: number): number | undefined {
+  const i = levels.indexOf(passed);
+  if (i < 0) return undefined;
+  return levels[Math.min(i + 1, levels.length - 1)];
 }
 
 /** How many more words of `row` must be retained before the next level opens. */

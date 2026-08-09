@@ -11,7 +11,7 @@ import type { LanguageCode } from '@/lib/types';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { removeLanguage } from '@/lib/onboarding';
 import { loadLevelTable } from '@/lib/curriculum';
-import { levelStandings, wordsToUnlockNext, gateFor, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
+import { levelStandings, wordsToUnlockNext, gateFor, levelAfter, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
 
@@ -71,8 +71,14 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const { deck } = useVocabDeck(language);
   const [levelTable, setLevelTable] = useState<Record<number, string[]> | null>(null);
   const [testedLevel, setTestedLevel] = useState(0);
-  /** Which locked level the learner is challenging, or null. Placement lives in the
-   *  onboarding flow now (components/level/AddLanguage.tsx) and never starts from here. */
+  /**
+   * The level being examined by an open challenge, or null.
+   *
+   * This is the GATE of the level the learner clicked, not that level itself: the row says
+   * "426 more A1 words to retain, or take a test to unlock it", and the test has to measure
+   * the same thing that sentence promises. Passing it opens the level above — see
+   * lib/unlock.ts. Placement lives in onboarding now and never starts from here.
+   */
   const [test, setTest] = useState<number | null>(null);
   const [removing, setRemoving] = useState<LanguageCode | null>(null);
 
@@ -326,12 +332,18 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       </p>
 
       {test !== null && (
-        <LevelTest
-          language={language}
-          mode={test}
-          onFinish={recordTestResult}
-          onClose={() => setTest(null)}
-        />
+        <>
+          <p style={{ fontSize: 13, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.5, marginBottom: -4 }}>
+            Testing your {levelLabel(language, test)} vocabulary — passing it unlocks{' '}
+            {levelLabel(language, levelAfter(langConfig.levels.map(l => l.level), test) ?? test)}.
+          </p>
+          <LevelTest
+            language={language}
+            mode={test}
+            onFinish={recordTestResult}
+            onClose={() => setTest(null)}
+          />
+        </>
       )}
 
       <div className="flex flex-col gap-2.5 mb-4" style={{ maxWidth: 540 }}>
@@ -346,7 +358,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           return (
             <button
               key={lvl}
-              onClick={() => (locked ? setTest(lvl) : handleSelectLevel(lvl))}
+              onClick={() => (locked ? (below && setTest(below.level)) : handleSelectLevel(lvl))}
               className="text-left cursor-pointer transition-all duration-150 rounded-[11px] px-5 py-4"
               style={{
                 background: active
@@ -371,7 +383,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
                   <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2, lineHeight: 1.4 }}>
                     {locked
                       ? below
-                        ? <>Locked — {wordsToUnlockNext(below)} more {levelLabel(language, below.level)} word{wordsToUnlockNext(below) === 1 ? '' : 's'} to retain, or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take a test to unlock it</span>.</>
+                        ? <>Locked — {wordsToUnlockNext(below)} more {levelLabel(language, below.level)} word{wordsToUnlockNext(below) === 1 ? '' : 's'} to retain, or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take the {levelLabel(language, below.level)} test to unlock it</span>.</>
                         : <>Locked — <span style={{ color: 'var(--accent)', fontWeight: 500 }}>take the test</span> to unlock.</>
                       : desc}
                   </div>

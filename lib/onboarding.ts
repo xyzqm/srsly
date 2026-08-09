@@ -1,5 +1,6 @@
 import type { LanguageCode, UserPrefs } from './types';
-import { getLanguageConfig, SUPPORTED_LANGUAGES } from './languageConfig';
+import { getLanguageConfig, levelNumbers, SUPPORTED_LANGUAGES } from './languageConfig';
+import { levelAfter } from './unlock';
 import { storage } from './storage';
 
 /**
@@ -41,17 +42,20 @@ export async function resolveLanguages(prefs: UserPrefs): Promise<LanguageCode[]
 }
 
 /**
- * Record a newly added language and the level the placement test put them in.
+ * Record a newly added language and where the placement test put the learner.
  *
- * `placedLevel` of 0 means the test placed them nowhere — a true beginner, or a skip — and
- * they start at the easiest level with nothing marked as tested. Anything else both selects
- * that level and records it as test-unlocked, which is what opens everything below it.
+ * `passedThrough` is the HARDEST LEVEL WHOSE TEST THEY PASSED, so the level they start at is
+ * the one ABOVE it — passing A1 means A1 is behind you, not ahead. 0 means they passed
+ * nothing, from failing the first block or skipping immediately, and they start at the
+ * easiest level with nothing recorded as tested.
  */
-export async function addLanguage(lang: LanguageCode, placedLevel: number): Promise<UserPrefs> {
+export async function addLanguage(lang: LanguageCode, passedThrough: number): Promise<UserPrefs> {
   const prefs = await storage.getPrefs();
   const existing = await resolveLanguages(prefs);
   const cfg = getLanguageConfig(lang);
-  const level = placedLevel > 0 ? placedLevel : easiestLevel(lang);
+  const level = passedThrough > 0
+    ? (levelAfter(levelNumbers(lang), passedThrough) ?? easiestLevel(lang))
+    : easiestLevel(lang);
 
   const next: UserPrefs = {
     ...prefs,
@@ -59,8 +63,8 @@ export async function addLanguage(lang: LanguageCode, placedLevel: number): Prom
     language: lang,
     [cfg.levelPrefKey]: level,
     placementSeen: { ...prefs.placementSeen, [lang]: true },
-    ...(placedLevel > 0 && {
-      testedLevels: { ...prefs.testedLevels, [lang]: placedLevel },
+    ...(passedThrough > 0 && {
+      testedLevels: { ...prefs.testedLevels, [lang]: passedThrough },
     }),
   };
   await storage.savePrefs(next);
