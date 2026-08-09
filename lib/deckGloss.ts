@@ -22,7 +22,7 @@ import { isDictionaryDerived, isMetalinguisticGloss, isProperNounGloss } from '.
  */
 
 /** Bump when the dictionaries are re-ranked in a way decks should pick up. */
-export const CARD_GLOSS_VERSION = 3;
+export const CARD_GLOSS_VERSION = 4;
 
 /**
  * Passed as the lookup's fallback so a miss is DISTINGUISHABLE from a hit.

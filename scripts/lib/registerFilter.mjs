@@ -98,6 +98,13 @@ export function isLexicalPos(pos) {
  */
 export function isMetalinguisticGloss(gloss) {
   return /^(?:the\s+)?(?:[\w-]+\s+)?letter of the\b/i.test(gloss)
+    // "A with grave accent", "a letter in the French alphabet, after x and before z" —
+    // descriptions of the CHARACTER. No real word is ever defined this way.
+    || /^.{1,2} with (?:grave|acute|circumflex|tilde|cedilla|diaeresis|macron|breve|caron|ring)\b/i.test(gloss)
+    || /^an? letter (?:in|of) the\b/i.test(gloss)
+    // Orphans left by an older build that split "…alphabet, written in the Latin script."
+    // at the comma: the tail is not a definition of anything on its own.
+    || /\bwritten in the .{0,16}\bscript\b/i.test(gloss)
     // "Name of the letter A.", "The name of the Latin script letter I/i.", "a, the name of
     // the Latin-script letter A" — the same fact stated the other way round, with a variable
     // amount of script pedantry in between and sometimes the letter itself in front.

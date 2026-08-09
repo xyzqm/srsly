@@ -779,9 +779,17 @@
       "y": "and"
     },
     "fr": {
+      "ci": "alternative form of ici",
       "ne": "not, no",
       "se": "The third-person reflexive",
-      "ci": "alternative form of ici"
+      "y": "there (at a place)",
+      "à": "to (destination)"
+    }
+  },
+  "curatedGloss": {
+    "_why": "HAND-WRITTEN definitions, for the rare entry whose source is missing a core sense outright. Everything else in this app follows a strict rule — a definition comes from the licensed dictionary or it does not exist — and this section is the one deliberate exception to it, so keep the list tiny and justify every line. Prefer `leadSense` whenever the sense merely needs promoting: that only reorders what the dictionary already says and stays inside the rule. Each value REPLACES the entry's whole gloss, so keep the source's real senses in it rather than discarding them.",
+    "es": {
+      "a": "to, at; bishop"
     }
   }
 }

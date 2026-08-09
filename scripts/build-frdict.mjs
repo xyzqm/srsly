@@ -46,7 +46,7 @@ import { isNamePos, isNameSense } from './lib/nameFilter.mjs';
 import { adjustBandsWithAnchor } from './lib/corpusFreq.mjs';
 import { lexiqueRanking } from './lib/lexique.mjs';
 import { anchorLevelOf, writeAnchorReport } from './lib/cefrjAnchor.mjs';
-import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions, leadSenseFor } from './lib/coreOverrides.mjs';
+import { applyCoreOverrides, reportCoreOverrides, applyDemotions, reportDemotions, leadSenseFor, curatedGlossFor } from './lib/coreOverrides.mjs';
 import { isNonStandardSense, isExcludedHeadword, isLexicalPos, isMetalinguisticGloss, isBandableLength } from './lib/registerFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,6 +74,7 @@ const CEFR_BANDS = [
 const MAX_MEANING = 90;
 const MAX_SENSES = 3;
 const LEAD_SENSE = leadSenseFor('fr');
+const CURATED = curatedGlossFor('fr');
 
 /** Tags marking a sense as non-core. Such senses are kept, but always rank below plain
  *  ones, so `perro` leads with "dog" rather than with its Chilean or derogatory senses. */
@@ -216,7 +217,12 @@ async function main() {
     const ranked = cands
       .sort((a, b) => tier(a) - tier(b) || a.order - b.order)
       .map(c => c.gloss);
-    // Last word: a hand-set preference, which can only ever promote a sense already here.
+    // A curated gloss replaces the entry outright — it exists because this source is
+    // missing a sense that reordering therefore cannot surface.
+    const curated = CURATED.get(word);
+    if (curated) { dict[word] = { p: '', m: curated }; continue; }
+
+    // Otherwise: a hand-set preference, which can only ever promote a sense already here.
     const want = LEAD_SENSE.get(word);
     if (want) {
       const i = ranked.findIndex(g => g.toLowerCase().includes(want.toLowerCase()));

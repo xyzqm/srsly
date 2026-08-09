@@ -73,6 +73,19 @@ export function leadSenseFor(lang) {
   return new Map(prefs && typeof prefs === 'object' ? Object.entries(prefs) : []);
 }
 
+/**
+ * Hand-written glosses for entries the source is missing a core sense for — the one
+ * deliberate exception to "a definition comes from the dictionary or it does not exist".
+ * See the `_why` in core-overrides.json; prefer leadSenseFor whenever reordering suffices.
+ *
+ * @param {string} lang
+ * @returns {Map<string, string>}
+ */
+export function curatedGlossFor(lang) {
+  const g = JSON.parse(readFileSync(FILE, 'utf8')).curatedGloss?.[lang];
+  return new Map(g && typeof g === 'object' ? Object.entries(g) : []);
+}
+
 export function coreOverridesFor(lang) {
   const all = JSON.parse(readFileSync(FILE, 'utf8'));
   const themed = Object.values(all?.beginner?.[lang] ?? {}).flat();

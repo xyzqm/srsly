@@ -25,11 +25,17 @@ import { createRequire } from 'module';
 
 /** Plain-object lookup would resolve dictionary words like `constructor` and `toString`
  *  against Object.prototype and hand back a function, so each language gets a Map. */
-const LEAD_SENSE = new Map(
-  Object.entries(createRequire(import.meta.url)('./data/core-overrides.json').leadSense ?? {})
+const OVERRIDES = createRequire(import.meta.url)('./data/core-overrides.json');
+const byLang = (section) => new Map(
+  Object.entries(section ?? {})
     .filter(([k, v]) => !k.startsWith('_') && v && typeof v === 'object')
     .map(([lang, prefs]) => [lang, new Map(Object.entries(prefs))]),
 );
+const LEAD_SENSE = byLang(OVERRIDES.leadSense);
+/** Hand-written glosses, for entries the source is missing a core sense for. The one
+ *  deliberate exception to "a definition comes from the dictionary or it does not exist";
+ *  see the _why in core-overrides.json. Replaces the entry's gloss outright. */
+const CURATED = byLang(OVERRIDES.curatedGloss);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK = process.argv.includes('--check');
@@ -42,6 +48,10 @@ const CHECK = process.argv.includes('--check');
  * ranked it.
  */
 function reorder(meaning, word, lang) {
+  // A curated gloss wins outright — it exists precisely because reordering cannot help.
+  const curated = CURATED.get(lang)?.get(word);
+  if (curated) return curated;
+
   const parts = meaning.split(';').map(s => s.trim()).filter(Boolean);
   if (parts.length < 2) return meaning;
 

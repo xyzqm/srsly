@@ -17,6 +17,13 @@
  */
 export function isMetalinguisticGloss(gloss: string): boolean {
   return /^(?:the\s+)?(?:[\w-]+\s+)?letter of the\b/i.test(gloss)
+    // "A with grave accent", "a letter in the French alphabet, after x and before z" —
+    // descriptions of the CHARACTER. No real word is ever defined this way.
+    || /^.{1,2} with (?:grave|acute|circumflex|tilde|cedilla|diaeresis|macron|breve|caron|ring)\b/i.test(gloss)
+    || /^an? letter (?:in|of) the\b/i.test(gloss)
+    // Orphans left by an older build that split "…alphabet, written in the Latin script."
+    // at the comma: the tail is not a definition of anything on its own.
+    || /\bwritten in the .{0,16}\bscript\b/i.test(gloss)
     || /\bname of the .{0,24}\bletter\b/i.test(gloss)
     || /^(?:abbreviation|initialism|acronym|misspelling|contraction|symbol|romanization|alternative spelling|alternative form|obsolete spelling) (?:of|for)\b/i.test(gloss)
     || /^only used in\b/i.test(gloss);
@@ -48,7 +55,12 @@ export function isDictionaryDerived(stored: string, dictionary: string): boolean
   const hay = dictionary.toLowerCase();
   return stored
     .split(';')
-    .map(s => s.trim().toLowerCase().replace(/[.]$/, ''))
+    .map(s => s.trim())
     .filter(Boolean)
-    .every(s => hay.includes(s));
+    // Metalinguistic senses are exactly what the new gloss is dropping, so requiring them to
+    // survive would veto every replacement that removes one. `a` is the clearest case: its
+    // curated gloss is "to, at; bishop", and demanding that "The first letter of the Spanish
+    // alphabet" still appear would reject it forever.
+    .filter(s => !isMetalinguisticGloss(s))
+    .every(s => hay.includes(s.toLowerCase().replace(/[.]$/, '')));
 }
