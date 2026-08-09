@@ -3,26 +3,33 @@ import { lookupReadingAsync } from './data/lookup';
 import { isMetalinguisticGloss, isProperNounGloss } from './glossQuality';
 
 /**
- * Re-sync deck glosses with the dictionary, for words whose definition we shipped.
+ * Repair deck cards whose stored definition describes the word's SPELLING instead of
+ * teaching it, and drop cards that are somebody's name.
  *
- * A card stores its own copy of `m` at the moment it was added, so improving the dictionary
+ * A card keeps its own copy of `m` from the moment it was added, so fixing the dictionary
  * does nothing for words already in a deck. `no` kept "abbreviation of noroeste; northwest;
- * not; no" in every surface that reads the card — the vocabulary list, the Orbit tooltip,
- * flashcards — long after the dictionary itself was fixed.
+ * not; no" everywhere the card is read — the vocabulary list, the flashcard, the level test
+ * — long after the dictionary itself said "not; no".
  *
- * ONLY A PERMUTATION IS REPLACED, and that restriction is the whole safety argument. The
- * Vocab tab lets you rewrite a definition in your own words, and silently overwriting that
- * would be far worse than the bug being fixed. So a card is only re-synced when its senses
- * are the same SET as the dictionary's, just in a different order — which can only be true
- * of a gloss that came from the dictionary and has since been re-ranked. Anything you typed
- * differs by more than order and is left exactly as it is.
+ * NO VERSION MARKER, AND THAT IS THE FIX
+ * This used to run once per language per CARD_GLOSS_VERSION, recorded in localStorage. The
+ * marker was written at the end of the sync, but the caller can DISCARD the result — the
+ * load effect bails out when the language changed underneath it, and React's dev-mode
+ * double-mount makes that the normal case, not an edge case. One discarded run and the
+ * language was marked done forever, having repaired nothing; bumping the version just armed
+ * the same trap again. Three separate bumps went that way and `no` still read "abbreviation
+ * of noroeste" on screen.
  *
- * Runs once per language per CARD_GLOSS_VERSION; the marker is device-local for the same
- * reason the curriculum prune's is (it records what has been done to this copy of the deck).
+ * There is nothing a marker knows that the deck doesn't. A gloss reading "abbreviation of
+ * noroeste" is self-evidently the broken kind, so the deck is its own to-do list: scan it,
+ * and if nothing is broken return in a few microseconds having touched no storage. A card
+ * that slips through today is then simply repaired on the next load.
+ *
+ * The marker's supposed payment — not fetching a multi-megabyte dictionary on every start —
+ * turned out to be imaginary: useWordLookup and useDailyContent both call preloadDict on
+ * mount, so the file is fetched once per load whatever this function does. It was buying
+ * nothing and costing the repair.
  */
-
-/** Bump when the dictionaries are re-ranked in a way decks should pick up. */
-export const CARD_GLOSS_VERSION = 5;
 
 /**
  * Passed as the lookup's fallback so a miss is DISTINGUISHABLE from a hit.
@@ -31,99 +38,65 @@ export const CARD_GLOSS_VERSION = 5;
  * nothing when the dictionary failed to load, since that failure is swallowed on purpose so
  * the rest of the app keeps working offline. Handing it the card's own gloss made those two
  * cases identical, so a run where the dictionary never arrived looked like "checked
- * everything, nothing to change" and wrote the done-marker. One slow or cached fetch and the
- * migration was permanently finished having done nothing. A sentinel tells them apart.
+ * everything, nothing to change". A sentinel tells them apart, and an unrepaired card is
+ * simply still broken next load, which is exactly when we try again.
  */
 const MISS = '\u0000no-dictionary-entry';
 
-const MARKER_KEY = 'srsly-gloss-synced';
-
-function readMarkers(): Record<string, number> {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MARKER_KEY) ?? '{}');
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, number> : {};
-  } catch {
-    return {};
-  }
-}
-
-export function needsGlossSync(lang: LanguageCode): boolean {
-  return (readMarkers()[lang] ?? 0) < CARD_GLOSS_VERSION;
-}
-
-function writeMarker(lang: LanguageCode): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(MARKER_KEY, JSON.stringify({ ...readMarkers(), [lang]: CARD_GLOSS_VERSION }));
-  } catch { /* private mode / quota — the sync simply runs again next load */ }
-}
-
 /**
- * Should this card's stored gloss be replaced by the dictionary's?
+ * Does this card carry a sense that describes its own spelling? — "abbreviation of
+ * noroeste", "The first letter of the Spanish alphabet", "alternative spelling of éste".
  *
- * Yes exactly when the card carries a sense that describes its own spelling — "abbreviation
- * of noroeste", "The first letter of the Spanish alphabet", "alternative spelling of éste".
- * That is a sufficient signal on its own, because nobody writes a definition like that. It
- * is the fingerprint of a gloss we shipped.
+ * That is a sufficient signal on its own, because nobody writes a definition like that: it
+ * is the fingerprint of a gloss we shipped. What protects a hand-written definition is that
+ * it contains no such sense — "MY OWN NOTE: the house where I grew up" is untouched, and so
+ * is a gloss trimmed to "dog". The residual risk is a learner who deliberately typed
+ * "abbreviation of …" as their own note, whose card reverts to the dictionary. Worth it for
+ * a rule this simple.
  *
- * This replaced a containment test — every stored sense had to reappear in the new gloss —
- * which worked while the fix was a reordering and broke the moment it became a DELETION.
- * `a` is curated down to "to, at" and `no` to "not; no", so their old senses are gone by
- * design; demanding they survive would veto the very updates the card needs.
- *
- * What protects a hand-written definition is that it contains no such sense: "MY OWN NOTE:
- * the house where I grew up" is untouched, and so is a gloss trimmed to "dog". The residual
- * risk is a learner who deliberately typed "abbreviation of …" as their own note, whose card
- * would revert to the dictionary — a trade worth making for a rule this simple.
+ * Note this is also the retry condition. A word whose every sense is metalinguistic — a
+ * genuine letter name — keeps its gloss (reorder-glosses.mjs never empties an entry), so it
+ * stays "stale" and costs one dictionary load per session. Rare enough to accept.
  */
-function shouldReplace(stored: string, fresh: string): boolean {
-  if (stored === fresh) return false;
-  return stored.split(';').some(sense => isMetalinguisticGloss(sense.trim()));
+function isSpellingGloss(w: DeckWord): boolean {
+  return !!w.m && w.m.split(';').some(sense => isMetalinguisticGloss(sense.trim()));
 }
 
 /**
- * Returns a new deck when anything changed, or the original array when nothing did — so
- * callers can skip the write. Never throws: a failed dictionary load leaves the deck alone
- * and the marker unset, so it retries next time.
+ * Returns a new deck when anything changed, or the ORIGINAL array reference when nothing
+ * did — so callers can skip the write. Never throws: a failed dictionary load leaves the
+ * deck alone, and the next load tries again.
  */
 export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Promise<DeckWord[]> {
-  if (!needsGlossSync(lang) || deck.length === 0) return deck;
+  if (deck.length === 0) return deck;
 
   // Proper nouns first, and they are REMOVED rather than re-glossed: a character's name from
   // a passage is not vocabulary, will not recur, and cannot be studied. Keyed on the
   // generator's own "(name) …" marker, so this can only catch cards it produced.
   const named = deck.filter(w => w.m && isProperNounGloss(w.m));
-  const kept = named.length > 0 ? deck.filter(w => !(w.m && isProperNounGloss(w.m))) : deck;
   if (named.length > 0) {
+    deck = deck.filter(w => !(w.m && isProperNounGloss(w.m)));
     console.info(`[gloss] removed ${named.length} proper-noun card(s) from the ${lang} deck: ${named.map(w => w.h).join(', ')}`);
   }
-  deck = kept;
-  if (deck.length === 0) { writeMarker(lang); return kept; }
 
-  let changed = 0;
-  let answered = 0;   // cards the dictionary actually had an entry for
-  const next = await Promise.all(deck.map(async w => {
-    if (!w.m) return w;
+  // The whole point of scanning first: a healthy deck costs one regex pass over its glosses
+  // and never touches the dictionary, which is what the version marker used to buy.
+  const stale = deck.filter(isSpellingGloss);
+  if (stale.length === 0) return deck;
+
+  const fixes = new Map<DeckWord, string>();
+  await Promise.all(stale.map(async w => {
     try {
       const fresh = (await lookupReadingAsync(lang, w.h, w.p ?? '', MISS))?.meaning;
-      if (!fresh || fresh === MISS) return w;   // not in the dictionary, or it never loaded
-      answered++;
-      // Same senses, different order → ours is the stale ranking. Different senses → the
-      // learner's own wording. Leave both alone.
-      if (!shouldReplace(w.m, fresh)) return w;
-      changed++;
-      return { ...w, m: fresh };
-    } catch {
-      return w;
-    }
+      if (!fresh || fresh === MISS || fresh === w.m) return;   // no entry, or it never loaded
+      fixes.set(w, fresh);
+    } catch { /* leave the card alone; it is still stale next load */ }
   }));
 
-  // No entry resolved for ANY card in a non-empty deck means the dictionary isn't there,
-  // not that every word is unknown. Leave the marker unset so this retries next load.
-  if (answered === 0) return named.length > 0 ? kept : deck;
-  writeMarker(lang);
-  if (changed === 0) return named.length > 0 ? kept : deck;
-  console.info(`[gloss] re-ranked ${changed} ${lang} card definition(s) to match the dictionary`);
-  return next;
+  if (fixes.size === 0) return deck;
+  console.info(`[gloss] repaired ${fixes.size} ${lang} card definition(s) from the dictionary`);
+  return deck.map(w => {
+    const fresh = fixes.get(w);
+    return fresh ? { ...w, m: fresh } : w;
+  });
 }
