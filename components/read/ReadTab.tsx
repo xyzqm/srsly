@@ -4,7 +4,7 @@ import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'rea
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
+import { levelFor, levelLabel, getLanguageConfig, defaultWordsPerPassage } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -106,16 +106,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const genEstShort = hskLevel <= 3 ? '~15–25s' : '~20–35s';
   const genEstLong  = hskLevel <= 3 ? 'about 15–25 seconds' : 'about 20–35 seconds';
 
-  const PASSAGE_VOCAB_SET = useMemo(
+  /** What the generator was asked to build this passage around, as recorded at the time. */
+  const storedVocabWords = useMemo(
     () => new Set(currentPassage?.vocabWords ?? []),
     [currentPassage]
   );
-
-  const totalReviewWordCount = useMemo(() => {
-    if (!dailyContent) return 0;
-    const all = new Set(dailyContent.passages.flatMap(p => p.vocabWords));
-    return all.size;
-  }, [dailyContent]);
 
   const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
   const deckReadings = useMemo(() => groupReadings(deck), [deck]);
@@ -124,10 +119,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     const idx = deck.findIndex(d => d.h === h && d.pool);
     if (idx >= 0) updateWord(idx, { pool: undefined, dueAt: dateInDays(1) });
   }, [deck, updateWord]);
-  const targetWords = useMemo(
-    () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
-    [deck, PASSAGE_VOCAB_SET]
-  );
 
   const anchorMap = useMemo(() => buildAnchorMap(deck), [deck]);
   const passageAnchors = useMemo(() => {
@@ -170,12 +161,61 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     return { dueDeckWords: due, pendingDeckWords: pending };
   }, [deck, passageAnchors]);
 
-  // The words this passage actually blanks out: the ones it was GENERATED around
-  // (`vocabWords`), narrowed to those still due. Blanking every due deck word that merely
-  // happens to appear would bury the passage — once the due queue is large, an HSK 3 text is
-  // almost entirely deck vocabulary, and the reader gets a wall of gaps instead of prose.
-  // `vocabWords` is already keyed the way tokens resolve here (surface form, Japanese base
-  // form, or anchor compound), so no extra normalisation is needed.
+  /**
+   * This passage's target words — normally the list recorded at generation time, but
+   * REBUILT FROM THE PASSAGE ITSELF when that list is empty.
+   *
+   * `vocabWords` is written once, when the passage is generated, and everything downstream
+   * hangs off it: the cloze blanks, the review-word count in the header, the words the
+   * finish handler schedules. When it comes back empty the passage silently degrades to
+   * plain text with no blanks and a header reading "add words to your deck" — which is
+   * indistinguishable from having an empty deck, and there is no way to recover it, because
+   * nothing recomputes the list once it is stored.
+   *
+   * The list is not irreplaceable, though: a target word is just a due deck word that
+   * appears in the text, which is exactly what the recovery below looks for. Capped at the
+   * same words-per-passage budget the generator was given, and taken in reading order, so a
+   * large due queue can't turn the whole text into blanks — the reason the stored list is
+   * preferred in the first place.
+   */
+  const PASSAGE_VOCAB_SET = useMemo(() => {
+    if (storedVocabWords.size > 0 || !currentPassage) return storedVocabWords;
+    const cap = wordsPerPassage ?? defaultWordsPerPassage(language, hskLevel);
+    const found = new Set<string>();
+    const consider = (key: string) => {
+      if (found.size < cap && dueDeckWords.has(key)) found.add(key);
+    };
+    for (const s of currentPassage.sentences) {
+      for (const t of s.tokens) {
+        if (t.type === 'punct') continue;
+        consider(t.text);
+        if (t.baseForm) consider(t.baseForm);
+      }
+    }
+    if (found.size > 0) {
+      console.info(`[read] passage stored no target words; recovered ${found.size} from the deck: ${[...found].join(', ')}`);
+    }
+    return found;
+  }, [storedVocabWords, currentPassage, dueDeckWords, wordsPerPassage, language, hskLevel]);
+
+  const targetWords = useMemo(
+    () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
+    [deck, PASSAGE_VOCAB_SET]
+  );
+
+  const totalReviewWordCount = useMemo(() => {
+    const all = new Set(dailyContent?.passages.flatMap(p => p.vocabWords) ?? []);
+    // Every passage stored an empty list — report what the current one recovered rather
+    // than claiming the deck is empty.
+    return all.size > 0 ? all.size : PASSAGE_VOCAB_SET.size;
+  }, [dailyContent, PASSAGE_VOCAB_SET]);
+
+  // The words this passage actually blanks out: its target words, narrowed to those still
+  // due. Blanking every due deck word that merely happens to appear would bury the passage
+  // — once the due queue is large, an HSK 3 text is almost entirely deck vocabulary, and the
+  // reader gets a wall of gaps instead of prose. The set is already keyed the way tokens
+  // resolve here (surface form, Japanese base form, or anchor compound), so no extra
+  // normalisation is needed.
   const clozeWords = useMemo(
     () => new Set([...PASSAGE_VOCAB_SET].filter(w => dueDeckWords.has(w))),
     [PASSAGE_VOCAB_SET, dueDeckWords]
