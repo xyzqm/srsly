@@ -33,7 +33,7 @@ interface Props {
   onSkip?: (passedThrough: number) => void;
 }
 
-type Phase = 'loading' | 'unavailable' | 'asking' | 'blockDone' | 'finished';
+type Phase = 'loading' | 'loadFailed' | 'unavailable' | 'asking' | 'blockDone' | 'finished';
 
 export default function LevelTest({ language, mode, onFinish, onClose, onSkip }: Props) {
   const levels = useMemo(() => levelNumbers(language), [language]);
@@ -54,6 +54,8 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
   const [answers, setAnswers]     = useState<(string | null)[]>([]);
   const [results, setResults]     = useState<BlockResult[]>([]);
   const [picked, setPicked]       = useState<string | null>(null);
+  /** Bumped by "Try again" to re-run the table loader after a failed fetch. */
+  const [reloadKey, setReloadKey] = useState(0);
 
   /**
    * Everything below belongs to ONE (language, mode) run, and both have to clear it.
@@ -84,12 +86,18 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
     setTables(null);
     Promise.all([loadLevelTable(language), loadVocabTable(language)]).then(([levelTable, vocab]) => {
       if (!live) return;
-      // No tables means no definitions, and a test must never invent one.
-      if (!levelTable || !vocab) { setPhase('unavailable'); return; }
+      // No tables means no definitions, and a test must never invent one. This is NOT the
+      // same as a level being too small to test, and conflating the two told the learner
+      // something false about their curriculum: the loaders swallow a failed dynamic import
+      // and return null, so a chunk that didn't arrive — a stale dev build, a dropped
+      // connection, a cache miss offline — rendered as "this level doesn't have enough
+      // defined words". Every language shares these two loaders, so it read as the whole
+      // app being broken rather than one fetch being retryable.
+      if (!levelTable || !vocab) { setPhase('loadFailed'); return; }
       setTables({ levelTable, vocab });
     });
     return () => { live = false; };
-  }, [language]);
+  }, [language, reloadKey]);
 
   // Start (or advance to) a block once the tables are in.
   useEffect(() => {
@@ -149,6 +157,27 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
 
   if (phase === 'loading') {
     return panel(<div className="text-center py-8" style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>Loading…</div>);
+  }
+
+  if (phase === 'loadFailed') {
+    return panel(
+      <div className="text-center py-6">
+        <p style={{ color: 'var(--ink-soft)', fontSize: 14, lineHeight: 1.6, maxWidth: '40ch', margin: '0 auto' }}>
+          Couldn&apos;t load the {getLanguageConfig(language).name} word list. Check your
+          connection and try again.
+        </p>
+        <div className="flex gap-2 justify-center mt-5">
+          <button onClick={() => setReloadKey(k => k + 1)} className="cursor-pointer"
+            style={{ ...mono, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 18px' }}>
+            Try again
+          </button>
+          <button onClick={onClose} className="cursor-pointer"
+            style={{ ...mono, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '10px 18px' }}>
+            Close
+          </button>
+        </div>
+      </div>,
+    );
   }
 
   if (phase === 'unavailable') {

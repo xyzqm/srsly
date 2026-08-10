@@ -4,7 +4,7 @@ import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'rea
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor, levelLabel, getLanguageConfig, defaultWordsPerPassage } from '@/lib/languageConfig';
+import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -39,6 +39,7 @@ interface Props {
 }
 
 const READ_WANT: ContentSection[] = ['passage'];
+
 
 const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for unlimited AI-generated passages and to sync your progress across devices.";
 
@@ -172,31 +173,33 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    * indistinguishable from having an empty deck, and there is no way to recover it, because
    * nothing recomputes the list once it is stored.
    *
-   * The list is not irreplaceable, though: a target word is just a due deck word that
-   * appears in the text, which is exactly what the recovery below looks for. Capped at the
-   * same words-per-passage budget the generator was given, and taken in reading order, so a
-   * large due queue can't turn the whole text into blanks — the reason the stored list is
-   * preferred in the first place.
+   * EVERY due word in the text is targeted. No cap on how many, and no preference between
+   * them: a word is in the queue because the scheduler says it is due today, and skipping it
+   * because it is short, or common, or awkward to guess from context is the app deciding on
+   * the learner's behalf that some of their review debt does not count. Recall difficulty is
+   * FSRS's business — a hard blank that gets missed is information the scheduler wants, not
+   * a flaw in the exercise.
+   *
+   * This does mean a recovered passage can be far denser than a generated one, whose target
+   * list is a handful of words the model wrote supporting context around. That density is
+   * the honest reflection of a large due queue.
    */
   const PASSAGE_VOCAB_SET = useMemo(() => {
     if (storedVocabWords.size > 0 || !currentPassage) return storedVocabWords;
-    const cap = wordsPerPassage ?? defaultWordsPerPassage(language, hskLevel);
     const found = new Set<string>();
-    const consider = (key: string) => {
-      if (found.size < cap && dueDeckWords.has(key)) found.add(key);
-    };
-    for (const s of currentPassage.sentences) {
-      for (const t of s.tokens) {
+    for (const sent of currentPassage.sentences) {
+      for (const t of sent.tokens) {
         if (t.type === 'punct') continue;
-        consider(t.text);
-        if (t.baseForm) consider(t.baseForm);
+        // Prefer the base form when the deck holds the lemma, so `comemos` reaches `comer`.
+        const key = t.baseForm && dueDeckWords.has(t.baseForm) ? t.baseForm : t.text;
+        if (dueDeckWords.has(key)) found.add(key);
       }
     }
     if (found.size > 0) {
-      console.info(`[read] passage stored no target words; recovered ${found.size} from the deck: ${[...found].join(', ')}`);
+      console.info(`[read] passage stored no target words; recovered ${found.size} from the deck`);
     }
     return found;
-  }, [storedVocabWords, currentPassage, dueDeckWords, wordsPerPassage, language, hskLevel]);
+  }, [storedVocabWords, currentPassage, dueDeckWords]);
 
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
@@ -770,8 +773,18 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           <div className="flex gap-2 items-center mb-4 flex-wrap">
             <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
             <div className="ml-auto flex gap-2 items-center flex-wrap">
-              <button style={toggleStyle(showClozeHints)} onClick={() => setShowClozeHints(v => !v)}>
-                Hints
+              {/* Named for what it does rather than what it is. It controls two things —
+                  the English gloss on hover AND the letter-by-letter colouring as you type
+                  — and "Hints" gave no reason to expect the second, so turning it off to
+                  drop the tooltip silently made the typing harder as well. */}
+              <button
+                style={toggleStyle(showClozeHints)}
+                onClick={() => setShowClozeHints(v => !v)}
+                title={showClozeHints
+                  ? 'Showing the English on hover, and colouring your typing as you go'
+                  : 'No help: type your answer and find out when you commit it'}
+              >
+                Help me
               </button>
               {/* Only for scripts that don't delimit their own words. In Spanish and French
                   every space is already a boundary, so the toggle offered a choice between

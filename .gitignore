@@ -42,3 +42,4 @@ next-env.d.ts
 
 # Build-time review artefacts (CEFR-J band disagreement reports)
 scripts/reports/
+.next-verify

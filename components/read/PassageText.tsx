@@ -147,8 +147,13 @@ function TokenEl({ token, peeked, isReviewWord, compounds, showWordBoundaries, r
   );
 }
 
-function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade, onWordClick }: {
+function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, initialGrade, onWordClick }: {
   token: PassageToken;
+  /** Characters this language needs that a keyboard may not have. Empty = no bar. */
+  accentKeys: string[];
+  /** Hints on: the English gloss on hover, AND live character-by-character feedback as you
+   *  type. Off: neither — you commit an answer and find out afterwards. The two belong on
+   *  one switch because they are the same offer, support while you recall. */
   showHint: boolean;
   /** The sense of this word that applies in this sentence, if the generator found one. */
   contextualMeaning?: string;
@@ -160,7 +165,35 @@ function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade,
   const [submitted, setSubmitted] = useState(!!initialGrade);
   const [correct, setCorrect] = useState(initialGrade?.correct ?? false);
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const gradedRef = useRef(!!initialGrade);
+
+  /**
+   * Insert an accented character at the caret.
+   *
+   * The button suppresses mousedown rather than handling blur, and that is the whole trick:
+   * the input submits on blur, so a button that took focus would grade the answer the
+   * moment you reached for `é`. Nothing is focused, nothing blurs, the caret stays put.
+   */
+  const insert = useCallback((ch: string) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? start;
+    const next = value.slice(0, start) + ch + value.slice(end);
+    setValue(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + ch.length, start + ch.length);
+    });
+  }, [value]);
+
+  // How many leading characters match the answer. Everything before this index is green,
+  // from it on is red — but only when hints are on, since it answers the question one
+  // character at a time.
+  let matchLen = 0;
+  while (matchLen < value.length && matchLen < token.text.length && value[matchLen] === token.text[matchLen]) matchLen++;
 
   const submit = useCallback((opts?: { force?: boolean }) => {
     if (gradedRef.current) return;
@@ -171,11 +204,6 @@ function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade,
     setCorrect(isCorrect);
     onGrade(isCorrect);
   }, [value, token.text, onGrade]);
-
-  // How many leading characters of the user's input match the correct answer.
-  // Everything before this index is green; at and after is red.
-  let matchLen = 0;
-  while (matchLen < value.length && matchLen < token.text.length && value[matchLen] === token.text[matchLen]) matchLen++;
 
   if (submitted) {
     const color = correct ? 'var(--jade)' : 'var(--accent)';
@@ -242,8 +270,11 @@ function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade,
           <GlossText gloss={token.meaning} contextual={contextualMeaning} highlightColor="var(--accent)" />
         </span>
       )}
-      {/* Real-time prefix-match overlay: green for matching prefix, red for mismatches/extra */}
-      {value.length > 0 && (
+      {/* Live prefix-match overlay, hints only. With hints off the input renders its own
+          text in plain ink instead, so nothing tells you how you are doing until you
+          commit — the colour would otherwise let you find the word by watching it change
+          rather than by recalling it. */}
+      {showHint && value.length > 0 && (
         <span
           aria-hidden="true"
           style={{
@@ -266,16 +297,20 @@ function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade,
         </span>
       )}
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit({ force: true }); }}
-        onBlur={() => submit()}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); submit(); }}
         style={{
           width: `${Math.max(token.text.length * 1.3, 2.5)}em`,
           fontFamily: 'var(--f-han)',
           fontSize: '1em',
-          color: 'transparent',
+          fontWeight: 'var(--han-weight)' as 'bold',
+          // Transparent only when the overlay above is drawing the text in its place.
+          color: showHint ? 'transparent' : 'var(--ink)',
           caretColor: 'var(--ink)',
           background: 'transparent',
           border: 'none',
@@ -289,6 +324,52 @@ function ClozeBlank({ token, showHint, contextualMeaning, onGrade, initialGrade,
         }}
         aria-label={`Fill in the blank${showHint && token.meaning ? `: ${token.meaning}` : ''}`}
       />
+
+      {focused && accentKeys.length > 0 && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            gap: 2,
+            width: 'max-content',
+            background: 'var(--card)',
+            border: '1px solid var(--line)',
+            borderRadius: 6,
+            padding: 3,
+            boxShadow: '0 2px 8px rgba(0,0,0,.08)',
+            zIndex: 20,
+          }}
+        >
+          {accentKeys.map(ch => (
+            <button
+              key={ch}
+              type="button"
+              tabIndex={-1}
+              onMouseDown={e => { e.preventDefault(); insert(ch); }}
+              className="cursor-pointer"
+              style={{
+                font: 'inherit',
+                fontSize: 15,
+                lineHeight: 1,
+                minWidth: 24,
+                padding: '4px 2px',
+                background: 'none',
+                border: '1px solid transparent',
+                borderRadius: 4,
+                color: 'var(--ink)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--paper-2)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = 'transparent'; }}
+              aria-label={`Insert ${ch}`}
+            >
+              {ch}
+            </button>
+          ))}
+        </span>
+      )}
     </span>
   );
 }
@@ -446,6 +527,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     <ClozeBlank
                       token={token}
                       showHint={showClozeHints ?? true}
+                      accentKeys={langConfig.accentKeys}
                       contextualMeaning={contextualMeanings?.[reviewKey] ?? contextualMeanings?.[token.text]}
                       onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
                       initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}

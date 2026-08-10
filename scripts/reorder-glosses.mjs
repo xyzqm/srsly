@@ -32,6 +32,21 @@ const byLang = (section) => new Map(
     .map(([lang, prefs]) => [lang, new Map(Object.entries(prefs))]),
 );
 const LEAD_SENSE = byLang(OVERRIDES.leadSense);
+/**
+ * Adjective forms that should carry their lemma's meaning — see the _why in
+ * core-overrides.json. Not a hand-written definition: the lemma's own gloss is prepended,
+ * so the dictionary is still the only source of meaning.
+ */
+const INHERIT = new Map(
+  Object.entries(OVERRIDES.inheritLemmaSense ?? {})
+    .filter(([k, v]) => !k.startsWith('_') && Array.isArray(v))
+    .map(([lang, words]) => [lang, new Set(words)]),
+);
+/** Inflected form → lemma, per language. Maps, so `forms.get('constructor')` is a miss. */
+const FORMS = new Map(['es', 'fr'].map(lang => [
+  lang,
+  new Map(Object.entries(createRequire(import.meta.url)(`../lib/data/${lang === 'es' ? 'es' : 'fr'}-forms.json`))),
+]));
 /** Hand-written glosses, for entries the source is missing a core sense for. The one
  *  deliberate exception to "a definition comes from the dictionary or it does not exist";
  *  see the _why in core-overrides.json. Replaces the entry's gloss outright. */
@@ -90,6 +105,18 @@ function reorder(meaning, word, lang, dict) {
   // by rearranging it. Senses omitted from the curated value are deleted deliberately.
   const curated = CURATED.get(lang)?.get(word);
   if (curated) return curated;
+
+  // An adjective form that lost its everyday sense to the FORMS map: put the lemma's own
+  // gloss in front, and leave whatever niche senses the form had behind it.
+  if (INHERIT.get(lang)?.has(word)) {
+    const lemma = FORMS.get(lang)?.get(word);
+    const lemmaGloss = lemma && (dict[lemma]?.m ?? dict[lemma]?.meaning);
+    if (lemmaGloss) {
+      const head = lemmaGloss.split(';')[0].trim();
+      const rest = meaning.split(';').map(t => t.trim()).filter(t => t && t !== head);
+      return [head, ...rest].join('; ');
+    }
+  }
 
   const parts = meaning.split(';').map(s => s.trim()).filter(Boolean);
   if (parts.length < 2) return meaning;

@@ -789,7 +789,42 @@
   "curatedGloss": {
     "_why": "HAND-WRITTEN definitions, for the rare entry whose source is missing a core sense outright or pads it with something a learner should never be shown. Everything else in this app follows a strict rule — a definition comes from the licensed dictionary or it does not exist — and this section is the one deliberate exception, so keep the list tiny and justify every line. Prefer `leadSense` whenever the sense merely needs promoting: that only reorders what the dictionary already says and stays inside the rule. Each value REPLACES the entry's whole gloss, so senses omitted here are deleted.",
     "es": {
-      "a": "to, at"
+      "a": "to, at",
+      "primera": "first",
+      "segunda": "second",
+      "tercera": "third",
+      "tía": "aunt",
+      "prima": "female cousin; bonus, premium",
+      "chica": "girl",
+      "novia": "girlfriend; bride",
+      "maestra": "teacher (female); schoolmistress"
     }
+  },
+  "inheritLemmaSense": {
+    "_why": "Feminine/plural ADJECTIVE forms that are headwords in their own right but lost their everyday meaning. Wiktionary files 'feminine singular of blanco' as a form_of sense, which the build routes into the FORMS map rather than the gloss (correctly — it is morphology, not a definition), so the entry keeps only whatever niche noun senses it also had: `fria` was defined as \"beer\", `rica` as \"fenugreek\", `mexicana` as \"A robbery of drugs.\", and `cubana` as a vulgar sex act and nothing else. These are NOT hand-written definitions — the lemma's own dictionary gloss is prepended, so the strict-dictionary rule holds: `fria` gets exactly what `frio` says. That is only valid for adjectives, where the feminine means the same thing; a gendered NOUN pair does not work this way (tia is not 'uncle'), so those live in curatedGloss instead. scripts/audit-glosses.mjs finds candidates — 226 of them in Spanish — but the list is REVIEWED, never applied wholesale: most are correct nominalizations (`cara` = face, `musica` = music, `entrada` = entrance) that prepending would actively break.",
+    "es": [
+      "abierta",
+      "antiguos",
+      "basada",
+      "blanca",
+      "corta",
+      "cubana",
+      "directa",
+      "extrana",
+      "extraña",
+      "fria",
+      "fría",
+      "mala",
+      "mexicana",
+      "mia",
+      "mía",
+      "privada",
+      "rara",
+      "rica",
+      "roja",
+      "santa",
+      "suprema",
+      "vieja"
+    ]
   }
 }

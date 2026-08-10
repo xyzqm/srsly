@@ -14,7 +14,7 @@ export default function LookupSummary({ totalVocab, distinctWords, clozeAnswered
   const msg = totalVocab === 0
     ? (<>Tap any to look it up and add it to your deck.</>)
     : clozeAnswered === 0
-      ? (<><strong style={{ color: 'var(--ink)' }}>{totalVocab} blank{totalVocab === 1 ? '' : 's'}</strong>{repeats && <> covering <strong style={{ color: 'var(--ink)' }}>{distinctWords} review word{distinctWords === 1 ? '' : 's'}</strong></>} — type each one to practice. Hover a blank for the English hint (toggle <strong style={{ color: 'var(--ink)' }}>Hints</strong> on/off above).</>)
+      ? (<><strong style={{ color: 'var(--ink)' }}>{totalVocab} blank{totalVocab === 1 ? '' : 's'}</strong>{repeats && <> covering <strong style={{ color: 'var(--ink)' }}>{distinctWords} review word{distinctWords === 1 ? '' : 's'}</strong></>} — type each one to practice. <strong style={{ color: 'var(--ink)' }}>Help me</strong> above shows the English on hover and colours your typing as you go — turn it off to answer cold.</>)
       : remaining > 0
         ? (<><strong style={{ color: 'var(--ink)' }}>{clozeAnswered} of {totalVocab}</strong> blanks filled in — <strong style={{ color: 'var(--ink)' }}>{remaining}</strong> remaining.</>)
         : (<>All <strong style={{ color: 'var(--ink)' }}>{totalVocab}</strong> blank{totalVocab === 1 ? '' : 's'} filled in. Click <strong style={{ color: 'var(--ink)' }}>Finish</strong> below to schedule your results.</>);

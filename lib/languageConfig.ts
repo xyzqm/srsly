@@ -64,6 +64,17 @@ export interface LanguageConfig {
   scriptIsUnspaced: boolean;
   /** Matches a single "word character" — used by the paste-import parsers. */
   wordCharRe: RegExp;
+  /**
+   * Characters a learner needs but a plain keyboard layout may not offer, shown as an
+   * insert bar under a focused cloze blank.
+   *
+   * Empty for Chinese and Japanese: those are typed through an IME, which is the input
+   * method for the whole script rather than a handful of extra letters, and a bar of six
+   * kana would help nobody. Spanish and French genuinely differ from each other — French
+   * has no `ñ` and Spanish no `ç`, `œ` or circumflex — so the sets are per language rather
+   * than one shared "accents" list.
+   */
+  accentKeys: string[];
   /** Heading for the level picker in Settings. */
   levelSectionLabel: string;
   /** Sentence/word shape per level, keyed by the level number. */
@@ -151,6 +162,7 @@ export const ZH_CONFIG: LanguageConfig = {
   usesBaseForms: false,
   segmentation: 'pipe',
   scriptIsUnspaced: true,
+  accentKeys: [],
   wordCharRe: /[一-鿿]/,
   levelSectionLabel: 'HSK level',
   levelShape: ZH_LEVEL_SHAPE,
@@ -189,6 +201,7 @@ export const JA_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: true,
+  accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,
   levelSectionLabel: 'JLPT level',
   levelShape: JA_LEVEL_SHAPE,
@@ -236,6 +249,7 @@ export const ES_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
+  accentKeys: ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ', '¿', '¡'],
   wordCharRe: /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/,
   levelSectionLabel: 'CEFR level',
   levelShape: ES_LEVEL_SHAPE,
@@ -308,6 +322,7 @@ export const FR_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
+  accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',
   levelShape: FR_LEVEL_SHAPE,
