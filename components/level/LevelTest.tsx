@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LanguageCode } from '@/lib/types';
 import { loadLevelTable, loadVocabTable } from '@/lib/curriculum';
 import { levelLabel, levelNumbers, getLanguageConfig } from '@/lib/languageConfig';
+import { levelAfter } from '@/lib/unlock';
 import {
   buildBlock, scoreBlock, placementResult, passingScore,
   PLACEMENT_BLOCK, CHALLENGE_BLOCK,
@@ -237,15 +238,31 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
 
   if (phase === 'finished') {
     const through = mode === 'placement' ? placementResult(results) : (results.at(-1)?.passed ? (mode as number) : 0);
+    /**
+     * Name the level that OPENS, not the one you passed.
+     *
+     * Passing the HSK 2 block puts HSK 2 behind you and opens HSK 3 — which is what
+     * lib/unlock.ts does and what addLanguage actually sets your level to. This panel was
+     * reporting `through`, the hardest block passed, so acing HSK 2 and failing HSK 3
+     * announced "HSK 2 unlocked" while the app quietly placed you in HSK 3. The screen
+     * disagreed with the state behind it.
+     *
+     * levelAfter clamps at the top of the curriculum, so passing the hardest block names
+     * itself rather than running off the end.
+     */
+    const opened = through > 0 ? (levelAfter(levels, through) ?? through) : 0;
+    const atCeiling = opened === through;
     return panel(
       <div className="text-center py-5">
         <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500 }}>
-          {through > 0 ? `${levelLabel(language, through)} unlocked` : 'Starting at the beginning'}
+          {through > 0 ? `${levelLabel(language, opened)} unlocked` : 'Starting at the beginning'}
         </div>
         <p style={{ color: 'var(--ink-soft)', fontSize: 14, margin: '8px auto 0', maxWidth: '38ch', lineHeight: 1.6 }}>
-          {through > 0
-            ? 'Everything up to and including it is now open. You can still study the levels below it.'
-            : 'Nothing unlocked this time — the first level is open anyway, and studying unlocks the rest.'}
+          {through === 0
+            ? 'Nothing unlocked this time — the first level is open anyway, and studying unlocks the rest.'
+            : atCeiling
+              ? `You passed ${levelLabel(language, through)}, the last level. Everything is open.`
+              : `You passed ${levelLabel(language, through)}, so everything up to and including ${levelLabel(language, opened)} is now open. You can still study the levels below it.`}
         </p>
         <button onClick={onClose} className="cursor-pointer mt-6"
           style={{ ...mono, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}>

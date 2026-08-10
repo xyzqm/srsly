@@ -40,6 +40,23 @@ interface Props {
 
 const READ_WANT: ContentSection[] = ['passage'];
 
+/**
+ * Ceiling on how much of a RECOVERED passage may be blanked, as a share of its words.
+ *
+ * A generated passage carries its own target list — a handful of words the model wrote
+ * supporting context around — and is left alone. Recovery has no such list and, for a
+ * learner part-way through a graded curriculum, nearly every word of an A1 text is sitting
+ * due: blanking all of them turned a 96-word passage into 75 holes, which is not a reading
+ * exercise. The generator itself lands near 13% (9 blanks in 70 words), so this sits just
+ * above that.
+ *
+ * Nothing is dropped from the queue by not fitting. The words that miss the cut are still
+ * due, still in flashcards, and first in line for the next passage — see the ordering.
+ */
+const MAX_BLANK_SHARE = 0.15;
+/** Short passages still get a usable number of blanks. */
+const MIN_BLANKS = 3;
+
 
 const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for unlimited AI-generated passages and to sync your progress across devices.";
 
@@ -173,33 +190,62 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    * indistinguishable from having an empty deck, and there is no way to recover it, because
    * nothing recomputes the list once it is stored.
    *
-   * EVERY due word in the text is targeted. No cap on how many, and no preference between
-   * them: a word is in the queue because the scheduler says it is due today, and skipping it
-   * because it is short, or common, or awkward to guess from context is the app deciding on
-   * the learner's behalf that some of their review debt does not count. Recall difficulty is
-   * FSRS's business — a hard blank that gets missed is information the scheduler wants, not
-   * a flaw in the exercise.
+   * WHICH DUE WORDS, AND WHY NOT ALL OF THEM
+   * Every due word in the text is a candidate, and they are taken MOST OVERDUE FIRST. That
+   * ordering is the whole design: no word is passed over for being short, common, or hard
+   * to guess from context — recall difficulty is FSRS's business, and a missed blank is
+   * information the scheduler wants. A word is only left out because the passage ran out of
+   * room, and being left out costs it nothing: it stays due, it is still in flashcards, and
+   * its debt has only grown by the time the next passage is built, so it sorts higher then.
    *
-   * This does mean a recovered passage can be far denser than a generated one, whose target
-   * list is a handful of words the model wrote supporting context around. That density is
-   * the honest reflection of a large due queue.
+   * The cap exists because the alternative is not a harder exercise, it is an unreadable
+   * one — 75 blanks in 96 words, with no prose left to recover any of them from.
    */
   const PASSAGE_VOCAB_SET = useMemo(() => {
     if (storedVocabWords.size > 0 || !currentPassage) return storedVocabWords;
-    const found = new Set<string>();
+
+    // Occurrences per candidate, in reading order.
+    const cost = new Map<string, number>();
+    let tokens = 0;
     for (const sent of currentPassage.sentences) {
       for (const t of sent.tokens) {
         if (t.type === 'punct') continue;
-        // Prefer the base form when the deck holds the lemma, so `comemos` reaches `comer`.
+        tokens++;
         const key = t.baseForm && dueDeckWords.has(t.baseForm) ? t.baseForm : t.text;
-        if (dueDeckWords.has(key)) found.add(key);
+        if (dueDeckWords.has(key)) cost.set(key, (cost.get(key) ?? 0) + 1);
       }
     }
+    if (cost.size === 0) return storedVocabWords;
+
+    // How long each has been owed. A card with no `dueAt` is new rather than overdue, so it
+    // sorts as due today — behind anything genuinely late, ahead of anything scheduled on.
+    const today = todayStr();
+    const owedSince = new Map<string, string>();
+    for (const w of deck) {
+      if (!cost.has(w.h)) continue;
+      const due = w.dueAt ?? today;
+      const seen = owedSince.get(w.h);
+      if (!seen || due < seen) owedSince.set(w.h, due);
+    }
+
+    const budget = Math.max(MIN_BLANKS, Math.round(tokens * MAX_BLANK_SHARE));
+    // Map iteration is reading order, so words owed since the same day break ties stably.
+    const ranked = [...cost.keys()].sort((a, b) =>
+      (owedSince.get(a) ?? today).localeCompare(owedSince.get(b) ?? today));
+
+    const found = new Set<string>();
+    let blanks = 0;
+    for (const word of ranked) {
+      const n = cost.get(word)!;
+      if (blanks + n > budget) continue;
+      found.add(word);
+      blanks += n;
+    }
     if (found.size > 0) {
-      console.info(`[read] passage stored no target words; recovered ${found.size} from the deck`);
+      console.info(`[read] passage stored no target words; recovered ${found.size} of ${cost.size} due (${blanks} of ${tokens} words blanked)`);
     }
     return found;
-  }, [storedVocabWords, currentPassage, dueDeckWords]);
+  }, [storedVocabWords, currentPassage, dueDeckWords, deck]);
 
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
@@ -230,17 +276,18 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // separately how many distinct words those blanks cover — the summary reports both, since
   // "9 blanks" and "5 review words" are different facts and conflating them is what made the
   // old copy read as if the deck had exploded.
-  const { clozeWordCount, clozeDistinctCount } = useMemo(() => {
+  const { clozeWordCount, clozeDistinctCount, blankIds } = useMemo(() => {
     let count = 0;
     const distinct = new Set<string>();
-    for (const s of SENTENCES) {
-      for (const t of s.tokens) {
-        if (t.type !== 'vocab') continue;
+    const ids = new Set<string>();
+    SENTENCES.forEach((s, si) => {
+      s.tokens.forEach((t, ti) => {
+        if (t.type !== 'vocab') return;
         const key = (t.baseForm && clozeWords.has(t.baseForm)) ? t.baseForm : t.text;
-        if (clozeWords.has(key)) { count++; distinct.add(key); }
-      }
-    }
-    return { clozeWordCount: count, clozeDistinctCount: distinct.size };
+        if (clozeWords.has(key)) { count++; distinct.add(key); ids.add(`${si}-${ti}`); }
+      });
+    });
+    return { clozeWordCount: count, clozeDistinctCount: distinct.size, blankIds: ids };
   }, [SENTENCES, clozeWords]);
 
   const [activeSentence, setActiveSentence] = useState(0);
@@ -258,6 +305,21 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [language]);
   // Occurrence-based: keyed by "${sentenceIdx}-${tokenIdx}", value tracks word + grade.
   const [clozeGrades, setClozeGrades] = useState<Map<string, { word: string; grade: FsrsGrade }>>(new Map());
+
+  /**
+   * Answered blanks that are STILL blanks.
+   *
+   * `clozeGrades` is keyed by occurrence and persisted per passage, but which occurrences
+   * are blanks is derived live from the deck — so the two drift apart the moment the deck
+   * changes under a passage you already worked on. Clearing the deck mid-passage left eight
+   * recorded answers against one remaining blank and the counter read "8/1 blanks filled".
+   * Grades for occurrences that are no longer blanks are kept (the deck may come back) but
+   * not counted.
+   */
+  const clozeAnswered = useMemo(
+    () => [...clozeGrades.keys()].filter(id => blankIds.has(id)).length,
+    [clozeGrades, blankIds],
+  );
   const [frResponses, setFrResponses] = useState<Record<number, FRResponse>>({});
   const [mcGrades, setMcGrades] = useState<Record<number, FsrsGrade>>({});
   const [showResults, setShowResults] = useState(false);
@@ -823,7 +885,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           <LookupSummary
             totalVocab={clozeWordCount}
             distinctWords={clozeDistinctCount}
-            clozeAnswered={clozeGrades.size}
+            clozeAnswered={clozeAnswered}
           />
         </>
       )}
@@ -895,12 +957,12 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
             {(() => {
-              const clozeIncomplete = clozeWordCount > 0 && clozeGrades.size < clozeWordCount;
+              const clozeIncomplete = clozeWordCount > 0 && clozeAnswered < clozeWordCount;
               const isDisabled = alreadyFinished || clozeIncomplete;
               const label = alreadyFinished
                 ? 'Already finished!'
                 : clozeIncomplete
-                  ? `${clozeGrades.size}/${clozeWordCount} blanks filled in`
+                  ? `${clozeAnswered}/${clozeWordCount} blanks filled in`
                   : 'Finish & see vocabulary results';
               // A new passage can only be generated once every blank in EVERY generated
               // passage today is filled in — not just the one currently being viewed —
