@@ -3,15 +3,36 @@ import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
 import type { DailyAccuracy, DeckWord, LanguageCode } from '@/lib/types';
 import { todayStr, dateInDays } from '@/lib/deck';
-import { applyActivity, forgivenInStreak, reconcileStreak } from '@/lib/streak';
+import { applyActivity, dueCountOn, forgivenInStreak, reconcileStreak } from '@/lib/streak';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
 interface EmojiState { emoji: string; tip: string }
 
-function pickEmoji(streak: number, daysSince: number, todayScore: number, scoreFresh: boolean): EmojiState {
-  if (daysSince >= 14) return { emoji: '🥶', tip: 'Been a while... welcome back!' };
-  if (daysSince >= 4)  return { emoji: '🫥', tip: "Getting rusty — let's shake it off!" };
-  if (daysSince >= 2)  return { emoji: '😶‍🌫️', tip: 'A couple days off — ease back in' };
+/**
+ * `daysAway` is UNFORGIVEN absence, not days since you last opened the app.
+ *
+ * These three states used to key off `lastVisit`, which is the one signal the honest
+ * streak was written to stop trusting (see lib/streak.ts). The result contradicted itself
+ * on screen: three days where FSRS asked for nothing kept the streak alive and intact, and
+ * then the header greeted the learner with "Getting rusty — let's shake it off!" for
+ * obeying the schedule. A rest day is not rust, and a visit is not study.
+ *
+ * `restToday` is the other half: today is asking nothing of you and your streak is safe.
+ * Saying so is the point of the mechanic — silence would only mean the app has stopped
+ * contradicting itself.
+ */
+function pickEmoji(streak: number, daysAway: number, todayScore: number, scoreFresh: boolean, restToday: boolean): EmojiState {
+  if (daysAway >= 14) return { emoji: '🥶', tip: 'Been a while... welcome back!' };
+  if (daysAway >= 4)  return { emoji: '🫥', tip: "Getting rusty — let's shake it off!" };
+  if (daysAway >= 2)  return { emoji: '😶‍🌫️', tip: 'A couple days off — ease back in' };
+  if (restToday) {
+    return {
+      emoji: '😌',
+      tip: streak > 0
+        ? `Rest day — nothing is due. Your ${streak}-day streak is safe.`
+        : 'Rest day — nothing is due.',
+    };
+  }
   if (scoreFresh) {
     if (todayScore >= 90) return { emoji: '🤓', tip: 'Top marks today!' };
     if (todayScore >= 75) return { emoji: '😎', tip: 'Strong session!' };
@@ -68,10 +89,14 @@ export function useSRS() {
     (async () => {
       let state = await storage.getSRSState();
       const lastVisit = state.lastVisit;
+      const decks = await allDecks();
+      // Read the last active day BEFORE reconciling: a broken streak clears it, and that
+      // is the only record of how long the learner was actually gone.
+      const priorActive = state.lastActive ?? state.todayScoreDate;
 
       // Settle any gap FIRST, and before the day's reviews move any due dates — that
       // ordering is what makes the retroactive check trustworthy (see lib/streak.ts).
-      const settled = reconcileStreak(state, await allDecks(), today, yest);
+      const settled = reconcileStreak(state, decks, today, yest);
       if (settled) state = settled;
 
       // Guard against a corrupted runaway counter (caused by a past render-loop bug)
@@ -85,23 +110,28 @@ export function useSRS() {
       const lastActive = state.lastActive ?? state.todayScoreDate;
       // A streak is live only while it reaches today or yesterday — after reconcile,
       // forgiven rest days have already been folded into lastActive.
-      const displayStreak = lastActive === today || lastActive === yest ? state.streak : 0;
+      const live = lastActive === today || lastActive === yest;
+      const displayStreak = live ? state.streak : 0;
 
       setStreak(displayStreak);
       setSessions(state.sessions ?? 0);
       setAccuracy(state.accuracy ?? []);
       setForgiven(forgivenInStreak(state, today));
 
-      // daysSince last visit (for emoji)
-      let daysSince = 0;
-      if (lastVisit && lastVisit !== today) {
-        daysSince = Math.floor(
-          (new Date(today).getTime() - new Date(lastVisit).getTime()) / 86400000
-        );
-      }
+      // How long the learner has genuinely been away. A live streak means zero, however
+      // many calendar days passed: reconcileStreak only leaves it live when every missed
+      // day was one FSRS asked nothing of them.
+      const daysAway = live || !priorActive ? 0 : Math.floor(
+        (new Date(today).getTime() - new Date(priorActive).getTime()) / 86400000
+      );
+
+      // Today is a rest day when the streak reaches yesterday and nothing is owed now.
+      // Requiring "not active today" is what stops a finished session from reading as
+      // rest — clearing the queue empties it just as surely as never having owed anything.
+      const restToday = lastActive === yest && dueCountOn(decks, today, lastActive) === 0;
 
       const scoreFresh = state.todayScoreDate === today && state.todayScore >= 0;
-      setEmojiState(pickEmoji(displayStreak, daysSince, state.todayScore, scoreFresh));
+      setEmojiState(pickEmoji(displayStreak, daysAway, state.todayScore, scoreFresh, restToday));
     })();
   }, []);
 
@@ -157,7 +187,8 @@ export function useSRS() {
     setSessions(newSessions);
     setStreak(updated.streak);
     setForgiven(forgivenInStreak(updated, today));
-    setEmojiState(pickEmoji(updated.streak, 0, score, true));
+    // A score means they just studied, so neither away nor resting — the score emoji wins.
+    setEmojiState(pickEmoji(updated.streak, 0, score, true, false));
   }, []);
 
   /**
