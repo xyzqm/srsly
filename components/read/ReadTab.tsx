@@ -1,6 +1,6 @@
 'use client';
 import { useAuth } from '@/lib/auth/AuthProvider';
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -13,6 +13,7 @@ import { useDailyContent } from '@/hooks/useDailyContent';
 import { groupReadings } from '@/lib/readings';
 import { dateInDays, isDueToday, todayStr } from '@/lib/deck';
 import { buildAnchorMap, type Anchor } from '@/lib/anchors';
+import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
@@ -624,13 +625,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => {
-                  // one of this passage's due target words → accent (review word); else
-                  // pending (added, not yet due) → green '+'. Same rules as the passage body.
+                  // One of this passage's due target words → accent underline. Same rule as
+                  // the passage body.
                   const isReviewWord = clozeWords.has(t.text) && t.type === 'vocab';
-                  const claimKind = isReviewWord ? null
-                    : pendingDeckWords.has(t.text) ? 'vocab' as const
-                    : null;
-                  return <ClickableWord key={i} token={t} onOpen={titlePopup.openPopup} claimKind={claimKind} isReviewWord={isReviewWord} />;
+                  // The title goes through needsSpaceBefore like every other renderer. It
+                  // used to lean on the '+' badge span after each word as an accidental
+                  // spacer, which is why "La salud y el ejercicio" held together at all in
+                  // Spanish — a superscript's width standing in for a space.
+                  return (
+                    <Fragment key={i}>
+                      {needsSpaceBefore(TITLE_TOKENS, i, langConfig.scriptIsUnspaced)}
+                      <ClickableWord token={t} onOpen={titlePopup.openPopup} isReviewWord={isReviewWord} />
+                    </Fragment>
+                  );
                 })}
               </span>
             )}
@@ -726,9 +733,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               <button style={toggleStyle(showClozeHints)} onClick={() => setShowClozeHints(v => !v)}>
                 Hints
               </button>
-              <button style={toggleStyle(showWordBoundaries)} onClick={() => setShowWordBoundaries(v => !v)}>
-                Boundaries
-              </button>
+              {/* Only for scripts that don't delimit their own words. In Spanish and French
+                  every space is already a boundary, so the toggle offered a choice between
+                  "correct" and "correct with underlines" — a decoration masquerading as a
+                  practice mode. */}
+              {langConfig.scriptIsUnspaced && (
+                <button style={toggleStyle(showWordBoundaries)} onClick={() => setShowWordBoundaries(v => !v)}>
+                  Boundaries
+                </button>
+              )}
               <button style={toggleStyle(audioOnly)} onClick={() => setAudioOnly(v => !v)}>
                 🎧 Audio only
               </button>
@@ -819,7 +832,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                     onAddVocab={handleAddVocabQuestion}
                     deckWords={deckWords}
                     deckReadings={deckReadings}
-                    pendingDeckWords={pendingDeckWords}
                     claimsStore={claimsStore}
                     onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
                   />

@@ -69,11 +69,10 @@ interface Props {
   contextualMeanings?: Record<string, string>;
 }
 
-function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBoundaries, reserveGap, onClick }: {
+function TokenEl({ token, peeked, isReviewWord, compounds, showWordBoundaries, reserveGap, onClick }: {
   token: PassageToken;
   peeked: boolean;
   isReviewWord: boolean;
-  claimKind: 'vocab' | null;
   compounds: CompoundHint[];
   showWordBoundaries: boolean;
   /** Reserve a blank slot after the word so tokens read as separate. Only unspaced scripts
@@ -88,9 +87,13 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
   // reading layer at all, so gating on it would make every Spanish token dead text.
   if (token.type === 'punct' || !(token.reading || token.meaning)) return <span>{token.text}</span>;
 
-  // Indicator character and color — empty string when none so the span is always present
-  const indicatorChar  = claimKind === 'vocab' ? '+' : (peeked && isReviewWord) ? '↺' : '';
-  const indicatorColor = claimKind === 'vocab' ? 'var(--jade)' : 'var(--accent)';
+  // Indicator character — empty string when none so the span is always present.
+  //
+  // There is deliberately no "just added" marker. Adding a word used to paint it with a jade
+  // underline and a '+', but only while word boundaries were on, so the same action left a
+  // visible trace in one mode and none in the other. Removing it is what makes the two modes
+  // agree; the popup already reports deck membership when you ask for it.
+  const indicatorChar = (peeked && isReviewWord) ? '↺' : '';
 
   return (
     <>
@@ -105,9 +108,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
               ? peeked
                 ? '1.5px solid var(--accent)'
                 : '1.5px dotted var(--accent)'
-              : claimKind === 'vocab'
-                ? '1.5px solid color-mix(in srgb, var(--jade) 80%, transparent)'
-                : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)'
+              : '1.5px dotted color-mix(in srgb, var(--ink-faint) 70%, transparent)'
             : undefined,
           color: peeked && isReviewWord ? 'var(--accent-deep)' : undefined,
           paddingBottom: 1,
@@ -136,7 +137,7 @@ function TokenEl({ token, peeked, isReviewWord, claimKind, compounds, showWordBo
             fontWeight: 700,
             pointerEvents: 'none',
             userSelect: 'none',
-            color: indicatorChar ? indicatorColor : 'transparent',
+            color: indicatorChar ? 'var(--accent)' : 'transparent',
           }}
         >
           {indicatorChar || '+'}
@@ -453,10 +454,6 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                     </Fragment>
                   );
                 }
-                const claimKind = (
-                  pendingDeckWords.has(token.text) ||
-                  (langConfig.usesBaseForms && !!token.baseForm && pendingDeckWords.has(token.baseForm))
-                ) ? 'vocab' : null;
                 // Compound hints are a Chinese single-character feature; server-segmented
                 // languages (ja, es) already arrive as whole words.
                 const compounds = language === 'zh' ? findCompoundHints(token, sent, ti) : [];
@@ -467,7 +464,6 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                       token={token}
                       peeked={false}
                       isReviewWord={false}
-                      claimKind={claimKind}
                       compounds={compounds}
                       showWordBoundaries={showWordBoundaries}
                       reserveGap={langConfig.scriptIsUnspaced}

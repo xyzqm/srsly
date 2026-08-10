@@ -12,7 +12,7 @@ export default function LookupSummary({ totalVocab, distinctWords, clozeAnswered
   const repeats = totalVocab !== distinctWords;
 
   const msg = totalVocab === 0
-    ? (<><strong style={{ color: 'var(--ink)' }}>Other words</strong> (faint underline) — tap any to look it up and add it to your deck.</>)
+    ? (<>Tap any to look it up and add it to your deck.</>)
     : clozeAnswered === 0
       ? (<><strong style={{ color: 'var(--ink)' }}>{totalVocab} blank{totalVocab === 1 ? '' : 's'}</strong>{repeats && <> covering <strong style={{ color: 'var(--ink)' }}>{distinctWords} review word{distinctWords === 1 ? '' : 's'}</strong></>} — type each one to practice. Hover a blank for the English hint (toggle <strong style={{ color: 'var(--ink)' }}>Hints</strong> on/off above).</>)
       : remaining > 0

@@ -1,6 +1,6 @@
 'use client';
 import { Fragment, useState } from 'react';
-import type { Question as Q, FRResponse, ResponseMode, PassageToken } from '@/lib/types';
+import type { Question as Q, FRResponse, ResponseMode } from '@/lib/types';
 import type { FsrsGrade } from '@/lib/fsrs';
 import { speak } from '@/lib/speech';
 import ClickableWord from '@/components/shared/ClickableWord';
@@ -23,7 +23,6 @@ interface Props {
   /** Words added during THIS session — the same optimistic set the passage body uses.
    *  Deck membership alone lags behind the write, so a badge keyed on it never appears
    *  at the moment the learner needs the feedback. */
-  pendingDeckWords: Set<string>;
   /** Shared session claims, so a word added in a question is also badged in the passage. */
   claimsStore?: ClaimsStore;
   deckWords?: Set<string>;
@@ -32,9 +31,9 @@ interface Props {
   onMcGrade?: (questionIdx: number, grade: FsrsGrade) => void;
 }
 
-export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, pendingDeckWords, claimsStore, onMcGrade }: Props) {
+export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, claimsStore, onMcGrade }: Props) {
   const language = useLanguage();
-  const { scriptIsUnspaced, usesBaseForms } = getLanguageConfig(language);
+  const { scriptIsUnspaced } = getLanguageConfig(language);
   // MC state
   const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
   const [mcDone, setMcDone]             = useState(false);
@@ -48,20 +47,6 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
   const [loading, setLoading]       = useState(false);
 
   const { popup, openPopup, closePopup, handleAddVocab } = useWordPopup(onAddVocab, deckWords, deckReadings, claimsStore);
-  /**
-   * The + badge, derived exactly as PassageText derives it.
-   *
-   * This used to read `vocabClaimed.has(text) && deckWords.has(text)`, which could not work
-   * in either half. `deckWords` only updates once the deck write round-trips, so the badge
-   * was absent at the one moment it is feedback for; and the claim is stored under
-   * `baseForm ?? word` (WordPopup adds the dictionary form) while the test used the surface
-   * — so for any inflected token, which is most of them in es/fr/ja, the two never matched.
-   */
-  const claimKind = (token: PassageToken) =>
-    (pendingDeckWords.has(token.text) ||
-      (usesBaseForms && !!token.baseForm && pendingDeckWords.has(token.baseForm)))
-      ? 'vocab' as const : null;
-
   const questionText = tokensToText(question.q, scriptIsUnspaced);
 
   // ─── MC handler ────────────────────────────────────────────────────────────
@@ -160,7 +145,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
             {index + 1}.
           </span>
           {question.q.map((t, i) => (
-            <Fragment key={i}>{needsSpaceBefore(question.q, i, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t)} /></Fragment>
+            <Fragment key={i}>{needsSpaceBefore(question.q, i, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} /></Fragment>
           ))}
         </div>
       </div>
@@ -212,7 +197,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
                   }}
                 >
                   {opt.tokens.map((t, ti) => (
-                    <Fragment key={ti}>{needsSpaceBefore(opt.tokens, ti, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} claimKind={claimKind(t)} /></Fragment>
+                    <Fragment key={ti}>{needsSpaceBefore(opt.tokens, ti, scriptIsUnspaced)}<ClickableWord token={t} onOpen={openPopup} /></Fragment>
                   ))}
                 </div>
               </div>
