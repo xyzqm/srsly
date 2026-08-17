@@ -5,7 +5,7 @@ import { storage } from '@/lib/storage';
 import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
-import { isDueToday, todayStr, shuffle } from '@/lib/deck';
+import { isReadyNow, todayStr, shuffle } from '@/lib/deck';
 import { getTodayCounts } from '@/lib/reviewCounts';
 import { getSrsSettings } from '@/lib/fsrs';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
@@ -545,7 +545,7 @@ export function useDailyContent(
       // land in the same top group — otherwise the same overdue words keep getting bundled
       // into every passage together.
       const dueWords = shuffle(
-        currentDeck.filter(w => isDueToday(w, today)),
+        currentDeck.filter(w => isReadyNow(w, today)),
       ).sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
@@ -731,7 +731,7 @@ export function useDailyContent(
         if (!state) continue;
         for (const entry of Object.values(state)) coveredWords.add(entry.word);
       }
-      const dueWords = shuffle(currentDeck.filter(w => isDueToday(w, today))).sort((a, b) => {
+      const dueWords = shuffle(currentDeck.filter(w => isReadyNow(w, today))).sort((a, b) => {
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
       });

@@ -219,6 +219,21 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
    * Grade one specific card by its stable id — used by flashcards, where the exact
    * reading being reviewed is known, so each reading of a character schedules on its own.
    * grade: 1=Again, 2=Hard, 3=Good, 4=Easy
+   *
+   * `minDaysOut` floors a card to tomorrow, so the reading passage cannot grade a word and
+   * then immediately blank it again in the next passage. It deliberately does NOT apply to
+   * a card still in the learning phase.
+   *
+   * It used to. A learning-step result carries `dueAt: today` with `dueAtMs` ten minutes
+   * out, so the floor caught every one of them: it cleared `dueAtMs`, forced `phase:
+   * 'review'`, and pushed the card to tomorrow — discarding the step. Worse, the step
+   * branch sets neither `stability` nor `reviews` (those are earned at graduation), so the
+   * card landed as `phase: 'review'` with `stability: undefined` and `reviews: 0`: still
+   * counted as brand new the next day, with no FSRS curve ever started. Reading introduced
+   * words into a state the scheduler had no model for.
+   *
+   * Learning cards now keep their step and Practice finishes it — one pipeline, whichever
+   * surface the word was met on.
    */
   const gradeCard = useCallback(async (id: string, grade: number, opts?: { minDaysOut?: number }) => {
     const settings = getSrsSettings();
@@ -229,7 +244,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       if (d.id !== id) return d;
       touched = true;
       const patch = applyLeech(d, fsrsSchedule(d, grade as FsrsGrade, settings, { fuzz: true }));
-      if (minDate && patch.dueAt !== undefined && patch.dueAt <= today) {
+      if (minDate && patch.phase !== 'learning' && patch.dueAt !== undefined && patch.dueAt <= today) {
         return { ...d, ...patch, dueAt: minDate, dueAtMs: undefined, phase: 'review' as const };
       }
       return { ...d, ...patch };
@@ -250,7 +265,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       if (d.h !== hanzi) return d;
       touched = true;
       const patch = applyLeech(d, fsrsSchedule(d, grade as FsrsGrade, settings, { fuzz: true }));
-      if (minDate && patch.dueAt !== undefined && patch.dueAt <= today) {
+      if (minDate && patch.phase !== 'learning' && patch.dueAt !== undefined && patch.dueAt <= today) {
         return { ...d, ...patch, dueAt: minDate, dueAtMs: undefined, phase: 'review' as const };
       }
       return { ...d, ...patch };

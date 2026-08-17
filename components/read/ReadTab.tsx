@@ -11,7 +11,7 @@ import { useWordPopup } from '@/hooks/useWordPopup';
 import { useClaims } from '@/hooks/useClaims';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { groupReadings } from '@/lib/readings';
-import { dateInDays, isDueToday, todayStr } from '@/lib/deck';
+import { dateInDays, isReadyNow, todayStr } from '@/lib/deck';
 import { buildAnchorMap, type Anchor } from '@/lib/anchors';
 import { bumpCount, getTodayCounts } from '@/lib/reviewCounts';
 import { getSrsSettings } from '@/lib/fsrs';
@@ -163,7 +163,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     const status = new Map<string, 'due' | 'pending'>();
     const mark = (key: string, w: DeckWord) => {
       if (w.pool) return; // pool words show no passage indicator
-      if (isDueToday(w, today)) { status.set(key, 'due'); return; }
+      // isReadyNow, not isDueToday: a card part-way through a learning step is due TODAY but
+      // not due YET. Blanking it again ten seconds after it was answered is the thing the
+      // step exists to prevent. Practice keeps it, shows a countdown, and finishes the step.
+      if (isReadyNow(w, today)) { status.set(key, 'due'); return; }
       const isNewCard = (w.reviews ?? 0) === 0 && w.stability === undefined;
       if (isNewCard && status.get(key) !== 'due') status.set(key, 'pending');
     };

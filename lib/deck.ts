@@ -53,3 +53,18 @@ export function isDueToday(w: DeckWord, today: string = todayStr()): boolean {
   return !w.dueAt || w.dueAt <= today;
 }
 
+/**
+ * Due today AND its intra-day learning step has already elapsed.
+ *
+ * A card in the learning phase carries `dueAtMs` — "come back in ten minutes" — while its
+ * `dueAt` stays today. `isDueToday` only reads the date, so it answers true for a card that
+ * is not actually ready yet. That is CORRECT for the flashcard queue, which wants the card
+ * in the session and shows a countdown until the moment arrives, and wrong for the reading
+ * passage, which has no countdown and would simply blank the word again.
+ *
+ * So the two callers get different tests rather than one test with an exception in it.
+ */
+export function isReadyNow(w: DeckWord, today: string = todayStr(), nowMs: number = Date.now()): boolean {
+  return isDueToday(w, today) && (!w.dueAtMs || w.dueAtMs <= nowMs);
+}
+
