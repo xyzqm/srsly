@@ -5,7 +5,7 @@ import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor, levelLabel, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
-import { RECOMMENDED_POOL_ACTIVATE, HIGH_POOL_ACTIVATE } from '@/lib/fsrs';
+import { RECOMMENDED_POOL_ACTIVATE, HIGH_POOL_ACTIVATE, DEFAULT_SRS_SETTINGS } from '@/lib/fsrs';
 import { todayStr } from '@/lib/deck';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import type { LanguageCode } from '@/lib/types';
@@ -41,6 +41,28 @@ interface Props {
 }
 
 /** Above this a daily cap stops being a cap. Advisory only — nothing enforces it. */
+/**
+ * One-click reset to whatever this app considers sensible.
+ *
+ * Every numeric setting states a recommendation and then leaves the field open — nothing is
+ * clamped. That combination needs a way back: having typed 36500 into the interval cap to
+ * see what happens, the learner should not have to remember it used to say 365.
+ */
+function UseRecommended({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <div className="flex gap-2 flex-wrap mb-10">
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5 disabled:opacity-40 disabled:cursor-default"
+        style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
+      >
+        Use recommended
+      </button>
+    </div>
+  );
+}
+
 const RECOMMENDED_MAX_PER_DAY = 500;
 
 /** Past this share there is no prose left between the gaps. Advisory only. */
@@ -469,15 +491,10 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           being reading and becomes a list of blanks.
         </p>
       )}
-      <div className="flex gap-2 flex-wrap mb-10">
-        <button
-          onClick={() => { setBlankDensity(RECOMMENDED_BLANK_DENSITY); setBlankDensityRaw(String(RECOMMENDED_BLANK_DENSITY)); savePrefs({ blankDensity: RECOMMENDED_BLANK_DENSITY }); }}
-          className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
-        >
-          Use recommended
-        </button>
-      </div>
+      <UseRecommended
+        disabled={loaded && blankDensity === RECOMMENDED_BLANK_DENSITY}
+        onClick={() => { setBlankDensity(RECOMMENDED_BLANK_DENSITY); setBlankDensityRaw(String(RECOMMENDED_BLANK_DENSITY)); savePrefs({ blankDensity: RECOMMENDED_BLANK_DENSITY }); }}
+      />
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}
       <SectionLabel>Desired retention</SectionLabel>
@@ -549,7 +566,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           then costs a full relearn.
         </p>
       )}
-      <div className="flex gap-2 flex-wrap mb-10 mt-3">
+      <div className="flex gap-2 flex-wrap mb-2 mt-3">
         {[30, 90, 180, 365].map(d => (
           <button
             key={d}
@@ -561,6 +578,18 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           </button>
         ))}
       </div>
+
+      <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
+        {`We recommend ${DEFAULT_SRS_SETTINGS.maxIntervalDays} days — a year. Long enough that a well-known card is barely `}
+        {'interrupted, short enough that the scheduler can still catch you before you forget.'}
+      </div>
+      <UseRecommended
+        disabled={loaded && maxDays === DEFAULT_SRS_SETTINGS.maxIntervalDays}
+        onClick={() => {
+          const d = DEFAULT_SRS_SETTINGS.maxIntervalDays;
+          setMaxDays(d); setMaxDaysRaw(String(d)); savePrefs({ srsMaxDays: d });
+        }}
+      />
 
       {/* ── Activate from pool ────────────────────────────────────────────── */}
       <SectionLabel>Activate from pool</SectionLabel>
@@ -599,15 +628,10 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           passage, which has no daily cap, every one of them counts as due immediately.
         </p>
       )}
-      <div className="flex gap-2 flex-wrap mb-10">
-        <button
-          onClick={() => { setPoolActivate(RECOMMENDED_POOL_ACTIVATE); setPoolActivateRaw(String(RECOMMENDED_POOL_ACTIVATE)); savePrefs({ poolActivateCount: RECOMMENDED_POOL_ACTIVATE }); }}
-          className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
-        >
-          Use recommended
-        </button>
-      </div>
+      <UseRecommended
+        disabled={loaded && poolActivate === RECOMMENDED_POOL_ACTIVATE}
+        onClick={() => { setPoolActivate(RECOMMENDED_POOL_ACTIVATE); setPoolActivateRaw(String(RECOMMENDED_POOL_ACTIVATE)); savePrefs({ poolActivateCount: RECOMMENDED_POOL_ACTIVATE }); }}
+      />
 
       {/* ── Daily limits ──────────────────────────────────────────────────── */}
       <SectionLabel>Daily limits</SectionLabel>
@@ -646,11 +670,24 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           telling the learner a number is unreasonable. */}
       {(newPerDayRaw !== '' && Number(newPerDayRaw) > RECOMMENDED_MAX_PER_DAY) ||
        (revPerDayRaw !== '' && Number(revPerDayRaw) > RECOMMENDED_MAX_PER_DAY) ? (
-        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--gold)', lineHeight: 1.55, maxWidth: '48ch', marginTop: -28, marginBottom: 34 }}>
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--gold)', lineHeight: 1.55, maxWidth: '48ch', marginTop: -28, marginBottom: 10 }}>
           Not recommended above {RECOMMENDED_MAX_PER_DAY} a day. A limit this high is the
           same as no limit — the point of the cap is to stop a backlog arriving all at once.
         </p>
       ) : null}
+      <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: -28, marginBottom: 10 }}>
+        {`We recommend ${DEFAULT_SRS_SETTINGS.newPerDay} new and ${DEFAULT_SRS_SETTINGS.reviewsPerDay} reviews a day. `}
+        {'New cards are the expensive ones — each becomes a review you owe for weeks.'}
+      </div>
+      <UseRecommended
+        disabled={loaded && newPerDay === DEFAULT_SRS_SETTINGS.newPerDay && revPerDay === DEFAULT_SRS_SETTINGS.reviewsPerDay}
+        onClick={() => {
+          const { newPerDay: n, reviewsPerDay: r } = DEFAULT_SRS_SETTINGS;
+          setNewPerDay(n); setNewPerDayRaw(String(n));
+          setRevPerDay(r); setRevPerDayRaw(String(r));
+          savePrefs({ srsNewPerDay: n, srsReviewsPerDay: r });
+        }}
+      />
 
       {/* ── Backup & data ─────────────────────────────────────────────────── */}
       <SectionLabel>Backup &amp; data</SectionLabel>
