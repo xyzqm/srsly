@@ -525,8 +525,23 @@ function mergeSection(
   const sections = { ...sectionFlags(c) };
   if (section === 'passage') {
     sections.passage = done;
-    const passages = built as DailyPassage[];
-    return { ...c, passages: passages.length ? passages : c.passages, sections };
+    const generated = built as DailyPassage[];
+    if (generated.length === 0) return { ...c, passages: c.passages, sections };
+    /**
+     * APPEND. This used to assign `passages: generated`, which quietly assumed a completing
+     * generation was the only thing that could have put a passage in today's content.
+     *
+     * Pasting broke that assumption: a generation takes 20–35s, the paste panel sits above
+     * the skeleton and works the whole time, so a learner can paste and commit an article
+     * while one is still in flight. The wholesale assignment then DELETED it — from state and
+     * from localStorage — the moment the generation landed. Measured: paste committed, one
+     * passage stored, generation lands, storage holds one passage and it is the generated one.
+     *
+     * Appending also keeps existing indices fixed, which matters beyond this bug: cloze
+     * progress is stored at `srsly-cloze|{contentKey}|{passageIdx}`, so a passage that moves
+     * inherits another passage's answers.
+     */
+    return { ...c, passages: [...c.passages, ...generated], sections };
   }
   if (section === 'fill') {
     sections.fill = done;

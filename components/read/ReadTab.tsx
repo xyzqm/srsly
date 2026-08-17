@@ -1,7 +1,7 @@
 'use client';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
+import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap, DailyPassage } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
 import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
@@ -520,17 +520,32 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     } catch { /* ignore */ }
   }, [sessionAddedWords, contentKey, passageIdx]);
 
-  // Jump to a passage the user just generated with "+ new passage" — but NOT when content
-  // first hydrates from cache (reload / tab switch back), so restoring honors the saved
-  // passage instead of leaping to the last one.
+  /**
+   * Jump to a passage the reader just ASKED FOR — "+ new passage", or their own pasted text —
+   * but never to one that merely turned up.
+   *
+   * It used to jump on any growth in the passage count, which was the same thing right up
+   * until a passage could arrive on its own. The day's auto-generation lands 20–35s after the
+   * tab opens, and it now appends rather than replaces, so without this flag it would pull the
+   * reader off the article they pasted and were part-way through — resetting the active
+   * sentence and clearing the cloze grades in view as it went.
+   */
   const prevNumPassages = useRef(0);
   const didHydrate = useRef(false);
+  const jumpOnArrival = useRef(false);
   useEffect(() => {
+    // Consume the request on EVERY run, including the hydration path below. Clearing it only
+    // where the jump happens leaves it armed when the requested passage was the first one:
+    // pasting into an empty day lands on the hydration branch, which returns early, so the
+    // flag survived and the day's generation — arriving minutes later and wanted by nobody —
+    // spent it, yanking the reader off the article they were part-way through.
+    const wanted = jumpOnArrival.current;
+    jumpOnArrival.current = false;
     if (!didHydrate.current) {
       if (numPassages > 0) { didHydrate.current = true; prevNumPassages.current = numPassages; }
       return;
     }
-    if (numPassages > prevNumPassages.current) {
+    if (numPassages > prevNumPassages.current && wanted) {
       setPassageIdx(numPassages - 1);
       setActiveSentence(0);
       setClozeGrades(new Map());
@@ -542,6 +557,17 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     }
     prevNumPassages.current = numPassages;
   }, [numPassages]);
+
+  /** Both doors that add a passage on purpose ask to be taken to it. */
+  const requestJump = useCallback(() => { jumpOnArrival.current = true; }, []);
+  const commitPastedPassage = useCallback((passage: DailyPassage) => {
+    requestJump();
+    addPastedPassage(passage);
+  }, [requestJump, addPastedPassage]);
+  const generateMore = useCallback(() => {
+    requestJump();
+    return loadMore();
+  }, [requestJump, loadMore]);
 
   const handlePassageChange = useCallback((delta: number) => {
     setPassageIdx(prev => Math.max(0, Math.min(prev + delta, numPassages - 1)));
@@ -788,7 +814,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             )}
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
-            {hskLevel === 0 || dailyStatus === 'loading' ? (
+            {/* Same rule as the body below: shimmer only when there is no title to show. */}
+            {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
@@ -854,11 +881,17 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           deck={deck}
           dueWords={dueDeckWords}
           blankDensity={blankDensity}
-          onCommit={addPastedPassage}
+          onCommit={commitPastedPassage}
         />
       )}
 
-      {hskLevel === 0 || dailyStatus === 'loading' ? (
+      {/* The skeleton stands in for a passage that is not here yet — so it must not cover one
+          that is. Generation runs for 20–35s with the paste panel live above it, and gating
+          purely on `loading` meant a pasted article committed during that window was on disk,
+          in state, and invisible: the reader clicked "Read this" and kept staring at a
+          shimmer. Whenever there is something to read, read it; the generation carries on and
+          appends its own passage when it lands. */}
+      {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
         <>
           {dailyStatus === 'loading' && (
             <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, marginBottom: 16 }}>
@@ -896,7 +929,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   : 'Generate a passage built around your due words.'}
               </p>
               <button
-                onClick={() => loadMore()}
+                onClick={() => generateMore()}
                 disabled={loadingMore}
                 className="cursor-pointer transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed"
                 style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
@@ -1105,7 +1138,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                     {label}
                   </button>
                   <button
-                    onClick={() => loadMore()}
+                    onClick={() => generateMore()}
                     disabled={newPassageDisabled}
                     title={
                       newPassageDisabled && !loadingMore
