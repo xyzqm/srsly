@@ -44,17 +44,25 @@ function isWord(word: string): boolean {
 }
 
 /**
- * Split a dictionary match back into deck words, when it is exactly two or more of them.
+ * ── A DICTIONARY MATCH MUST NOT HIDE A DECK WORD ─────────────────────────────────────────
  *
- * CC-CEDICT lists PHRASES as well as words — 经济发展, 日常生活, 文化交流 — and a longest match
- * swallows them whole, so a learner with 经济 and 发展 both due got no blank at all from a
- * sentence containing both. That is the feature failing silently in its most ordinary case.
+ * The two helpers below are one rule in two shapes, and they are what makes this segmenter
+ * usable for cross-referencing rather than merely correct on average. CC-CEDICT holds 121k
+ * entries including phrases, place names and compounds, so a plain longest match regularly
+ * eats a word the learner actually has a card for — and it fails SILENTLY: no blank appears,
+ * and nothing says why.
  *
- * Every piece must be at least two characters. That one condition is what separates a phrase
- * built from words (经济 + 发展) from a word built from characters: inside a two-character
- * word the halves are morphemes, not words, and a learner holding cards for 生 and 活
- * separately must not have 生活 torn in two. It also keeps 中国人 whole rather than splitting
- * off a bare 人.
+ * Both helpers only ever shorten a DICTIONARY match. A match on the deck's own card is
+ * authoritative and is never taken apart.
+ *
+ * The minimum piece length of two characters is what stops this from running wild. Inside a
+ * two-character word the halves are morphemes, not words, so a learner holding 生 and 活 as
+ * separate cards must not have 生活 torn in two, and 中国人 must not shed a bare 人.
+ */
+
+/**
+ * Case 1 — the deck words sit exactly INSIDE the match: 经济发展 is a CC-CEDICT phrase, and a
+ * learner with both 经济 and 发展 due got nothing from a sentence containing both.
  */
 function tileByDeckWords(word: string, overrides: Map<string, DictOverride>): string[] | null {
   if (word.length < 4) return null;   // two pieces of two characters is the smallest tiling
@@ -69,6 +77,29 @@ function tileByDeckWords(word: string, overrides: Map<string, DictOverride>): st
     return null;
   };
   return walk(word, []);
+}
+
+/**
+ * Case 2 — the deck word STRADDLES the match's right edge, so tiling can't see it. 中国城市 is
+ * 中国 + 城市, but CC-CEDICT has 中国城 ("Chinatown"), which is longer, wins, and leaves 市
+ * stranded — with 城市 (HSK 1, in almost every Chinese deck) nowhere in the output.
+ *
+ * Returns how far to shorten the match, or null to keep it whole. The prefix that is left
+ * behind must itself be a real word: shortening is only worth doing if what remains is
+ * something a reader would recognise, not an arbitrary cut.
+ */
+function shortenForDeckWord(
+  text: string, i: number, len: number, runEnd: number, overrides: Map<string, DictOverride>,
+): number | null {
+  for (let k = 1; k < len; k++) {
+    for (let dl = Math.min(MAX_OVERRIDE_LEN, runEnd - (i + k)); dl >= 2; dl--) {
+      if (k + dl <= len) break;   // fits inside the match — that is tileByDeckWords' case
+      if (!overrides.has(text.slice(i + k, i + k + dl))) continue;
+      const prefix = text.slice(i, i + k);
+      return isWord(prefix) || overrides.has(prefix) ? k : null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -117,23 +148,29 @@ export function segmentZh(text: string, overrides: Map<string, DictOverride>): R
 
     while (i < runEnd) {
       const room = runEnd - i;
-      let word = text[i];
+      let matched = false;
       for (let len = Math.min(MAX_OVERRIDE_LEN, room); len >= 1; len--) {
-        const cand = text.slice(i, i + len);
+        let cand = text.slice(i, i + len);
         if (!overrides.has(cand) && !(len <= MAX_DICT_LEN && isWord(cand))) continue;
-        // The deck's own card at this length is authoritative and never re-split; only a
-        // dictionary phrase gets taken apart into the words the learner actually holds.
-        const tiled = overrides.has(cand) ? null : tileByDeckWords(cand, overrides);
-        for (const piece of tiled ?? [cand]) {
+        matched = true;
+        // A match on the deck's own card is authoritative and is never re-cut. Only a
+        // dictionary match gives way to the words the learner actually holds.
+        if (overrides.has(cand)) {
+          out.push(emit(cand, overrides));
+          i += cand.length;
+          break;
+        }
+        const cut = shortenForDeckWord(text, i, len, runEnd, overrides);
+        if (cut !== null) cand = text.slice(i, i + cut);
+        for (const piece of tileByDeckWords(cand, overrides) ?? [cand]) {
           out.push(emit(piece, overrides));
           i += piece.length;
         }
-        word = '';
         break;
       }
       // Nothing matched at all — a single hanzi CC-CEDICT has never heard of. Still a word,
       // not punctuation.
-      if (word) { out.push(emit(word, overrides)); i += word.length; }
+      if (!matched) { out.push(emit(text[i], overrides)); i += 1; }
     }
   }
 

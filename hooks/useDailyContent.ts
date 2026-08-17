@@ -374,31 +374,32 @@ function buildPassage(
  * so every reader downstream (blanks, the primer, the shelf, passage navigation) works on it
  * unchanged.
  *
- * TWO THINGS DIFFER FROM `buildPassage`, AND BOTH ARE DELIBERATE.
+ * The one thing that differs from `buildPassage` is the "due words" set handed to the token
+ * builder: the WHOLE DECK, not a chosen batch. In the generated path that set names the words
+ * the model was asked to write around; here nobody chose anything in advance, so the honest
+ * equivalent is "every word I have a card for" — which is what lets a deck word classify as
+ * vocab even where the bundled dictionary has no gloss for it.
  *
- * The "due words" set passed to the token builder is the WHOLE DECK, not a chosen batch. In
- * the generated path that set names the words the model was asked to write around; here
- * nobody chose anything in advance, so the honest equivalent is "every word I have a card
- * for" — that is what lets a deck word classify as vocab even where the bundled dictionary
- * has no gloss for it.
- *
- * And `vocabWords` is left EMPTY on purpose. It is the passage's list of blank targets, and
- * for a generated passage it is written once at generation time. Pasted text has no such
- * moment: ReadTab picks the targets from the text itself, most-overdue-first, under the
- * blank-density preference and the shared new-card ledger. Recording a list here would
- * freeze that decision against a deck that keeps moving. See PASSAGE_VOCAB_SET in ReadTab.
+ * `vocabWords` still arrives from the caller and is still written ONCE, because that is what
+ * makes a passage stable to read. The caller (PasteTextPanel) picks it with the same
+ * selectClozeTargets call that produced the coverage readout, so what the reader was promised
+ * and what the passage contains are the same computation rather than two agreeing ones. It
+ * has to be settled at paste time: derive it on every render instead and the deck moves
+ * underneath the reader — filling one blank drops another, and finishing the passage makes it
+ * sprout fresh ones.
  */
 export function buildPastedPassage(
   raw: { title: RawTok[]; sentences: RawTok[][] },
   deck: DeckWord[],
   lang: LanguageCode,
+  vocabWords: string[],
 ): DailyPassage {
   const deckWords = new Set(deck.map(d => d.h));
   const deckReadings = groupReadings(deck);
   return {
     titleTokens: buildTitleTokens(raw.title, deckWords, deckReadings, lang),
     sentences: buildSentences(raw.sentences, deckWords, deckReadings, lang),
-    vocabWords: [],
+    vocabWords,
     pasted: true,
   };
 }

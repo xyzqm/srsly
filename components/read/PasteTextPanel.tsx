@@ -72,16 +72,18 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
         throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
       }
       const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][] };
-      const passage = buildPastedPassage(raw, deck, language);
+      const built = buildPastedPassage(raw, deck, language, []);
+      // Chosen here, once, against the ledger as it stands right now — and then RECORDED on
+      // the passage. The readout below and the blanks you will see are therefore the same
+      // computation, not two that are supposed to agree.
+      const targets = selectClozeTargets(
+        built.sentences, deck, dueWords, blankDensity,
+        getSrsSettings().newPerDay - getTodayCounts().newCount,
+      );
       setAnalysis({
-        passage,
-        coverage: analyzeCoverage(passage.sentences, new Set(deck.map(d => d.h)), dueWords),
-        // The same call ReadTab makes on the passage it renders, against the same live
-        // ledger — so the blank count below is the blank count you will get, not an estimate.
-        targets: selectClozeTargets(
-          passage.sentences, deck, dueWords, blankDensity,
-          getSrsSettings().newPerDay - getTodayCounts().newCount,
-        ),
+        passage: { ...built, vocabWords: [...targets.words] },
+        coverage: analyzeCoverage(built.sentences, new Set(deck.map(d => d.h)), dueWords),
+        targets,
       });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));

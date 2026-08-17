@@ -101,6 +101,32 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   const currentPassage = dailyContent?.passages[passageIdx];
 
+  /**
+   * The daily new-card budget AS IT STOOD WHEN THIS PASSAGE WAS OPENED.
+   *
+   * Deriving a target list from the live counter closes a feedback loop, and the loop bites
+   * in the middle of a reading session: `selectClozeTargets` spends the budget to choose the
+   * blanks, and answering one of those blanks charges the very same counter — so the next
+   * time the selection is evaluated it has one fewer to spend, drops a word, and a blank
+   * further down the page that you have not reached yet turns back into plain text. Measured
+   * on a pasted article: three blanks chosen, the first answered, and the third silently
+   * stopped being a blank while the reader was looking at it.
+   *
+   * "The memo's dependencies didn't change" is not a defence — useMemo is a performance hint
+   * and React may recompute whenever it likes, so anything a memo reads from module state has
+   * to be stable on its own. A generated passage never had this problem because its target
+   * list is written once and stored; this snapshot gives a DERIVED list the same stability.
+   *
+   * It cannot double-spend: the words chosen against this snapshot are exactly the words
+   * whose answers go on to charge it. The next passage opens against the updated count.
+   */
+  const budgetKey = `${dailyContent?.date ?? ''}|${language}|${hskLevel}|${passageIdx}`;
+  const budgetRef = useRef<{ key: string; left: number } | null>(null);
+  if (budgetRef.current?.key !== budgetKey) {
+    budgetRef.current = { key: budgetKey, left: getSrsSettings().newPerDay - getTodayCounts().newCount };
+  }
+  const newBudgetAtOpen = budgetRef.current.left;
+
   const SENTENCES    = useMemo(() => currentPassage?.sentences ?? [], [currentPassage]);
   const TITLE_TOKENS = useMemo(() => currentPassage?.titleTokens ?? [], [currentPassage]);
   // AI passages start with no questions; they're generated lazily on demand.
@@ -175,40 +201,39 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [deck, passageAnchors]);
 
   /**
-   * This passage's target words — the list recorded at generation time, or DERIVED FROM THE
-   * PASSAGE ITSELF when there isn't one. Two passages arrive with an empty `vocabWords`, for
-   * opposite reasons, and both need the same answer.
+   * This passage's target words — the recorded list, or DERIVED FROM THE PASSAGE ITSELF when
+   * a generated one came back without any.
    *
-   * PASTED TEXT has no generation moment: nobody picked words and wrote prose around them,
-   * so the targets can only come from reading the text against the deck. `vocabWords` is
-   * left empty deliberately (see buildPastedPassage) rather than frozen at paste time, so
-   * the blanks track a deck that keeps moving underneath them.
+   * That recovery path exists because everything downstream hangs off `vocabWords` — the
+   * cloze blanks, the review-word count in the header, the words the finish handler schedules
+   * — so an empty list used to degrade the passage to plain text under a header reading "add
+   * words to your deck", indistinguishable from an empty deck and unrecoverable, because
+   * nothing ever recomputed it.
    *
-   * A GENERATED PASSAGE whose list came back empty is a failure, and used to be an
-   * unrecoverable one. Everything downstream hangs off `vocabWords` — the cloze blanks, the
-   * review-word count in the header, the words the finish handler schedules — so the passage
-   * silently degraded to plain text with a header reading "add words to your deck", which is
-   * indistinguishable from having an empty deck, and nothing ever recomputed the list.
+   * A PASTED PASSAGE IS NEVER DERIVED, even when its list is empty: it chose its targets at
+   * paste time (see buildPastedPassage) and an empty list there is a real answer — "nothing
+   * in this text fits today's budget" — not a missing one. Deriving anyway would let a
+   * finished passage grow new blanks the moment grading pushed its old ones out of the due
+   * queue, which is precisely what it did before this line existed.
    *
    * The rule itself — most overdue first, capped by density and by the shared new-card
    * ledger — lives in lib/clozeTargets.ts, because the paste panel's coverage readout has to
    * predict it exactly and a near-duplicate is how it would start lying.
    */
   const PASSAGE_VOCAB_SET = useMemo(() => {
-    if (storedVocabWords.size > 0 || !currentPassage) return storedVocabWords;
+    if (storedVocabWords.size > 0 || !currentPassage || currentPassage.pasted) return storedVocabWords;
 
     // One shared rule — see lib/clozeTargets.ts. The new-card budget applies here too:
     // this is a second way into the passage, and leaving it uncapped would reopen the hole
     // the shared ledger was built to close. A stored-target-list of [] is not a licence to
     // introduce the whole deck.
     const { words, blanks, tokens, candidates } = selectClozeTargets(
-      currentPassage.sentences, deck, dueDeckWords, blankDensity,
-      getSrsSettings().newPerDay - getTodayCounts().newCount,
+      currentPassage.sentences, deck, dueDeckWords, blankDensity, newBudgetAtOpen,
     );
     if (words.size === 0) return storedVocabWords;
     console.info(`[read] ${currentPassage.pasted ? 'pasted text' : 'passage stored no target words'}; selected ${words.size} of ${candidates} due (${blanks} of ${tokens} words blanked)`);
     return words;
-  }, [storedVocabWords, currentPassage, dueDeckWords, deck, blankDensity]);
+  }, [storedVocabWords, currentPassage, dueDeckWords, deck, blankDensity, newBudgetAtOpen]);
 
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
@@ -274,10 +299,13 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const heldBackNew = useMemo(() => {
     if (!currentPassage) return 0;
     const takenNew = deck.filter(w => clozeWords.has(w.h) && isNewCard(w)).length;
-    const left = getSrsSettings().newPerDay - getTodayCounts().newCount - takenNew;
-    if (left > 0) return 0;
+    // Against the SAME snapshot the selection spent, not the live counter. Reading the
+    // counter here counts this passage's own intake twice — once in `newCount` as blanks
+    // get answered, once in `takenNew` — so a passage that took two of its two allowed new
+    // words started reporting words as "held back" the moment you began filling them in.
+    if (newBudgetAtOpen - takenNew > 0) return 0;
     return deck.filter(w => dueDeckWords.has(w.h) && !clozeWords.has(w.h) && isNewCard(w)).length;
-  }, [deck, dueDeckWords, clozeWords, currentPassage]);
+  }, [deck, dueDeckWords, clozeWords, currentPassage, newBudgetAtOpen]);
 
   const reviewWordCount = clozeWords.size;
 

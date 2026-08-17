@@ -167,6 +167,84 @@ interface UndoBarProps {
   progress: number;
 }
 
+interface ReadingRowProps {
+  word: DeckWord;
+  /** "Pinyin" for Chinese, "Reading" for Japanese — from the language config. */
+  label: string;
+  onSave: (update: Partial<DeckWord>) => void;
+  onCancel: () => void;
+}
+
+/**
+ * Correct a card's READING. Not its definition.
+ *
+ * Editing the meaning is gone: definitions come from the bundled dictionary, and letting a
+ * card carry a hand-typed one is what forced every version of the deck repair in
+ * lib/deckGloss.ts to tiptoe around the possibility. A reading is a different kind of fact
+ * — it is a property of this card, the dictionary can be wrong about it, and for a
+ * polyphone there is no single right answer to look up. 行 is xíng or háng depending on
+ * which card this is, which is the whole reason multi-reading cards exist; an import that
+ * guessed wrong previously had no fix short of delete-and-re-add.
+ *
+ * Rendered only where `hasReadings` is true. Spanish and French keep `p` empty by design,
+ * so the field would be an input for a value the language does not have.
+ */
+function ReadingRow({ word, label, onSave, onCancel }: ReadingRowProps) {
+  const [reading, setReading] = useState(word.p);
+
+  // "hao3" → "hǎo". Typing tone numbers is how most people enter pinyin on a plain keyboard.
+  function handleBlur(val: string) {
+    if (/[1-5]/.test(val)) setReading(toneNumToMark(val));
+  }
+
+  function handleSave() {
+    const p = reading.trim();
+    // Warn, don't block: a polyphone's correct reading may well not be the dictionary's
+    // first, and the learner is the one who knows which card this is.
+    const known = [lookupWord(word.h).pinyin, ...(POLYPHONES[word.h]?.map(r => r.p) ?? [])].filter(Boolean);
+    const warn = checkPinyin(p, word.h, known);
+    if (warn && !window.confirm(warn)) return;
+    onSave({ p });
+  }
+
+  return (
+    <div
+      className="py-3 px-3 rounded-xl"
+      style={{ background: 'var(--paper-2)', border: '1px dashed var(--line)', marginBottom: 4 }}
+    >
+      <div className="flex items-center gap-3 mb-2.5">
+        <span style={{ fontFamily: 'var(--f-han)', fontSize: 26, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 48 }}>
+          {word.h}
+        </span>
+        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          {word.m}
+        </span>
+      </div>
+      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
+        {label}
+      </div>
+      <div className="flex gap-2 items-center flex-wrap">
+        <input
+          value={reading}
+          autoFocus
+          onChange={e => setReading(e.target.value)}
+          onBlur={e => handleBlur(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onCancel(); }}
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 13, letterSpacing: '.04em',
+            background: 'var(--paper-2)', border: '1px solid var(--line)',
+            borderRadius: 7, padding: '7px 10px', color: 'var(--ink)',
+            width: 180, outline: 'none',
+          }}
+          onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
+        />
+        <BulkBtn label="Save" onClick={handleSave} />
+        <BulkBtn label="Cancel" onClick={onCancel} />
+      </div>
+    </div>
+  );
+}
+
 function UndoBar({ pending, onUndo, progress }: UndoBarProps) {
   return (
     <div
@@ -350,8 +428,9 @@ interface VocabTabProps {
 
 export default function VocabTab({ onStudy }: VocabTabProps) {
   const language = useLanguage();
+  const langConfig = getLanguageConfig(language);
   const {
-    deck, addWord, addWords, removeWord, clearDeck,
+    deck, addWord, addWords, removeWord, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
   } = useVocabDeck(language);
@@ -515,6 +594,9 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
     await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, pool: true })));
     setShowImport(false);
   }
+
+  /** Card whose reading is being corrected, by deck index. */
+  const [readingIdx, setReadingIdx] = useState<number | null>(null);
 
   const btnGhost: React.CSSProperties = {
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
@@ -704,10 +786,21 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
         {/* Cross-fade the whole list (rows + empty states) when the deck changes. */}
         <CrossFade id={language}>
         {visibleDeck.map((w) => {
+          const realIdx = deck.findIndex(d => d.id === w.id);
           const snoozed  = !!w.snoozeUntil && w.snoozeUntil > today;
           const managing = managingId === w.id;
           return (
             <div key={w.id}>
+              {readingIdx === realIdx ? (
+                <div className="py-2">
+                  <ReadingRow
+                    word={w}
+                    label={langConfig.readingLabel}
+                    onSave={update => { updateWord(realIdx, update); setReadingIdx(null); }}
+                    onCancel={() => setReadingIdx(null)}
+                  />
+                </div>
+              ) : (
               <>
                   <div
                     className="grid items-center gap-4 py-3 px-1"
@@ -738,6 +831,18 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                       >
                         {w.focus ? '★' : '☆'}
                       </button>
+                      {langConfig.hasReadings && (
+                        <button
+                          onClick={() => setReadingIdx(realIdx)}
+                          className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+                          style={btnGhost}
+                          title={`Correct this card's ${langConfig.readingLabel.toLowerCase()}`}
+                          onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
+                          onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
+                        >
+                          {langConfig.readingLabel}
+                        </button>
+                      )}
                       <button
                         onClick={() => setManagingId(managing ? null : (w.id ?? null))}
                         className="cursor-pointer transition-all duration-150 whitespace-nowrap"
@@ -772,6 +877,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                     />
                   )}
               </>
+              )}
             </div>
           );
         })}
