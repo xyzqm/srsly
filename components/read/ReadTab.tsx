@@ -236,11 +236,22 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     const ranked = [...cost.keys()].sort((a, b) =>
       (owedSince.get(a) ?? today).localeCompare(owedSince.get(b) ?? today));
 
+    // The new-card budget applies here too. Recovery is a second way into the passage, and
+    // leaving it uncapped would reopen the hole the shared ledger was built to close — a
+    // stored-target-list of [] is not a licence to introduce the whole deck.
+    let newLeft = getSrsSettings().newPerDay - getTodayCounts().newCount;
+
     const found = new Set<string>();
     let blanks = 0;
     for (const word of ranked) {
       const n = cost.get(word)!;
       if (blanks + n > budget) continue;
+      const card = deck.find(d => d.h === word);
+      const fresh = !!card && (card.reviews ?? 0) === 0 && card.stability === undefined && card.phase !== 'learning';
+      if (fresh) {
+        if (newLeft <= 0) continue;
+        newLeft--;
+      }
       found.add(word);
       blanks += n;
     }
@@ -297,15 +308,24 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     return out;
   }, [deck, clozeWords]);
 
-  /** Due new words this passage could not take because the daily budget ran out. */
+  /**
+   * Due new words this passage could not take because the daily budget ran out.
+   *
+   * The test is whether the budget is empty AFTER this passage's intake, not before it.
+   * Checking "before" only fired once you were already at zero on arrival, so the common
+   * case — eighteen spent, two taken here, eight still waiting — said nothing at all, which
+   * is exactly when the learner most needs telling. Density-limited words are not counted:
+   * this note names the daily limit, so it must only appear when the daily limit is what
+   * stopped them.
+   */
   const heldBackNew = useMemo(() => {
     if (!currentPassage) return 0;
-    const left = getSrsSettings().newPerDay - getTodayCounts().newCount;
+    const isFresh = (w: DeckWord) =>
+      (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning';
+    const takenNew = deck.filter(w => clozeWords.has(w.h) && isFresh(w)).length;
+    const left = getSrsSettings().newPerDay - getTodayCounts().newCount - takenNew;
     if (left > 0) return 0;
-    return deck.filter(w =>
-      dueDeckWords.has(w.h) && !clozeWords.has(w.h)
-      && (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning',
-    ).length;
+    return deck.filter(w => dueDeckWords.has(w.h) && !clozeWords.has(w.h) && isFresh(w)).length;
   }, [deck, dueDeckWords, clozeWords, currentPassage]);
 
   const reviewWordCount = clozeWords.size;
