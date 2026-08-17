@@ -4,7 +4,8 @@ import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
-import { getLanguageConfig, levelFor, levelLabel, recommendedWordsPerPassage, defaultWordsPerPassage } from '@/lib/languageConfig';
+import { getLanguageConfig, levelFor, levelLabel, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
+import { RECOMMENDED_POOL_ACTIVATE, HIGH_POOL_ACTIVATE } from '@/lib/fsrs';
 import { todayStr } from '@/lib/deck';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import type { LanguageCode } from '@/lib/types';
@@ -39,6 +40,12 @@ interface Props {
   onLanguagesChanged: (languages: LanguageCode[], active?: LanguageCode) => void;
 }
 
+/** Above this a daily cap stops being a cap. Advisory only — nothing enforces it. */
+const RECOMMENDED_MAX_PER_DAY = 500;
+
+/** Past this share there is no prose left between the gaps. Advisory only. */
+const HIGH_BLANK_DENSITY = 35;
+
 export default function SettingsTab({ languages, onAddLanguage, onLanguagesChanged }: Props) {
   const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
   const language = useLanguage();
@@ -53,8 +60,10 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const [newPerDayRaw,  setNewPerDayRaw]  = useState('20');
   const [revPerDay,     setRevPerDay]     = useState(200);
   const [revPerDayRaw,  setRevPerDayRaw]  = useState('200');
-  const [wordsPerPassage,    setWordsPerPassage]    = useState(defaultWordsPerPassage(language, langConfig.defaultLevel));
-  const [wordsPerPassageRaw, setWordsPerPassageRaw]  = useState(String(wordsPerPassage));
+  const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
+  const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
+  const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
+  const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));
   const [saved,      setSaved]      = useState(false);
   /**
    * Whether prefs have arrived. Until they have, NOTHING renders as selected.
@@ -135,13 +144,15 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       setNewPerDay(npd); setNewPerDayRaw(String(npd));
       const rpd = p.srsReviewsPerDay ?? 200;
       setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
-      const wpp = p.wordsPerPassage ?? defaultWordsPerPassage(language, levelFor(language, p));
-      setWordsPerPassage(wpp); setWordsPerPassageRaw(String(wpp));
+      const bd = p.blankDensity ?? RECOMMENDED_BLANK_DENSITY;
+      setBlankDensity(bd); setBlankDensityRaw(String(bd));
+      const pa = p.poolActivateCount ?? RECOMMENDED_POOL_ACTIVATE;
+      setPoolActivate(pa); setPoolActivateRaw(String(pa));
       setLoaded(true);
     });
   }, [language]);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; wordsPerPassage: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -158,27 +169,49 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
     await savePrefs({ srsRetention: value });
   }
 
+  /**
+   * These three handlers advise rather than overrule.
+   *
+   * They used to silently clamp — typing 100000000 into the interval cap left 36500 sitting
+   * in the box, which reads as the field being broken rather than as a limit being applied,
+   * because nothing said a limit existed. The recommendation and the "not recommended"
+   * warning are already on screen; a number past them is the learner's call to make.
+   *
+   * Only the floor is enforced, because it is not a preference: an interval below one day
+   * and a negative daily limit have no meaning for the scheduler.
+   */
   async function handleMaxDaysBlur() {
     const v = parseInt(maxDaysRaw, 10);
     if (!isNaN(v) && v >= 1) {
-      const clamped = Math.min(Math.max(v, 1), 36500);
-      setMaxDays(clamped);
-      setMaxDaysRaw(String(clamped));
-      await savePrefs({ srsMaxDays: clamped });
+      setMaxDays(v);
+      setMaxDaysRaw(String(v));
+      await savePrefs({ srsMaxDays: v });
     } else {
       setMaxDaysRaw(String(maxDays)); // reset to last valid
     }
   }
 
-  async function handleWordsPerPassageBlur() {
-    const v = parseInt(wordsPerPassageRaw, 10);
-    if (!isNaN(v)) {
-      const clamped = Math.min(Math.max(v, 2), 12);
-      setWordsPerPassage(clamped);
-      setWordsPerPassageRaw(String(clamped));
-      await savePrefs({ wordsPerPassage: clamped });
+  async function handlePoolActivateBlur() {
+    const v = parseInt(poolActivateRaw, 10);
+    if (!isNaN(v) && v >= 1) {
+      setPoolActivate(v);
+      setPoolActivateRaw(String(v));
+      await savePrefs({ poolActivateCount: v });
     } else {
-      setWordsPerPassageRaw(String(wordsPerPassage)); // reset to last valid
+      setPoolActivateRaw(String(poolActivate)); // reset to last valid
+    }
+  }
+
+  async function handleBlankDensityBlur() {
+    const v = parseInt(blankDensityRaw, 10);
+    // 1–100 is the range the number can mean at all, not a recommendation; the note under
+    // the field carries the advice, as with the interval cap and the daily limits.
+    if (!isNaN(v) && v >= 1 && v <= 100) {
+      setBlankDensity(v);
+      setBlankDensityRaw(String(v));
+      await savePrefs({ blankDensity: v });
+    } else {
+      setBlankDensityRaw(String(blankDensity)); // reset to last valid
     }
   }
 
@@ -217,9 +250,8 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
     const last = kind === 'new' ? newPerDay : revPerDay;
     const v = parseInt(raw, 10);
     if (!isNaN(v) && v >= 0) {
-      const clamped = Math.min(Math.max(v, 0), 9999);
-      if (kind === 'new') { setNewPerDay(clamped); setNewPerDayRaw(String(clamped)); await savePrefs({ srsNewPerDay: clamped }); }
-      else { setRevPerDay(clamped); setRevPerDayRaw(String(clamped)); await savePrefs({ srsReviewsPerDay: clamped }); }
+      if (kind === 'new') { setNewPerDay(v); setNewPerDayRaw(String(v)); await savePrefs({ srsNewPerDay: v }); }
+      else { setRevPerDay(v); setRevPerDayRaw(String(v)); await savePrefs({ srsReviewsPerDay: v }); }
     } else {
       if (kind === 'new') setNewPerDayRaw(String(last)); else setRevPerDayRaw(String(last));
     }
@@ -399,21 +431,22 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         })}
       </div>
 
-      {/* ── Words per passage ─────────────────────────────────────────────── */}
-      <SectionLabel>Words per passage</SectionLabel>
+      {/* ── Blank density ─────────────────────────────────────────────────── */}
+      <SectionLabel>Blank density</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
-        How many due vocab words each AI-generated passage is built around. Fewer words keep
-        a passage focused; more give it more to review at once.
+        How much of each passage is blanked out for you to fill in. This is a share rather
+        than a word count, so it keeps its meaning as passages get longer — you set it once
+        and it still fits when you move up a level.
       </p>
       <div className="flex items-center gap-3 mb-2" style={{ maxWidth: 320 }}>
         <input
           type="number"
-          min={2}
-          max={12}
-          value={wordsPerPassageRaw}
-          onChange={e => setWordsPerPassageRaw(e.target.value)}
-          onBlur={handleWordsPerPassageBlur}
-          onKeyDown={e => e.key === 'Enter' && handleWordsPerPassageBlur()}
+          min={1}
+          max={100}
+          value={blankDensityRaw}
+          onChange={e => setBlankDensityRaw(e.target.value)}
+          onBlur={handleBlankDensityBlur}
+          onKeyDown={e => e.key === 'Enter' && handleBlankDensityBlur()}
           className="rounded-[9px] px-4 py-2.5 transition-all duration-150"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 14, width: 100,
@@ -423,27 +456,27 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           onFocus={e => { e.target.style.borderColor = 'var(--accent)'; }}
           onBlurCapture={e => { e.target.style.borderColor = 'var(--line)'; }}
         />
-        <span style={{ fontSize: 13.5, color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)' }}>words</span>
+        <span style={{ fontSize: 13.5, color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)' }}>% of words</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
-        {(() => {
-          const [min, max] = recommendedWordsPerPassage(language, level);
-          return `For ${levelLabel(language, level)}, we recommend studying between ${min}-${max} words per passage.`;
-        })()}
+        {`We recommend ${RECOMMENDED_BLANK_DENSITY}% — about one word in ${Math.round(100 / RECOMMENDED_BLANK_DENSITY)}. `}
+        {`At ${levelLabel(language, level)} that works out to roughly ${wordsForDensity(language, level, blankDensity)} word${wordsForDensity(language, level, blankDensity) === 1 ? '' : 's'} per passage.`}
       </div>
+      {blankDensityRaw !== '' && Number(blankDensityRaw) > HIGH_BLANK_DENSITY && (
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--gold)', lineHeight: 1.55, maxWidth: '48ch', marginBottom: 10 }}>
+          Not recommended above {HIGH_BLANK_DENSITY}%. Past roughly a third, there is not
+          enough prose left between the gaps to work any of them out from context — it stops
+          being reading and becomes a list of blanks.
+        </p>
+      )}
       <div className="flex gap-2 flex-wrap mb-10">
-        {(() => {
-          const [min, max] = recommendedWordsPerPassage(language, level);
-          return (
-            <button
-              onClick={() => { const mid = Math.round((min + max) / 2); setWordsPerPassage(mid); setWordsPerPassageRaw(String(mid)); savePrefs({ wordsPerPassage: mid }); }}
-              className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
-            >
-              Use recommended
-            </button>
-          );
-        })()}
+        <button
+          onClick={() => { setBlankDensity(RECOMMENDED_BLANK_DENSITY); setBlankDensityRaw(String(RECOMMENDED_BLANK_DENSITY)); savePrefs({ blankDensity: RECOMMENDED_BLANK_DENSITY }); }}
+          className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
+        >
+          Use recommended
+        </button>
       </div>
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}
@@ -487,7 +520,6 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         <input
           type="number"
           min={1}
-          max={36500}
           value={maxDaysRaw}
           onChange={e => setMaxDaysRaw(e.target.value)}
           onBlur={handleMaxDaysBlur}
@@ -530,6 +562,53 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         ))}
       </div>
 
+      {/* ── Activate from pool ────────────────────────────────────────────── */}
+      <SectionLabel>Activate from pool</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
+        How many pooled words the Vocab tab offers to bring into circulation at once. This
+        is the batch size on the Activate button, not a limit — you can always type a
+        different number there.
+      </p>
+      <div className="flex items-center gap-3 mb-2" style={{ maxWidth: 320 }}>
+        <input
+          type="number"
+          min={1}
+          value={poolActivateRaw}
+          onChange={e => setPoolActivateRaw(e.target.value)}
+          onBlur={handlePoolActivateBlur}
+          onKeyDown={e => e.key === 'Enter' && handlePoolActivateBlur()}
+          className="rounded-[9px] px-4 py-2.5 transition-all duration-150"
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 14, width: 100,
+            background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)',
+            outline: 'none',
+          }}
+          onFocus={e => { e.target.style.borderColor = 'var(--accent)'; }}
+          onBlurCapture={e => { e.target.style.borderColor = 'var(--line)'; }}
+        />
+        <span style={{ fontSize: 13.5, color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)' }}>words</span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
+        {`We recommend ${RECOMMENDED_POOL_ACTIVATE} — a day's worth of new material, and under your `}
+        {`${newPerDay} new cards/day, so a batch you activate is one you can actually start today.`}
+      </div>
+      {poolActivateRaw !== '' && Number(poolActivateRaw) > HIGH_POOL_ACTIVATE && (
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--gold)', lineHeight: 1.55, maxWidth: '48ch', marginBottom: 10 }}>
+          Not recommended above {HIGH_POOL_ACTIVATE}. Activating more than you can start
+          just moves the backlog from the pool into your review queue — and in the reading
+          passage, which has no daily cap, every one of them counts as due immediately.
+        </p>
+      )}
+      <div className="flex gap-2 flex-wrap mb-10">
+        <button
+          onClick={() => { setPoolActivate(RECOMMENDED_POOL_ACTIVATE); setPoolActivateRaw(String(RECOMMENDED_POOL_ACTIVATE)); savePrefs({ poolActivateCount: RECOMMENDED_POOL_ACTIVATE }); }}
+          className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
+        >
+          Use recommended
+        </button>
+      </div>
+
       {/* ── Daily limits ──────────────────────────────────────────────────── */}
       <SectionLabel>Daily limits</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
@@ -541,7 +620,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-soft)', marginBottom: 7 }}>New cards / day</div>
           <input
-            type="number" min={0} max={9999}
+            type="number" min={0}
             value={newPerDayRaw}
             onChange={e => setNewPerDayRaw(e.target.value)}
             onBlur={() => handleLimitBlur('new')}
@@ -553,7 +632,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', color: 'var(--ink-soft)', marginBottom: 7 }}>Max reviews / day</div>
           <input
-            type="number" min={0} max={9999}
+            type="number" min={0}
             value={revPerDayRaw}
             onChange={e => setRevPerDayRaw(e.target.value)}
             onBlur={() => handleLimitBlur('review')}
@@ -563,6 +642,15 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           />
         </div>
       </div>
+      {/* Advice, not a ceiling — the handler no longer clamps, so this is the only thing
+          telling the learner a number is unreasonable. */}
+      {(newPerDayRaw !== '' && Number(newPerDayRaw) > RECOMMENDED_MAX_PER_DAY) ||
+       (revPerDayRaw !== '' && Number(revPerDayRaw) > RECOMMENDED_MAX_PER_DAY) ? (
+        <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--gold)', lineHeight: 1.55, maxWidth: '48ch', marginTop: -28, marginBottom: 34 }}>
+          Not recommended above {RECOMMENDED_MAX_PER_DAY} a day. A limit this high is the
+          same as no limit — the point of the cap is to stop a backlog arriving all at once.
+        </p>
+      ) : null}
 
       {/* ── Backup & data ─────────────────────────────────────────────────── */}
       <SectionLabel>Backup &amp; data</SectionLabel>

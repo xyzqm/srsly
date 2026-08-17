@@ -289,6 +289,30 @@ export function defaultWordsPerPassage(lang: LanguageCode | undefined, level: nu
 }
 
 /**
+ * Recommended share of a passage to blank out, as a percentage.
+ *
+ * 15% is roughly where three independent things agree. Classic fixed-ratio cloze deletes
+ * every seventh word (~14%); this app's generator, left to itself, lands near 13% (9 blanks
+ * in a 70-word A1 passage); and 15% was what read comfortably when the recovery budget was
+ * measured against a real passage — 11 blanks in 76 words, with enough prose left between
+ * them to recover any one from context.
+ */
+export const RECOMMENDED_BLANK_DENSITY = 15;
+
+/**
+ * How many vocab words to build a passage around, for a given blank density.
+ *
+ * Anchored so the recommended density reproduces exactly the level's recommended word
+ * count, and scales from there. That anchoring is the point: `defaultWordsPerPassage`
+ * already grows with the level, so one density setting keeps its meaning all the way from
+ * A1 to C2 without the learner ever revisiting it.
+ */
+export function wordsForDensity(lang: LanguageCode | undefined, level: number, density: number): number {
+  const base = defaultWordsPerPassage(lang, level);
+  return Math.max(1, Math.round(base * (density / RECOMMENDED_BLANK_DENSITY)));
+}
+
+/**
  * French. Structurally the closest language to Spanish in this app: no reading layer
  * (`hasReadings: false`), space-delimited, server-segmented, and graded on CEFR — so it
  * reuses the same spacing/rendering and token paths rather than needing new ones.

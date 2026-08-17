@@ -10,6 +10,8 @@ import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch, searchRank } from '@/lib/deckSearch';
+import { storage } from '@/lib/storage';
+import { RECOMMENDED_POOL_ACTIVATE } from '@/lib/fsrs';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -64,7 +66,13 @@ function ActivatePoolBtn({ poolCount, onActivate, onUndo }: {
   // to type into: with `Number(e.target.value) || 1` an empty field snapped back to 1, so
   // you could never clear it to type a new value, and two-digit entries were fought
   // character by character. Validation happens once, on submit.
-  const [draft, setDraft] = useState('5');
+  // Seeded from the learner's setting (Settings → Activate from pool), read once on mount.
+  const [draft, setDraft] = useState(String(RECOMMENDED_POOL_ACTIVATE));
+  useEffect(() => {
+    void storage.getPrefs().then(p => {
+      if (p.poolActivateCount) setDraft(String(p.poolActivateCount));
+    });
+  }, []);
   const [undo, setUndo] = useState<{ ids: string[] } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);

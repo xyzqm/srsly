@@ -31,6 +31,17 @@ export const DEFAULT_SRS_SETTINGS: SrsSettings = {
   reviewsPerDay: 200,
 };
 
+/**
+ * Default batch size for the Vocab tab's "Activate from pool" button.
+ *
+ * Ten is a day's worth of genuinely new material for most people and sits comfortably under
+ * the default 20 new cards/day, so a batch activated today is one you can actually start
+ * today rather than one that queues up behind the limit.
+ */
+export const RECOMMENDED_POOL_ACTIVATE = 10;
+/** Past this, a single activation is more new words than a day of study can absorb. */
+export const HIGH_POOL_ACTIVATE = 50;
+
 /** Lapse count at which a word is auto-flagged as a leech (and auto-paused). */
 export const LEECH_THRESHOLD = 8;
 
