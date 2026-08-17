@@ -1,6 +1,7 @@
 import type { DeckWord, LanguageCode } from './types';
 import { lookupReadingAsync } from './data/lookup';
 import { isMetalinguisticGloss, isProperNounGloss } from './glossQuality';
+import { REVISED_GLOSSES } from './data/gloss-revisions';
 
 /**
  * Repair deck cards whose stored definition describes the word's SPELLING instead of
@@ -63,6 +64,27 @@ function isSpellingGloss(w: DeckWord): boolean {
 }
 
 /**
+ * The other kind of staleness: a gloss that reads perfectly well and is simply the wrong
+ * definition.
+ *
+ * `primera` shipped as "first gear (lowest gear in a motor vehicle); first class" — the
+ * ordinal sense lives in a form_of sense the build routes into the FORMS map, so only the
+ * niche noun readings survived. Nothing about that string looks broken, so isSpellingGloss
+ * cannot see it, and the card stayed wrong indefinitely while the dictionary behind it was
+ * fixed.
+ *
+ * What makes it safe to overwrite is not a test on the text but a RECORD: scripts/
+ * reorder-glosses.mjs emits lib/data/gloss-revisions.ts naming every headword whose bundled
+ * definition it replaced. Those are ours, we changed them, and a card still holding the old
+ * value is holding something we no longer ship. Everything outside that list is left alone,
+ * so a definition the learner rewrote is untouched unless it happens to be one of these few
+ * dozen words — a trade worth making only because the list is small and named.
+ */
+function hasRevisedGloss(lang: LanguageCode, w: DeckWord): boolean {
+  return (REVISED_GLOSSES[lang] ?? []).includes(w.h);
+}
+
+/**
  * Returns a new deck when anything changed, or the ORIGINAL array reference when nothing
  * did — so callers can skip the write. Never throws: a failed dictionary load leaves the
  * deck alone, and the next load tries again.
@@ -81,7 +103,7 @@ export async function syncDeckGlosses(lang: LanguageCode, deck: DeckWord[]): Pro
 
   // The whole point of scanning first: a healthy deck costs one regex pass over its glosses
   // and never touches the dictionary, which is what the version marker used to buy.
-  const stale = deck.filter(isSpellingGloss);
+  const stale = deck.filter(w => isSpellingGloss(w) || hasRevisedGloss(lang, w));
   if (stale.length === 0) return deck;
 
   const fixes = new Map<DeckWord, string>();
