@@ -8,6 +8,13 @@
   --accent: #B23A2E; --accent-deep: #8E2C22; --jade: #5C7355; --gold: #A9803C;
   --accent-soft: rgba(178,58,46,.10); --jade-soft: rgba(92,115,85,.13); --gold-soft: rgba(169,128,60,.12);
   --pop-bg: #22201C; --pop-fg: #F4EFE6; --pop-pin: #F0C0B8; --pop-mute: #8d877c; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+  /* Verdict colours — right is green, wrong is red, in every theme.
+     Deliberately NOT --jade/--accent: those are the theme's palette, so on Slate a wrong
+     answer came out blue and on Ink it came out near-black. Right and wrong are not a
+     matter of taste, and a learner reading their own mistakes should never have to work
+     out which colour means what in the theme they happen to be using. Only Dusk overrides
+     these, and only for legibility on a dark background. */
+  --right: #1F7A43; --wrong: #C02A20;
 }
 [data-theme="ink"] {
   --paper: #FAFAF8; --paper-2: #F1F0EC; --card: #FFFFFF;
@@ -48,6 +55,8 @@
   --accent: #D77A5B; --accent-deep: #A95934; --jade: #86A57E; --gold: #D6B26A;
   --accent-soft: rgba(215,122,91,.14); --jade-soft: rgba(134,165,126,.14); --gold-soft: rgba(214,178,106,.14);
   --pop-bg: #0E0D14; --pop-fg: #F0EDE4; --pop-pin: #F0BFA8; --pop-mute: #7E7A6F; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+  /* Same two meanings, lifted for a dark background. */
+  --right: #6FCF97; --wrong: #F0685B;
 }
 
 /* ============ FONT TOKENS ============ */

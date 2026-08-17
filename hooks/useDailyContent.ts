@@ -7,7 +7,8 @@ import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, todayStr, shuffle } from '@/lib/deck';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
-import { defaultWordsPerPassage, getLanguageConfig } from '@/lib/languageConfig';
+import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
+import { tokensToText } from '@/lib/tokenText';
 
 type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
 
@@ -203,7 +204,12 @@ function buildSentences(rawRows: RawTok[][], dueWords: Set<string>, deckReadings
       .filter(r => r[0] !== '' && r[0] !== 'punctuation')
       .map(r => rawToToken(r, dueWords, deckReadings, lang));
     const tokens = degroupOversized(raw, dueWords, deckReadings, lang);
-    return { tokens, plainText: tokens.map(t => t.text).join('') };
+    // Through tokensToText, never a local join. `plainText` is not a debug field: it is what
+    // the passage shelf stores and what generateQuestionsForPassage sends the model as the
+    // text to write questions about. Joined flush it rendered Spanish as
+    // "¿Quetalelclimahoy?" — unreadable on the shelf, and unusable as a prompt, which is why
+    // the reading-comprehension questions came back blank.
+    return { tokens, plainText: tokensToText(tokens, getLanguageConfig(lang).scriptIsUnspaced) };
   });
 }
 
@@ -344,7 +350,7 @@ function sanitizeCachedContent(content: DailyContent, lang: LanguageCode): void 
     p.titleTokens = fixAndDegroup(p.titleTokens);
     p.sentences.forEach(s => {
       s.tokens = fixAndDegroup(s.tokens);
-      s.plainText = s.tokens.map(t => t.text).join('');
+      s.plainText = tokensToText(s.tokens, getLanguageConfig(lang).scriptIsUnspaced);
     });
     p.questions?.forEach(q => {
       q.q = fixAndDegroup(q.q);
@@ -447,7 +453,7 @@ export function useDailyContent(
   deck: DeckWord[],
   want: ContentSection[] = ALL_SECTIONS,
   language: LanguageCode = 'zh',
-  wordsPerPassage?: number,
+  blankDensity?: number,
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   const [status, setStatus] = useState<DailyContentStatus>('idle');
@@ -462,7 +468,8 @@ export function useDailyContent(
   // How many due words to build each passage/fill/convo batch around. Falls back to a
   // level-scaled recommendation (harder levels support longer passages, so more words fit
   // without overwhelming the reader) when the user hasn't set an explicit preference.
-  const effectiveWordsPerPassage = wordsPerPassage ?? defaultWordsPerPassage(language, hskLevel);
+  // One density setting, converted to a word count per level — see wordsForDensity.
+  const effectiveWordsPerPassage = wordsForDensity(language, hskLevel, blankDensity ?? RECOMMENDED_BLANK_DENSITY);
   const wordsPerPassageRef = useRef(effectiveWordsPerPassage);
   wordsPerPassageRef.current = effectiveWordsPerPassage;
 
@@ -757,7 +764,8 @@ export function useDailyContent(
 
     setLoadingQuestions(true);
     try {
-      const passageText = passage.sentences.map(s => s.plainText).join('');
+      const sep = getLanguageConfig(language).scriptIsUnspaced ? '' : ' ';
+      const passageText = passage.sentences.map(s => s.plainText).join(sep);
       const vocabWords = deckRef.current.filter(w => passage.vocabWords.includes(w.h));
 
       const res = await fetch('/api/daily-content', {

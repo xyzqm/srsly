@@ -1,4 +1,6 @@
 import type { DailyContent, ShelfEntry, ClozeOccurrenceMap } from './types';
+import { getLanguageConfig } from './languageConfig';
+import { tokensToText } from './tokenText';
 
 /**
  * The passage shelf — everything you've actually read, kept.
@@ -37,6 +39,22 @@ export function scoreCloze(state: ClozeOccurrenceMap | null): { correct: number;
 }
 
 /**
+ * Which words were right and which were missed, collapsed to one row per word.
+ *
+ * A word blanked several times keeps the WORST outcome: getting it once and missing it
+ * twice is not a word you knew, and the shelf exists to be looked back at.
+ */
+export function resultsCloze(state: ClozeOccurrenceMap | null): { word: string; correct: boolean }[] | undefined {
+  if (!state) return undefined;
+  const byWord = new Map<string, boolean>();
+  for (const e of Object.values(state)) {
+    const ok = e.grade >= 3;
+    byWord.set(e.word, (byWord.get(e.word) ?? true) && ok);
+  }
+  return byWord.size > 0 ? [...byWord].map(([word, correct]) => ({ word, correct })) : undefined;
+}
+
+/**
  * Turn one day's content into shelf entries — only for passages actually finished.
  *
  * `wasRead` answers "did the learner finish passage N", and `clozeFor` supplies its blank
@@ -61,10 +79,12 @@ export function entriesFrom(
       date: content.date,
       language,
       level: content.hskLevel,
-      title: p.titleTokens.map(t => t.text).join('').trim(),
+      // Same rule as the body: a local join renders "Undíasoleado" in every spaced language.
+      title: tokensToText(p.titleTokens, getLanguageConfig(language).scriptIsUnspaced).trim(),
       text,
       vocabWords: p.vocabWords ?? [],
       score: scoreCloze(clozeFor(i)),
+      results: resultsCloze(clozeFor(i)),
     });
   });
 

@@ -199,14 +199,18 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
     if (gradedRef.current) return;
     if (!value.trim() && !opts?.force) return;
     gradedRef.current = true;
-    const isCorrect = value.trim() === token.text;
+    // Case-insensitive: a sentence-initial blank shows `Buenos días`, and marking someone
+    // wrong for typing `buenos días` tests where the sentence happened to break, not whether
+    // they know the word. Accents still count — they are part of the spelling, which is why
+    // the accent bar exists.
+    const isCorrect = value.trim().localeCompare(token.text, undefined, { sensitivity: 'accent' }) === 0;
     setSubmitted(true);
     setCorrect(isCorrect);
     onGrade(isCorrect);
   }, [value, token.text, onGrade]);
 
   if (submitted) {
-    const color = correct ? 'var(--jade)' : 'var(--accent)';
+    const color = correct ? 'var(--right)' : 'var(--wrong)';
     return (
       <>
         <ruby
@@ -291,8 +295,12 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
             zIndex: 1,
           }}
         >
+          {/* `white-space: pre` or the spaces vanish: each character is its own span inside a
+              flex row, and a span holding only a space collapses to zero width. Multi-word
+              answers — `por favor`, `buenos días`, `hasta luego` — looked like the space key
+              did nothing. */}
           {[...value].map((char, i) => (
-            <span key={i} style={{ color: i < matchLen ? 'var(--jade)' : 'var(--accent)' }}>{char}</span>
+            <span key={i} style={{ whiteSpace: 'pre', color: i < matchLen ? 'var(--right)' : 'var(--wrong)' }}>{char}</span>
           ))}
         </span>
       )}
@@ -512,14 +520,24 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                 // Due vocab words become cloze blanks. A conjugated Japanese token is
                 // a review word if its base form (not surface form) is in clozeWords.
                 const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
-                const isReviewWord = clozeWords.has(reviewKey) && token.type === 'vocab';
+                const occurrenceId = `${si}-${ti}`;
+                /**
+                 * A blank you already answered stays a blank.
+                 *
+                 * Answering it grades the card, which pushes `dueAt` into the future and
+                 * drops the word out of `clozeWords` — so coming back to the passage found
+                 * your answered `por favor` rendered as ordinary black text, with no sign
+                 * you had ever filled it in. The recorded grade is the durable fact here,
+                 * so an occurrence that has one is a blank regardless of the schedule.
+                 */
+                const isReviewWord = (clozeWords.has(reviewKey) || restoredClozeGrades?.has(occurrenceId))
+                  && token.type === 'vocab';
                 // Spaced scripts need the spaces put back: the segmenter drops whitespace,
                 // and rendering tokens flush together (correct for CJK) would otherwise
                 // produce "muchos amigos . El" with the punctuation adrift.
                 const space = needsSpaceBefore(sent.tokens, ti, langConfig.scriptIsUnspaced);
                 // Due vocab words become cloze blanks — rendered separately.
                 if (isReviewWord) {
-                  const occurrenceId = `${si}-${ti}`;
                   const storedEntry = restoredClozeGrades?.get(occurrenceId);
                   return (
                     <Fragment key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}>

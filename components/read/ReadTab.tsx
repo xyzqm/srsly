@@ -4,7 +4,7 @@ import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'rea
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
+import { levelFor, levelLabel, getLanguageConfig, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
@@ -41,19 +41,10 @@ interface Props {
 const READ_WANT: ContentSection[] = ['passage'];
 
 /**
- * Ceiling on how much of a RECOVERED passage may be blanked, as a share of its words.
- *
- * A generated passage carries its own target list — a handful of words the model wrote
- * supporting context around — and is left alone. Recovery has no such list and, for a
- * learner part-way through a graded curriculum, nearly every word of an A1 text is sitting
- * due: blanking all of them turned a 96-word passage into 75 holes, which is not a reading
- * exercise. The generator itself lands near 13% (9 blanks in 70 words), so this sits just
- * above that.
- *
- * Nothing is dropped from the queue by not fitting. The words that miss the cut are still
- * due, still in flashcards, and first in line for the next passage — see the ordering.
+ * The recovery path blanks at the learner's chosen density (Settings → Blank density),
+ * the same number the generator is sized from — so the two agree instead of one being a
+ * preference and the other a constant.
  */
-const MAX_BLANK_SHARE = 0.15;
 /** Short passages still get a usable number of blanks. */
 const MIN_BLANKS = 3;
 
@@ -78,16 +69,16 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
   const [hskLevel, setHskLevel] = useState(0);
-  const [wordsPerPassage, setWordsPerPassage] = useState<number | undefined>(undefined);
+  const [blankDensity, setBlankDensity] = useState<number | undefined>(undefined);
   useEffect(() => {
     storage.getPrefs().then(p => {
       setHskLevel(levelFor(language, p));
-      setWordsPerPassage(p.wordsPerPassage);
+      setBlankDensity(p.blankDensity);
     });
   }, [language]);
 
   // One deck per language, so passages always draw on the whole due queue.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, READ_WANT, language, wordsPerPassage);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -228,7 +219,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       if (!seen || due < seen) owedSince.set(w.h, due);
     }
 
-    const budget = Math.max(MIN_BLANKS, Math.round(tokens * MAX_BLANK_SHARE));
+    // The learner's own density, so the recovery path and the generator obey one setting.
+    const share = (blankDensity ?? RECOMMENDED_BLANK_DENSITY) / 100;
+    const budget = Math.max(MIN_BLANKS, Math.round(tokens * share));
     // Map iteration is reading order, so words owed since the same day break ties stably.
     const ranked = [...cost.keys()].sort((a, b) =>
       (owedSince.get(a) ?? today).localeCompare(owedSince.get(b) ?? today));
@@ -245,7 +238,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       console.info(`[read] passage stored no target words; recovered ${found.size} of ${cost.size} due (${blanks} of ${tokens} words blanked)`);
     }
     return found;
-  }, [storedVocabWords, currentPassage, dueDeckWords, deck]);
+  }, [storedVocabWords, currentPassage, dueDeckWords, deck, blankDensity]);
 
   const targetWords = useMemo(
     () => deck.map(d => d.h).filter(h => PASSAGE_VOCAB_SET.has(h)),
@@ -276,6 +269,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // separately how many distinct words those blanks cover — the summary reports both, since
   // "9 blanks" and "5 review words" are different facts and conflating them is what made the
   // old copy read as if the deck had exploded.
+  // Declared before the counters below, which read it: an occurrence with a recorded answer
+  // is still a blank even once its card is no longer due.
+  const [clozeGrades, setClozeGrades] = useState<Map<string, { word: string; grade: FsrsGrade }>>(new Map());
+
   const { clozeWordCount, clozeDistinctCount, blankIds } = useMemo(() => {
     let count = 0;
     const distinct = new Set<string>();
@@ -283,12 +280,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     SENTENCES.forEach((s, si) => {
       s.tokens.forEach((t, ti) => {
         if (t.type !== 'vocab') return;
+        const id = `${si}-${ti}`;
         const key = (t.baseForm && clozeWords.has(t.baseForm)) ? t.baseForm : t.text;
-        if (clozeWords.has(key)) { count++; distinct.add(key); ids.add(`${si}-${ti}`); }
+        // Same rule PassageText renders by, or the count and the page disagree.
+        if (clozeWords.has(key) || clozeGrades.has(id)) { count++; distinct.add(key); ids.add(id); }
       });
     });
     return { clozeWordCount: count, clozeDistinctCount: distinct.size, blankIds: ids };
-  }, [SENTENCES, clozeWords]);
+  }, [SENTENCES, clozeWords, clozeGrades]);
 
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
@@ -304,7 +303,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     setShowWordBoundaries(getLanguageConfig(language).scriptIsUnspaced);
   }, [language]);
   // Occurrence-based: keyed by "${sentenceIdx}-${tokenIdx}", value tracks word + grade.
-  const [clozeGrades, setClozeGrades] = useState<Map<string, { word: string; grade: FsrsGrade }>>(new Map());
 
   /**
    * Answered blanks that are STILL blanks.

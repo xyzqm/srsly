@@ -114,7 +114,20 @@ export interface UserPrefs {
   srsMaxDays?: number;   // maximum review interval in days (default 365)
   srsNewPerDay?: number;     // max new cards introduced per day (default 20)
   srsReviewsPerDay?: number; // max review cards shown per day (default 200)
-  wordsPerPassage?: number;  // vocab words to build each AI passage around; absent = level-based recommendation
+  /**
+   * Share of a passage that should be blanks, as a percentage. Replaces the old
+   * `wordsPerPassage` count, which was pinned to the level it was set at: someone who chose
+   * 4 words at A1 kept getting 4 in a C2 passage three times the length, and had no reason
+   * to remember why their reading had gone thin. A density holds its meaning as passages
+   * grow. Absent = RECOMMENDED_BLANK_DENSITY.
+   */
+  blankDensity?: number;
+  /**
+   * How many pooled words the Vocab tab's Activate button offers by default. Absent =
+   * RECOMMENDED_POOL_ACTIVATE. A preference because the right batch depends on how much
+   * new material you can absorb, which is the same judgement `srsNewPerDay` encodes.
+   */
+  poolActivateCount?: number;
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
   /** Highest level unlocked by PASSING ITS TEST, per language (see lib/unlock.ts). Levels
    *  unlocked by retention are derived from the deck and deliberately not stored — a
@@ -208,6 +221,15 @@ export interface ShelfEntry {
   vocabWords: string[];    // the target words this passage was built around
   /** First-try blanks, when the passage had any. */
   score?: { correct: number; total: number };
+  /**
+   * Per-word outcome, so a shelved passage records WHICH words you got right, not just how
+   * many. A bare "7/9" tells you nothing you can act on a month later; the two words you
+   * missed are the whole reason to look back at it.
+   *
+   * One row per distinct word: a word blanked three times and missed once counts as missed,
+   * because that is the answer worth remembering about it.
+   */
+  results?: { word: string; correct: boolean }[];
 }
 
 export interface ClozeGradeEntry { word: string; grade: number }

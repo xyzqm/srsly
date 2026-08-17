@@ -226,7 +226,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
           <textarea
             value={frText}
             onChange={e => setFrText(e.target.value)}
-            placeholder="Write your answer in Chinese — full sentences, your own words."
+            placeholder={`Write your answer in ${getLanguageConfig(language).name} — full sentences, your own words.`}
             className="w-full rounded-[10px] px-4 py-3 resize-y transition-all duration-150"
             style={{
               fontFamily: 'var(--f-han)', fontSize: 16, minHeight: 74,

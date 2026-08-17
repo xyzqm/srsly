@@ -102,18 +102,39 @@ export default function PassageShelf({ language }: Props) {
                   }}>
                     {e.text}
                   </p>
-                  {e.vocabWords.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-4">
-                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', alignSelf: 'center' }}>
-                        Built around
-                      </span>
-                      {e.vocabWords.map(w => (
-                        <span key={w} style={{ fontFamily: 'var(--f-han)', fontSize: 13, color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 9%, transparent)', borderRadius: 5, padding: '2px 7px' }}>
-                          {w}
+                  {/* What you got right and what you missed, not just how many — and in the
+                      same red/green the passage used, so the record reads the same way the
+                      exercise did. Words with no recorded answer (never blanked, or the
+                      passage was left unfinished) stay neutral rather than being coloured
+                      as though they had been judged. */}
+                  {e.vocabWords.length > 0 && (() => {
+                    const verdict = new Map((e.results ?? []).map(r => [r.word, r.correct]));
+                    return (
+                      <div className="flex flex-wrap gap-1.5 mt-4">
+                        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-faint)', alignSelf: 'center' }}>
+                          {verdict.size > 0 ? 'Your answers' : 'Built around'}
                         </span>
-                      ))}
-                    </div>
-                  )}
+                        {e.vocabWords.map(w => {
+                          const ok = verdict.get(w);
+                          const hue = ok === undefined ? 'var(--ink-soft)' : ok ? 'var(--right)' : 'var(--wrong)';
+                          return (
+                            <span
+                              key={w}
+                              title={ok === undefined ? 'Not answered' : ok ? 'Correct first try' : 'Missed'}
+                              style={{
+                                fontFamily: 'var(--f-han)', fontSize: 13, color: hue,
+                                background: `color-mix(in srgb, ${hue} 10%, transparent)`,
+                                border: `1px solid color-mix(in srgb, ${hue} 28%, transparent)`,
+                                borderRadius: 5, padding: '2px 7px',
+                              }}
+                            >
+                              {ok === undefined ? '' : ok ? '\u2713 ' : '\u2717 '}{w}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
