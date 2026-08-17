@@ -4,23 +4,25 @@ import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'rea
 import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
-import { levelFor, levelLabel, getLanguageConfig, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
+import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { fsrsNextInterval, fmtInterval, type FsrsGrade } from '@/lib/fsrs';
 import { useWordPopup } from '@/hooks/useWordPopup';
 import { useClaims } from '@/hooks/useClaims';
 import { useDailyContent } from '@/hooks/useDailyContent';
 import { groupReadings } from '@/lib/readings';
-import { dateInDays, isReadyNow, todayStr } from '@/lib/deck';
+import { dateInDays, isNewCard, isReadyNow, todayStr } from '@/lib/deck';
 import { buildAnchorMap, type Anchor } from '@/lib/anchors';
 import { bumpCount, getTodayCounts } from '@/lib/reviewCounts';
 import { getSrsSettings } from '@/lib/fsrs';
+import { selectClozeTargets, clozeKey } from '@/lib/clozeTargets';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
+import PasteTextPanel from './PasteTextPanel';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -41,14 +43,6 @@ interface Props {
 }
 
 const READ_WANT: ContentSection[] = ['passage'];
-
-/**
- * The recovery path blanks at the learner's chosen density (Settings → Blank density),
- * the same number the generator is sized from — so the two agree instead of one being a
- * preference and the other a constant.
- */
-/** Short passages still get a usable number of blanks. */
-const MIN_BLANKS = 3;
 
 
 const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for unlimited AI-generated passages and to sync your progress across devices.";
@@ -85,7 +79,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [language]);
 
   // One deck per language, so passages always draw on the whole due queue.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -181,84 +175,39 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [deck, passageAnchors]);
 
   /**
-   * This passage's target words — normally the list recorded at generation time, but
-   * REBUILT FROM THE PASSAGE ITSELF when that list is empty.
+   * This passage's target words — the list recorded at generation time, or DERIVED FROM THE
+   * PASSAGE ITSELF when there isn't one. Two passages arrive with an empty `vocabWords`, for
+   * opposite reasons, and both need the same answer.
    *
-   * `vocabWords` is written once, when the passage is generated, and everything downstream
-   * hangs off it: the cloze blanks, the review-word count in the header, the words the
-   * finish handler schedules. When it comes back empty the passage silently degrades to
-   * plain text with no blanks and a header reading "add words to your deck" — which is
-   * indistinguishable from having an empty deck, and there is no way to recover it, because
-   * nothing recomputes the list once it is stored.
+   * PASTED TEXT has no generation moment: nobody picked words and wrote prose around them,
+   * so the targets can only come from reading the text against the deck. `vocabWords` is
+   * left empty deliberately (see buildPastedPassage) rather than frozen at paste time, so
+   * the blanks track a deck that keeps moving underneath them.
    *
-   * WHICH DUE WORDS, AND WHY NOT ALL OF THEM
-   * Every due word in the text is a candidate, and they are taken MOST OVERDUE FIRST. That
-   * ordering is the whole design: no word is passed over for being short, common, or hard
-   * to guess from context — recall difficulty is FSRS's business, and a missed blank is
-   * information the scheduler wants. A word is only left out because the passage ran out of
-   * room, and being left out costs it nothing: it stays due, it is still in flashcards, and
-   * its debt has only grown by the time the next passage is built, so it sorts higher then.
+   * A GENERATED PASSAGE whose list came back empty is a failure, and used to be an
+   * unrecoverable one. Everything downstream hangs off `vocabWords` — the cloze blanks, the
+   * review-word count in the header, the words the finish handler schedules — so the passage
+   * silently degraded to plain text with a header reading "add words to your deck", which is
+   * indistinguishable from having an empty deck, and nothing ever recomputed the list.
    *
-   * The cap exists because the alternative is not a harder exercise, it is an unreadable
-   * one — 75 blanks in 96 words, with no prose left to recover any of them from.
+   * The rule itself — most overdue first, capped by density and by the shared new-card
+   * ledger — lives in lib/clozeTargets.ts, because the paste panel's coverage readout has to
+   * predict it exactly and a near-duplicate is how it would start lying.
    */
   const PASSAGE_VOCAB_SET = useMemo(() => {
     if (storedVocabWords.size > 0 || !currentPassage) return storedVocabWords;
 
-    // Occurrences per candidate, in reading order.
-    const cost = new Map<string, number>();
-    let tokens = 0;
-    for (const sent of currentPassage.sentences) {
-      for (const t of sent.tokens) {
-        if (t.type === 'punct') continue;
-        tokens++;
-        const key = t.baseForm && dueDeckWords.has(t.baseForm) ? t.baseForm : t.text;
-        if (dueDeckWords.has(key)) cost.set(key, (cost.get(key) ?? 0) + 1);
-      }
-    }
-    if (cost.size === 0) return storedVocabWords;
-
-    // How long each has been owed. A card with no `dueAt` is new rather than overdue, so it
-    // sorts as due today — behind anything genuinely late, ahead of anything scheduled on.
-    const today = todayStr();
-    const owedSince = new Map<string, string>();
-    for (const w of deck) {
-      if (!cost.has(w.h)) continue;
-      const due = w.dueAt ?? today;
-      const seen = owedSince.get(w.h);
-      if (!seen || due < seen) owedSince.set(w.h, due);
-    }
-
-    // The learner's own density, so the recovery path and the generator obey one setting.
-    const share = (blankDensity ?? RECOMMENDED_BLANK_DENSITY) / 100;
-    const budget = Math.max(MIN_BLANKS, Math.round(tokens * share));
-    // Map iteration is reading order, so words owed since the same day break ties stably.
-    const ranked = [...cost.keys()].sort((a, b) =>
-      (owedSince.get(a) ?? today).localeCompare(owedSince.get(b) ?? today));
-
-    // The new-card budget applies here too. Recovery is a second way into the passage, and
-    // leaving it uncapped would reopen the hole the shared ledger was built to close — a
-    // stored-target-list of [] is not a licence to introduce the whole deck.
-    let newLeft = getSrsSettings().newPerDay - getTodayCounts().newCount;
-
-    const found = new Set<string>();
-    let blanks = 0;
-    for (const word of ranked) {
-      const n = cost.get(word)!;
-      if (blanks + n > budget) continue;
-      const card = deck.find(d => d.h === word);
-      const fresh = !!card && (card.reviews ?? 0) === 0 && card.stability === undefined && card.phase !== 'learning';
-      if (fresh) {
-        if (newLeft <= 0) continue;
-        newLeft--;
-      }
-      found.add(word);
-      blanks += n;
-    }
-    if (found.size > 0) {
-      console.info(`[read] passage stored no target words; recovered ${found.size} of ${cost.size} due (${blanks} of ${tokens} words blanked)`);
-    }
-    return found;
+    // One shared rule — see lib/clozeTargets.ts. The new-card budget applies here too:
+    // this is a second way into the passage, and leaving it uncapped would reopen the hole
+    // the shared ledger was built to close. A stored-target-list of [] is not a licence to
+    // introduce the whole deck.
+    const { words, blanks, tokens, candidates } = selectClozeTargets(
+      currentPassage.sentences, deck, dueDeckWords, blankDensity,
+      getSrsSettings().newPerDay - getTodayCounts().newCount,
+    );
+    if (words.size === 0) return storedVocabWords;
+    console.info(`[read] ${currentPassage.pasted ? 'pasted text' : 'passage stored no target words'}; selected ${words.size} of ${candidates} due (${blanks} of ${tokens} words blanked)`);
+    return words;
   }, [storedVocabWords, currentPassage, dueDeckWords, deck, blankDensity]);
 
   const targetWords = useMemo(
@@ -267,10 +216,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   );
 
   const totalReviewWordCount = useMemo(() => {
-    const all = new Set(dailyContent?.passages.flatMap(p => p.vocabWords) ?? []);
-    // Every passage stored an empty list — report what the current one recovered rather
-    // than claiming the deck is empty.
-    return all.size > 0 ? all.size : PASSAGE_VOCAB_SET.size;
+    // Union rather than a fallback: a pasted passage carries no stored list, so a day
+    // holding one generated passage and one pasted one would otherwise report only the
+    // generated one's words and read as if the pasted text had none.
+    const all = new Set([
+      ...(dailyContent?.passages.flatMap(p => p.vocabWords) ?? []),
+      ...PASSAGE_VOCAB_SET,
+    ]);
+    return all.size;
   }, [dailyContent, PASSAGE_VOCAB_SET]);
 
   // The words this passage actually blanks out: its target words, narrowed to those still
@@ -300,7 +253,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     const out: DeckWord[] = [];
     for (const w of deck) {
       if (!clozeWords.has(w.h) || seen.has(w.h)) continue;
-      if ((w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning') {
+      if (isNewCard(w)) {
         seen.add(w.h);
         out.push(w);
       }
@@ -320,12 +273,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    */
   const heldBackNew = useMemo(() => {
     if (!currentPassage) return 0;
-    const isFresh = (w: DeckWord) =>
-      (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning';
-    const takenNew = deck.filter(w => clozeWords.has(w.h) && isFresh(w)).length;
+    const takenNew = deck.filter(w => clozeWords.has(w.h) && isNewCard(w)).length;
     const left = getSrsSettings().newPerDay - getTodayCounts().newCount - takenNew;
     if (left > 0) return 0;
-    return deck.filter(w => dueDeckWords.has(w.h) && !clozeWords.has(w.h) && isFresh(w)).length;
+    return deck.filter(w => dueDeckWords.has(w.h) && !clozeWords.has(w.h) && isNewCard(w)).length;
   }, [deck, dueDeckWords, clozeWords, currentPassage]);
 
   const reviewWordCount = clozeWords.size;
@@ -346,7 +297,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       s.tokens.forEach((t, ti) => {
         if (t.type !== 'vocab') return;
         const id = `${si}-${ti}`;
-        const key = (t.baseForm && clozeWords.has(t.baseForm)) ? t.baseForm : t.text;
+        const key = clozeKey(t, clozeWords);
         // Same rule PassageText renders by, or the count and the page disagree.
         if (clozeWords.has(key) || clozeGrades.has(id)) { count++; distinct.add(key); ids.add(id); }
       });
@@ -497,14 +448,18 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     async function check() {
       if (!dailyContent || !contentKey) { if (!cancelled) setAllPassagesComplete(true); return; }
       const results = await Promise.all(dailyContent.passages.map(async (passage, idx) => {
+        // Pasted text is exempt. This gate exists so a generated passage isn't abandoned
+        // half-finished while another is generated on top of it; the learner's own article
+        // is not a generation, can run to hundreds of blanks, and locking the rest of the
+        // day behind finishing one would be a penalty for pasting.
+        if (passage.pasted) return true;
         // Same rule as `clozeWords`, but scoped to each passage's own target words.
         const blankable = new Set(passage.vocabWords.filter(w => dueDeckWords.has(w)));
         let needed = 0;
         for (const s of passage.sentences) {
           for (const t of s.tokens) {
             if (t.type !== 'vocab') continue;
-            const key = (t.baseForm && blankable.has(t.baseForm)) ? t.baseForm : t.text;
-            if (blankable.has(key)) needed++;
+            if (blankable.has(clozeKey(t, blankable))) needed++;
           }
         }
         if (needed === 0) return true;
@@ -616,8 +571,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
      * passage: that is one card entering circulation, not two.
      */
     const card = deckRef.current.find(d => d.h === word);
-    if (card && (card.reviews ?? 0) === 0 && card.stability === undefined && card.phase !== 'learning'
-        && !spentNewRef.current.has(word)) {
+    if (card && isNewCard(card) && !spentNewRef.current.has(word)) {
       spentNewRef.current.add(word);
       bumpCount('new');
     }
@@ -861,6 +815,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             next →
           </button>
         </div>
+      )}
+
+      {/* Outside every branch below, deliberately. The paste panel is most wanted in the
+          states where there is nothing to read — an empty deck, a failed generation, no API
+          key at all — and those are exactly the branches that render instead of a passage. */}
+      {hskLevel > 0 && (
+        <PasteTextPanel
+          language={language}
+          deck={deck}
+          dueWords={dueDeckWords}
+          blankDensity={blankDensity}
+          onCommit={addPastedPassage}
+        />
       )}
 
       {hskLevel === 0 || dailyStatus === 'loading' ? (

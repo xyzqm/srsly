@@ -68,3 +68,15 @@ export function isReadyNow(w: DeckWord, today: string = todayStr(), nowMs: numbe
   return isDueToday(w, today) && (!w.dueAtMs || w.dueAtMs <= nowMs);
 }
 
+/**
+ * A card the learner has never been shown — the thing `srsNewPerDay` exists to ration.
+ *
+ * The `phase` test is not redundant with the other two. A card part-way through its learning
+ * steps has been introduced already (that is what put it in learning), but has no `stability`
+ * and no completed `reviews` yet, so without it every such card reads as brand new and gets
+ * charged to the daily budget a second time.
+ */
+export function isNewCard(w: DeckWord): boolean {
+  return (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning';
+}
+

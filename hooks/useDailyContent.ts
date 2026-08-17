@@ -12,7 +12,7 @@ import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { tokensToText } from '@/lib/tokenText';
 
-type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
+export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
 
 const PUNCT_CHARS = new Set([
   '。','！','？','，','、','—','…','·','「','」','『','』',
@@ -369,6 +369,40 @@ function buildPassage(
   };
 }
 
+/**
+ * Turn segmented pasted text into a `DailyPassage` — the same shape the generator produces,
+ * so every reader downstream (blanks, the primer, the shelf, passage navigation) works on it
+ * unchanged.
+ *
+ * TWO THINGS DIFFER FROM `buildPassage`, AND BOTH ARE DELIBERATE.
+ *
+ * The "due words" set passed to the token builder is the WHOLE DECK, not a chosen batch. In
+ * the generated path that set names the words the model was asked to write around; here
+ * nobody chose anything in advance, so the honest equivalent is "every word I have a card
+ * for" — that is what lets a deck word classify as vocab even where the bundled dictionary
+ * has no gloss for it.
+ *
+ * And `vocabWords` is left EMPTY on purpose. It is the passage's list of blank targets, and
+ * for a generated passage it is written once at generation time. Pasted text has no such
+ * moment: ReadTab picks the targets from the text itself, most-overdue-first, under the
+ * blank-density preference and the shared new-card ledger. Recording a list here would
+ * freeze that decision against a deck that keeps moving. See PASSAGE_VOCAB_SET in ReadTab.
+ */
+export function buildPastedPassage(
+  raw: { title: RawTok[]; sentences: RawTok[][] },
+  deck: DeckWord[],
+  lang: LanguageCode,
+): DailyPassage {
+  const deckWords = new Set(deck.map(d => d.h));
+  const deckReadings = groupReadings(deck);
+  return {
+    titleTokens: buildTitleTokens(raw.title, deckWords, deckReadings, lang),
+    sentences: buildSentences(raw.sentences, deckWords, deckReadings, lang),
+    vocabWords: [],
+    pasted: true,
+  };
+}
+
 function sanitizeCachedContent(content: DailyContent, lang: LanguageCode): void {
   const emptyDue = new Set<string>();
   const emptyMeanings = new Map<string, ReadingHint[]>();
@@ -433,16 +467,30 @@ function migrateContent(raw: Record<string, unknown>): DailyContent | null {
 const ALL_SECTIONS: ContentSection[] = ['passage', 'fill', 'convo'];
 
 /**
- * True if any daily content is already cached for `today` (across every level/deck scope).
- * Lets us tell the day's first load (auto-generate the passage) apart from a later HSK-level
- * or deck switch (don't auto-generate — just show that scope's cache or the static fallback,
- * so changing a setting never silently burns a generation or wipes the view).
+ * True if anything was GENERATED for `today` (across every level/deck scope). Lets us tell
+ * the day's first load (auto-generate the passage) apart from a later HSK-level or deck
+ * switch (don't auto-generate — just show that scope's cache, so changing a setting never
+ * silently burns a generation or wipes the view).
+ *
+ * This reads the cached content rather than merely testing that its key exists, because
+ * pasting text writes to the same per-day cache and a paste is not a generation. Keying off
+ * existence meant that pasting an article before the day's passage had been generated
+ * suppressed it for the rest of the day — the user would have spent nothing and lost the
+ * passage anyway.
  */
 function hasAnyDailyContentToday(today: string): boolean {
   if (typeof localStorage === 'undefined') return false;
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k && k.startsWith('srsly-daily-') && k.endsWith(today)) return true;
+    if (!k || !k.startsWith('srsly-daily-') || !k.endsWith(today)) continue;
+    try {
+      const c = JSON.parse(localStorage.getItem(k) ?? 'null') as DailyContent | null;
+      if (!c) continue;
+      if ((c.passages ?? []).some(p => !p.pasted)) return true;
+      if ((c.fillItems ?? []).length > 0 || (c.conversation ?? []).length > 0) return true;
+    } catch {
+      return true;   // unreadable cache — assume generated rather than spend another call
+    }
   }
   return false;
 }
@@ -458,6 +506,8 @@ export interface UseDailyContentResult {
   guestLimited: boolean;
   generateQuestionsForPassage: (passageIdx: number) => Promise<void>;
   loadingQuestions: boolean;
+  /** Append a passage built from text the learner pasted. Spends no AI generation. */
+  addPastedPassage: (passage: DailyPassage) => void;
 }
 
 function sectionFlags(c: DailyContent): { passage?: boolean; fill?: boolean; convo?: boolean } {
@@ -841,5 +891,29 @@ export function useDailyContent(
     }
   }, [dailyContent, loadingQuestions, hskLevel, language]);
 
-  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions };
+  /**
+   * Append a pasted passage to today's content and persist it.
+   *
+   * Same append-and-save shape as loadMore, and for the same reason: passages are only ever
+   * added to the end, which is what keeps `srsly-cloze|{contentKey}|{idx}` pointing at the
+   * passage it was written for. It never touches `sections`, so the day still counts as
+   * having no generated passage — pasting must not cost the learner the one the app owes
+   * them.
+   */
+  const addPastedPassage = useCallback((passage: DailyPassage) => {
+    setDailyContent(prev => {
+      const base: DailyContent = prev ?? {
+        date: todayStr(), language, hskLevel,
+        passages: [], fillItems: [], conversation: [], sections: {},
+      };
+      const updated: DailyContent = { ...base, passages: [...base.passages, passage] };
+      storage.saveDailyContent(updated);
+      return updated;
+    });
+    // There is content to read now, whatever the generator managed earlier. Never override
+    // an in-flight generation's skeleton, though — that one still has a passage coming.
+    setStatus(prev => (prev === 'loading' ? prev : 'ready'));
+  }, [language, hskLevel]);
+
+  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, addPastedPassage };
 }

@@ -49,11 +49,12 @@ const MISS = '\u0000no-dictionary-entry';
  * noroeste", "The first letter of the Spanish alphabet", "alternative spelling of éste".
  *
  * That is a sufficient signal on its own, because nobody writes a definition like that: it
- * is the fingerprint of a gloss we shipped. What protects a hand-written definition is that
- * it contains no such sense — "MY OWN NOTE: the house where I grew up" is untouched, and so
- * is a gloss trimmed to "dog". The residual risk is a learner who deliberately typed
- * "abbreviation of …" as their own note, whose card reverts to the dictionary. Worth it for
- * a rule this simple.
+ * is the fingerprint of a gloss we shipped.
+ *
+ * The Vocab tab's Edit button is gone, so no card gloss is user-authored any more and this
+ * test no longer has anything to protect. Kept narrow regardless: a card can still carry a
+ * gloss from an older build or a restored backup, and replacing only the recognisably
+ * broken ones is still the right default.
  *
  * Note this is also the retry condition. A word whose every sense is metalinguistic — a
  * genuine letter name — keeps its gloss (reorder-glosses.mjs never empties an entry), so it

@@ -175,6 +175,19 @@ export interface DailyPassage {
    * "no single sense applies" and the full gloss is shown unhighlighted.
    */
   contextualMeanings?: Record<string, string>;
+  /**
+   * Text the learner pasted in, rather than a passage the model wrote around their due
+   * words. Stored alongside the day's generated passages because everything a passage needs
+   * — cloze state, the finished flag, the shelf, passage navigation — is already keyed by
+   * date and passage index, and a second store would have to reimplement all of it.
+   *
+   * Two rules elsewhere read this flag, and both exist because a pasted passage is not a
+   * generation: it never counts as "content was generated today" (so it can't suppress the
+   * day's auto-generated passage), and it is exempt from the finish-everything gate on
+   * "+ New passage" (a native article can be a hundred blanks long and abandoning one
+   * shouldn't lock the day).
+   */
+  pasted?: boolean;
 }
 
 /** AI-generated daily practice content, cached in localStorage per day+level. */

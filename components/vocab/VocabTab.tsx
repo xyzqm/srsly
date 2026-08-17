@@ -160,152 +160,6 @@ function StatusChip({ label }: { label: string }) {
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 
-interface EditRowProps {
-  word: DeckWord;
-  onSave: (update: Partial<DeckWord>) => void;
-  onCancel: () => void;
-}
-
-function EditRow({ word, onSave, onCancel }: EditRowProps) {
-  const [pinyin, setPinyin] = useState(word.p);
-  const [meaning, setMeaning] = useState(word.m);
-  const [compounds, setCompounds] = useState<string[]>(word.compounds ?? []);
-
-  function handlePinyinBlur(val: string) {
-    if (/[1-5]/.test(val)) setPinyin(toneNumToMark(val));
-  }
-
-  function addCompound() { setCompounds(c => [...c, '']); }
-  function removeCompound(i: number) { setCompounds(c => c.filter((_, j) => j !== i)); }
-  function setCompound(i: number, val: string) { setCompounds(c => c.map((v, j) => j === i ? val : v)); }
-
-  async function handleSave() {
-    const p = pinyin.trim();
-    const known = [lookupWord(word.h).pinyin, ...(POLYPHONES[word.h]?.map(r => r.p) ?? [])].filter(Boolean);
-    const warn = checkPinyin(p, word.h, known);
-    if (warn && !window.confirm(warn)) return;
-    const clean = compounds.map(c => c.trim()).filter(Boolean);
-    const compWarn = await checkCompounds(word.h, clean);
-    if (compWarn && !window.confirm(compWarn)) return;
-    onSave({ p, m: meaning.trim(), compounds: clean.length ? clean : undefined });
-  }
-
-  const inputStyle: React.CSSProperties = {
-    fontFamily: 'var(--f-mono)', fontSize: 13,
-    background: 'var(--paper-2)', border: '1px solid var(--line)',
-    borderRadius: 7, padding: '7px 10px', color: 'var(--ink)',
-    width: '100%', outline: 'none', transition: 'border-color .15s',
-  };
-
-  const showCompounds = !!POLYPHONES[word.h] || compounds.length > 0;
-
-  return (
-    <div
-      className="py-3 px-3 rounded-xl"
-      style={{ background: 'var(--paper-2)', border: '1px dashed var(--line)', marginBottom: 4 }}
-    >
-      <div className="flex items-center gap-3 mb-2.5">
-        <span style={{ fontFamily: 'var(--f-han)', fontSize: 26, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 48 }}>
-          {word.h}
-        </span>
-        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          editing
-        </span>
-      </div>
-      <div className="grid gap-2.5" style={{ gridTemplateColumns: '140px 1fr' }}>
-        <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
-            Pinyin
-          </div>
-          <input
-            value={pinyin}
-            onChange={e => setPinyin(e.target.value)}
-            onBlur={e => handlePinyinBlur(e.target.value)}
-            style={{ ...inputStyle, letterSpacing: '.04em' }}
-            onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
-          />
-        </div>
-        <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
-            Meaning
-          </div>
-          <input
-            value={meaning}
-            onChange={e => setMeaning(e.target.value)}
-            placeholder="shown separated by semicolons"
-            style={inputStyle}
-            onFocus={e => (e.target.style.borderColor = 'var(--accent)')}
-          />
-        </div>
-      </div>
-
-      {/* Compounds — words that surface this reading in generated passages */}
-      {showCompounds && (
-        <div className="mt-2.5">
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 5 }}>
-            Compounds{' '}
-            <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>
-              — words that use this reading; generated passages can use these to show it in context
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            {compounds.map((c, i) => (
-              <div key={i} className="flex items-center gap-1" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 7, padding: '3px 5px 3px 9px' }}>
-                <input
-                  value={c}
-                  onChange={e => setCompound(i, e.target.value)}
-                  placeholder=""
-                  style={{ fontFamily: 'var(--f-han)', fontSize: 14, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)', width: `${Math.max(c.length, 2) + 1}ch` }}
-                />
-                <button
-                  onClick={() => removeCompound(i)}
-                  className="shrink-0 cursor-pointer"
-                  style={{ fontFamily: 'var(--f-mono)', fontSize: 13, background: 'none', border: 'none', color: 'var(--ink-faint)', width: 18, height: 18, borderRadius: 5 }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <button
-              onClick={addCompound}
-              className="cursor-pointer transition-all duration-150"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', background: 'none', border: '1px dashed var(--line)', color: 'var(--ink-faint)', borderRadius: 7, padding: '6px 10px' }}
-            >
-              + add compound
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2 mt-3">
-        <button
-          onClick={handleSave}
-          className="cursor-pointer transition-all duration-150"
-          style={{
-            fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500,
-            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-            padding: '8px 16px', boxShadow: '0 1px 0 var(--accent-deep)',
-          }}
-        >
-          Save
-        </button>
-        <button
-          onClick={onCancel}
-          className="cursor-pointer transition-all duration-150"
-          style={{
-            fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
-            background: 'none', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 7, padding: '8px 16px',
-          }}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Inline undo bar ──────────────────────────────────────────────────────────
-
 interface UndoBarProps {
   pending: PendingUndo;
   onUndo: () => void;
@@ -497,13 +351,12 @@ interface VocabTabProps {
 export default function VocabTab({ onStudy }: VocabTabProps) {
   const language = useLanguage();
   const {
-    deck, addWord, addWords, removeWord, updateWord, clearDeck,
+    deck, addWord, addWords, removeWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
   } = useVocabDeck(language);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [managingId, setManagingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
@@ -560,7 +413,6 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
       if (pendingUndo) commitPending(pendingUndo);
     }
     setPendingUndo(next);
-    setEditingIdx(null);
     timerRef.current = setTimeout(() => {
       commitPending(next);
       setPendingUndo(null);
@@ -663,11 +515,6 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
     await addWords(words.map(w => ({ h: w.h, p: w.p, m: w.m, pool: true })));
     setShowImport(false);
   }
-
-  const handleSaveEdit = useCallback((idx: number, update: Partial<DeckWord>) => {
-    updateWord(idx, update);
-    setEditingIdx(null);
-  }, [updateWord]);
 
   const btnGhost: React.CSSProperties = {
     fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em',
@@ -857,22 +704,11 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
         {/* Cross-fade the whole list (rows + empty states) when the deck changes. */}
         <CrossFade id={language}>
         {visibleDeck.map((w) => {
-          // Map display index back to real deck index for editing/saving
-          const realIdx = deck.findIndex(d => d.id === w.id);
           const snoozed  = !!w.snoozeUntil && w.snoozeUntil > today;
           const managing = managingId === w.id;
           return (
             <div key={w.id}>
-              {editingIdx === realIdx ? (
-                <div className="py-2">
-                  <EditRow
-                    word={w}
-                    onSave={update => handleSaveEdit(realIdx, update)}
-                    onCancel={() => setEditingIdx(null)}
-                  />
-                </div>
-              ) : (
-                <>
+              <>
                   <div
                     className="grid items-center gap-4 py-3 px-1"
                     style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: (w.paused || w.pool) ? 0.55 : 1 }}
@@ -901,15 +737,6 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                         style={{ background: 'none', border: 'none', fontSize: 17, lineHeight: 1, padding: '2px 4px', color: w.focus ? 'var(--gold)' : 'var(--ink-faint)' }}
                       >
                         {w.focus ? '★' : '☆'}
-                      </button>
-                      <button
-                        onClick={() => setEditingIdx(realIdx)}
-                        className="cursor-pointer transition-all duration-150 whitespace-nowrap"
-                        style={btnGhost}
-                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
-                        onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
-                      >
-                        Edit
                       </button>
                       <button
                         onClick={() => setManagingId(managing ? null : (w.id ?? null))}
@@ -944,8 +771,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                       onClose={() => setManagingId(null)}
                     />
                   )}
-                </>
-              )}
+              </>
             </div>
           );
         })}
