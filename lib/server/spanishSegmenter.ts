@@ -124,15 +124,29 @@ export function segmentEs(text: string, overrides: Map<string, DictOverride>): R
 
     const surface = piece.text;
     const lower = surface.toLowerCase();
-    // An override keyed by the surface is authoritative — that is the deck's own card.
-    const direct = overrides.get(surface) ?? overrides.get(lower);
-    // Capitalisation counts as an inflection for matching purposes: deck cards and dictionary
-    // headwords are lowercase, but a word can open a sentence or a title. Emitting the
-    // lowercase form as the base form is what lets "Casa" match the card "casa", since every
-    // downstream matcher keys on `baseForm ?? text`.
-    const baseForm = direct
+    // An override keyed by the EXACT surface is authoritative — that is the deck's own card,
+    // spelled the way it appears here.
+    const directExact = overrides.get(surface);
+    // Matched only once lowercased: the card is `hola`, the passage opens with `Hola`.
+    const directLower = directExact ? undefined : overrides.get(lower);
+    const direct = directExact ?? directLower;
+
+    /**
+     * Capitalisation counts as an inflection: deck cards and dictionary headwords are
+     * lowercase, but a word can open a sentence or a title, and every downstream matcher
+     * keys on `baseForm ?? text`. So a case-only difference has to leave the lowercase form
+     * behind as the base form, or nothing can link the token back to the card.
+     *
+     * This used to read `direct ? undefined : …`, which threw that link away for precisely
+     * the words that had one. A greetings deck — `hola`, `gracias`, `buenos dias`, `adios`
+     * — is nearly all sentence-openers, so ten due words produced one blank: `por favor`,
+     * the only one the passage happened to use mid-sentence in lowercase.
+     */
+    const baseForm = directExact
       ? undefined
-      : lemmatizeEs(surface, dict) ?? (lower !== surface && dict.has(lower) ? lower : undefined);
+      : directLower
+        ? lower
+        : lemmatizeEs(surface, dict) ?? (lower !== surface && dict.has(lower) ? lower : undefined);
     const override = direct ?? (baseForm ? overrides.get(baseForm) : undefined);
     const meaning = override?.m ?? resolveMeaning(baseForm, surface);
 
