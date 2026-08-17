@@ -5,7 +5,8 @@ import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { segmentZh } from '@/lib/server/chineseSegmenter';
-import { splitSentences, MAX_PASTE_CHARS } from '@/lib/server/sentenceSplit';
+import { splitSentences } from '@/lib/server/sentenceSplit';
+import { MAX_PASTE_CHARS } from '@/lib/constants';
 
 /**
  * Segment text the LEARNER supplied, into the same wire format /api/daily-content emits.

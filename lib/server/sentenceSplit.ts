@@ -12,10 +12,6 @@
  * where a sentence ends.
  */
 
-/** A hard cap, so a pasted book can't produce a passage the browser has to lay out — and
- *  can't blow the localStorage budget the day's content shares with everything else. */
-export const MAX_PASTE_CHARS = 8000;
-
 /** Terminators for scripts written without spaces. `；` ends a clause, but it reads as a
  *  break and CJK sentences are long enough that treating it as one helps. */
 const CJK_TERMINATORS = /[。！？!?…‥；;]+["」』）】’”]*/g;

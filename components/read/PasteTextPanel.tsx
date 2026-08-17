@@ -7,7 +7,7 @@ import { selectClozeTargets, type ClozeTargetResult } from '@/lib/clozeTargets';
 import { analyzeCoverage, verdictFor, type TextCoverage } from '@/lib/coverage';
 import { getSrsSettings } from '@/lib/fsrs';
 import { getTodayCounts } from '@/lib/reviewCounts';
-import { MAX_PASTE_CHARS } from '@/lib/server/sentenceSplit';
+import { MAX_PASTE_CHARS } from '@/lib/constants';
 
 interface Props {
   language: LanguageCode;
@@ -29,11 +29,28 @@ const label: React.CSSProperties = {
   ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)',
 };
 
-/** The first line, when it reads like a headline: short, and not a sentence. */
-function guessTitle(text: string): string {
-  const first = text.replace(/\r\n?/g, '\n').split('\n').map(l => l.trim()).find(Boolean) ?? '';
-  if (!first || first.length > 60) return '';
-  return /[.!?。！？…]$/.test(first) ? '' : first;
+/**
+ * Work out the passage title, and hand back the body that should go with it.
+ *
+ * A pasted article usually opens with its own headline on its own line, so lifting that line
+ * into the title is right — but it must then come OUT of the body, or the passage renders its
+ * headline twice, once as the title and again as sentence one.
+ *
+ * Only a line that reads like a headline is lifted: short, and not ending in sentence
+ * punctuation. Prose that starts straight in keeps all of its text and borrows an opening
+ * fragment as a label instead, which is what a reader would call it anyway.
+ */
+function splitTitle(text: string, manual: string): { title: string; body: string } {
+  if (manual) return { title: manual, body: text };
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const i = lines.findIndex(l => l.trim());
+  const first = i >= 0 ? lines[i].trim() : '';
+  const isHeadline = first && first.length <= 60 && !/[.!?。！？…]$/.test(first);
+  const rest = lines.slice(i + 1).join('\n');
+  // A headline with nothing after it is just the text — lifting it would leave no passage.
+  if (isHeadline && rest.trim()) return { title: first, body: rest };
+  const label = first.length > 60 ? first.slice(0, 60).replace(/\s+\S*$/, '') + '…' : first;
+  return { title: label, body: text };
 }
 
 export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit }: Props) {
@@ -57,12 +74,13 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
     setBusy(true);
     setError('');
     try {
+      const split = splitTitle(text, title.trim());
       const res = await fetch('/api/segment-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text,
-          title: title.trim() || guessTitle(text),
+          text: split.body,
+          title: split.title,
           language,
           words: deck.map(w => ({ h: w.h, p: w.p, m: w.m })),
         }),
