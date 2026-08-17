@@ -13,6 +13,8 @@ import { useDailyContent } from '@/hooks/useDailyContent';
 import { groupReadings } from '@/lib/readings';
 import { dateInDays, isDueToday, todayStr } from '@/lib/deck';
 import { buildAnchorMap, type Anchor } from '@/lib/anchors';
+import { bumpCount, getTodayCounts } from '@/lib/reviewCounts';
+import { getSrsSettings } from '@/lib/fsrs';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
@@ -66,6 +68,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const { deck, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
+  // Latest deck, readable from a callback without making it depend on every deck change.
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
+  /** Brand-new words already charged to today's budget, so a word blanked twice costs one. */
+  const spentNewRef = useRef<Set<string>>(new Set());
 
   // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
   const [hskLevel, setHskLevel] = useState(0);
@@ -262,6 +269,41 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     () => new Set([...PASSAGE_VOCAB_SET].filter(w => dueDeckWords.has(w))),
     [PASSAGE_VOCAB_SET, dueDeckWords]
   );
+
+  /**
+   * Brand-new target words in this passage, with their meanings — the pre-reading primer.
+   *
+   * You cannot test what you have not taught. A cloze blank measures recall, and asking
+   * someone to recall a word they have never met measures nothing; it just produces a wrong
+   * answer, an Again grade, and a card that starts its life in relearning for no reason.
+   * Naming them before the passage is what makes the blank a test rather than a guess.
+   *
+   * Only genuinely new cards appear here. A word you have reviewed before is not news, and
+   * listing it would give away a blank you could have recalled.
+   */
+  const primerWords = useMemo(() => {
+    const seen = new Set<string>();
+    const out: DeckWord[] = [];
+    for (const w of deck) {
+      if (!clozeWords.has(w.h) || seen.has(w.h)) continue;
+      if ((w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning') {
+        seen.add(w.h);
+        out.push(w);
+      }
+    }
+    return out;
+  }, [deck, clozeWords]);
+
+  /** Due new words this passage could not take because the daily budget ran out. */
+  const heldBackNew = useMemo(() => {
+    if (!currentPassage) return 0;
+    const left = getSrsSettings().newPerDay - getTodayCounts().newCount;
+    if (left > 0) return 0;
+    return deck.filter(w =>
+      dueDeckWords.has(w.h) && !clozeWords.has(w.h)
+      && (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning',
+    ).length;
+  }, [deck, dueDeckWords, clozeWords, currentPassage]);
 
   const reviewWordCount = clozeWords.size;
 
@@ -537,7 +579,25 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     });
     // Only the first grading of a blank counts, so restoring a passage you already answered
     // cannot inflate the figure.
-    if (firstTime) onAnswer(correct);
+    if (!firstTime) return;
+    onAnswer(correct);
+    /**
+     * Spend from the shared daily new-card budget — the other half of "one budget, two
+     * doors" (see selectTargets in useDailyContent).
+     *
+     * On ANSWERING, not on generating. A word introduced is a word you were actually shown
+     * and asked to recall; charging the budget at generation time would mean flicking
+     * through three passages without answering anything burnt the whole day.
+     *
+     * `spentNewRef` guards the case where the same brand-new word is blanked twice in one
+     * passage: that is one card entering circulation, not two.
+     */
+    const card = deckRef.current.find(d => d.h === word);
+    if (card && (card.reviews ?? 0) === 0 && card.stability === undefined && card.phase !== 'learning'
+        && !spentNewRef.current.has(word)) {
+      spentNewRef.current.add(word);
+      bumpCount('new');
+    }
   }, [onAnswer]);
 
   const handleAddToDeck = useCallback((word: DeckWord) => {
@@ -860,6 +920,48 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               </button>
             </div>
           </div>
+
+          {/* Teach, then test. These are the passage's brand-new words, named before you
+              read rather than sprung on you as a blank you have no way to fill. */}
+          {primerWords.length > 0 && (
+            <div
+              className="rounded-[11px] px-5 py-4 mb-4"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+            >
+              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                New words to know · {primerWords.length}
+              </div>
+              <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '5px 0 10px', maxWidth: '52ch' }}>
+                You haven&apos;t seen {primerWords.length === 1 ? 'this one' : 'these'} before. Read {primerWords.length === 1 ? 'it' : 'them'} now — the passage will ask you to fill {primerWords.length === 1 ? 'it' : 'them'} in.
+              </p>
+              <div className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))' }}>
+                {primerWords.map(w => (
+                  <div key={w.id ?? w.h} className="flex items-baseline gap-2.5">
+                    <span style={{
+                      fontFamily: langConfig.scriptIsUnspaced ? 'var(--f-han)' : 'var(--f-display)',
+                      fontSize: 16, color: 'var(--ink)', whiteSpace: 'nowrap',
+                    }}>
+                      {w.h}
+                    </span>
+                    {w.p && (
+                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>{w.p}</span>
+                    )}
+                    <span style={{ fontSize: 13, color: 'var(--ink-soft)', lineHeight: 1.4 }}>
+                      {(w.m ?? '').split(';')[0].trim()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Not "there were no more words" — there were, and the daily limit is holding
+              them for tomorrow. Without saying so it reads as the deck being exhausted. */}
+          {heldBackNew > 0 && (
+            <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.5, marginBottom: 12 }}>
+              {heldBackNew} more new word{heldBackNew === 1 ? '' : 's'} held back by your {getSrsSettings().newPerDay}/day limit — {heldBackNew === 1 ? 'it returns' : 'they return'} tomorrow.
+            </p>
+          )}
 
           <PassageText
             sentences={SENTENCES}

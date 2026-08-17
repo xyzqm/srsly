@@ -6,6 +6,8 @@ import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
 import { isDueToday, todayStr, shuffle } from '@/lib/deck';
+import { getTodayCounts } from '@/lib/reviewCounts';
+import { getSrsSettings } from '@/lib/fsrs';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { tokensToText } from '@/lib/tokenText';
@@ -293,6 +295,43 @@ function buildQuestions(rawQuestions: unknown[], dueWords: Set<string>, deckRead
   });
 }
 
+/** A card the learner has never been shown — the thing `newPerDay` exists to ration. */
+function isNewCard(w: DeckWord): boolean {
+  return (w.reviews ?? 0) === 0 && w.stability === undefined && w.phase !== 'learning';
+}
+
+/**
+ * Pick this passage's target words, spending from the SAME daily new-card budget the
+ * flashcard queue spends from.
+ *
+ * ONE BUDGET, TWO DOORS. A word becomes "introduced" the moment it is graded, and reading
+ * grades every blank you fill — so reading introduces cards exactly as flashcards do, and
+ * takes on the same future review debt. But only Flashcards.tsx ever consulted
+ * lib/reviewCounts.ts, so `newPerDay` was a limit on one door of a two-door room: activate
+ * 300 words from the pool and reading would happily introduce all of them, and the backlog
+ * arrived next week regardless of the setting.
+ *
+ * Reviews are NOT rationed here. A passage is a text, not a queue: blank density already
+ * bounds how much work it is, and dropping review words would leave prose written around
+ * vocabulary it no longer asks about.
+ *
+ * Returns the words to build around plus how many new ones were held back, so the reader
+ * can say so rather than letting them look like they vanished.
+ */
+function selectTargets(due: DeckWord[], want: number, newBudgetLeft: number): { words: DeckWord[]; heldBack: number } {
+  const fresh = due.filter(isNewCard);
+  const known = due.filter(w => !isNewCard(w));
+  const allowedNew = Math.max(0, Math.min(newBudgetLeft, want));
+  const takeNew = fresh.slice(0, allowedNew);
+  // Reviews fill whatever the budget left over. Early on there are few of them, so the
+  // passage simply gets fewer targets rather than being topped up with new material.
+  const takeKnown = known.slice(0, Math.max(0, want - takeNew.length));
+  return {
+    words: [...takeNew, ...takeKnown],
+    heldBack: Math.max(0, fresh.length - takeNew.length),
+  };
+}
+
 function collectVocabWords(
   passage: DailyPassage,
   dueSet: Set<string>,
@@ -511,7 +550,8 @@ export function useDailyContent(
         if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1;
         return 0;
       });
-      const selectedWords = dueWords.slice(0, wordsPerPassageNow);
+      const budgetLeft = getSrsSettings().newPerDay - getTodayCounts().newCount;
+      const selectedWords = selectTargets(dueWords, wordsPerPassageNow, budgetLeft).words;
       const hasDueWords = selectedWords.length > 0;
 
       // Restore the FULL cached set of passages — every one the user generated today via
@@ -702,7 +742,8 @@ export function useDailyContent(
       const fresh = notCovered(dueWords);
       const reused = dueWords.filter(w => coveredWords.has(w.h));
       const pool = [...fresh, ...reused];
-      const selectedWords = pool.slice(0, wordsPerPassageRef.current);
+      const budgetLeft = getSrsSettings().newPerDay - getTodayCounts().newCount;
+      const selectedWords = selectTargets(pool, wordsPerPassageRef.current, budgetLeft).words;
       // Never generate a generic, vocab-less passage — the caller (the "+ New passage"
       // button) is disabled whenever there are no due words, but guard here too.
       if (selectedWords.length === 0) return;
