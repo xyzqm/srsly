@@ -159,9 +159,14 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
       </div>
 
       <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.55, margin: '0 0 12px', maxWidth: '60ch' }}>
+        {/* Deliberately no number here. Blank density is a Settings value the learner chose,
+            and quoting it back mid-sentence reads as a rule the app is imposing. What this
+            sentence is for is the guarantee that your own settings apply here exactly as they
+            do to a generated passage — the readout below names the figure, where it explains
+            a concrete outcome and points at the lever that changes it. */}
         Paste an article in {cfg.name}. It is segmented against {cfg.dictName}, cross-referenced
-        with your deck, and your due words become blanks — at the same {density}% density and
-        under the same daily new-card limit as a generated passage. No AI generation is spent.
+        with your deck, and your due words become blanks — at the same density and under the
+        same daily new-card limit as a generated passage. No AI generation is spent.
       </p>
 
       <input
