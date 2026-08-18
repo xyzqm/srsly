@@ -3,6 +3,9 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import PieChart from './PieChart';
+import MilestoneRing from './MilestoneRing';
+import ReviewHeatmap from './ReviewHeatmap';
+import FutureLoad from './FutureLoad';
 import LevelProgress from './LevelProgress';
 import PassageShelf from './PassageShelf';
 import AccuracyTrend from './AccuracyTrend';
@@ -30,6 +33,12 @@ export default function StatsTab({ onNavigateRead }: Props) {
           ? 'Your deck is empty. Read a passage and click underlined words to start building it.'
           : 'Your complete vocabulary broken down by SRS mastery phase.'}
       </p>
+
+      <MilestoneRing deck={deck} language={language} />
+
+      <ReviewHeatmap deck={deck} />
+
+      <FutureLoad deck={deck} />
 
       <PieChart deck={deck} />
 

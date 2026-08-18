@@ -4,6 +4,7 @@ import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { dateInDays, todayStr } from '@/lib/deck';
 import { pruneDeckToCurriculum, loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
+import { logGraded } from '@/lib/activityLog';
 import { syncDeckGlosses } from '@/lib/deckGloss';
 import { fsrsSchedule, getSrsSettings, LEECH_THRESHOLD, type FsrsGrade } from '@/lib/fsrs';
 
@@ -249,7 +250,10 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       }
       return { ...d, ...patch };
     });
-    if (touched) await commit(next);
+    // One graded card, logged at the single point BOTH surfaces pass through — flashcards
+    // and the reading tab both schedule here, so the heatmap cannot count one and miss the
+    // other. See lib/activityLog.ts.
+    if (touched) { logGraded(1); await commit(next); }
   }, [commit]);
 
   /**
@@ -270,7 +274,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       }
       return { ...d, ...patch };
     });
-    if (touched) await commit(next);
+    if (touched) { logGraded(1); await commit(next); }
   }, [commit]);
 
   /** Update pinyin / meaning / other fields of the word at position idx. */
