@@ -96,8 +96,23 @@ function dedupeDeck(deck: DeckWord[]): DeckWord[] {
   return out;
 }
 
+/**
+ * The last deck loaded for each language, kept across mounts.
+ *
+ * Tabs are mounted and unmounted by app/page.tsx, so switching to Stats and back re-ran this
+ * entire load — a storage read, a dedupe, a curriculum prune and a gloss sync — every single
+ * time, and the tab sat empty for the whole chain. Measured on a 541-word deck: about a
+ * second per switch, with no long task and no network to show for it. It was almost all
+ * waiting on sequential awaits for data we already had.
+ *
+ * So a return visit renders from this cache on the first frame and revalidates behind it. The
+ * cache is only ever written from `commit` or from a completed load, so it cannot go stale
+ * relative to storage — every mutation in this hook goes through `commit`.
+ */
+const deckCache = new Map<LanguageCode, DeckWord[]>();
+
 export function useVocabDeck(language: LanguageCode = 'zh') {
-  const [deck, setDeck] = useState<DeckWord[]>([]);
+  const [deck, setDeck] = useState<DeckWord[]>(() => deckCache.get(language) ?? []);
   /**
    * Which language the deck in state actually belongs to — null until the first load.
    *
@@ -108,7 +123,9 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
    * language's deck. Flashcards latches its queue in exactly that window, which is how a
    * Spanish card ended up on screen in a Japanese session.
    */
-  const [loadedLang, setLoadedLang] = useState<LanguageCode | null>(null);
+  const [loadedLang, setLoadedLang] = useState<LanguageCode | null>(
+    () => (deckCache.has(language) ? language : null),
+  );
   const deckLoaded = loadedLang === language;
 
   // Mirror of deck that's always current — lets mutators compute from the latest
@@ -118,12 +135,20 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
 
   const commit = useCallback((next: DeckWord[]) => {
     deckRef.current = next;
+    deckCache.set(language, next);
     setDeck(next);
     return storage.saveVocabDeck(language, next);
   }, [language]);
 
   useEffect(() => {
     let live = true;
+    // Show what we already have on the first frame; the load below still runs and replaces it.
+    const cached = deckCache.get(language);
+    if (cached) {
+      deckRef.current = cached;
+      setDeck(cached);
+      setLoadedLang(language);
+    }
     storage.getVocabDeck(language).then(async d => {
       let changed = false;
       const migrated = d.map(w => {
@@ -159,6 +184,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       // A switch away mid-load must not publish the language we just left.
       if (!live) return;
       deckRef.current = resynced;
+      deckCache.set(language, resynced);
       setDeck(resynced);
       setLoadedLang(language);
       if (changed) storage.saveVocabDeck(language, resynced);

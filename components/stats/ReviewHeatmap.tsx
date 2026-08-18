@@ -39,6 +39,9 @@ function intensity(n: number, max: number): number {
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Wide enough for a three-letter weekday plus a little air. */
+const GUTTER = 26;
 
 export default function ReviewHeatmap({ deck }: Props) {
   const { grid, max, total, activeDays, firstRecorded, monthLabels } = useMemo(() => {
@@ -91,6 +94,12 @@ export default function ReviewHeatmap({ deck }: Props) {
           {total.toLocaleString()} card{total === 1 ? '' : 's'} over {activeDays} day{activeDays === 1 ? '' : 's'}
         </div>
       </div>
+      {/* The window is a rolling 91 days, not three whole calendar months, so the first month
+          on the left is a partial one — it starts wherever 13 weeks ago fell. Saying so beats
+          leaving the reader to wonder why May has two columns. */}
+      <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', opacity: 0.8, marginTop: 2 }}>
+        13 weeks to today · the first month is partial
+      </div>
 
       {total === 0 && (
         <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, margin: '6px 0 0', maxWidth: '52ch', lineHeight: 1.5 }}>
@@ -102,7 +111,7 @@ export default function ReviewHeatmap({ deck }: Props) {
       <div className="mt-3" style={{ overflowX: 'auto' }}>
         <div style={{ display: 'inline-block', minWidth: 'min-content' }}>
           {/* Month ruler, aligned to the week each month starts in. */}
-          <div style={{ position: 'relative', height: 14, marginLeft: 26 }}>
+          <div style={{ position: 'relative', height: 14, marginLeft: GUTTER + GAP }}>
             {monthLabels.map(({ col, label }) => (
               <span key={`${col}-${label}`} style={{
                 position: 'absolute', left: col * (CELL + GAP),
@@ -112,9 +121,12 @@ export default function ReviewHeatmap({ deck }: Props) {
           </div>
 
           <div style={{ display: 'flex', gap: GAP }}>
-            {/* Weekday gutter — only alternate rows are labelled, or the column becomes noise. */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: 23, flexShrink: 0 }}>
-              {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((d, i) => (
+            {/* Every weekday is labelled. Three of seven was the GitHub convention, which
+                works there because the grid is enormous and the rhythm is obvious; at this
+                size the blank rows just read as missing labels and you have to count to work
+                out which row is which. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: GAP, width: GUTTER, flexShrink: 0 }}>
+              {WEEKDAYS.map((d, i) => (
                 <span key={i} style={{
                   height: CELL, lineHeight: `${CELL}px`,
                   fontFamily: 'var(--f-mono)', fontSize: 9, color: 'var(--ink-faint)',

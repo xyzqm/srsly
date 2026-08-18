@@ -73,40 +73,62 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
   // Track whether popup is placed below the word (arrow flips to point up)
   const [below, setBelow] = useState(false);
 
-  useEffect(() => {
-    if (!data) { setReady(false); return; }
+  /**
+   * Put the popup where it belongs, given its CURRENT height.
+   *
+   * Extracted so it can run again whenever that height changes. When the popup sits ABOVE the
+   * word its top is derived from its own height (`r.top - ph`), so anything that grows it —
+   * expanding the character breakdown — moved the box without moving the arrow, and the tail
+   * ended up pointing at empty space instead of the word.
+   */
+  const place = useCallback(() => {
     const pop = popRef.current;
-    if (!pop) return;
-
+    if (!pop || !data) return;
     const pw = 254;
     const r = data.anchorRect;
 
     // Centre popup horizontally on the word, clamped to viewport
     let left = r.left + r.width / 2 - pw / 2;
     left = Math.max(10, Math.min(left, window.innerWidth - pw - 10));
+    pop.style.left = left + 'px';
+
+    const ph = pop.offsetHeight;
+    const topAbove = r.top - ph - 12;
+    const topBelow = r.bottom + 10;
+    const isBelow = topAbove < 8;
+    pop.style.top = (isBelow ? topBelow : topAbove) + 'px';
+
+    // Arrow x-offset — points at the word's centre, clamped to popup edges
+    const wordCx = r.left + r.width / 2;
+    const ax = Math.max(14, Math.min(wordCx - left, pw - 14));
+    pop.style.setProperty('--arrow-x', ax + 'px');
+    setBelow(isBelow);
+  }, [data]);
+
+  useEffect(() => {
+    if (!data) { setReady(false); return; }
+    const pop = popRef.current;
+    if (!pop) return;
 
     pop.style.visibility = 'hidden';
-    pop.style.left = left + 'px';
     pop.style.top = '0px';
 
     requestAnimationFrame(() => {
       if (!popRef.current) return;
-      const ph = pop.offsetHeight;
-      const topAbove = r.top - ph - 12;
-      const topBelow = r.bottom + 10;
-      const isBelow = topAbove < 8;
-      pop.style.top = (isBelow ? topBelow : topAbove) + 'px';
-
-      // Arrow x-offset — points at the word's centre, clamped to popup edges
-      const wordCx = r.left + r.width / 2;
-      const ax = Math.max(14, Math.min(wordCx - left, pw - 14));
-      pop.style.setProperty('--arrow-x', ax + 'px');
-
+      place();
       pop.style.visibility = '';
-      setBelow(isBelow);
       setReady(true);
     });
-  }, [data]);
+  }, [data, place]);
+
+  // Re-place whenever the content resizes — opening the breakdown is the case that matters.
+  useEffect(() => {
+    const pop = popRef.current;
+    if (!data || !pop || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => place());
+    ro.observe(pop);
+    return () => ro.disconnect();
+  }, [data, place]);
 
   // Close when clicking outside or scrolling
   useEffect(() => {
@@ -117,9 +139,21 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
+  /**
+   * Close when the PAGE scrolls — the popup is pinned to a viewport rect, so it would
+   * otherwise drift away from its word.
+   *
+   * But not when something inside it scrolls. This listens in the capture phase, so scrolling
+   * the breakdown's own horizontal overflow raised the same event and dismissed the popup the
+   * instant you dragged its scrollbar to read the rest of a long decomposition.
+   */
   useEffect(() => {
     if (!data) return;
-    const onScroll = () => onClose();
+    const onScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && popRef.current?.contains(t.nodeType === 9 ? (t as Document).documentElement : t)) return;
+      onClose();
+    };
     window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     return () => window.removeEventListener('scroll', onScroll, { capture: true });
   }, [data, onClose]);

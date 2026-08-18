@@ -165,11 +165,19 @@
 }
 .playing-pulse { animation: pulse-ring 1s infinite; }
 
+/* Entrance for a panel that has just mounted.
+ *
+ * It used to run .45s from opacity 0. Every tab is mounted fresh on each switch, so that
+ * played in full every single time — the content was in the DOM almost immediately but spent
+ * nearly half a second invisible, which is most of what "switching tabs takes a while" was.
+ * It now starts partly visible and is under half as long: still a settle, no longer a wait.
+ * A one-off entrance can afford to be slow; something you see on every click cannot. */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0.35; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
-.animate-rise { animation: rise .45s cubic-bezier(.2,.7,.3,1); }
+.animate-rise { animation: rise .2s cubic-bezier(.2,.7,.3,1); }
+@media (prefers-reduced-motion: reduce) { .animate-rise { animation: none; } }
 
 /* True cross-fade for the vocab list when it swaps decks: the outgoing snapshot fades
    out while the incoming list fades in, stacked, so there's no blank gap or pop. */
