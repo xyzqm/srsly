@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { dateInDays, todayStr } from '@/lib/deck';
-import { pruneDeckToCurriculum } from '@/lib/curriculum';
+import { pruneDeckToCurriculum, loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
 import { syncDeckGlosses } from '@/lib/deckGloss';
 import { fsrsSchedule, getSrsSettings, LEECH_THRESHOLD, type FsrsGrade } from '@/lib/fsrs';
 
@@ -349,8 +349,18 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
 
   /** Release the first `count` pool (staged) words into circulation (due today). Returns # released. */
   /**
-   * Move the first `count` pooled cards into circulation, in deck order — which is
-   * curriculum order, so a level import hands out its easiest words first.
+   * Move `count` pooled cards into circulation, EASIEST FIRST — lowest level, then the
+   * word's position within that level (see loadCurriculumRank for what that position does
+   * and does not mean per language).
+   *
+   * This used to take the first `count` in deck-array order, which is curriculum order only
+   * for a pool that came from a single level import. Import two levels, or claim a word from
+   * a passage, and the array order stopped meaning anything: "Activate 5" handed out
+   * whatever sat at the front. Sorting explicitly makes the promise the button implies.
+   *
+   * If the level chunk fails to load the rank is null, every card ranks equal, and the
+   * comparator falls through to alphabetical — an arbitrary order, but a stable one, and
+   * never a reason to refuse to activate anything.
    *
    * Returns the ids it released so the caller can offer an undo. Ids rather than a count:
    * undoing has to put back exactly those cards, and a second release in between would
@@ -359,15 +369,20 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   const releaseFromPool = useCallback(async (count: number): Promise<string[]> => {
     const cur = deckRef.current;
     const today = todayStr();
+    const rank = await loadCurriculumRank(language);
+    const chosen = new Set(
+      cur.filter(w => w.pool).sort(byCurriculum(rank)).slice(0, count).map(w => w.id ?? w.h),
+    );
+    if (chosen.size === 0) return [];
     const released: string[] = [];
     const next = cur.map(w => {
-      if (!w.pool || released.length >= count) return w;
+      if (!w.pool || !chosen.has(w.id ?? w.h)) return w;
       released.push(w.id ?? w.h);
       return { ...w, pool: undefined, dueAt: today }; // undefined drops from storage on save
     });
     if (released.length > 0) await commit(next);
     return released;
-  }, [commit]);
+  }, [commit, language]);
 
   /** Activate one specific pooled card. The per-card Release button used releaseFromPool(1),
    *  which activates the FIRST pooled card in deck order — so opening `zumo` and pressing

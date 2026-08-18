@@ -11,6 +11,7 @@ import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch, searchRank } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
+import { loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
 import { RECOMMENDED_POOL_ACTIVATE } from '@/lib/fsrs';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
@@ -457,6 +458,13 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   const [managingId, setManagingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
+  /**
+   * Study order for the pool list, loaded only while that filter is open.
+   *
+   * The level tables run 340–900 kB of source, so this follows the same rule as everything
+   * else that touches them: dynamically imported, and only once something actually needs it.
+   */
+  const [poolRank, setPoolRank] = useState<Map<string, number> | null>(null);
   const today = todayStr();
 
   // ── Unified undo state ──────────────────────────────────────────────────────
@@ -555,6 +563,13 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
     return []; // pending clear — the whole deck is on its way out
   }, [deck, pendingUndo]);
   const isNewCard = (w: DeckWord) => !w.pool && (w.reviews ?? 0) === 0 && w.stability === undefined;
+  useEffect(() => {
+    if (filter !== 'pool') return;
+    let live = true;
+    void loadCurriculumRank(language).then(r => { if (live) setPoolRank(r); });
+    return () => { live = false; };
+  }, [filter, language]);
+
   const chipFiltered = useMemo(() => {
     switch (filter) {
       case 'due':       return displayDeck.filter(w => isDueToday(w, today));
@@ -573,6 +588,10 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(() => {
     if (!query.trim()) {
+      // The pool is ordered the way ACTIVATION picks — easiest first — because the two must
+      // agree: "Activate 5" takes the top five, and a list sorted any other way would hand
+      // out five words the reader was not looking at.
+      if (filter === 'pool') return [...chipFiltered].sort(byCurriculum(poolRank));
       return [...chipFiltered].sort((a, b) =>
         dueSortKey(a, today).localeCompare(dueSortKey(b, today))
         || alphaKey(a).localeCompare(alphaKey(b))
@@ -587,7 +606,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
         || dueSortKey(a.w, today).localeCompare(dueSortKey(b.w, today))
         || alphaKey(a.w).localeCompare(alphaKey(b.w)))
       .map(x => x.w);
-  }, [chipFiltered, query, today]);
+  }, [chipFiltered, query, today, filter, poolRank]);
 
   // Counts for the filter chips (within the selected deck)
   const counts = useMemo(() => {

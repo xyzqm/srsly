@@ -1,4 +1,5 @@
 import type { DeckWord, LanguageCode } from './types';
+import { levelNumbers } from './languageConfig';
 
 /**
  * Pruning decks against the graded vocabulary tables.
@@ -149,4 +150,65 @@ export async function pruneDeckToCurriculum(lang: LanguageCode, deck: DeckWord[]
   if (kept.length === deck.length) return deck;
   console.info(`[curriculum] pruned ${deck.length - kept.length} off-curriculum ${lang} word(s) from the deck`);
   return kept;
+}
+
+/**
+ * STUDY ORDER — a rank per graded word, easiest first.
+ *
+ * Used to decide which pooled cards enter circulation next. Activating in deck-array order
+ * only worked while the pool came from exactly one level import, which arrives in curriculum
+ * order; a pool built from two imports, or topped up with words claimed from passages,
+ * interleaved them and handed out whatever happened to sit at the front of the array.
+ *
+ * WHAT THE RANK IS MADE OF, AND WHAT IT ISN'T.
+ * Primary is the LEVEL, taken through `levelNumbers` rather than the raw number, because the
+ * scales do not agree on direction: HSK 1 and CEFR A1 are the easy end, JLPT N5 is the easy
+ * end and numbers DOWN to N1. Sorting on the number itself would hand a Japanese learner N1
+ * first.
+ *
+ * Secondary is the word's position within its level, which is worth being precise about:
+ *  - es/fr — a genuine frequency rank. The bands are cut from corpus frequency, so position
+ *    within a band is how common the word is (after the hand-pinned openers).
+ *  - zh/ja — NOT frequency. These are the published HSK/JLPT exam lists in their own order,
+ *    and no frequency table ships for either language. It is a stable, curriculum-shaped
+ *    tiebreak, and calling it more than that would be a lie.
+ *
+ * A word the tables have never heard of ranks last: it came from a passage or a paste, we
+ * know nothing about its difficulty, and it should not jump ahead of graded vocabulary.
+ */
+const UNRANKED = Number.MAX_SAFE_INTEGER;
+/** Wider than any level list, so the level always outranks the position within it. */
+const LEVEL_STRIDE = 1_000_000;
+
+const rankCache = new Map<LanguageCode, Map<string, number>>();
+
+export async function loadCurriculumRank(lang: LanguageCode): Promise<Map<string, number> | null> {
+  const cached = rankCache.get(lang);
+  if (cached) return cached;
+  const table = await loadLevelTable(lang);
+  if (!table) return null;   // a failed chunk is not cached — the next call retries
+  const rank = new Map<string, number>();
+  levelNumbers(lang).forEach((level, tier) => {
+    (table[level] ?? []).forEach((word, i) => {
+      if (!rank.has(word)) rank.set(word, tier * LEVEL_STRIDE + i);
+    });
+  });
+  rankCache.set(lang, rank);
+  return rank;
+}
+
+/** Rank for one word; unknown words sort last. */
+export function curriculumRankOf(rank: Map<string, number> | null, w: DeckWord): number {
+  return rank?.get(w.h) ?? UNRANKED;
+}
+
+/**
+ * Comparator: easiest graded word first, then alphabetically by reading so the order is
+ * total and stable rather than dependent on however the deck array happened to be built.
+ */
+export function byCurriculum(rank: Map<string, number> | null) {
+  return (a: DeckWord, b: DeckWord): number =>
+    curriculumRankOf(rank, a) - curriculumRankOf(rank, b)
+    || (a.p || a.h).localeCompare(b.p || b.h)
+    || a.h.localeCompare(b.h);
 }
