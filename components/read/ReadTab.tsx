@@ -825,6 +825,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             {/* Same rule as the body below: shimmer only when there is no title to show. */}
             {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
+            ) : audioOnly ? (
+              /* Listening mode hides the title too. A generated passage's title is a headline
+                 and would be harmless, but a PASTED one is auto-labelled from its own opening
+                 line — so leaving it up displayed the first sentence of the very passage the
+                 mode exists to hide. */
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 15, letterSpacing: '.06em', color: 'var(--ink-faint)' }}>
+                Hidden while listening
+              </span>
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => {

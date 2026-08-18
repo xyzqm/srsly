@@ -40,6 +40,8 @@ const label: React.CSSProperties = {
  * punctuation. Prose that starts straight in keeps all of its text and borrows an opening
  * fragment as a label instead, which is what a reader would call it anyway.
  */
+const TITLE_EXCERPT_CHARS = 32;
+
 function splitTitle(text: string, manual: string): { title: string; body: string } {
   if (manual) return { title: manual, body: text };
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -49,7 +51,14 @@ function splitTitle(text: string, manual: string): { title: string; body: string
   const rest = lines.slice(i + 1).join('\n');
   // A headline with nothing after it is just the text — lifting it would leave no passage.
   if (isHeadline && rest.trim()) return { title: first, body: rest };
-  const label = first.length > 60 ? first.slice(0, 60).replace(/\s+\S*$/, '') + '…' : first;
+  // No headline: label the passage with a SHORT excerpt of its opening, never the whole
+  // first line. A one-paragraph paste has no line breaks, so "the first line" is the entire
+  // text — which became the title, and listening mode then displayed the passage it was
+  // supposed to be hiding. Cut at the first sentence end, then hard-cap it.
+  const opening = (first.match(/^[\s\S]*?[.!?。！？…]/) ?? [first])[0].trim();
+  const label = opening.length > TITLE_EXCERPT_CHARS
+    ? opening.slice(0, TITLE_EXCERPT_CHARS).replace(/\s+\S*$/, '') + '…'
+    : opening;
   return { title: label, body: text };
 }
 

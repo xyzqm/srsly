@@ -165,15 +165,6 @@
 }
 .playing-pulse { animation: pulse-ring 1s infinite; }
 
-@keyframes wave {
-  0%   { transform: scaleY(0.12); }
-  20%  { transform: scaleY(1); }
-  45%  { transform: scaleY(0.45); }
-  65%  { transform: scaleY(0.85); }
-  85%  { transform: scaleY(0.2); }
-  100% { transform: scaleY(0.12); }
-}
-
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; }
