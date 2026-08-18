@@ -108,7 +108,7 @@ function WordSection({ word, sentences }: { word: MissedWord; sentences: string[
       {/* The other place this belongs: you have just failed to recall this word, so the
           answer is already on screen and a mnemonic costs nothing. Offering it before the
           attempt would have given the answer away; offering it now is the whole point. */}
-      <CharacterBreakdown word={word.h} />
+      <CharacterBreakdown word={word.h} gloss={word.m} />
       {/* Sentences */}
       {sentences.length === 0 ? (
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>

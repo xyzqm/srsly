@@ -396,6 +396,10 @@ and copy that segment EXACTLY as written — same words, same order, no rewordin
 punctuation. It must be a character-for-character copy of one semicolon-separated segment.
   - Omit the word entirely (or map it to null) when several segments apply equally, when the
     segments all mean essentially the same thing, or when the definition has only one segment.
+  - MOST DEFINITIONS ARE SYNONYM LISTS, NOT SENSE LISTS. "student; pupil", "to clean; to
+    sweep", "instrument; apparatus", "cup; glass" are each ONE meaning written several ways —
+    omit every one of these. Only mark a word whose segments are genuinely different ideas,
+    the way 要 is "to want" in one sentence and "important" in another. If in doubt, omit.
   - The map holds ONE sense per word for the whole passage. So if you used a word in two
     different senses (e.g. "livre" as both "book" and "pound"), omit it — a single entry
     would mislabel the other occurrence. Only list a word whose sense is consistent throughout.
@@ -593,7 +597,22 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       const gloss = inputMap.get(word)?.m;
       if (!gloss) continue;
       const segments = gloss.split(';').map(x => x.trim()).filter(Boolean);
-      if (segments.length < 2) continue;                          // nothing to disambiguate
+      /**
+       * THREE SENSES, NOT TWO, BEFORE ANY OF THEM IS MARKED.
+       *
+       * CC-CEDICT uses ';' for two different things and does not distinguish them: a list of
+       * near-synonyms, and a list of genuinely distinct senses. Sampling HSK's 673 two-segment
+       * glosses, essentially all are the former — "student; pupil", "to clean; to sweep",
+       * "instrument; apparatus", "oar; paddle", "cup; glass", "joke; jest". Marking one half
+       * of a synonym pair as "the sense used here" asserts a distinction that does not exist,
+       * and tells the reader the other half is wrong when it is equally correct.
+       *
+       * Two segments is exactly where the claim is weakest and the risk highest, so the bar
+       * is three. It does not eliminate the problem — "near; close; close to" is three
+       * synonyms — which is why the highlight no longer dims the alternatives either; see
+       * components/shared/GlossText.tsx.
+       */
+      if (segments.length < 3) continue;
       const match = segments.find(seg => seg.toLowerCase() === sense.trim().toLowerCase());
       if (match) out[word] = match;
     }

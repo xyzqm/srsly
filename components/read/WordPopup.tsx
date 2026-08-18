@@ -215,7 +215,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
           {/* The popup is the right home for this: you clicked the character to ask about it,
               so an explanation is what you came for. It is deliberately NOT offered next to a
               cloze blank — see CharacterBreakdown. */}
-          <CharacterBreakdown word={displayData.baseForm ?? displayData.word} variant="popup" />
+          <CharacterBreakdown word={displayData.baseForm ?? displayData.word} gloss={displayData.meaning} variant="popup" />
 
           {displayData.compounds && displayData.compounds.length > 0 && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>

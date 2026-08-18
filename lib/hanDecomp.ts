@@ -101,8 +101,23 @@ export function decompose(table: Record<string, HanEntry>, char: string): Decomp
     parts.push(role ? { char: c, gloss: sub.g, role } : { char: c, gloss: sub.g });
   }
 
-  // Nothing to show and nothing to say — not worth a panel.
-  if (parts.length < 2 && !e.h) return null;
+  /**
+   * THE HINT IS ONLY AN EXPLANATION FOR SOME CHARACTERS.
+   *
+   * On ideographic and pictographic entries it is a sentence — "A person 亻 leaning against a
+   * tree 木", "A crack on an oracle bone". On PICTOPHONETIC entries it is not an explanation
+   * at all: it is a bare gloss of the semantic component, repeated. 1,279 of them match that
+   * component's gloss exactly and the rest are variants of it ("people" for 亻 "man").
+   *
+   * Rendered as a line under the breakdown, that read as a definition of the whole character:
+   * 意 showed "heart", which is 心's meaning, not 意's — 意 is thought, or idea. The components
+   * already say "音 sound + 心 meaning", which is the complete and correct story, so the hint
+   * is dropped here rather than repeating half of it as if it were the answer.
+   */
+  const hint = e.t === 'pictophonetic' ? undefined : e.h;
 
-  return { char, gloss: e.g, components: parts, hint: e.h, type: e.t };
+  // Nothing to show and nothing to say — not worth a panel.
+  if (parts.length < 2 && !hint) return null;
+
+  return { char, gloss: e.g, components: parts, hint, type: e.t };
 }

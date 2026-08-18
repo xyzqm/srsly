@@ -14,14 +14,19 @@ interface Props {
 const norm = (s: string) => s.trim().toLowerCase();
 
 /**
- * Renders a dictionary gloss with the contextually-relevant sense emphasised and the rest
- * dimmed.
+ * Renders a dictionary gloss with the contextually-relevant sense emphasised.
  *
- * A gloss is often several senses ("to want, wish, desire; to expect; to think"), and
- * showing all of them tells a learner nothing about the sentence in front of them. When the
- * generator has identified which sense applies (see `contextualMeanings` on DailyPassage),
- * that segment is bolded and the others faded — the full gloss is still there to read, but
- * the eye lands on the one that matters.
+ * A gloss is often several senses ("to want, wish, desire; to expect; to think"), and showing
+ * all of them tells a learner nothing about the sentence in front of them. When the generator
+ * has identified which sense applies (see `contextualMeanings` on DailyPassage), that segment
+ * is bolded so the eye lands on it.
+ *
+ * IT EMPHASISES; IT NO LONGER DE-EMPHASISES. The others used to be faded to 45%, which does
+ * not say "this one fits here" — it says "the rest are wrong". They very often are not:
+ * dictionary senses are frequently synonyms of each other, so 学生 "student; pupil" was
+ * shown with `pupil` bold and `student` greyed out, as if student were the wrong answer.
+ * The filter upstream now refuses to mark two-segment glosses at all, and this stops the
+ * remaining highlight from making a claim the data cannot support.
  *
  * Falls back to the plain gloss whenever there is no match, so a reworded or stale
  * `contextual` can only ever lose the emphasis, never hide or alter the definition.
@@ -41,10 +46,10 @@ export default function GlossText({ gloss, contextual, highlightColor }: Props) 
     <>
       {segments.map((seg, i) => (
         <Fragment key={i}>
-          {i > 0 && <span style={{ opacity: 0.45 }}>; </span>}
+          {i > 0 && <span style={{ opacity: 0.55 }}>; </span>}
           {i === hit
             ? <strong style={{ fontWeight: 700, color: highlightColor ?? 'var(--ink)' }}>{seg}</strong>
-            : <span style={{ opacity: 0.45 }}>{seg}</span>}
+            : <span>{seg}</span>}
         </Fragment>
       ))}
     </>
