@@ -920,11 +920,17 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         <div className="flex flex-col items-center text-center py-16 px-6">
           {dueDeckWords.size === 0 ? (
             <>
+              {/* An empty deck is not the same as a cleared queue, and this branch used to
+                  tell both the same thing. "All caught up" to someone who has never added a
+                  word congratulates them for work they have not done, and buries the one
+                  instruction they actually need. */}
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                All caught up
+                {deck.length === 0 ? 'Nothing to read yet' : 'All caught up'}
               </div>
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
-                You have no words due for review today. Add new words to your deck to get a fresh passage built around them.
+                {deck.length === 0
+                  ? 'Passages are built around the words in your deck, and yours is empty. Add a few and one will be written around them — or paste your own text above to read straight away.'
+                  : 'You have no words due for review today. Add new words to your deck to get a fresh passage built around them.'}
               </p>
               <button
                 onClick={onNavigateVocab}
@@ -937,21 +943,30 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           ) : (
             <>
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                {dailyStatus === 'error' ? "Couldn't generate a passage" : 'No passage yet'}
+                {dailyStatus === 'no-key' ? 'AI passages are switched off'
+                  : dailyStatus === 'error' ? "Couldn't generate a passage"
+                  : 'No passage yet'}
               </div>
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
-                {dailyStatus === 'error'
-                  ? 'Something went wrong generating today’s passage. Try again.'
-                  : 'Generate a passage built around your due words.'}
+                {dailyStatus === 'no-key'
+                  ? 'This install has no ANTHROPIC_API_KEY, so passages cannot be written. Everything else still works — paste your own text above and it will be segmented and blanked against your deck.'
+                  : dailyStatus === 'error'
+                    ? 'Something went wrong generating today’s passage. Try again.'
+                    : 'Generate a passage built around your due words.'}
               </p>
-              <button
-                onClick={() => generateMore()}
-                disabled={loadingMore}
-                className="cursor-pointer transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
-              >
-                {loadingMore ? `Generating… ${genEstShort}` : 'Generate passage'}
-              </button>
+              {/* No button in the no-key state. It cannot succeed — the server has already
+                  said it has no key — and a button that reliably fails is worse than none.
+                  The paste panel above is the working path, so the copy points there. */}
+              {dailyStatus !== 'no-key' && (
+                <button
+                  onClick={() => generateMore()}
+                  disabled={loadingMore}
+                  className="cursor-pointer transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+                >
+                  {loadingMore ? `Generating… ${genEstShort}` : 'Generate passage'}
+                </button>
+              )}
             </>
           )}
         </div>

@@ -43,7 +43,11 @@ export default function PieChart({ deck }: Props) {
   }
 
   return (
-    <div className="grid gap-9 mt-7 items-center" style={{ gridTemplateColumns: '200px 1fr' }}>
+    /* `200px 1fr` has no narrow-screen answer: the donut alone is 200px and the legend rows
+       carry a fixed 80px count column, so at 375px the legend was pushed to ~493px and the
+       whole page scrolled sideways. auto-fit with a min track collapses it to one column
+       when there is no room for two. */
+    <div className="grid gap-9 mt-7 items-center" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, auto))' }}>
       {/* Donut */}
       <div className="relative shrink-0" style={{ width: 200, height: 200 }}>
         <div className="w-full h-full rounded-full" style={{ background: gradientBg, filter: 'drop-shadow(0 3px 14px rgba(0,0,0,.08))' }} />
@@ -59,7 +63,9 @@ export default function PieChart({ deck }: Props) {
       {/* Legend */}
       <div className="flex flex-col gap-4">
         {segments.map(s => (
-          <div key={s.cls} className="grid items-center gap-3.5" style={{ gridTemplateColumns: '12px 1fr 80px' }}>
+          /* minmax(0,1fr) on the label, so a long phase name shrinks instead of forcing the
+             row wider than its container. */
+          <div key={s.cls} className="grid items-center gap-3.5" style={{ gridTemplateColumns: '12px minmax(0, 1fr) 80px' }}>
             <span className="w-[11px] h-[11px] rounded-[3px] shrink-0" style={{ background: s.color }} />
             <div>
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 28, fontWeight: 500, lineHeight: 1 }}>{s.count}</div>

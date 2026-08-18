@@ -859,7 +859,10 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                       {w.paused && <StatusChip label="paused" />}
                       {snoozed && <StatusChip label={`snoozed → ${w.snoozeUntil}`} />}
                     </span>
-                    <div className="flex gap-1.5 items-center">
+                    {/* Wraps on a narrow screen. Fixed-width action buttons in a nowrap row
+                        pushed each deck row to ~526px at a 375px viewport, which is what made
+                        the whole Vocab tab scroll sideways. */}
+                    <div className="flex gap-1.5 items-center flex-wrap justify-end">
                       {(() => { const lbl = dueLabel(w, today); return lbl ? (
                         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', color: lbl === 'now' ? 'var(--accent)' : 'var(--ink-faint)', minWidth: 24, textAlign: 'right' }}>
                           {lbl}

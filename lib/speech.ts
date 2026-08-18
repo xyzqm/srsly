@@ -155,7 +155,11 @@ const apiCache = new Map<string, string>();
  * Returns a Blob URL for the given text using the /api/tts route, or null if
  * no API key is configured or the request fails.
  */
+/** Latched once the server reports it has no TTS key — see the 501 branch below. */
+let apiTtsUnavailable = false;
+
 async function fetchApiAudio(text: string): Promise<string | null> {
+  if (apiTtsUnavailable) return null;
   const key = currentLocale + '\u001f' + text;
   if (apiCache.has(key)) return apiCache.get(key)!;
 
@@ -168,7 +172,13 @@ async function fetchApiAudio(text: string): Promise<string | null> {
       body: JSON.stringify({ text, lang: currentLocale }),
     });
 
-    if (!res.ok) return null; // 501 = no key, 500 = error — both fall back
+    // 501 is the server saying it has no OPENAI_API_KEY — an answer that cannot change while
+    // this page is open. It used to fall back and then ask again on the very next word, so a
+    // flashcard session fired one doomed round-trip per utterance and filled the console with
+    // failures. Latch it and go straight to browser speech thereafter. Other failures are not
+    // latched: a 500 or a dropped connection may well be transient.
+    if (res.status === 501) { apiTtsUnavailable = true; return null; }
+    if (!res.ok) return null;
 
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

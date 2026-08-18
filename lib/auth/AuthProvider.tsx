@@ -61,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = session?.user ?? null;
       await applyBackend(u);
       setUser(u);
-      console.log("AuthProvider: Auth state changed. User is now:", u);
       if (event === 'SIGNED_IN') {
         // Only redirect if the URL contains auth recovery/access tokens to prevent infinite loops on home page reloads
         if (window.location.hash.includes('access_token') || window.location.search.includes('code')) {

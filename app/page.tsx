@@ -77,6 +77,20 @@ function AppShell() {
   const { recordScore, recordActivity, recordAnswer } = useSRS();
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
+  /**
+   * Changing tab dismisses the sign-in prompt.
+   *
+   * The guest-limit modal is raised by the Read tab when a generation comes back 402, which
+   * is the right moment to ask. But it is app-level state and nothing closed it, so it then
+   * followed you: switch to Stats to look at your heatmap and the modal was still sitting on
+   * top of it, asking about a passage you had stopped trying to read. The banner inside the
+   * Read tab keeps the offer available for whenever you go back.
+   */
+  const changeTab = useCallback((next: TabId) => {
+    setSignIn(s => (s.open ? { open: false } : s));
+    setTab(next);
+  }, []);
+
   // Active study language. Persisted in prefs; drives deck namespacing, dictionary
   // lookups, proficiency labels and TTS locale via LanguageProvider below.
   const [language, setLanguage] = useState<LanguageCode>('zh');
@@ -125,8 +139,8 @@ function AppShell() {
   const [studyStartMode, setStudyStartMode] = useState<PracticeMode>('flash');
   const startStudy = useCallback((mode: PracticeMode) => {
     setStudyStartMode(mode);
-    setTab('practice');
-  }, []);
+    changeTab('practice');
+  }, [changeTab]);
 
   return (
     <LanguageProvider value={language}>
@@ -139,7 +153,7 @@ function AppShell() {
           onLanguageChange={handleLanguageChange}
           onAddLanguage={() => setAddingLanguage(true)}
         />
-        <TabNav active={tab} onChange={setTab} />
+        <TabNav active={tab} onChange={changeTab} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
           {tab === 'read' && (
             <ReadTab
@@ -147,14 +161,14 @@ function AppShell() {
               onActivity={recordActivity}
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
-              onNavigateVocab={() => setTab('vocab')}
+              onNavigateVocab={() => changeTab('vocab')}
             />
           )}
           {tab === 'practice' && (
             <ExtrasTab onScore={recordScore} initialMode={studyStartMode} />
           )}
           {tab === 'dash' && (
-            <StatsTab onNavigateRead={() => setTab('read')} />
+            <StatsTab onNavigateRead={() => changeTab('read')} />
           )}
           {tab === 'vocab' && (
             <VocabTab onStudy={startStudy} />

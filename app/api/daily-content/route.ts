@@ -561,10 +561,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     if (typeof s !== 'string' || !s.trim()) return [];
     if (language === 'es') return segmentEs(s, map);
     if (language === 'fr') return segmentFr(s, map);
-    const tokens = await segmentJa(s, map);
-    console.log('[kuromoji-debug] LLM sentence:', s);
-    console.log('[kuromoji-debug] segmented:', tokens.map(t => t[0]));
-    return tokens;
+    return segmentJa(s, map);
   }
 
   // Resolve a fill-item answer/distractor word: for Japanese, segment it and prefer the

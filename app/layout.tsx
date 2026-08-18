@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
 export const metadata: Metadata = {
   title: 'srsly?',
@@ -19,8 +20,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full" data-theme="paper" data-font="editorial-warm" suppressHydrationWarning>
         {/* Blocking script: reads saved prefs before first paint to prevent theme/font flash
-            and to set <html lang> for the active study language. */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);if(p.language==='ja')document.documentElement.setAttribute('lang','ja');}catch(e){}})();` }} />
+            and to set <html lang> for the active study language.
+
+            The lang map is GENERATED from LanguageConfig rather than written out here. It
+            used to read `if (p.language === 'ja')` and nothing else, so Spanish and French
+            learners were served `lang="zh"` until the client mounted and corrected it —
+            wrong for screen readers and for the font fallback the browser picks. This is a
+            server component, so the config can simply be interpolated in and cannot drift
+            from it the way a hand-kept ternary would. */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);var L=${JSON.stringify(
+          Object.fromEntries(SUPPORTED_LANGUAGES.map(c => [c.code, c.htmlLang])),
+        )};if(p.language&&L[p.language])document.documentElement.setAttribute('lang',L[p.language]);}catch(e){}})();` }} />
         {children}
       </body>
     </html>

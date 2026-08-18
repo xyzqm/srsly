@@ -7,6 +7,7 @@ import { POLYPHONES } from '@/lib/polyphones';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor, levelLabel, levelNumbers } from '@/lib/languageConfig';
 import { storage } from '@/lib/storage';
+import { copyText } from '@/lib/clipboard';
 
 /** A language's level word lists. `vocab` entries carry `pinyin` (zh) or `reading` (ja);
  *  the reading is always '' for Spanish and French. */
@@ -285,17 +286,21 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
     }
   });
 
+  // Both go through lib/clipboard.ts: `navigator.clipboard` is undefined outside a secure
+  // context and writeText rejects on an unfocused document, and these used to do neither a
+  // catch nor a fallback — so the copy silently failed and raised an unhandled rejection.
+  // The flag is set from the RESULT, so the button cannot claim a copy that did not happen.
   function copyBookmarkletUrl() {
-    navigator.clipboard.writeText('javascript:' + BOOKMARKLET_SRC).then(() => {
-      setBookmarkletCopied(true);
-      setTimeout(() => setBookmarkletCopied(false), 2000);
+    void copyText('javascript:' + BOOKMARKLET_SRC).then(ok => {
+      setBookmarkletCopied(ok);
+      if (ok) setTimeout(() => setBookmarkletCopied(false), 2000);
     });
   }
 
   function copyDebugUrl() {
-    navigator.clipboard.writeText('javascript:' + DEBUG_SRC).then(() => {
-      setDebugCopied(true);
-      setTimeout(() => setDebugCopied(false), 2000);
+    void copyText('javascript:' + DEBUG_SRC).then(ok => {
+      setDebugCopied(ok);
+      if (ok) setTimeout(() => setDebugCopied(false), 2000);
     });
   }
 

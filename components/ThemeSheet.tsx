@@ -1,6 +1,8 @@
 'use client';
 import type { Theme, Font } from '@/lib/types';
 import { useTheme } from '@/hooks/useTheme';
+import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 
 const THEMES: { id: Theme; name: string; chips: string[] }[] = [
   { id: 'paper', name: 'Paper',  chips: ['#F4EFE6','#B23A2E'] },
@@ -11,17 +13,19 @@ const THEMES: { id: Theme; name: string; chips: string[] }[] = [
   { id: 'dusk',  name: 'Dusk',   chips: ['#1B1A22','#D77A5B'] },
 ];
 
-const FONTS: { id: Font; name: string; preview: string; han: string; hanFamily: string }[] = [
-  { id: 'editorial-warm', name: 'Editorial warm', preview: 'Fraunces',    han: '渐', hanFamily: "'Noto Serif SC', serif" },
-  { id: 'quiet-serif',    name: 'Quiet serif',    preview: 'Newsreader',  han: '渐', hanFamily: "'Noto Serif SC', serif" },
-  { id: 'technical',      name: 'Technical',      preview: 'IBM Plex Serif', han: '渐', hanFamily: "'Noto Sans SC', sans-serif" },
-  { id: 'classic',        name: 'Classic',        preview: 'Lora',        han: '渐', hanFamily: "'Noto Serif SC', serif" },
-  { id: 'sans-modern',    name: 'Sans modern',    preview: 'Inter',       han: '渐', hanFamily: "'Noto Sans SC', sans-serif" },
+const FONTS: { id: Font; name: string; preview: string; hanFamily: string }[] = [
+  { id: 'editorial-warm', name: 'Editorial warm', preview: 'Fraunces',    hanFamily: "'Noto Serif SC', serif" },
+  { id: 'quiet-serif',    name: 'Quiet serif',    preview: 'Newsreader',  hanFamily: "'Noto Serif SC', serif" },
+  { id: 'technical',      name: 'Technical',      preview: 'IBM Plex Serif', hanFamily: "'Noto Sans SC', sans-serif" },
+  { id: 'classic',        name: 'Classic',        preview: 'Lora',        hanFamily: "'Noto Serif SC', serif" },
+  { id: 'sans-modern',    name: 'Sans modern',    preview: 'Inter',       hanFamily: "'Noto Sans SC', sans-serif" },
 ];
 
 interface Props { open: boolean; onClose: () => void; }
 
 export default function ThemeSheet({ open, onClose }: Props) {
+  const langConfig = getLanguageConfig(useLanguage());
+  const sampleGlyph = langConfig.glyph;
   const { theme, font, setTheme, setFont } = useTheme();
 
   return (
@@ -109,7 +113,10 @@ export default function ThemeSheet({ open, onClose }: Props) {
                 }}
               >
                 <span style={{ fontFamily: `'${f.preview}', serif`, fontSize: 18, lineHeight: 1 }}>
-                  Aa <span style={{ fontFamily: f.hanFamily }}>渐</span>
+                  {/* The sample is the STUDY language's own glyph, not a fixed 渐. A Spanish
+                      or French learner was being shown a Chinese character to judge a font by
+                      — and judging it on a script their passages will never contain. */}
+                  Aa <span style={{ fontFamily: f.hanFamily }}>{sampleGlyph}</span>
                 </span>
                 <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
                   {f.name}
@@ -120,7 +127,8 @@ export default function ThemeSheet({ open, onClose }: Props) {
         </div>
 
         <div className="px-5 py-4" style={{ color: 'var(--ink-faint)', fontSize: 12, lineHeight: 1.6 }}>
-          Tweaks save to this device. Try them with a passage open to see the effect on Chinese type and pinyin.
+          Tweaks save to this device. Try them with a passage open to see the effect on{' '}
+          {langConfig.name} type{langConfig.hasReadings ? ' and its reading marks' : ''}.
         </div>
       </aside>
     </>
