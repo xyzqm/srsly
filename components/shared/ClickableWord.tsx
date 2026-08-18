@@ -10,11 +10,6 @@ interface Props {
   /** Extra inline styles applied to the ruby/span wrapper */
   style?: React.CSSProperties;
   /**
-   * True when this is an SRS review word in the deck: dotted accent underline, matching how
-   * review words look in the passage body.
-   */
-  isReviewWord?: boolean;
-  /**
    * Whether word-boundary marks are on. The passage body drops its underlines when the
    * learner turns BOUNDARIES off; the title used to keep them, because this component never
    * heard about the toggle — so the same setting produced two different answers on one
@@ -28,7 +23,7 @@ interface Props {
  * A single clickable word that opens a definition popup.
  * Tokens we know nothing about render as plain spans (punct / plain text).
  */
-export default function ClickableWord({ token, onOpen, style, isReviewWord, showWordBoundaries = true }: Props) {
+export default function ClickableWord({ token, onOpen, style, showWordBoundaries = true }: Props) {
   const [hovered, setHovered] = useState(false);
   const scriptIsUnspaced = getLanguageConfig(useLanguage()).scriptIsUnspaced;
 
@@ -36,15 +31,14 @@ export default function ClickableWord({ token, onOpen, style, isReviewWord, show
   // reading-only gate would render every Spanish word as dead text.
   if (token.type === 'punct' || !(token.reading || token.meaning)) return <span style={style}>{token.text}</span>;
 
-  // No "just added" state. A jade underline and a '+' badge used to mark a word claimed this
-  // session, which meant the same word was drawn two different ways depending on when you
-  // looked at it — and only in the surfaces that happened to pass claimKind. The popup
-  // already says whether a word is in the deck, at the moment you ask.
-  const borderStyle = !showWordBoundaries
-    ? undefined
-    : isReviewWord
-      ? '1.5px dotted var(--accent)'
-      : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
+  // ONE underline, or none. There is no "just added" state and no review-word accent state
+  // either: both marked the same word differently depending on something the reader could not
+  // see, and the accent one gave the title's answers away — the words carrying it were exactly
+  // the words the passage was about to blank out. The popup already says whether a word is in
+  // the deck, at the moment you ask.
+  const borderStyle = showWordBoundaries
+    ? '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)'
+    : undefined;
 
   return (
     <>
@@ -69,8 +63,10 @@ export default function ClickableWord({ token, onOpen, style, isReviewWord, show
           has no spaces of its own. It used to carry the '+' badge; with that gone it is
           only a spacer, and a spacer is the last thing Spanish and French need — they are
           already space-delimited, so this was widening every gap in the line for nothing.
-          Same rule as TokenEl's `reserveGap`. */}
-      {scriptIsUnspaced && (
+          Same rule as TokenEl's `reserveGap` — including that it disappears with BOUNDARIES,
+          which it used not to: the title kept reserving a slot after every word, so turning
+          boundaries off left the underlines gone but the gaps still there. */}
+      {scriptIsUnspaced && showWordBoundaries && (
         <span
           aria-hidden="true"
           style={{

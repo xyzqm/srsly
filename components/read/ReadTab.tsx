@@ -337,6 +337,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const [audioOnly, setAudioOnly] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
   const [showClozeHints, setShowClozeHints] = useState(true);
+  /** The primer is open until the reader starts answering — see the block that renders it. */
+  const [primerOpen, setPrimerOpen] = useState(true);
   // Word-boundary marks exist because CJK has no spaces. Spanish already delimits its
   // words, so they default off there (the BOUNDARIES toggle still works either way).
   // Set in an effect, not as the useState initial value: `language` starts at the context
@@ -450,8 +452,12 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // Restore cloze blank progress for the current passage (survives reloads and new-device sign-in).
   useEffect(() => {
     if (!contentKey) return;
+    // A fresh passage gets its primer; one you already started does not, or reloading mid-way
+    // would hand back the answers to every blank still open.
+    setPrimerOpen(true);
     storage.getPassageState(contentKey, passageIdx).then(state => {
       if (!state || Object.keys(state).length === 0) return;
+      setPrimerOpen(false);
       setClozeGrades(new Map(
         Object.entries(state).map(([k, v]) => [k, { word: v.word, grade: v.grade as FsrsGrade }])
       ));
@@ -609,6 +615,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       next.set(occurrenceId, { word, grade: correct ? 3 : 1 });
       return next;
     });
+    // Answering is the moment the primer stops teaching and starts giving answers away.
+    setPrimerOpen(false);
     // Only the first grading of a blank counts, so restoring a passage you already answered
     // cannot inflate the figure.
     if (!firstTime) return;
@@ -820,9 +828,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
                 {TITLE_TOKENS.map((t, i) => {
-                  // One of this passage's due target words → accent underline. Same rule as
-                  // the passage body.
-                  const isReviewWord = clozeWords.has(t.text) && t.type === 'vocab';
+                  // Deliberately no per-word state here. The title used to accent-underline
+                  // its due target words, which quietly published the answer key: the marked
+                  // words were exactly the ones the passage was about to blank out.
                   // The title goes through needsSpaceBefore like every other renderer. It
                   // used to lean on the '+' badge span after each word as an accidental
                   // spacer, which is why "La salud y el ejercicio" held together at all in
@@ -830,7 +838,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   return (
                     <Fragment key={i}>
                       {needsSpaceBefore(TITLE_TOKENS, i, langConfig.scriptIsUnspaced)}
-                      <ClickableWord token={t} onOpen={titlePopup.openPopup} isReviewWord={isReviewWord} showWordBoundaries={showWordBoundaries} />
+                      <ClickableWord token={t} onOpen={titlePopup.openPopup} showWordBoundaries={showWordBoundaries} />
                     </Fragment>
                   );
                 })}
@@ -973,16 +981,37 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             </div>
           </div>
 
-          {/* Teach, then test. These are the passage's brand-new words, named before you
-              read rather than sprung on you as a blank you have no way to fill. */}
+          {/* Teach, then test — with the emphasis on THEN.
+              These are the passage's brand-new words, named before you read rather than
+              sprung on you as a blank you have no way to fill. But left open while you work
+              it stops being a primer and becomes an answer key: the words listed here are
+              exactly the words the passage is about to blank out, sitting a few lines above
+              the gaps with their meanings attached. So it closes the moment you start
+              answering, and reopening it is a deliberate act. */}
           {primerWords.length > 0 && (
             <div
               className="rounded-[11px] px-5 py-4 mb-4"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
             >
-              <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-                New words to know · {primerWords.length}
-              </div>
+              <button
+                onClick={() => setPrimerOpen(v => !v)}
+                className="cursor-pointer w-full flex items-center justify-between gap-3"
+                style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
+                aria-expanded={primerOpen}
+              >
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                  New words to know · {primerWords.length}
+                </span>
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                  {primerOpen ? 'hide' : 'show'}
+                </span>
+              </button>
+              {!primerOpen && (
+                <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '6px 0 0', maxWidth: '52ch' }}>
+                  Hidden while you fill in the blanks — {primerWords.length === 1 ? 'it is' : 'they are'} what the passage is testing.
+                </p>
+              )}
+              {primerOpen && (<>
               <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '5px 0 10px', maxWidth: '52ch' }}>
                 You haven&apos;t seen {primerWords.length === 1 ? 'this one' : 'these'} before. Read {primerWords.length === 1 ? 'it' : 'them'} now — the passage will ask you to fill {primerWords.length === 1 ? 'it' : 'them'} in.
               </p>
@@ -1004,6 +1033,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   </div>
                 ))}
               </div>
+              </>)}
             </div>
           )}
 

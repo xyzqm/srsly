@@ -17,6 +17,24 @@ import ImportPanel from './ImportPanel';
 
 const UNDO_DURATION_MS = 5000;
 
+/**
+ * Alphabetical tiebreak within a due bucket, by reading where there is one and by the word
+ * itself otherwise.
+ *
+ * `dueSortKey` returns the SAME empty string for every due-now and every new card, so on a
+ * deck that has not been studied yet — which is every freshly imported deck — it compares
+ * equal for all 541 rows and the sort collapses to a no-op. Array.sort is stable, so the list
+ * then showed raw insertion order: whatever sequence the import happened to add them in,
+ * which reads as random and, because addWord prepends, roughly backwards.
+ *
+ * Locale compare with numeric off, on the tone-stripped reading, so "bā" and "bà" sit
+ * together rather than splitting on their diacritics.
+ */
+function alphaKey(w: DeckWord): string {
+  const reading = (w.p || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  return reading || w.h;
+}
+
 /** Sort key: due-now → future dates → paused/snoozed → pool */
 function dueSortKey(w: DeckWord, today: string): string {
   if (w.pool)                                        return '\xff\xff';
@@ -555,14 +573,19 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(() => {
     if (!query.trim()) {
-      return [...chipFiltered].sort((a, b) => dueSortKey(a, today).localeCompare(dueSortKey(b, today)));
+      return [...chipFiltered].sort((a, b) =>
+        dueSortKey(a, today).localeCompare(dueSortKey(b, today))
+        || alphaKey(a).localeCompare(alphaKey(b))
+        || a.h.localeCompare(b.h));
     }
     // With a query, relevance leads and the due order is only the tiebreak. Sorting purely
     // by due date made the word you actually typed land wherever the scheduler put it.
     const filtered = chipFiltered.filter(w => matchesSearch(w, query, today));
     return filtered
       .map(w => ({ w, rank: searchRank(w, query) }))
-      .sort((a, b) => b.rank - a.rank || dueSortKey(a.w, today).localeCompare(dueSortKey(b.w, today)))
+      .sort((a, b) => b.rank - a.rank
+        || dueSortKey(a.w, today).localeCompare(dueSortKey(b.w, today))
+        || alphaKey(a.w).localeCompare(alphaKey(b.w)))
       .map(x => x.w);
   }, [chipFiltered, query, today]);
 
