@@ -274,11 +274,12 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
           <GlossText gloss={token.meaning} contextual={contextualMeaning} highlightColor="var(--accent)" />
         </span>
       )}
-      {/* Live prefix-match overlay, hints only. With hints off the input renders its own
-          text in plain ink instead, so nothing tells you how you are doing until you
-          commit — the colour would otherwise let you find the word by watching it change
-          rather than by recalling it. */}
-      {showHint && value.length > 0 && (
+      {/* Live prefix-match overlay — always on, independent of Hints.
+          It colours what you have ALREADY TYPED; it never tells you what to type next, and
+          with no meaning on hover you still have to produce the word from memory first.
+          Tying it to Hints made one switch mean two different kinds of help, so turning off
+          the meaning silently took away your typing feedback as well. */}
+      {value.length > 0 && (
         <span
           aria-hidden="true"
           style={{
@@ -317,8 +318,9 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
           fontFamily: 'var(--f-han)',
           fontSize: '1em',
           fontWeight: 'var(--han-weight)' as 'bold',
-          // Transparent only when the overlay above is drawing the text in its place.
-          color: showHint ? 'transparent' : 'var(--ink)',
+          // The overlay above always draws the text now, so the real input text is always
+          // transparent — otherwise the two would render on top of each other.
+          color: 'transparent',
           caretColor: 'var(--ink)',
           background: 'transparent',
           border: 'none',

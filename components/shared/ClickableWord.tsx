@@ -14,13 +14,21 @@ interface Props {
    * review words look in the passage body.
    */
   isReviewWord?: boolean;
+  /**
+   * Whether word-boundary marks are on. The passage body drops its underlines when the
+   * learner turns BOUNDARIES off; the title used to keep them, because this component never
+   * heard about the toggle — so the same setting produced two different answers on one
+   * screen. Defaults to true for the surfaces that have no such toggle (question prompts and
+   * multiple-choice options), where the underline is the only cue that a word is tappable.
+   */
+  showWordBoundaries?: boolean;
 }
 
 /**
  * A single clickable word that opens a definition popup.
  * Tokens we know nothing about render as plain spans (punct / plain text).
  */
-export default function ClickableWord({ token, onOpen, style, isReviewWord }: Props) {
+export default function ClickableWord({ token, onOpen, style, isReviewWord, showWordBoundaries = true }: Props) {
   const [hovered, setHovered] = useState(false);
   const scriptIsUnspaced = getLanguageConfig(useLanguage()).scriptIsUnspaced;
 
@@ -32,9 +40,11 @@ export default function ClickableWord({ token, onOpen, style, isReviewWord }: Pr
   // session, which meant the same word was drawn two different ways depending on when you
   // looked at it — and only in the surfaces that happened to pass claimKind. The popup
   // already says whether a word is in the deck, at the moment you ask.
-  const borderStyle = isReviewWord
-    ? '1.5px dotted var(--accent)'
-    : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
+  const borderStyle = !showWordBoundaries
+    ? undefined
+    : isReviewWord
+      ? '1.5px dotted var(--accent)'
+      : '1px dotted color-mix(in srgb, var(--ink-faint) 55%, transparent)';
 
   return (
     <>

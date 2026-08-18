@@ -79,7 +79,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [language]);
 
   // One deck per language, so passages always draw on the whole due queue.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
@@ -830,7 +830,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   return (
                     <Fragment key={i}>
                       {needsSpaceBefore(TITLE_TOKENS, i, langConfig.scriptIsUnspaced)}
-                      <ClickableWord token={t} onOpen={titlePopup.openPopup} isReviewWord={isReviewWord} />
+                      <ClickableWord token={t} onOpen={titlePopup.openPopup} isReviewWord={isReviewWord} showWordBoundaries={showWordBoundaries} />
                     </Fragment>
                   );
                 })}
@@ -944,18 +944,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           <div className="flex gap-2 items-center mb-4 flex-wrap">
             <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
             <div className="ml-auto flex gap-2 items-center flex-wrap">
-              {/* Named for what it does rather than what it is. It controls two things —
-                  the English gloss on hover AND the letter-by-letter colouring as you type
-                  — and "Hints" gave no reason to expect the second, so turning it off to
-                  drop the tooltip silently made the typing harder as well. */}
+              {/* Scoped to ONE thing: the English meaning shown when you hover a blank.
+                  It briefly also gated the letter-by-letter colouring as you type, which
+                  made "off" mean two different kinds of help at once; the colouring is
+                  feedback on what you have already typed, not a hint about what to type,
+                  so it stays on and this switch is about the meaning alone. */}
               <button
                 style={toggleStyle(showClozeHints)}
                 onClick={() => setShowClozeHints(v => !v)}
                 title={showClozeHints
-                  ? 'Showing the English on hover, and colouring your typing as you go'
-                  : 'No help: type your answer and find out when you commit it'}
+                  ? 'Hovering a blank shows its English meaning'
+                  : 'No meaning on hover — recall the word, then type it'}
               >
-                Help me
+                Hints
               </button>
               {/* Only for scripts that don't delimit their own words. In Spanish and French
                   every space is already a boundary, so the toggle offered a choice between
@@ -1055,7 +1056,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
           {QUESTIONS.length === 0 && currentPassage ? (
-            <div className="flex justify-center py-2 mb-4">
+            <div className="flex flex-col items-center gap-2 py-2 mb-4">
               {loadingQuestions ? (
                 <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', letterSpacing: '.06em' }}>
                   Generating questions…
@@ -1072,6 +1073,16 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 >
                   + Generate reading comprehension questions
                 </button>
+              )}
+              {/* Say why nothing happened. The button used to swallow every failure and
+                  return, so an exhausted AI budget looked identical to a button that did
+                  nothing at all. */}
+              {!loadingQuestions && questionsError && (
+                <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--accent)', lineHeight: 1.5, textAlign: 'center', maxWidth: '46ch', margin: 0 }}>
+                  {showGuestLimit
+                    ? "You've used your free AI generations — sign in for unlimited questions."
+                    : `Couldn't generate questions: ${questionsError}. Try again.`}
+                </p>
               )}
             </div>
           ) : QUESTIONS.length > 0 ? (

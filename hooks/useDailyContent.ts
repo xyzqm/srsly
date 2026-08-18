@@ -507,6 +507,8 @@ export interface UseDailyContentResult {
   guestLimited: boolean;
   generateQuestionsForPassage: (passageIdx: number) => Promise<void>;
   loadingQuestions: boolean;
+  /** Why the last question generation produced nothing. Empty when it worked. */
+  questionsError: string;
   /** Append a passage built from text the learner pasted. Spends no AI generation. */
   addPastedPassage: (passage: DailyPassage) => void;
 }
@@ -566,6 +568,7 @@ export function useDailyContent(
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [questionsError, setQuestionsError] = useState('');
   const [guestLimited, setGuestLimited] = useState(false);
 
   const deckRef = useRef(deck);
@@ -870,6 +873,7 @@ export function useDailyContent(
     if (!passage || loadingQuestions) return;
 
     setLoadingQuestions(true);
+    setQuestionsError('');
     try {
       const sep = getLanguageConfig(language).scriptIsUnspaced ? '' : ' ';
       const passageText = passage.sentences.map(s => s.plainText).join(sep);
@@ -887,21 +891,47 @@ export function useDailyContent(
         }),
       });
 
-      if (!res.ok) return;
-      const payload = await res.json() as { data: { questions?: unknown[] } };
-      const questions = Array.isArray(payload.data?.questions) ? payload.data.questions : [];
-      if (questions.length === 0) return;
+      if (res.status === 402) { markGuestAiExhausted(); setGuestLimited(true); return; }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? err.error ?? `HTTP ${res.status}`);
+      }
+      const payload = await res.json() as { data: { questions?: unknown[] }; aiRemaining?: number | null };
+      syncGuestAiRemaining(payload.aiRemaining);
+      const raw = Array.isArray(payload.data?.questions) ? payload.data.questions : [];
+      if (raw.length === 0) throw new Error('Question generation returned nothing');
+
+      /**
+       * Through buildQuestions, never `as Question[]`.
+       *
+       * The route answers in the RawTok wire format — `q` is an array of [text, reading,
+       * meaning] tuples, not PassageTokens. Casting told TypeScript otherwise and shipped the
+       * tuples straight into the renderer, which reads `t.text` off each one and gets
+       * undefined: five questions rendered as five empty prompts above five answer boxes.
+       * Every other consumer of this payload already goes through the builders; this was the
+       * one path that skipped them, which is why questions attached to a generated passage
+       * looked fine and lazily-generated ones did not.
+       */
+      const questions = buildQuestions(
+        raw,
+        new Set(passage.vocabWords),
+        groupReadings(deckRef.current),
+        language,
+      );
 
       setDailyContent(prev => {
         if (!prev) return prev;
         const passages = [...prev.passages];
-        passages[passageIdx] = { ...passages[passageIdx], questions: questions as import('@/lib/types').Question[] };
+        passages[passageIdx] = { ...passages[passageIdx], questions };
         const updated = { ...prev, passages };
         storage.saveDailyContent(updated);
         return updated;
       });
     } catch (err) {
+      // Silence here read as "the button does nothing". A guest whose AI budget is spent, or
+      // a malformed generation, got no questions and no reason.
       console.error('[generateQuestionsForPassage]', err);
+      setQuestionsError(String(err instanceof Error ? err.message : err));
     } finally {
       setLoadingQuestions(false);
     }
@@ -931,5 +961,5 @@ export function useDailyContent(
     setStatus(prev => (prev === 'loading' ? prev : 'ready'));
   }, [language, hskLevel]);
 
-  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, addPastedPassage };
+  return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage };
 }
