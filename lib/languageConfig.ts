@@ -63,16 +63,22 @@ export interface LanguageConfig {
    *  has to be split and re-merged against the dictionary (true for zh). */
   scriptIsUnspaced: boolean;
   /**
-   * Whether words are written in Han characters, so a single character can be broken into
-   * its components (休 = 亻 + 木).
+   * Whether to offer character decomposition — 休 = 亻 + 木.
    *
-   * Its own flag rather than reusing `scriptIsUnspaced`, even though the two currently agree.
-   * They mean different things — one is about where word boundaries are, the other about
-   * whether a character has internal structure — and a language could easily have one without
-   * the other (Korean hangul is unspaced-ish in neither sense; Vietnamese once used Han
-   * characters with spaces). Reusing the wrong flag is how these two ideas get welded together.
+   * NAMED FOR THE PRODUCT DECISION, NOT THE SCRIPT. It was `hasHanCharacters`, which is a
+   * claim about the writing system, and that made it the wrong switch the moment the answer
+   * stopped tracking the script: Japanese is written in Han characters and always will be, so
+   * turning the feature off for Japanese by setting a flag called `hasHanCharacters` to false
+   * would put a false statement in the config for a component to read as true.
+   *
+   * Chinese only, deliberately. The decomposition data is a Chinese dataset and is missing 223
+   * of 1,967 JLPT kanji — the shinjitai forms (駅 読 売 歩 転 広 関 様 対 実 図 among them) —
+   * so a Japanese session got the panel on most characters and silence on common ones. That is
+   * worse than not offering it: a learner cannot tell "no breakdown exists" from "we don't
+   * have it". If a source with shinjitai coverage is added later, this becomes true for ja
+   * again and nothing else has to change.
    */
-  hasHanCharacters: boolean;
+  showsCharacterDecomposition: boolean;
   /** Matches a single "word character" — used by the paste-import parsers. */
   wordCharRe: RegExp;
   /**
@@ -173,7 +179,7 @@ export const ZH_CONFIG: LanguageConfig = {
   usesBaseForms: false,
   segmentation: 'pipe',
   scriptIsUnspaced: true,
-  hasHanCharacters: true,
+  showsCharacterDecomposition: true,
   accentKeys: [],
   wordCharRe: /[一-鿿]/,
   levelSectionLabel: 'HSK level',
@@ -213,7 +219,7 @@ export const JA_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: true,
-  hasHanCharacters: true,
+  showsCharacterDecomposition: false,
   accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,
   levelSectionLabel: 'JLPT level',
@@ -262,7 +268,7 @@ export const ES_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
-  hasHanCharacters: false,
+  showsCharacterDecomposition: false,
   accentKeys: ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ', '¿', '¡'],
   wordCharRe: /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/,
   levelSectionLabel: 'CEFR level',
@@ -360,7 +366,7 @@ export const FR_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
-  hasHanCharacters: false,
+  showsCharacterDecomposition: false,
   accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',

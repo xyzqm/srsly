@@ -9,8 +9,8 @@ import { getLanguageConfig } from './languageConfig';
  * is the one kind of help that works on a character you have never seen before.
  *
  * The table is DYNAMICALLY IMPORTED, like every other large dataset here: it is ~350 kB and
- * only two of the four languages can use it at all. Statically importing it would put Han
- * decomposition in the initial bundle for a French learner.
+ * only Chinese sessions can use it. Statically importing it would put Han decomposition in
+ * the initial bundle for every learner of every other language.
  */
 
 export interface HanEntry {
@@ -58,9 +58,15 @@ export async function loadHanDecomp(): Promise<Record<string, HanEntry> | null> 
   return loading;
 }
 
-/** Whether this language is written in characters that can be decomposed at all. */
+/**
+ * Whether this session should offer decomposition at all — Chinese only.
+ *
+ * The single gate. Both surfaces that show the panel (the lookup popup and the missed-word
+ * review) render it through one component, and that component asks this first, so there is
+ * no second place for a language to slip through.
+ */
 export function supportsDecomposition(lang: LanguageCode): boolean {
-  return getLanguageConfig(lang).hasHanCharacters;
+  return getLanguageConfig(lang).showsCharacterDecomposition;
 }
 
 const HAN = /^[一-鿿㐀-䶿]$/;
