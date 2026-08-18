@@ -62,6 +62,17 @@ export interface LanguageConfig {
   /** Whether the script is written without spaces between words, so a run of characters
    *  has to be split and re-merged against the dictionary (true for zh). */
   scriptIsUnspaced: boolean;
+  /**
+   * Whether words are written in Han characters, so a single character can be broken into
+   * its components (休 = 亻 + 木).
+   *
+   * Its own flag rather than reusing `scriptIsUnspaced`, even though the two currently agree.
+   * They mean different things — one is about where word boundaries are, the other about
+   * whether a character has internal structure — and a language could easily have one without
+   * the other (Korean hangul is unspaced-ish in neither sense; Vietnamese once used Han
+   * characters with spaces). Reusing the wrong flag is how these two ideas get welded together.
+   */
+  hasHanCharacters: boolean;
   /** Matches a single "word character" — used by the paste-import parsers. */
   wordCharRe: RegExp;
   /**
@@ -162,6 +173,7 @@ export const ZH_CONFIG: LanguageConfig = {
   usesBaseForms: false,
   segmentation: 'pipe',
   scriptIsUnspaced: true,
+  hasHanCharacters: true,
   accentKeys: [],
   wordCharRe: /[一-鿿]/,
   levelSectionLabel: 'HSK level',
@@ -201,6 +213,7 @@ export const JA_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: true,
+  hasHanCharacters: true,
   accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,
   levelSectionLabel: 'JLPT level',
@@ -249,6 +262,7 @@ export const ES_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
+  hasHanCharacters: false,
   accentKeys: ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ', '¿', '¡'],
   wordCharRe: /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/,
   levelSectionLabel: 'CEFR level',
@@ -346,6 +360,7 @@ export const FR_CONFIG: LanguageConfig = {
   usesBaseForms: true,
   segmentation: 'server',
   scriptIsUnspaced: false,
+  hasHanCharacters: false,
   accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',

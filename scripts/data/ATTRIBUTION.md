@@ -65,3 +65,36 @@ Vendored **unmodified**. Only four of its 35 columns are read — `ortho`, `cgra
 
 Not a vendored dataset — srsly's own hand-maintained list of headwords pinned to level 1.
 No third-party licence applies. See `scripts/lib/coreOverrides.mjs` for why it exists.
+
+## makemeahanzi-dictionary.txt
+
+`dictionary.txt` from **Make Me a Hanzi** (<https://github.com/skishore/makemeahanzi>) by
+Shaunak Kishore, itself derived from the **Unihan Database** and **CJKlib**.
+
+Licensed under the **GNU Lesser General Public License v3**. Vendored **unmodified**.
+
+### This one is different from everything else in this directory
+
+Every other dataset here is a build-time input: the build reads it, grades vocabulary, and
+emits only word lists. This one is the source of data that is **shipped to the browser** —
+`lib/data/han-decomp.json`, read by the character-decomposition panel — so the LGPL travels
+with the emitted file rather than stopping at the build.
+
+What that obliges, in practice: keep this notice, state the license where the data is used,
+and let a recipient obtain and substitute their own version of the LGPL'd portion. The
+emitted JSON is a mechanical subset (see `scripts/build-radicals.mjs`) and is regenerable
+from this file, which is what makes substitution possible. It does **not** place srsly's own
+code under the LGPL.
+
+### Why not the more obvious source
+
+The canonical decomposition dataset is CHISE's `ids.txt`, redistributed as
+<https://github.com/cjkvi/cjkvi-ids>, and it is **GPLv2** — a copyleft obligation on a file
+we ship, which is materially heavier than the LGPL. Unicode's own Unihan is permissively
+licensed but supplies only `kRSUnicode` (radical plus residual stroke count), not a full
+decomposition, so it cannot answer "休 = 亻 + 木" at all.
+
+Re-download with:
+
+    curl -sL https://raw.githubusercontent.com/skishore/makemeahanzi/master/dictionary.txt \
+      -o scripts/data/makemeahanzi-dictionary.txt

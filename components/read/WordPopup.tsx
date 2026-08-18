@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import CharacterBreakdown from './CharacterBreakdown';
 
 function useIsMounted() {
   const [mounted, setMounted] = useState(false);
@@ -211,6 +212,11 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
           )}
 
           {/* Compound hints — shown for single-char words that appear in a compound nearby */}
+          {/* The popup is the right home for this: you clicked the character to ask about it,
+              so an explanation is what you came for. It is deliberately NOT offered next to a
+              cloze blank — see CharacterBreakdown. */}
+          <CharacterBreakdown word={displayData.baseForm ?? displayData.word} variant="popup" />
+
           {displayData.compounds && displayData.compounds.length > 0 && (
             <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
               <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase', opacity: 0.4, marginBottom: 5 }}>

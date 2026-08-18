@@ -1,4 +1,5 @@
 'use client';
+import CharacterBreakdown from './CharacterBreakdown';
 import { useState, useEffect, useRef } from 'react';
 import type { LanguageCode } from '@/lib/types';
 
@@ -104,6 +105,10 @@ function WordSection({ word, sentences }: { word: MissedWord; sentences: string[
         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 13, color: 'var(--accent)' }}>{word.p}</span>
         <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{word.m}</span>
       </div>
+      {/* The other place this belongs: you have just failed to recall this word, so the
+          answer is already on screen and a mnemonic costs nothing. Offering it before the
+          attempt would have given the answer away; offering it now is the whole point. */}
+      <CharacterBreakdown word={word.h} />
       {/* Sentences */}
       {sentences.length === 0 ? (
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
