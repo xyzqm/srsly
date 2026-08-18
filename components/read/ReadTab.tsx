@@ -452,12 +452,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // Restore cloze blank progress for the current passage (survives reloads and new-device sign-in).
   useEffect(() => {
     if (!contentKey) return;
-    // A fresh passage gets its primer; one you already started does not, or reloading mid-way
-    // would hand back the answers to every blank still open.
+    // Every passage opens with its primer showing. Closing it is the reader's call and only
+    // theirs — see the panel below.
     setPrimerOpen(true);
     storage.getPassageState(contentKey, passageIdx).then(state => {
       if (!state || Object.keys(state).length === 0) return;
-      setPrimerOpen(false);
       setClozeGrades(new Map(
         Object.entries(state).map(([k, v]) => [k, { word: v.word, grade: v.grade as FsrsGrade }])
       ));
@@ -615,8 +614,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       next.set(occurrenceId, { word, grade: correct ? 3 : 1 });
       return next;
     });
-    // Answering is the moment the primer stops teaching and starts giving answers away.
-    setPrimerOpen(false);
     // Only the first grading of a blank counts, so restoring a passage you already answered
     // cannot inflate the figure.
     if (!firstTime) return;
@@ -1006,11 +1003,13 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
           {/* Teach, then test — with the emphasis on THEN.
               These are the passage's brand-new words, named before you read rather than
-              sprung on you as a blank you have no way to fill. But left open while you work
-              it stops being a primer and becomes an answer key: the words listed here are
-              exactly the words the passage is about to blank out, sitting a few lines above
-              the gaps with their meanings attached. So it closes the moment you start
-              answering, and reopening it is a deliberate act. */}
+              sprung on you as a blank you have no way to fill. Left open while you work it is
+              also an answer key: these are exactly the words about to be blanked, sitting a
+              few lines above the gaps with their meanings attached.
+              It used to close itself the moment you answered anything. That was the app
+              deciding when you had finished reading — sometimes mid-word, on a list you were
+              still using. It now closes only when you press hide, and the copy says why you
+              might want to. */}
           {primerWords.length > 0 && (
             <div
               className="rounded-[11px] px-5 py-4 mb-4"
@@ -1029,14 +1028,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   {primerOpen ? 'hide' : 'show'}
                 </span>
               </button>
-              {!primerOpen && (
-                <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '6px 0 0', maxWidth: '52ch' }}>
-                  Hidden while you fill in the blanks — {primerWords.length === 1 ? 'it is' : 'they are'} what the passage is testing.
-                </p>
-              )}
               {primerOpen && (<>
               <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '5px 0 10px', maxWidth: '52ch' }}>
-                You haven&apos;t seen {primerWords.length === 1 ? 'this one' : 'these'} before. Read {primerWords.length === 1 ? 'it' : 'them'} now — the passage will ask you to fill {primerWords.length === 1 ? 'it' : 'them'} in.
+                You haven&apos;t seen {primerWords.length === 1 ? 'this one' : 'these'} before. Read {primerWords.length === 1 ? 'it' : 'them'} now — the passage will ask you to fill {primerWords.length === 1 ? 'it' : 'them'} in.{' '}
+                {/* A suggestion, not a rule, and placed where it can still be acted on: once
+                    the panel is collapsed, advice about collapsing it is just noise. */}
+                <span style={{ color: 'var(--ink-soft)' }}>
+                  Worth hiding {primerWords.length === 1 ? 'it' : 'them'} before you start filling in the blanks — {primerWords.length === 1 ? 'it is' : 'they are'} the answers.
+                </span>
               </p>
               <div className="grid gap-x-6 gap-y-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))' }}>
                 {primerWords.map(w => (
