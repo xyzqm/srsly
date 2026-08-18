@@ -6,6 +6,7 @@ import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { segmentZh } from '@/lib/server/chineseSegmenter';
 import { splitSentences } from '@/lib/server/sentenceSplit';
+import { guessChineseNames, nameReading } from '@/lib/server/chineseNames';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
 
 /**
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
   let title: string;
   let language: LanguageCode;
   let words: DeckEntry[];
+  let names: string[];
 
   try {
     const body = await req.json();
@@ -53,6 +55,9 @@ export async function POST(req: NextRequest) {
     title = typeof body.title === 'string' ? body.title : '';
     language = toLanguageCode(body.language);
     words = Array.isArray(body.words) ? body.words : [];
+    // Names the reader confirmed. They are overrides like any deck word, so the segmenter
+    // keeps them whole by the same greedy-merge path — no special case in the tokenizer.
+    names = Array.isArray(body.names) ? body.names.filter((n: unknown): n is string => typeof n === 'string' && !!n.trim()) : [];
   } catch {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
   }
@@ -77,6 +82,21 @@ export async function POST(req: NextRequest) {
     if (!overrides.has(w.h)) overrides.set(w.h, { p: w.p ?? '', m: w.m ?? '' });
   }
 
+  /**
+   * Confirmed names join the override map with a "(name)" gloss.
+   *
+   * That marker is load-bearing beyond the merge: `isProperNounGloss` reads it downstream to
+   * keep a name out of the character-decomposition panel, where breaking 李华 into "plum +
+   * son" explains the graphs and misleads about the word.
+   */
+  for (const n of names) {
+    const t = n.trim();
+    if (!t || overrides.has(t)) continue;
+    // The reading matters — see nameReading. Without one the client drops the token back to
+    // plain text and re-splits it into characters.
+    overrides.set(t, { p: language === 'zh' ? nameReading(t) : '', m: `(name) ${t}` });
+  }
+
   const unspaced = getLanguageConfig(language).scriptIsUnspaced;
   const rawSentences = splitSentences(text, unspaced).slice(0, MAX_SENTENCES);
   if (rawSentences.length === 0) {
@@ -88,7 +108,12 @@ export async function POST(req: NextRequest) {
     // A title is segmented like any other line so its words are clickable and can carry a
     // blank, exactly as a generated passage's title does.
     const titleToks = title.trim() ? await segment(language, title.trim(), overrides) : [];
-    return NextResponse.json({ ok: true, title: titleToks, sentences });
+    // Suggested, never applied — see lib/server/chineseNames.ts for why a dictionary cannot
+    // settle this alone. The reader confirms, and only then does it change the segmentation.
+    const suggestedNames = language === 'zh'
+      ? guessChineseNames(text).filter(n => !overrides.has(n))
+      : [];
+    return NextResponse.json({ ok: true, title: titleToks, sentences, suggestedNames });
   } catch (err) {
     console.error('[segment-text]', language, err);
     return NextResponse.json({ error: 'segmentation failed', detail: String(err) }, { status: 500 });

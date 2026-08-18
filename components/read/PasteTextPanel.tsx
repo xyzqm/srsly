@@ -22,6 +22,8 @@ interface Analysis {
   passage: DailyPassage;
   coverage: TextCoverage;
   targets: ClozeTargetResult;
+  /** Names the segmenter thinks are in the text but that were not confirmed — see below. */
+  suggestedNames: string[];
 }
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
@@ -67,6 +69,16 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * Personal names the reader has confirmed, kept whole by the segmenter.
+   *
+   * Without them a Chinese name splits into its characters and is glossed as though it were
+   * vocabulary — 李华 becomes 李 "surname Li" and 华 "abbr. for China" in the middle of a
+   * story. The generated path gets these from the model; pasted text has no such channel, and
+   * a dictionary cannot decide it alone (see lib/server/chineseNames.ts). So the app guesses,
+   * and the reader confirms.
+   */
+  const [names, setNames] = useState('');
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
 
@@ -78,7 +90,10 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
   // panel must not have — the whole point of it is to be trusted before you commit.
   const edit = useCallback(<T,>(set: (v: T) => void) => (v: T) => { set(v); setAnalysis(null); setError(''); }, []);
 
-  const analyze = useCallback(async () => {
+  const nameList = useCallback((raw: string) =>
+    raw.split(/[,，、\s]+/).map(n => n.trim()).filter(Boolean), []);
+
+  const analyze = useCallback(async (overrideNames?: string) => {
     if (!text.trim() || tooLong) return;
     setBusy(true);
     setError('');
@@ -92,13 +107,14 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
           title: split.title,
           language,
           words: deck.map(w => ({ h: w.h, p: w.p, m: w.m })),
+          names: nameList(overrideNames ?? names),
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
       }
-      const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][] };
+      const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][]; suggestedNames?: string[] };
       const built = buildPastedPassage(raw, deck, language, []);
       // Chosen here, once, against the ledger as it stands right now — and then RECORDED on
       // the passage. The readout below and the blanks you will see are therefore the same
@@ -111,19 +127,21 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
         passage: { ...built, vocabWords: [...targets.words] },
         coverage: analyzeCoverage(built.sentences, new Set(deck.map(d => d.h)), dueWords),
         targets,
+        suggestedNames: raw.suggestedNames ?? [],
       });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy(false);
     }
-  }, [text, title, tooLong, language, deck, dueWords, blankDensity]);
+  }, [text, title, names, nameList, tooLong, language, deck, dueWords, blankDensity]);
 
   const commit = useCallback(() => {
     if (!analysis) return;
     onCommit(analysis.passage);
     setText('');
     setTitle('');
+    setNames('');
     setAnalysis(null);
     setOpen(false);
   }, [analysis, onCommit]);
@@ -190,6 +208,18 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
         }}
       />
 
+      <input
+        type="text"
+        value={names}
+        onChange={e => edit(setNames)(e.target.value)}
+        placeholder="Names in this text (optional) — kept whole instead of split into characters"
+        style={{
+          width: '100%', fontSize: 13.5, color: 'var(--ink)', background: 'var(--card)',
+          border: '1px solid var(--line)', borderRadius: 7, padding: '8px 10px', outline: 'none',
+          marginBottom: 8,
+        }}
+      />
+
       <textarea
         value={text}
         onChange={e => edit(setText)(e.target.value)}
@@ -205,7 +235,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
 
       <div className="flex items-center gap-3 flex-wrap mt-2.5">
         <button
-          onClick={analyze}
+          onClick={() => analyze()}
           disabled={busy || !text.trim() || tooLong}
           className="transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
           style={btn(!analysis)}
@@ -224,6 +254,30 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
 
       {error && (
         <p style={{ ...mono, fontSize: 11.5, color: 'var(--wrong)', marginTop: 10 }}>{error}</p>
+      )}
+
+      {/* Offered, not applied. A wrong guess is one click from corrected here; applied
+          silently it would invent a word that does not exist in the middle of the passage. */}
+      {analysis && analysis.suggestedNames.length > 0 && (
+        <div className="mt-3 flex items-center gap-2 flex-wrap" style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>
+          <span>
+            {analysis.suggestedNames.length === 1 ? 'This looks like a name' : 'These look like names'}:{' '}
+            <span style={{ fontFamily: 'var(--f-han)', color: 'var(--ink)' }}>
+              {analysis.suggestedNames.join('、')}
+            </span>
+          </span>
+          <button
+            onClick={() => {
+              const merged = [...nameList(names), ...analysis.suggestedNames].join(', ');
+              setNames(merged);
+              void analyze(merged);
+            }}
+            className="cursor-pointer"
+            style={{ ...mono, fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', borderRadius: 7, padding: '4px 10px', color: 'var(--ink-soft)' }}
+          >
+            Keep whole
+          </button>
+        </div>
       )}
 
       {analysis && <CoverageReadout {...analysis} language={language} density={density} />}
