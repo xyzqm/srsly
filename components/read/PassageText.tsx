@@ -327,6 +327,19 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
           borderBottom: '1.5px dotted var(--accent)',
           outline: 'none',
           padding: '0 2px',
+          /**
+           * Keep consecutive blanks apart.
+           *
+           * Two blanks in a row share an edge — in an unspaced script there is not even a
+           * space between them — so their dotted borders meet. Each border restarts its own
+           * dash pattern at its own edge, so the last dot of one lands flush against the
+           * first dot of the next and renders as a single fat dot, with the two underlines
+           * reading as one long gap. That is not just untidy: it hides how many words are
+           * being asked for. A symmetric margin gives the seam a gap, so two blanks look
+           * like two. Symmetric matters — the typed-text overlay is centred over this
+           * element's box, and an uneven margin would shift it off the caret.
+           */
+          margin: '0 2px',
           textAlign: 'center',
           verticalAlign: 'baseline',
           position: 'relative',
