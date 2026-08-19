@@ -27,6 +27,7 @@ import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
 import MissedWordReview from './MissedWordReview';
+import DailyProverb from './DailyProverb';
 
 interface Props {
   onScore: (score: number) => void;
@@ -1278,8 +1279,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             const cacheKey = contentKey ? `srsly-missed-sentences|${contentKey}|${passageIdx}` : undefined;
             return <MissedWordReview words={reviewWords} missedCount={missedWords.length} cacheKey={cacheKey} language={language} level={hskLevel} />;
           })()}
+
         </>
       )}
+
+      {/* OUTSIDE the passage block on purpose. It is the last thing on the page either way,
+          but it does not depend on there being a passage — an empty deck shows the "nothing
+          to read yet" panel, and that is exactly the day a small readable thing is worth
+          having. Nested inside, it disappeared for every new learner. */}
+      <DailyProverb />
 
       <WordPopup
         data={titlePopup.popup}
