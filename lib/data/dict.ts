@@ -699,6 +699,29 @@ export async function preloadCedict(): Promise<void> {
 }
 
 /**
+ * Every 2–3 character word in CC-CEDICT that CONTAINS `char`.
+ *
+ * A linear pass over ~121k keys, which measures in single-digit milliseconds and runs once
+ * per lookup — cheap enough not to warrant a prebuilt index shipped to every client. The
+ * dictionary is already in memory by the time anyone can ask (the Vocab tab preloads it).
+ *
+ * Length is capped at 3 because the caller wants an ordinary word to put a bound character
+ * into, and a four-character idiom is not that.
+ */
+export async function wordsContaining(char: string): Promise<string[]> {
+  if (!char || char.length !== 1) return [];
+  const out: string[] = [];
+  try {
+    const cedict = await getCedict();
+    for (const w of Object.keys(cedict)) {
+      if (w.length < 2 || w.length > 3) continue;
+      if (w.includes(char)) out.push(w);
+    }
+  } catch { /* dictionary unavailable — the caller falls back to the gloss alone */ }
+  return out;
+}
+
+/**
  * Async version of lookupWord that falls back to the full CC-CEDICT dictionary
  * (~121k entries) when the local dict doesn't have an entry.
  */

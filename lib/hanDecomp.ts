@@ -79,22 +79,20 @@ const HAN = /^[一-鿿㐀-䶿]$/;
  * hint says so, which is why a primitive with a hint is still worth returning.
  */
 /**
- * Glosses for the component-only forms the source leaves blank.
+ * A UNICODE RADICAL NAME IS NOT A GLOSS. Do not reintroduce a table mapping these.
  *
- * These four are Unicode CJK RADICAL code points, and Unicode's own character names are the
- * gloss: U+2E8D is literally "CJK RADICAL SMALL TWO". They account for 28 of the 52
- * characters with an unglossed part, 学 among them, so naming them is what turns
- * "学 = ⺍ + 冖 cover + 子 son" into something a learner can read.
+ * ⺍ is named "CJK RADICAL SMALL TWO" (U+2E8D), and that read like a free gloss: "学 = ⺍
+ * small + 冖 cover + 子 son". It is wrong. The name places the shape in Unicode's radical
+ * block, next to ⺌ "SMALL ONE"; it does not claim the shape MEANS small in any character
+ * that contains it. In 学 it is not 小 at all — traditional 學 has 𦥯 on top, two hands
+ * around 爻, and the ⺍ is what that collapsed to when the character was simplified. Same
+ * story for the other three: ⺈ "KNIFE ONE" is a reduced 爫 (hand) in 争 and 刍, and ⺌ is a
+ * reduced 火 in 光. Each is right for one or two characters and false for the rest.
  *
- * Only these four. The remaining unglossed parts are ordinary ideographs (龶, 氺, 厽) with no
- * documented name to borrow, and inventing one would be worse than leaving the shape bare.
+ * These shapes therefore render bare — the glyph with nothing beside it. A learner reading
+ * "⺍ + 冖 cover + 子 son" can see there is a part we cannot name, which is true, and the
+ * etymology line underneath carries whatever story the source does have.
  */
-const RADICAL_GLOSS: Record<string, string> = {
-  '\u2E88': 'knife',       // ⺈ CJK RADICAL KNIFE ONE
-  '\u2E8A': 'divination',  // ⺊ CJK RADICAL DIVINATION
-  '\u2E8C': 'small',       // ⺌ CJK RADICAL SMALL ONE
-  '\u2E8D': 'small',       // ⺍ CJK RADICAL SMALL TWO
-};
 
 /**
  * Glosses that are worse than none, suppressed so the shape renders bare.
@@ -153,7 +151,7 @@ export function decompose(table: Record<string, HanEntry>, char: string): Decomp
   const parts: Component[] = [];
   for (const c of (e.t === 'pictographic' ? '' : e.p ?? '')) {
     const raw = table[c]?.g ?? '';
-    parts.push({ char: c, gloss: UNUSABLE_GLOSS.has(raw) ? '' : raw || RADICAL_GLOSS[c] || '' });
+    parts.push({ char: c, gloss: UNUSABLE_GLOSS.has(raw) ? '' : raw });
   }
 
   /**

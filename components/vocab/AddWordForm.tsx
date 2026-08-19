@@ -5,6 +5,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
+import { isBoundForm, suggestCompounds } from '@/lib/boundForms';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { useWordLookup, splitSenses } from '@/hooks/useWordLookup';
@@ -24,6 +25,8 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
   // Compound words that carry the chosen reading — surfaced in generated passages
   // for readings that don't stand alone (行 háng → 银行, 行业).
   const [compounds, setCompounds] = useState<string[]>([]);
+  /** Compounds offered for a bound character — see the effect below and lib/boundForms.ts. */
+  const [offered, setOffered] = useState<string[]>([]);
   const [recording, setRecording] = useState(false);
   // Detected after mount to avoid SSR/hydration mismatch
   const [hasSpeech, setHasSpeech] = useState(false);
@@ -75,6 +78,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
   useEffect(() => {
     if (isZh && POLYPHONES[trimmed]) return;  // handled above
     setCompounds([]);
+    setOffered([]);
     if (!langConfig.hasReadings) return;
     if (lookup.status === 'found') {
       setPinyin(lookup.reading);
@@ -84,6 +88,34 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
       setPinHint(langConfig.readingHint);
     }
   }, [trimmed, isZh, lookup.status, lookup.reading, langConfig.hasReadings, langConfig.readingHint]);
+
+  /**
+   * A BOUND CHARACTER gets the same treatment a polyphone reading does.
+   *
+   * 璃 is not a word — it is the back half of 玻璃. Added bare, its card says "(phonetic
+   * character used in transliteration of foreign names)" and no passage can ever use it, so
+   * it sits in the deck coming up for review forever and teaching nothing. Naming a compound
+   * is what makes it studiable, and the dictionary already knows which one.
+   *
+   * The top suggestion is filled in rather than merely offered: leaving it blank puts the
+   * work on someone who, by construction, does not yet know the word. The rest are one tap
+   * away, and the field stays editable.
+   */
+  useEffect(() => {
+    if (!isZh || POLYPHONES[trimmed]) return;          // polyphones carry their own list
+    if (lookup.status !== 'found' || lookup.definitions.length === 0) return;
+    // `definitions` is the gloss already split on ';' — rejoined here because that is the
+    // shape lib/boundForms works in, and it splits it again itself.
+    const gloss = lookup.definitions.join('; ');
+    if (!isBoundForm(trimmed, gloss)) return;
+    let live = true;
+    void suggestCompounds(trimmed, gloss).then(list => {
+      if (!live || list.length === 0) return;
+      setOffered(list);
+      setCompounds(c => (c.length ? c : [list[0]]));
+    });
+    return () => { live = false; };
+  }, [trimmed, isZh, lookup.status, lookup.definitions]);
 
   function handleHanziChange(val: string) {
     setHanzi(val);
@@ -346,14 +378,19 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
         )}
       </div>
 
-      {/* Compound words — surface this reading in generated passages. Shown for
-          polyphones (where a reading may not stand alone) or when already set. */}
-      {(POLYPHONES[hanzi.trim()] || compounds.length > 0) && (
+      {/* Compound words. Shown when the card cannot stand on its own: a polyphone reading
+          (行 háng), a bound character (璃), or whenever one has already been set. */}
+      {(POLYPHONES[hanzi.trim()] || offered.length > 0 || compounds.length > 0) && (
         <div className="mb-2.5">
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
             Compounds{' '}
+            {/* Two different reasons, so two different sentences. The polyphone case is about
+                telling readings apart; the bound case is about the character not being a word
+                at all, which is worth saying outright — it is why the field appeared. */}
             <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>
-              — words that use this reading; generated passages can use these to show it in context
+              {offered.length > 0
+                ? `— ${hanzi.trim()} doesn't appear on its own, so passages will use it inside these`
+                : '— words that use this reading; generated passages can use these to show it in context'}
             </span>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -386,6 +423,28 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
               + add compound
             </button>
           </div>
+
+          {/* The runners-up, one tap each. The dictionary's best answer is already filled in
+              above; these are for when it picked 咖喱 and you wanted 咖啡. */}
+          {offered.filter(o => !compounds.includes(o)).length > 0 && (
+            <div className="flex flex-wrap gap-2 items-center mt-2">
+              <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)' }}>also</span>
+              {offered.filter(o => !compounds.includes(o)).map(o => (
+                <button
+                  key={o}
+                  onClick={() => setCompounds(c => [...c, o])}
+                  className="cursor-pointer transition-all duration-150"
+                  style={{
+                    fontFamily: 'var(--f-han)', fontSize: 14,
+                    background: 'none', border: '1px solid var(--line)',
+                    color: 'var(--ink-soft)', borderRadius: 8, padding: '4px 10px',
+                  }}
+                >
+                  + {o}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
