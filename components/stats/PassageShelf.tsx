@@ -18,6 +18,30 @@ interface Props { language: LanguageCode; }
 
 const PAGE = 6;
 
+/**
+ * Is this stored body unreadable — words run together with no spaces?
+ *
+ * A shelf entry keeps TEXT, not tokens, so it is a snapshot taken the day the passage was
+ * finished and cannot be re-derived later. Passages shelved before 8c87283 (2026-08-16) were
+ * written with a flush join instead of `tokensToText`, which in a spaced language produced
+ * "¿Quétalelclimahoy?Sí,esundíamuybonito." — and there is no way back, because recovering the
+ * word boundaries would mean re-segmenting prose against a dictionary.
+ *
+ * So the body is hidden and the rest of the entry kept. The date, title, score and per-word
+ * verdicts were never affected and are the parts worth looking back at; the run-together
+ * prose is the only casualty, and showing it is worse than saying it is gone. Entries are
+ * capped at 200, so waiting for these to age out is not a plan.
+ *
+ * Unspaced scripts are exempt: zh and ja have no spaces to be missing. The threshold sits far
+ * below real prose — Spanish and French average a space every five or six characters, so one
+ * in twenty is not a near miss.
+ */
+function isRunTogether(text: string, scriptIsUnspaced: boolean): boolean {
+  if (scriptIsUnspaced || text.length < 40) return false;
+  const spaces = (text.match(/\s/g) ?? []).length;
+  return spaces / text.length < 0.05;
+}
+
 export default function PassageShelf({ language }: Props) {
   const [entries, setEntries] = useState<ShelfEntry[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -96,12 +120,22 @@ export default function PassageShelf({ language }: Props) {
 
               {isOpen && (
                 <div className="px-4 pb-4" style={{ borderTop: '1px solid var(--line)' }}>
-                  <p style={{
-                    fontFamily: cfg.scriptIsUnspaced ? 'var(--f-han)' : 'var(--f-display)',
-                    fontSize: 16, lineHeight: 1.85, color: 'var(--ink)', marginTop: 14, whiteSpace: 'pre-wrap',
-                  }}>
-                    {e.text}
-                  </p>
+                  {isRunTogether(e.text, cfg.scriptIsUnspaced) ? (
+                    <p style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 12, lineHeight: 1.6,
+                      color: 'var(--ink-faint)', marginTop: 14, fontStyle: 'italic',
+                    }}>
+                      The text of this one was saved without its spacing and can&apos;t be
+                      recovered. Your score and words below are intact.
+                    </p>
+                  ) : (
+                    <p style={{
+                      fontFamily: cfg.scriptIsUnspaced ? 'var(--f-han)' : 'var(--f-display)',
+                      fontSize: 16, lineHeight: 1.85, color: 'var(--ink)', marginTop: 14, whiteSpace: 'pre-wrap',
+                    }}>
+                      {e.text}
+                    </p>
+                  )}
                   {/* What you got right and what you missed, not just how many — and in the
                       same red/green the passage used, so the record reads the same way the
                       exercise did. Words with no recorded answer (never blanked, or the
