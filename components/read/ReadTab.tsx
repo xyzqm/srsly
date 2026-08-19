@@ -834,11 +834,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       <div className="flex justify-between items-end mb-2 flex-wrap gap-2.5">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* "Targeted reading", not "today's passage" — the passage is built around the
+                words that are due, and naming the targeting is what explains why these
+                sentences and not others. It also stops being a lie once the shelf holds
+                several days' worth, or the reader pastes their own text. */}
             {numPassages > 1
-              ? `Today's ${numPassages} passages · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'} total`
+              ? `Targeted reading · ${numPassages} passages · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'} total`
               : totalReviewWordCount > 0
-                ? `Today's passage · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'}`
-                : "Today's passage · add words to your deck to track them here"
+                ? `Targeted reading · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'}`
+                : "Targeted reading · add words to your deck to track them here"
             }
             {dailyStatus === 'ready' && dailyContent?.sections?.passage && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', background: 'var(--jade-soft)', color: 'var(--jade)', border: '1px solid color-mix(in srgb, var(--jade) 30%, transparent)', borderRadius: 4, padding: '1px 5px' }}>

@@ -101,6 +101,23 @@ const ACCENTS: Record<string, string> = {
   'î': 'i', 'ï': 'i', 'ô': 'o', 'ö': 'o', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ÿ': 'y', 'ç': 'c',
 };
 
+/**
+ * The typographic apostrophe is the SAME LETTER as the typewriter one, for lookup purposes.
+ *
+ * Wiktionary keys its elided headwords with U+0027 (`d'accord`, `c'est`, `chef-d'œuvre`),
+ * and real French prose — anything out of a word processor, a news site, or a PDF — uses
+ * U+2019 (`d’accord`). Without folding, `dict.isCommonWord` missed every one of them, so the
+ * guard that keeps an elided headword whole never fired and the token was peeled apart
+ * instead: `d’accord` resolved to `accord` "chord; agreement" rather than staying "OK", and
+ * `c’est` reached `être` instead of its own entry. That is precisely the failure the elision
+ * rules were written to prevent — it just never showed up while the tests were typed by hand.
+ *
+ * Normalised for LOOKUP only. The token text keeps whatever the writer used.
+ */
+function normalizeApostrophe(s: string): string {
+  return s.replace(/[\u2019\u02BC]/g, "'");
+}
+
 /** Strip accents — used only to retry a lookup, never to rewrite output text. */
 function deaccent(s: string): string {
   return s.replace(/[àâäéèêëîïôöùûüÿç]/g, c => ACCENTS[c] ?? c);
@@ -176,8 +193,10 @@ function stripElision(word: string, dict: LemmaDict): string | undefined {
  * plausible was found). Callers treat undefined as "no base form" and omit RawTok's 4th
  * element, exactly as the other languages do.
  */
+export { normalizeApostrophe };
+
 export function lemmatizeFr(word: string, dict: LemmaDict): string | undefined {
-  const lower = word.trim().toLowerCase();
+  const lower = normalizeApostrophe(word.trim().toLowerCase());
   if (!lower) return undefined;
 
   const mapped = FR_FORMS[lower];

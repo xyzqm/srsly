@@ -1,6 +1,6 @@
 import frdictData from '@dict/frdict.json';
 import { FR_VOCAB } from '@/lib/data/fr-vocab';
-import { lemmatizeFr, type LemmaDict } from './frenchLemmatizer';
+import { lemmatizeFr, normalizeApostrophe, type LemmaDict } from './frenchLemmatizer';
 
 /**
  * Server-only French segmenter, the analogue of lib/server/spanishSegmenter.ts.
@@ -36,7 +36,9 @@ const dict: LemmaDict = {
 };
 
 function resolveMeaning(baseForm: string | undefined, surface: string): string {
-  const lower = surface.toLowerCase();
+  // Apostrophe folded for the same reason the lemmatizer folds it: the dictionary keys
+  // `chef-d'œuvre` with U+0027 and pasted prose writes U+2019.
+  const lower = normalizeApostrophe(surface.toLowerCase());
   const key = baseForm ?? lower;
   return frdict[key]?.m ?? frdict[lower]?.m
     ?? FR_VOCAB[key]?.meaning ?? FR_VOCAB[lower]?.meaning ?? '';
