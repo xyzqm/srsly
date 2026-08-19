@@ -202,8 +202,8 @@ let currentGen = 0;
  * without this, stopping only halted the browser-TTS path. The generation guard already kept
  * a cancelled SEQUENCE from advancing, which is why this stayed invisible: the passage did
  * not continue to the next sentence, it just finished the one it was on, over the top of
- * whatever you started next. Per-blank replay in listening mode makes interrupting the
- * normal thing to do rather than an edge case.
+ * whatever you started next. Interrupting is ordinary — a flashcard, a question's replay
+ * button, or switching passage all cut in on a playing passage.
  */
 let activeAudio: HTMLAudioElement | null = null;
 

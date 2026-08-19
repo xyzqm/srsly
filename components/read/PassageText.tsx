@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useState, useCallback, useMemo, useRef } from 'react';
+import { Fragment, useState, useCallback, useRef } from 'react';
 import type { PassageToken, DeckWord, Sentence, ClozeGradeEntry } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -9,7 +9,6 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { needsSpaceBefore } from '@/lib/tokenText';
-import { speak, stopAll } from '@/lib/speech';
 import GlossText from '@/components/shared/GlossText';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
@@ -44,7 +43,6 @@ interface Props {
   sentences: Sentence[];
   activeSentenceIdx: number;
   showPinyin?: boolean;
-  audioOnly: boolean;
   deckWords: Set<string>;
   /** This passage's due target words → cloze blanks. Deliberately NOT every due deck word:
    *  see `clozeWords` in ReadTab for why the passage only blanks what it was built around. */
@@ -398,7 +396,7 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, audioOnly, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true, contextualMeanings }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true, contextualMeanings }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -457,52 +455,6 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     openTokenPopup(e, token, compounds);
   }, [clozeWords, openTokenPopup]);
 
-  /**
-   * Every blank in the passage, in reading order — the list listening mode types into.
-   *
-   * Derived with the SAME rule the body renders by (`clozeWords` OR a restored grade, and
-   * the token must be vocab), so the two modes can never disagree about what counts as a
-   * blank. Computed unconditionally rather than inside the audio branch: it is cheap, and
-   * making it conditional would mean the hook order changed with the toggle.
-   */
-  const audioBlanks = useMemo(() => {
-    const out: { token: PassageToken; occurrenceId: string; reviewKey: string; si: number }[] = [];
-    sentences.forEach((sent, si) => {
-      sent.tokens.forEach((token, ti) => {
-        if (token.type !== 'vocab') return;
-        const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
-        const occurrenceId = `${si}-${ti}`;
-        if (clozeWords.has(reviewKey) || restoredClozeGrades?.has(occurrenceId)) {
-          out.push({ token, occurrenceId, reviewKey, si });
-        }
-      });
-    });
-    return out;
-  }, [sentences, clozeWords, restoredClozeGrades]);
-
-  /**
-   * Which blank's sentence is playing, so its button can show as active.
-   *
-   * SELF-PACED IS THE WHOLE POINT. Listening mode used to play the passage straight through
-   * while asking you to fill five blanks in order, which is not a hard exercise so much as an
-   * impossible one — the audio runs on its own clock and typing does not, so a word missed is
-   * missed for good and the only recovery is to restart the whole passage.
-   *
-   * Each blank now plays the sentence it lives in, as many times as you like, in any order.
-   * A WHOLE sentence deliberately: cutting the audio at the blank would strip the
-   * co-articulation and prosody either side of it, which is frequently the very thing that
-   * tells you what the word was.
-   */
-  const [playingBlank, setPlayingBlank] = useState<string | null>(null);
-
-  const playBlankSentence = useCallback((occurrenceId: string, si: number) => {
-    const text = sentences[si]?.plainText;
-    if (!text) return;
-    if (playingBlank === occurrenceId) { stopAll(); setPlayingBlank(null); return; }
-    setPlayingBlank(occurrenceId);
-    void speak(text, () => setPlayingBlank(cur => (cur === occurrenceId ? null : cur)));
-  }, [sentences, playingBlank]);
-
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
     onAddToDeck({ h: word, p: pinyin, m: meaning });
@@ -510,88 +462,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
 
   return (
     <div>
-      {/*
-        LISTENING MODE — a dictation exercise, not a blindfold.
-
-        This used to render a cover and nothing else, which made the mode a dead end: the
-        cloze inputs live inside the passage body below, so hiding the body removed them from
-        the DOM entirely — while the Finish button stayed gated on `clozeAnswered ===
-        clozeWordCount`. A passage with blanks could therefore never be completed in listening
-        mode. You had to switch back to reading, fill them in, and switch again, and nothing on
-        screen said so.
-
-        The blanks now come with you. The prose stays hidden; the gaps are listed in reading
-        order and you fill each one from what you hear, which is what a listening exercise
-        should have been asking for. They are the SAME ClozeBlank instances, keyed by the same
-        occurrence id and reporting through the same onGrade, so grading, restore-on-reload and
-        FSRS scheduling behave identically in either mode.
-      */}
-      {audioOnly && (
-        <div
-          className="flex flex-col items-center text-center gap-4 p-10 rounded-xl"
-          style={{ border: '1px dashed var(--line)', background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 30%, var(--paper)), var(--card))' }}
-        >
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Listening mode
-          </div>
-          {/* A STATIC mark. The bars used to animate on a loop whether or not anything was
-              playing, so the page appeared to be doing something at all times — motion that
-              carried no information and pulled the eye away from the blanks being typed into. */}
-          <div className="flex items-end gap-1.5" aria-hidden="true" style={{ height: 26 }}>
-            {[30, 70, 95, 50, 80, 40, 62].map((h, i) => (
-              <span key={i} className="block w-[5px] rounded-[3px]"
-                style={{ height: `${h}%`, background: 'var(--accent)', opacity: 0.35 }} />
-            ))}
-          </div>
-          <div style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', color: 'var(--ink-soft)', fontSize: 15, maxWidth: '38ch', lineHeight: 1.55 }}>
-            {audioBlanks.length > 0
-              ? 'The passage is hidden. Play any blank to hear its sentence — as many times as you need, in any order.'
-              : 'The passage is hidden. Press play and answer the questions below from what you hear.'}
-          </div>
-
-          {audioBlanks.length > 0 && (
-            <div className="w-full grid gap-x-6 gap-y-3 mt-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-              {audioBlanks.map(({ token, occurrenceId, reviewKey, si }, n) => {
-                const storedEntry = restoredClozeGrades?.get(occurrenceId);
-                return (
-                  <div key={occurrenceId} className="flex items-baseline gap-2 justify-center">
-                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', minWidth: '1.6em', textAlign: 'right' }}>
-                      {n + 1}.
-                    </span>
-                    <button
-                      onClick={() => playBlankSentence(occurrenceId, si)}
-                      title={playingBlank === occurrenceId ? 'Stop' : `Play sentence ${si + 1}`}
-                      aria-label={playingBlank === occurrenceId ? 'Stop' : `Play sentence ${si + 1} for blank ${n + 1}`}
-                      className="shrink-0 cursor-pointer transition-all duration-150"
-                      style={{
-                        width: 22, height: 22, borderRadius: '50%', alignSelf: 'center',
-                        display: 'grid', placeItems: 'center', fontSize: 9, lineHeight: 1,
-                        border: '1px solid',
-                        borderColor: playingBlank === occurrenceId ? 'var(--accent)' : 'var(--line)',
-                        background: playingBlank === occurrenceId ? 'var(--accent)' : 'var(--card)',
-                        color: playingBlank === occurrenceId ? '#fff' : 'var(--ink-soft)',
-                      }}
-                    >
-                      {playingBlank === occurrenceId ? '■' : '▶'}
-                    </button>
-                    <ClozeBlank
-                      token={token}
-                      showHint={showClozeHints ?? true}
-                      accentKeys={langConfig.accentKeys}
-                      contextualMeaning={contextualMeanings?.[reviewKey] ?? contextualMeanings?.[token.text]}
-                      onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
-                      initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Passage text */}
-      {!audioOnly && (
+      {(
         <div
           className={showPinyin ? 'show-pinyin' : ''}
           style={{

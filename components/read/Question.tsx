@@ -289,9 +289,6 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
             >
               {loading ? 'Evaluating…' : frFeedback ? 'Resubmit' : 'Submit for feedback'}
             </button>
-            <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-              Try to use today&apos;s vocabulary
-            </span>
           </div>
 
           {frFeedback && (
