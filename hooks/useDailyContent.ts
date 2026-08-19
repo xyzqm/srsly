@@ -900,7 +900,10 @@ export function useDailyContent(
       const payload = await res.json() as { data: { questions?: unknown[] }; aiRemaining?: number | null };
       syncGuestAiRemaining(payload.aiRemaining);
       const raw = Array.isArray(payload.data?.questions) ? payload.data.questions : [];
-      if (raw.length === 0) throw new Error('Question generation returned nothing');
+      // Reads as an explanation, not a stack trace. The model comes back empty when the
+      // passage is too thin to ask about; ReadTab hides the button below its own length
+      // threshold, so reaching here means it was long enough to try and still did not land.
+      if (raw.length === 0) throw new Error('the model had nothing to ask about this passage. Try again, or read a longer one.');
 
       /**
        * Through buildQuestions, never `as Question[]`.

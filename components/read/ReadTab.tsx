@@ -337,6 +337,24 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     return { clozeWordCount: count, clozeDistinctCount: distinct.size, blankIds: ids };
   }, [SENTENCES, clozeWords, clozeGrades]);
 
+  /**
+   * Is there enough passage to ask about?
+   *
+   * The route asks the model for five comprehension questions. Given "El camarón está aquí"
+   * it has nothing to work with and comes back empty, which surfaced to the reader as
+   * "Question generation returned nothing" — a sentence about our code, after a nine-second
+   * wait and a spent AI credit, for a request that could never have succeeded.
+   *
+   * Measured in TOKENS, not characters, and requiring more than one sentence: a question
+   * needs at least two facts to distinguish, and a single sentence gives one. The threshold
+   * is deliberately low — this exists to catch the obviously impossible, not to judge what
+   * makes a good passage.
+   */
+  const enoughToQuestion = useMemo(() => {
+    const tokenCount = SENTENCES.reduce((n, s) => n + s.tokens.length, 0);
+    return SENTENCES.length >= 2 && tokenCount >= 20;
+  }, [SENTENCES]);
+
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
   // Loaded from prefs just below, and written back on every change — the Read tab unmounts
@@ -1162,6 +1180,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', letterSpacing: '.06em' }}>
                   Generating questions…
                 </div>
+              ) : !enoughToQuestion ? (
+                <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.5, textAlign: 'center', maxWidth: '44ch', margin: 0 }}>
+                  Too short for comprehension questions — paste a few more sentences and the
+                  option appears.
+                </p>
               ) : (
                 <button
                   onClick={() => generateQuestionsForPassage(passageIdx)}
@@ -1182,7 +1205,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--accent)', lineHeight: 1.5, textAlign: 'center', maxWidth: '46ch', margin: 0 }}>
                   {showGuestLimit
                     ? "You've used your free AI generations — sign in for unlimited questions."
-                    : `Couldn't generate questions: ${questionsError}. Try again.`}
+                    : `Couldn't generate questions: ${questionsError}`}
                 </p>
               )}
             </div>

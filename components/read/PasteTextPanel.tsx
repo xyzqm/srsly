@@ -77,8 +77,15 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
    * story. The generated path gets these from the model; pasted text has no such channel, and
    * a dictionary cannot decide it alone (see lib/server/chineseNames.ts). So the app guesses,
    * and the reader confirms.
+   *
+   * CONFIRMING IS THE ONLY WAY IN. There used to be a text field asking the reader to type
+   * every name in the article, which is not work anyone was going to do — you would have to
+   * read the whole thing first to fill in the box that helps you read it. The guesser already
+   * finds them and the "Keep whole" button is one tap, so the field was pure friction. A name
+   * the guesser misses still splits into characters, which reads as slightly odd glosses
+   * rather than anything broken.
    */
-  const [names, setNames] = useState('');
+  const [names, setNames] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
 
@@ -90,10 +97,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
   // panel must not have — the whole point of it is to be trusted before you commit.
   const edit = useCallback(<T,>(set: (v: T) => void) => (v: T) => { set(v); setAnalysis(null); setError(''); }, []);
 
-  const nameList = useCallback((raw: string) =>
-    raw.split(/[,，、\s]+/).map(n => n.trim()).filter(Boolean), []);
-
-  const analyze = useCallback(async (overrideNames?: string) => {
+  const analyze = useCallback(async (overrideNames?: string[]) => {
     if (!text.trim() || tooLong) return;
     setBusy(true);
     setError('');
@@ -107,7 +111,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
           title: split.title,
           language,
           words: deck.map(w => ({ h: w.h, p: w.p, m: w.m })),
-          names: nameList(overrideNames ?? names),
+          names: overrideNames ?? names,
         }),
       });
       if (!res.ok) {
@@ -134,14 +138,14 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
     } finally {
       setBusy(false);
     }
-  }, [text, title, names, nameList, tooLong, language, deck, dueWords, blankDensity]);
+  }, [text, title, names, tooLong, language, deck, dueWords, blankDensity]);
 
   const commit = useCallback(() => {
     if (!analysis) return;
     onCommit(analysis.passage);
     setText('');
     setTitle('');
-    setNames('');
+    setNames([]);
     setAnalysis(null);
     setOpen(false);
   }, [analysis, onCommit]);
@@ -208,18 +212,6 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
         }}
       />
 
-      <input
-        type="text"
-        value={names}
-        onChange={e => edit(setNames)(e.target.value)}
-        placeholder="Names in this text (optional) — kept whole instead of split into characters"
-        style={{
-          width: '100%', fontSize: 13.5, color: 'var(--ink)', background: 'var(--card)',
-          border: '1px solid var(--line)', borderRadius: 7, padding: '8px 10px', outline: 'none',
-          marginBottom: 8,
-        }}
-      />
-
       <textarea
         value={text}
         onChange={e => edit(setText)(e.target.value)}
@@ -268,7 +260,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
           </span>
           <button
             onClick={() => {
-              const merged = [...nameList(names), ...analysis.suggestedNames].join(', ');
+              const merged = [...names, ...analysis.suggestedNames];
               setNames(merged);
               void analyze(merged);
             }}
