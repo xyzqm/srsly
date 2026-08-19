@@ -9,6 +9,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { needsSpaceBefore } from '@/lib/tokenText';
+import { speak, stopAll } from '@/lib/speech';
 import GlossText from '@/components/shared/GlossText';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
@@ -479,6 +480,29 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     return out;
   }, [sentences, clozeWords, restoredClozeGrades]);
 
+  /**
+   * Which blank's sentence is playing, so its button can show as active.
+   *
+   * SELF-PACED IS THE WHOLE POINT. Listening mode used to play the passage straight through
+   * while asking you to fill five blanks in order, which is not a hard exercise so much as an
+   * impossible one — the audio runs on its own clock and typing does not, so a word missed is
+   * missed for good and the only recovery is to restart the whole passage.
+   *
+   * Each blank now plays the sentence it lives in, as many times as you like, in any order.
+   * A WHOLE sentence deliberately: cutting the audio at the blank would strip the
+   * co-articulation and prosody either side of it, which is frequently the very thing that
+   * tells you what the word was.
+   */
+  const [playingBlank, setPlayingBlank] = useState<string | null>(null);
+
+  const playBlankSentence = useCallback((occurrenceId: string, si: number) => {
+    const text = sentences[si]?.plainText;
+    if (!text) return;
+    if (playingBlank === occurrenceId) { stopAll(); setPlayingBlank(null); return; }
+    setPlayingBlank(occurrenceId);
+    void speak(text, () => setPlayingBlank(cur => (cur === occurrenceId ? null : cur)));
+  }, [sentences, playingBlank]);
+
   const handleAddVocab = useCallback((word: string, pinyin: string, meaning: string) => {
     onClaimVocab(word);
     onAddToDeck({ h: word, p: pinyin, m: meaning });
@@ -521,7 +545,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', color: 'var(--ink-soft)', fontSize: 15, maxWidth: '38ch', lineHeight: 1.55 }}>
             {audioBlanks.length > 0
-              ? 'The passage is hidden. Press play and fill in each word you hear, in order.'
+              ? 'The passage is hidden. Play any blank to hear its sentence — as many times as you need, in any order.'
               : 'The passage is hidden. Press play and answer the questions below from what you hear.'}
           </div>
 
@@ -531,10 +555,25 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                 const storedEntry = restoredClozeGrades?.get(occurrenceId);
                 return (
                   <div key={occurrenceId} className="flex items-baseline gap-2 justify-center">
-                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', minWidth: '3.4em', textAlign: 'right' }}
-                          title={`Sentence ${si + 1}`}>
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', minWidth: '1.6em', textAlign: 'right' }}>
                       {n + 1}.
                     </span>
+                    <button
+                      onClick={() => playBlankSentence(occurrenceId, si)}
+                      title={playingBlank === occurrenceId ? 'Stop' : `Play sentence ${si + 1}`}
+                      aria-label={playingBlank === occurrenceId ? 'Stop' : `Play sentence ${si + 1} for blank ${n + 1}`}
+                      className="shrink-0 cursor-pointer transition-all duration-150"
+                      style={{
+                        width: 22, height: 22, borderRadius: '50%', alignSelf: 'center',
+                        display: 'grid', placeItems: 'center', fontSize: 9, lineHeight: 1,
+                        border: '1px solid',
+                        borderColor: playingBlank === occurrenceId ? 'var(--accent)' : 'var(--line)',
+                        background: playingBlank === occurrenceId ? 'var(--accent)' : 'var(--card)',
+                        color: playingBlank === occurrenceId ? '#fff' : 'var(--ink-soft)',
+                      }}
+                    >
+                      {playingBlank === occurrenceId ? '■' : '▶'}
+                    </button>
                     <ClozeBlank
                       token={token}
                       showHint={showClozeHints ?? true}

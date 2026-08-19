@@ -195,8 +195,44 @@ let currentGen = 0;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/**
+ * The API-backed <audio> currently playing, if any.
+ *
+ * `speechSynthesis.cancel()` has no authority over it — it is an ordinary media element — so
+ * without this, stopping only halted the browser-TTS path. The generation guard already kept
+ * a cancelled SEQUENCE from advancing, which is why this stayed invisible: the passage did
+ * not continue to the next sentence, it just finished the one it was on, over the top of
+ * whatever you started next. Per-blank replay in listening mode makes interrupting the
+ * normal thing to do rather than an edge case.
+ */
+let activeAudio: HTMLAudioElement | null = null;
+
+/**
+ * The running sequence's "I stopped" callback, so stopping can REPORT rather than rely on a
+ * cancelled utterance firing `onend` — which `speechSynthesis.cancel()` does not reliably
+ * do. Without it a player interrupted by anything else (a blank's replay button, a flashcard)
+ * kept its pause icon showing forever, because the only path that called `onDone` was one the
+ * generation guard had already closed off.
+ */
+let activeSequenceDone: (() => void) | null = null;
+
+function playTracked(audio: HTMLAudioElement): void {
+  activeAudio = audio;
+  const clear = () => { if (activeAudio === audio) activeAudio = null; };
+  audio.addEventListener('ended', clear);
+  audio.addEventListener('error', clear);
+}
+
 export function stopAll(): void {
   currentGen++;
+  const done = activeSequenceDone;
+  activeSequenceDone = null;
+  done?.();
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio.currentTime = 0;
+    activeAudio = null;
+  }
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     speechSynthesis.cancel();
   }
@@ -219,6 +255,7 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
     audio.onerror = () => {
       if (gen === currentGen) speakBrowser(text, gen, onEnd);
     };
+    playTracked(audio);
     audio.play().catch(() => {
       if (gen === currentGen) speakBrowser(text, gen, onEnd);
     });
@@ -261,9 +298,13 @@ export function speakSequence(
   texts: string[],
   startIdx: number,
   onAdvance: (idx: number) => void,
-  onDone: () => void,
+  rawOnDone: () => void,
 ): () => void {
-  const gen = ++currentGen;
+  stopAll();                       // reports any sequence already running before replacing it
+  const gen = currentGen;
+  // Fires at most once, whether the sequence finished or was cut short.
+  const onDone = () => { if (activeSequenceDone === onDone) activeSequenceDone = null; rawOnDone(); };
+  activeSequenceDone = onDone;
 
   async function speakAt(idx: number) {
     if (gen !== currentGen || idx >= texts.length) { onDone(); return; }
@@ -282,6 +323,7 @@ export function speakSequence(
       audio.onerror = () => {
         if (gen === currentGen) speakAtBrowser(idx);
       };
+      playTracked(audio);
       audio.play().catch(() => {
         if (gen === currentGen) speakAtBrowser(idx);
       });
@@ -308,7 +350,7 @@ export function speakSequence(
   }
 
   speakAt(startIdx);
-  return () => { currentGen++; speechSynthesis.cancel(); };
+  return () => stopAll();
 }
 
 /**
