@@ -51,13 +51,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    text = typeof body.text === 'string' ? body.text : '';
-    title = typeof body.title === 'string' ? body.title : '';
+    // NFC FIRST, before anything looks at a character.
+    //
+    // Pasted text is not necessarily precomposed: macOS, several PDF extractors and some
+    // web sources emit NFD, where á is a + U+0301 and が is か + U+3099. Every tokenizer
+    // here classifies characters one at a time and no combining mark is a word character,
+    // so `camarón` split into `camaro` + `́` + `n` — the word shredded, its pieces
+    // unmatchable against a dictionary keyed in NFC, and stray accent marks left standing
+    // in the passage as their own tokens. It broke every accented word in Spanish and
+    // French, and would break voiced kana in Japanese.
+    //
+    // Normalising here rather than in each segmenter keeps it to one place and covers the
+    // title, the names and the deck overrides at the same time — all of which have to agree
+    // with the passage text for a blank or a lookup to match.
+    const nfc = (v: unknown) => (typeof v === 'string' ? v.normalize('NFC') : '');
+    text = nfc(body.text);
+    title = nfc(body.title);
     language = toLanguageCode(body.language);
     words = Array.isArray(body.words) ? body.words : [];
     // Names the reader confirmed. They are overrides like any deck word, so the segmenter
     // keeps them whole by the same greedy-merge path — no special case in the tokenizer.
-    names = Array.isArray(body.names) ? body.names.filter((n: unknown): n is string => typeof n === 'string' && !!n.trim()) : [];
+    names = Array.isArray(body.names)
+      ? body.names.filter((n: unknown): n is string => typeof n === 'string' && !!n.trim()).map((n: string) => n.normalize('NFC'))
+      : [];
   } catch {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
   }
@@ -79,7 +95,8 @@ export async function POST(req: NextRequest) {
   const overrides = new Map<string, { p: string; m: string }>();
   for (const w of words) {
     if (typeof w?.h !== 'string' || !w.h) continue;
-    if (!overrides.has(w.h)) overrides.set(w.h, { p: w.p ?? '', m: w.m ?? '' });
+    const h = w.h.normalize('NFC');
+    if (!overrides.has(h)) overrides.set(h, { p: w.p ?? '', m: w.m ?? '' });
   }
 
   /**
