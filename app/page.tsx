@@ -17,6 +17,8 @@ import StatsTab from '@/components/stats/StatsTab';
 import VocabTab from '@/components/vocab/VocabTab';
 import SettingsTab from '@/components/settings/SettingsTab';
 import { useSRS } from '@/hooks/useSRS';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { runDailyPoolActivation } from '@/lib/poolAutoActivate';
 import { AuthProvider, useAuth } from '@/lib/auth/AuthProvider';
 import SignInModal from '@/components/auth/SignInModal';
 
@@ -116,6 +118,25 @@ function AppShell() {
       }
     });
   }, []);
+
+  /**
+   * The daily pool activation, run on load — see lib/poolAutoActivate.ts for the rules.
+   *
+   * HERE, and not in useVocabDeck, because AppShell mounts exactly once. That hook is
+   * instantiated by four tabs and two of them stay mounted, so an effect inside it would
+   * fire from several copies on the same tick, before any had written the date, and activate
+   * a batch per copy — precisely the avalanche the feature is supposed to prevent.
+   *
+   * Keyed on `language` so switching to a language you have not opened today activates its
+   * pool too. Each language keeps its own date, because each has its own deck.
+   */
+  const { releaseFromPool, deckLoaded } = useVocabDeck(language);
+  useEffect(() => {
+    // The deck has to be in memory first: releasing from a pool that has not loaded yet
+    // would find nothing pooled, and then record the day as done.
+    if (!deckLoaded) return;
+    void storage.getPrefs().then(p => runDailyPoolActivation(language, p, releaseFromPool));
+  }, [language, deckLoaded, releaseFromPool]);
 
   const handleAddLanguage = useCallback(async (lang: LanguageCode, placedLevel: number) => {
     const next = await addLanguage(lang, placedLevel);

@@ -84,6 +84,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const [revPerDayRaw,  setRevPerDayRaw]  = useState('200');
   const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
   const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
+  const [autoActivate, setAutoActivate] = useState(false);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));
   const [saved,      setSaved]      = useState(false);
@@ -170,11 +171,12 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       setBlankDensity(bd); setBlankDensityRaw(String(bd));
       const pa = p.poolActivateCount ?? RECOMMENDED_POOL_ACTIVATE;
       setPoolActivate(pa); setPoolActivateRaw(String(pa));
+      setAutoActivate(p.autoActivatePool === true);
       setLoaded(true);
     });
   }, [language]);
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number; autoActivatePool: boolean }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -632,6 +634,30 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         disabled={loaded && poolActivate === RECOMMENDED_POOL_ACTIVATE}
         onClick={() => { setPoolActivate(RECOMMENDED_POOL_ACTIVATE); setPoolActivateRaw(String(RECOMMENDED_POOL_ACTIVATE)); savePrefs({ poolActivateCount: RECOMMENDED_POOL_ACTIVATE }); }}
       />
+
+      {/* Off unless chosen. It changes how much work arrives without being asked, and
+          someone with a large pool should not find it draining itself because they
+          updated. See lib/poolAutoActivate.ts for the once-a-day rule and the cap. */}
+      <label
+        className="flex items-start gap-3 mt-5 cursor-pointer"
+        style={{ maxWidth: '48ch' }}
+      >
+        <input
+          type="checkbox"
+          checked={autoActivate}
+          onChange={e => { setAutoActivate(e.target.checked); savePrefs({ autoActivatePool: e.target.checked }); }}
+          style={{ marginTop: 3, width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer' }}
+        />
+        <span>
+          <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Activate a batch automatically each day</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.5, marginTop: 3 }}>
+            The first time you open the app each day, {poolActivate} word
+            {poolActivate === 1 ? '' : 's'} move out of the pool on their own. Never more than
+            one batch, however long you have been away — a week off does not become a week&apos;s
+            worth of new cards.
+          </span>
+        </span>
+      </label>
 
       {/* ── Daily limits ──────────────────────────────────────────────────── */}
       <SectionLabel>Daily limits</SectionLabel>

@@ -221,6 +221,7 @@ LocalStorage keys:
 - `srsly-prefs` — theme, font, language, and the per-language level (`hskLevel` / `jlptLevel` / `cefrLevel` / `frLevel`)
 - `srsly-claimed-words` — words added to deck or previewed
 - `srsly-curriculum-pruned` — per-language marker of the last `CURRICULUM_VERSION` the deck was pruned at (`lib/curriculum.ts`). Device-local on purpose: it records what has been done to this copy of the deck, not a preference worth syncing
+- `srsly-pool-auto-{lang}` — the date the daily pool auto-activation last ran (`lib/poolAutoActivate.ts`). Read on load, not on a timer, and **never used to compute elapsed days**: the catch-up cap is precisely the absence of that arithmetic, so a week away costs one batch rather than seven
 - `srsly-daily-{lang}-{level}-{YYYY-MM-DD}` — cached daily content
 
 ### Theming
