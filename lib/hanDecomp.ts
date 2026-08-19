@@ -79,6 +79,35 @@ const HAN = /^[一-鿿㐀-䶿]$/;
  * hint says so, which is why a primitive with a hint is still worth returning.
  */
 /**
+ * Glosses for the component-only forms the source leaves blank.
+ *
+ * These four are Unicode CJK RADICAL code points, and Unicode's own character names are the
+ * gloss: U+2E8D is literally "CJK RADICAL SMALL TWO". They account for 28 of the 52
+ * characters with an unglossed part, 学 among them, so naming them is what turns
+ * "学 = ⺍ + 冖 cover + 子 son" into something a learner can read.
+ *
+ * Only these four. The remaining unglossed parts are ordinary ideographs (龶, 氺, 厽) with no
+ * documented name to borrow, and inventing one would be worse than leaving the shape bare.
+ */
+const RADICAL_GLOSS: Record<string, string> = {
+  '\u2E88': 'knife',       // ⺈ CJK RADICAL KNIFE ONE
+  '\u2E8A': 'divination',  // ⺊ CJK RADICAL DIVINATION
+  '\u2E8C': 'small',       // ⺌ CJK RADICAL SMALL ONE
+  '\u2E8D': 'small',       // ⺍ CJK RADICAL SMALL TWO
+};
+
+/**
+ * Glosses that are worse than none, suppressed so the shape renders bare.
+ *
+ * "kwukyel" is 구결 — a Korean reading-annotation mark. Unihan records it because these
+ * shapes were borrowed for that purpose, but as the gloss beside a component of 来 or 半 it
+ * is not merely unhelpful, it points a Chinese learner at the wrong language. 丷 reaches 24
+ * characters that way. There is no agreed meaning to substitute — it is two strokes — so the
+ * honest rendering is the shape with nothing beside it.
+ */
+const UNUSABLE_GLOSS = new Set(['kwukyel']);
+
+/**
  * Cut the "…; 交 also provides the pronunciation" tail off a mnemonic.
  *
  * 256 hints end in one. It is the same sound-versus-meaning bookkeeping the component tags
@@ -110,11 +139,21 @@ export function decompose(table: Record<string, HanEntry>, char: string): Decomp
    * actively misleads. Wherever the source says the character is a picture, the picture is
    * the whole explanation and the hint carries it.
    */
+  /**
+   * EVERY part is listed, glossed or not.
+   *
+   * A part with no gloss used to be skipped, which silently shortened the equation: 学 is
+   * ⺍冖子 but ⺍ carries no gloss, so it rendered "学 = 冖 cover + 子 son" — an equation
+   * missing a piece the reader can plainly see on the character. Showing the shape with
+   * nothing beside it is the honest version; dropping it is a wrong answer.
+   *
+   * It is 52 characters out of 3,457, and every dropped part was present in the table and
+   * merely unglossed — none were absent from it.
+   */
   const parts: Component[] = [];
   for (const c of (e.t === 'pictographic' ? '' : e.p ?? '')) {
-    const sub = table[c];
-    if (!sub?.g) continue;                       // a stroke-level part with nothing to say
-    parts.push({ char: c, gloss: sub.g });
+    const raw = table[c]?.g ?? '';
+    parts.push({ char: c, gloss: UNUSABLE_GLOSS.has(raw) ? '' : raw || RADICAL_GLOSS[c] || '' });
   }
 
   /**

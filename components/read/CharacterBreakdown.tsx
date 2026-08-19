@@ -50,7 +50,10 @@ export default function CharacterBreakdown({ word, gloss, variant = 'panel' }: P
     setOpen(false);                                   // a new word starts collapsed again
     if (!supportsDecomposition(language) || !word) return;
     if (gloss && isProperNounGloss(gloss)) return;    // names are not built from anything
-    const chars = [...word].slice(0, MAX_CHARS);
+    // Deduped, and only then capped. 越来越 is 越 twice, and a second identical row says
+    // nothing the first did not — it also collided in React's key space, since the row key
+    // is the character itself.
+    const chars = [...new Set([...word])].slice(0, MAX_CHARS);
     void loadHanDecomp().then(table => {
       if (!live || !table) return;
       const out = chars.map(c => decompose(table, c)).filter((d): d is Decomposition => d !== null);
@@ -103,7 +106,9 @@ export default function CharacterBreakdown({ word, gloss, variant = 'panel' }: P
                       <span key={c.char + i} className="inline-flex items-baseline gap-1" style={{ whiteSpace: 'nowrap' }}>
                         {i > 0 && <span style={{ fontSize: pop ? 11 : 12, ...faint, marginRight: 2 }}>+</span>}
                         <span style={{ ...han, fontSize: pop ? 15 : 17 }}>{c.char}</span>
-                        <span style={{ fontSize: pop ? 10.5 : 11.5, ...dim }}>{c.gloss}</span>
+                        {/* A part the source never glossed shows as the shape alone, rather
+                            than an empty span opening a gap where a word should be. */}
+                        {c.gloss && <span style={{ fontSize: pop ? 10.5 : 11.5, ...dim }}>{c.gloss}</span>}
                         {/* No SOUND / MEANING tags.
                             They were meant to warn that a phonetic component is not a clue to
                             the meaning, but they read as claims about the component itself —
