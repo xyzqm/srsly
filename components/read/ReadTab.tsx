@@ -133,6 +133,30 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   const SENTENCES    = useMemo(() => currentPassage?.sentences ?? [], [currentPassage]);
   const TITLE_TOKENS = useMemo(() => currentPassage?.titleTokens ?? [], [currentPassage]);
+
+  /**
+   * Does the title give away the opening of the passage?
+   *
+   * Listening mode used to hide the title unconditionally, which was broader than its own
+   * reason. Only ONE of the ways a title gets set actually leaks anything (see splitTitle in
+   * PasteTextPanel): a paste with no headline line is labelled with a short excerpt of its
+   * own first sentence, and the body keeps that sentence — so the title is the passage. A
+   * model-written headline, a title the reader typed, and a headline lifted OUT of the body
+   * are all separate from the text and give nothing away. Hiding those cost the reader the
+   * one piece of context real listening practice always has: what it is about.
+   *
+   * Tested rather than tracked, so it needs no new stored field and holds for passages
+   * already on the shelf — and it catches the case a flag would miss, a reader who types a
+   * title that happens to be their first sentence. Whitespace is dropped from both sides
+   * because the title is segmented separately from the body and the two can space
+   * differently.
+   */
+  const titleRevealsOpening = useMemo(() => {
+    const strip = (v: string) => v.replace(/\s+/g, '').replace(/…$/, '');
+    const title = strip(TITLE_TOKENS.map(t => t.text).join(''));
+    if (title.length < 2) return false;
+    return strip(SENTENCES[0]?.plainText ?? '').startsWith(title);
+  }, [TITLE_TOKENS, SENTENCES]);
   // AI passages start with no questions; they're generated lazily on demand.
   const QUESTIONS = useMemo(() => currentPassage?.questions ?? [], [currentPassage]);
   // Passage length: characters for unspaced scripts, words for spaced ones — a Han-character
@@ -887,11 +911,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             {/* Same rule as the body below: shimmer only when there is no title to show. */}
             {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
-            ) : audioOnly ? (
-              /* Listening mode hides the title too. A generated passage's title is a headline
-                 and would be harmless, but a PASTED one is auto-labelled from its own opening
-                 line — so leaving it up displayed the first sentence of the very passage the
-                 mode exists to hide. */
+            ) : audioOnly && titleRevealsOpening ? (
+              /* Hidden only when the title IS the opening — see titleRevealsOpening. Every
+                 other title stays up, because knowing the subject is part of listening, not
+                 a leak. */
               <span style={{ fontFamily: 'var(--f-mono)', fontSize: 15, letterSpacing: '.06em', color: 'var(--ink-faint)' }}>
                 Hidden while listening
               </span>
