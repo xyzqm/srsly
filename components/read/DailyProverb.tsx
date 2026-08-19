@@ -5,16 +5,20 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 
 /**
- * The day's idiom, under the passage.
+ * The day's idiom, shown as a COMPLETION REWARD.
  *
- * Placed at the END of the reading page on purpose. It is a small pleasure, not a task —
- * putting it above the passage would give the day's first screen two things asking to be
- * read, and the passage is the one with the deck riding on it.
+ * It appears in exactly two places, both of them "you have finished" states: under the
+ * vocabulary results once a targeted reading is done, and on the session-complete screen
+ * after a block of flashcards or cram. Nowhere else.
  *
- * Collapsed to a single line until opened, for the same reason: it should be noticeable and
- * skippable in the same glance.
+ * That placement is the whole design. Sitting permanently at the foot of the Read tab it was
+ * wallpaper — always there, so never an event. Attached to the end of a study loop it is a
+ * small thing you earned, and it lands on a screen that is otherwise just a score.
+ *
+ * `showRule` is the only difference between the two hosts: the reading page wants a rule
+ * separating it from the results above, the centred session screen does not.
  */
-export default function DailyProverb() {
+export default function DailyProverb({ showRule = true }: { showRule?: boolean }) {
   const language = useLanguage();
   const { scriptIsUnspaced } = getLanguageConfig(language);
   const [proverb, setProverb] = useState<Proverb | null>(null);
@@ -33,7 +37,7 @@ export default function DailyProverb() {
   if (!proverb) return null;
 
   return (
-    <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--line)' }}>
+    <div className={showRule ? 'mt-8 pt-8' : 'mt-8'} style={showRule ? { borderTop: '1px solid var(--line)' } : undefined}>
       <div
         style={{
           fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.2em',

@@ -1284,14 +1284,12 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             return <MissedWordReview words={reviewWords} missedCount={missedWords.length} cacheKey={cacheKey} language={language} level={hskLevel} />;
           })()}
 
+          {/* The reward. Only once the reading is actually finished — see DailyProverb.
+              Sitting permanently at the foot of the tab it was wallpaper; here it is the
+              last thing on a screen that otherwise just reports a score. */}
+          {showResults && <DailyProverb />}
         </>
       )}
-
-      {/* OUTSIDE the passage block on purpose. It is the last thing on the page either way,
-          but it does not depend on there being a passage — an empty deck shows the "nothing
-          to read yet" panel, and that is exactly the day a small readable thing is worth
-          having. Nested inside, it disappeared for every new learner. */}
-      <DailyProverb />
 
       <WordPopup
         data={titlePopup.popup}

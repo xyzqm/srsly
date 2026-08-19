@@ -120,6 +120,12 @@ Proper nouns are filtered out at build time by `scripts/lib/nameFilter.mjs`, sha
 
 #### The daily proverb is chosen, not generated
 
+It is a **completion reward**, shown in exactly two places, both of them "you have finished"
+states: under the vocabulary results once a targeted reading is done, and on the
+session-complete screen after a block of flashcards or cram (one `Flashcards` component
+serves both modes, so its single complete block covers them). Nowhere else. Sitting
+permanently at the foot of the Read tab it was wallpaper — always there, so never an event.
+
 `lib/proverb.ts` picks one idiom per day as a **pure function of the date**. There is no API
 call and nothing to cache. That is worth stating because the instinct for a "daily X" is to
 generate it and cache by date the way `useDailyContent` does — right when the content has to
