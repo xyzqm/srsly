@@ -1,5 +1,6 @@
 import { wordsContaining } from './data/dict';
-import { loadLevelTable } from './curriculum';
+import { loadLevelTable, loadVocabTable } from './curriculum';
+import { POLYPHONES } from './polyphones';
 
 /**
  * Characters that are not words on their own — 黏着语素, bound forms.
@@ -30,6 +31,21 @@ const NAMES_ITS_COMPOUND = [
 
 /** Bound, but the gloss doesn't say what it is bound INTO. */
 const BOUND_MARKER = /\(bound form\)|phonetic character used in transliteration|used in loanwords for its phonetic value/;
+
+/**
+ * A gloss that offers NO standalone meaning — every word of it points somewhere else.
+ *
+ * "used in 咖喱[ga1 li2]" and "(phonetic character used in transliteration of foreign names)"
+ * tell you the character exists and nothing you could put on a card. Distinct from
+ * "(bound form) butterfly", which does give a meaning and merely says it usually travels
+ * with company.
+ */
+const POINTER_ONLY = [
+  /^used in [^[]+\[/,
+  /^see [^[]+[[,;]/,
+  /phonetic character used in transliteration/,
+  /used in loanwords for its phonetic value/,
+];
 
 const HAN = /^[一-鿿]+$/;
 
@@ -65,6 +81,36 @@ function compoundFromGloss(char: string, gloss: string): string | null {
 export function isBoundForm(char: string, gloss: string): boolean {
   if (char.length !== 1 || !HAN.test(char)) return false;
   return compoundFromGloss(char, gloss) !== null || senses(gloss).some(x => BOUND_MARKER.test(x));
+}
+
+/**
+ * Whether saving this character ALONE should be refused.
+ *
+ * Three conditions, and the last two exist because the first one is not safe by itself.
+ * cedict.json holds one merged entry per surface, and for a character with a rare second
+ * reading that entry is sometimes the rare one's: 上 is glossed "used in 上聲|上声", 个 is
+ * "used in 自個兒|自个儿", 家 is "used in 傢伙|家伙". On the gloss alone, blocking would have
+ * refused 上, 个, 家, 提, 无, 血, 转, 节, 万 — nine ordinary words, several of them HSK 1.
+ *
+ *   1. The gloss points elsewhere and offers no meaning of its own.
+ *   2. The character is not a single-character word in the curriculum. A curated level list
+ *      saying 上 IS a word settles it; that is what the merged dictionary entry lost.
+ *   3. It is not a known polyphone. 行 háng is glossed "(bound form) row; line" and is
+ *      genuinely bound in that sense, but the character stands alone elsewhere — as the
+ *      classifier in 一行 — and a reading picker already handles it.
+ *
+ * 744 characters remain, and none of them is an HSK word or a polyphone.
+ *
+ * `(bound form)` is deliberately NOT enough to block. 蝶 "butterfly" carries a real meaning,
+ * and refusing to store it would be this rule overreaching into a judgement call. It still
+ * gets a suggested compound; it just is not forced to take one.
+ */
+export async function isStrictlyBound(char: string, gloss: string): Promise<boolean> {
+  if (char.length !== 1 || !HAN.test(char)) return false;
+  if (POLYPHONES[char]) return false;
+  if (!POINTER_ONLY.some(re => re.test(gloss.trim()))) return false;
+  const vocab = await loadVocabTable('zh');
+  return !vocab?.[char];
 }
 
 /**

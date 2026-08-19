@@ -5,7 +5,7 @@ import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
 import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
-import { isBoundForm, suggestCompounds } from '@/lib/boundForms';
+import { isBoundForm, isStrictlyBound, suggestCompounds } from '@/lib/boundForms';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { useWordLookup, splitSenses } from '@/hooks/useWordLookup';
@@ -27,6 +27,8 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
   const [compounds, setCompounds] = useState<string[]>([]);
   /** Compounds offered for a bound character — see the effect below and lib/boundForms.ts. */
   const [offered, setOffered] = useState<string[]>([]);
+  /** True when this character has no standalone meaning at all, so a bare card is unusable. */
+  const [strictlyBound, setStrictlyBound] = useState(false);
   const [recording, setRecording] = useState(false);
   // Detected after mount to avoid SSR/hydration mismatch
   const [hasSpeech, setHasSpeech] = useState(false);
@@ -53,7 +55,17 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
   const status = polyReadings?.length ? 'found' : lookup.status;
   /** Dictionary form to file the card under — the lemma for inflecting languages. */
   const canonicalWord = activeReading ? trimmed : (lookup.word || trimmed);
-  const canAdd = status === 'found' && definitions.length > 0;
+  /**
+   * A strictly bound character with no compound is refused, not merely discouraged.
+   *
+   * 璃 on its own is a card the app cannot ever use: no passage can contain it, no blank can
+   * test it, and the generator asked for a sentence around it will either refuse or invent
+   * one. Saving it does not produce a weak card, it produces dead weight that comes up for
+   * review forever. The compound is what makes it studiable, so it is required.
+   */
+  const missingRequiredCompound =
+    strictlyBound && compounds.every(c => !c.trim());
+  const canAdd = status === 'found' && definitions.length > 0 && !missingRequiredCompound;
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +91,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
     if (isZh && POLYPHONES[trimmed]) return;  // handled above
     setCompounds([]);
     setOffered([]);
+    setStrictlyBound(false);
     if (!langConfig.hasReadings) return;
     if (lookup.status === 'found') {
       setPinyin(lookup.reading);
@@ -114,6 +127,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
       setOffered(list);
       setCompounds(c => (c.length ? c : [list[0]]));
     });
+    void isStrictlyBound(trimmed, gloss).then(strict => { if (live) setStrictlyBound(strict); });
     return () => { live = false; };
   }, [trimmed, isZh, lookup.status, lookup.definitions]);
 
@@ -448,11 +462,35 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
         </div>
       )}
 
+      {/* Says WHY the button is off, next to the button. The compounds field above is
+          already open and pre-filled, so the fix is one tap away — but if it has been
+          cleared the form must not just sit there greyed out with no explanation. */}
+      {missingRequiredCompound && (
+        <div
+          role="alert"
+          className="mt-3 rounded-lg px-4 py-3"
+          style={{
+            background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            color: 'var(--ink)', fontSize: 13, lineHeight: 1.5, maxWidth: '58ch',
+          }}
+        >
+          <strong style={{ fontWeight: 600 }}>{trimmed} needs a compound.</strong>{' '}
+          It never appears as a word on its own, so a card with nothing else on it can never
+          show up in a passage or a blank — add one of the words above and it becomes
+          studiable.
+        </div>
+      )}
+
       <div className="flex gap-2 mt-3.5">
         <button
           onClick={submit}
           disabled={!canAdd}
-          title={canAdd ? undefined : 'Look up a word in the dictionary first'}
+          title={
+            canAdd ? undefined
+              : missingRequiredCompound ? `${trimmed} only appears inside a compound — add one first`
+              : 'Look up a word in the dictionary first'
+          }
           className="transition-all duration-150"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
