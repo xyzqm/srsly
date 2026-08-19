@@ -176,6 +176,39 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
     });
   }, [language]);
 
+  /**
+   * The values a "reset" restores, in one place so the button and the check below cannot
+   * disagree about what "recommended" means.
+   */
+  const RECOMMENDED = {
+    srsRetention:      DEFAULT_SRS_SETTINGS.desiredRetention,
+    srsMaxDays:        DEFAULT_SRS_SETTINGS.maxIntervalDays,
+    srsNewPerDay:      DEFAULT_SRS_SETTINGS.newPerDay,
+    srsReviewsPerDay:  DEFAULT_SRS_SETTINGS.reviewsPerDay,
+    blankDensity:      RECOMMENDED_BLANK_DENSITY,
+    poolActivateCount: RECOMMENDED_POOL_ACTIVATE,
+  } as const;
+
+  const allRecommended =
+    retention === RECOMMENDED.srsRetention &&
+    maxDays === RECOMMENDED.srsMaxDays &&
+    newPerDay === RECOMMENDED.srsNewPerDay &&
+    revPerDay === RECOMMENDED.srsReviewsPerDay &&
+    blankDensity === RECOMMENDED.blankDensity &&
+    poolActivate === RECOMMENDED.poolActivateCount;
+
+  async function resetAllToRecommended() {
+    setRetention(RECOMMENDED.srsRetention);
+    setMaxDays(RECOMMENDED.srsMaxDays);       setMaxDaysRaw(String(RECOMMENDED.srsMaxDays));
+    setNewPerDay(RECOMMENDED.srsNewPerDay);   setNewPerDayRaw(String(RECOMMENDED.srsNewPerDay));
+    setRevPerDay(RECOMMENDED.srsReviewsPerDay); setRevPerDayRaw(String(RECOMMENDED.srsReviewsPerDay));
+    setBlankDensity(RECOMMENDED.blankDensity); setBlankDensityRaw(String(RECOMMENDED.blankDensity));
+    setPoolActivate(RECOMMENDED.poolActivateCount); setPoolActivateRaw(String(RECOMMENDED.poolActivateCount));
+    // autoActivatePool is NOT reset. It is a yes/no about behaviour someone opted into, not a
+    // dial with a correct value — silently switching it back off would be a surprise.
+    await savePrefs(RECOMMENDED);
+  }
+
   async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number; autoActivatePool: boolean }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
@@ -292,9 +325,28 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 28, fontWeight: 500, letterSpacing: '-.015em', margin: '8px 0 4px', lineHeight: 1.15 }}>
         Your preferences
       </div>
-      <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '48ch', lineHeight: 1.55, marginBottom: 32 }}>
+      <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '48ch', lineHeight: 1.55, marginBottom: 18 }}>
         Adjust your {langConfig.name} proficiency level and spaced-repetition schedule.
       </p>
+
+      {/* One button instead of six. Every section carries its own "Use recommended", which is
+          right when you are changing one thing and tedious when you have drifted and want to
+          start over. Deliberately touches ONLY the tuning values — not your level, not your
+          languages, and nothing in Backup & data — because those are choices about who you
+          are rather than dials that have a correct setting. */}
+      <div className="flex items-center gap-3 flex-wrap mb-9">
+        <button
+          onClick={resetAllToRecommended}
+          disabled={!loaded || allRecommended}
+          className="cursor-pointer transition-all duration-150 rounded-md px-3.5 py-2 disabled:opacity-40 disabled:cursor-default"
+          style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
+        >
+          Reset all to recommended
+        </button>
+        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
+          {allRecommended ? 'everything is already at its default' : 'leaves your level and languages alone'}
+        </span>
+      </div>
 
       {/* ── Account ───────────────────────────────────────────────────────── */}
       {authEnabled && (
@@ -639,7 +691,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           someone with a large pool should not find it draining itself because they
           updated. See lib/poolAutoActivate.ts for the once-a-day rule and the cap. */}
       <label
-        className="flex items-start gap-3 mt-5 cursor-pointer"
+        className="flex items-start gap-3 mt-5 mb-10 cursor-pointer"
         style={{ maxWidth: '48ch' }}
       >
         <input
