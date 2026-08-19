@@ -10,6 +10,7 @@ import { storage } from '@/lib/storage';
 import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
 import ThemeSheet from '@/components/ThemeSheet';
+import TabPanel from '@/components/TabPanel';
 import ReadTab from '@/components/read/ReadTab';
 import ExtrasTab from '@/components/practice/ExtrasTab';
 import StatsTab from '@/components/stats/StatsTab';
@@ -155,21 +156,27 @@ function AppShell() {
         />
         <TabNav active={tab} onChange={changeTab} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
-          {tab === 'read' && (
+          {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
+              They are the two that visibly rebuilt on every switch: Read re-entered its
+              loading state and Stats blinked the milestone ring in late. The other three
+              mount and unmount as before; nothing there is expensive enough to earn the
+              memory, and Practice owns audio and timers that should stop when you leave. */}
+          <TabPanel active={tab === 'read'}>
             <ReadTab
+              active={tab === 'read'}
               onScore={recordScore}
               onActivity={recordActivity}
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => changeTab('vocab')}
             />
-          )}
+          </TabPanel>
           {tab === 'practice' && (
             <ExtrasTab onScore={recordScore} initialMode={studyStartMode} />
           )}
-          {tab === 'dash' && (
+          <TabPanel active={tab === 'dash'}>
             <StatsTab onNavigateRead={() => changeTab('read')} />
-          )}
+          </TabPanel>
           {tab === 'vocab' && (
             <VocabTab onStudy={startStudy} />
           )}

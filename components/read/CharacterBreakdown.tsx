@@ -104,14 +104,12 @@ export default function CharacterBreakdown({ word, gloss, variant = 'panel' }: P
                         {i > 0 && <span style={{ fontSize: pop ? 11 : 12, ...faint, marginRight: 2 }}>+</span>}
                         <span style={{ ...han, fontSize: pop ? 15 : 17 }}>{c.char}</span>
                         <span style={{ fontSize: pop ? 10.5 : 11.5, ...dim }}>{c.gloss}</span>
-                        {/* Which half carries the sound is worth naming: it tells the learner
-                            this part is NOT a clue to the meaning, which is the single most
-                            common way character mnemonics go wrong. */}
-                        {c.role && (
-                          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 8.5, letterSpacing: '.06em', textTransform: 'uppercase', ...faint }}>
-                            {c.role}
-                          </span>
-                        )}
+                        {/* No SOUND / MEANING tags.
+                            They were meant to warn that a phonetic component is not a clue to
+                            the meaning, but they read as claims about the component itself —
+                            "孝 filial piety SOUND" invites the question "sound of what?" and
+                            answers nothing. The gloss beside each part is what a learner
+                            actually uses; the rest was jargon in the way. */}
                       </span>
                     ))}
                   </>

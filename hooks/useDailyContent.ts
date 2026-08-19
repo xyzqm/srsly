@@ -429,10 +429,11 @@ function sanitizeCachedContent(content: DailyContent, lang: LanguageCode): void 
     p.questions?.forEach(q => {
       q.q = fixAndDegroup(q.q);
       q.options.forEach(opt => { opt.tokens = fixAndDegroup(opt.tokens); });
-      for (let i = q.options.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
-      }
+      // NOT re-shuffled. `buildQuestions` shuffles once, at generation, and the shuffled
+      // order is what gets cached — so shuffling again here re-randomised the options on
+      // every load of the same passage. The correct answer moved under the reader between
+      // visits, and a question they had already answered came back rearranged, which is
+      // also what made restoring an answer by option index impossible.
     });
   });
 

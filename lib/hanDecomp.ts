@@ -32,8 +32,6 @@ export interface HanEntry {
 export interface Component {
   char: string;
   gloss: string;
-  /** How this part contributes, when the source says so. */
-  role?: 'sound' | 'meaning';
 }
 
 export interface Decomposition {
@@ -80,6 +78,25 @@ const HAN = /^[一-鿿㐀-䶿]$/;
  * would be technically true and pedagogically useless; 木 is a picture of a tree, and the
  * hint says so, which is why a primitive with a hint is still worth returning.
  */
+/**
+ * Cut the "…; 交 also provides the pronunciation" tail off a mnemonic.
+ *
+ * 256 hints end in one. It is the same sound-versus-meaning bookkeeping the component tags
+ * used to carry, and it lands the same way: the character it names is usually not even one
+ * of the parts listed above it (学's hint credits ⺍, which is not shown), so it reads as an
+ * unanswerable aside in the middle of an otherwise plain sentence. What survives — "A person
+ * 亻 keeping watch over a child 子" — is the part a learner can actually use.
+ *
+ * Deliberately anchored to the END and to those two words only. "The sound a bird makes" and
+ * "…provides the meaning and pronunciation" are real mnemonic content and are left alone.
+ */
+function stripPhoneticClause(hint: string | undefined): string | undefined {
+  if (!hint) return hint;
+  const cut = hint.replace(/\s*[;,]?\s*\S+\s*(?:also\s+)?provides the (?:pronunciation|sound)\s*$/i, '')
+                  .trim().replace(/[;,]$/, '');
+  return cut || undefined;
+}
+
 export function decompose(table: Record<string, HanEntry>, char: string): Decomposition | null {
   if (!HAN.test(char)) return null;
   const e = table[char];
@@ -97,8 +114,7 @@ export function decompose(table: Record<string, HanEntry>, char: string): Decomp
   for (const c of (e.t === 'pictographic' ? '' : e.p ?? '')) {
     const sub = table[c];
     if (!sub?.g) continue;                       // a stroke-level part with nothing to say
-    const role = c === e.ph ? 'sound' : c === e.se ? 'meaning' : undefined;
-    parts.push(role ? { char: c, gloss: sub.g, role } : { char: c, gloss: sub.g });
+    parts.push({ char: c, gloss: sub.g });
   }
 
   /**
@@ -110,11 +126,10 @@ export function decompose(table: Record<string, HanEntry>, char: string): Decomp
    * component's gloss exactly and the rest are variants of it ("people" for 亻 "man").
    *
    * Rendered as a line under the breakdown, that read as a definition of the whole character:
-   * 意 showed "heart", which is 心's meaning, not 意's — 意 is thought, or idea. The components
-   * already say "音 sound + 心 meaning", which is the complete and correct story, so the hint
-   * is dropped here rather than repeating half of it as if it were the answer.
+   * 意 showed "heart", which is 心's meaning, not 意's — 意 is thought, or idea. So the hint is
+   * dropped there rather than passing half the story off as the answer.
    */
-  const hint = e.t === 'pictophonetic' ? undefined : e.h;
+  const hint = e.t === 'pictophonetic' ? undefined : stripPhoneticClause(e.h);
 
   // Nothing to show and nothing to say — not worth a panel.
   if (parts.length < 2 && !hint) return null;

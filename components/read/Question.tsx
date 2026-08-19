@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import type { Question as Q, FRResponse, ResponseMode } from '@/lib/types';
 import type { FsrsGrade } from '@/lib/fsrs';
 import { speak } from '@/lib/speech';
@@ -29,15 +29,28 @@ interface Props {
   deckReadings?: Map<string, ReadingHint[]>;
   /** Called when MC is fully resolved — grade: 3=Good(1st try), 2=Hard(2nd try), 1=Again(both wrong) */
   onMcGrade?: (questionIdx: number, grade: FsrsGrade) => void;
+  /**
+   * A grade already recorded for this question, restored from the passage's saved state.
+   *
+   * The FR half has always taken `savedResponse`; MC had no equivalent, so its result lived
+   * only in this component's own state and vanished the moment the Read tab unmounted — a
+   * question you had answered came back unanswered. The grade is enough to redraw the
+   * outcome faithfully, since it encodes exactly what the status line reports: right first
+   * try, right on the second, or wrong twice.
+   */
+  savedMcGrade?: FsrsGrade;
 }
 
-export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, claimsStore, onMcGrade }: Props) {
+export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, claimsStore, onMcGrade, savedMcGrade }: Props) {
   const language = useLanguage();
   const { scriptIsUnspaced } = getLanguageConfig(language);
-  // MC state
-  const [mcTries, setMcTries]           = useState(0);          // 0 = untouched, 1 = one wrong try, 2 = done
-  const [mcDone, setMcDone]             = useState(false);
-  const [mcRight, setMcRight]           = useState<boolean | null>(null);
+  // MC state. Seeded from `savedMcGrade` so a restored question redraws as answered.
+  // 3 = right first try, 2 = right on the second, 1 = wrong twice; the option actually
+  // picked is not recoverable from the grade, so a restored wrong pick is simply not
+  // highlighted — the correct answer is, which is what the locked state shows anyway.
+  const [mcTries, setMcTries]           = useState(savedMcGrade === undefined ? 0 : savedMcGrade === 3 ? 0 : savedMcGrade === 2 ? 1 : 2);
+  const [mcDone, setMcDone]             = useState(savedMcGrade !== undefined);
+  const [mcRight, setMcRight]           = useState<boolean | null>(savedMcGrade === undefined ? null : savedMcGrade >= 2);
   const [selectedOi, setSelectedOi]     = useState<number | null>(null);  // last selected index
   const [firstWrongOi, setFirstWrongOi] = useState<number | null>(null);  // first wrong pick
 
@@ -45,6 +58,31 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
   const [frText, setFrText]         = useState(savedResponse?.text || '');
   const [frFeedback, setFrFeedback] = useState<FRResponse | null>(savedResponse || null);
   const [loading, setLoading]       = useState(false);
+
+  /**
+   * Adopt saved answers that arrive AFTER mount.
+   *
+   * The seeds above only fire on the first render, and on a page load that render happens
+   * before the passage's saved state has been read back — `dailyContent` has to resolve
+   * before ReadTab even knows which key to look under. Without this the restore landed one
+   * beat too late and was ignored, so a reload showed every question blank while the answers
+   * sat in storage.
+   *
+   * Both guards are "don't touch work in progress": an answered MC question is locked, and a
+   * free response is only adopted into an untouched box.
+   */
+  useEffect(() => {
+    if (savedMcGrade === undefined || mcDone) return;
+    setMcTries(savedMcGrade === 3 ? 0 : savedMcGrade === 2 ? 1 : 2);
+    setMcDone(true);
+    setMcRight(savedMcGrade >= 2);
+  }, [savedMcGrade, mcDone]);
+
+  useEffect(() => {
+    if (!savedResponse || frFeedback) return;
+    setFrText(t => t || savedResponse.text);
+    setFrFeedback(savedResponse);
+  }, [savedResponse, frFeedback]);
 
   const { popup, openPopup, closePopup, handleAddVocab } = useWordPopup(onAddVocab, deckWords, deckReadings, claimsStore);
   const questionText = tokensToText(question.q, scriptIsUnspaced);

@@ -77,6 +77,19 @@ export default function ReviewHeatmap({ deck }: Props) {
       }
       grid.push(col);
     }
+    /**
+     * Drop the first month's label when it barely appears.
+     *
+     * The window is a rolling 91 days, so the leftmost month is whatever 13 weeks ago landed
+     * in — often one or two columns. Labelling that put "May" hard against "Jun" with a single
+     * column between them, which reads as a squashed collision rather than two months. GitHub
+     * does the same thing: a partial leading month gets no label and the space stays blank.
+     */
+    const MIN_COLS_FOR_LABEL = 3;
+    if (monthLabels.length > 1 && monthLabels[1].col - monthLabels[0].col < MIN_COLS_FOR_LABEL) {
+      monthLabels.shift();
+    }
+
     return { grid, max, total, activeDays, firstRecorded, monthLabels };
   }, [deck]);
 
@@ -94,11 +107,13 @@ export default function ReviewHeatmap({ deck }: Props) {
           {total.toLocaleString()} card{total === 1 ? '' : 's'} over {activeDays} day{activeDays === 1 ? '' : 's'}
         </div>
       </div>
-      {/* The window is a rolling 91 days, not three whole calendar months, so the first month
-          on the left is a partial one — it starts wherever 13 weeks ago fell. Saying so beats
-          leaving the reader to wonder why May has two columns. */}
+      {/* The window is a rolling 91 days, not three whole calendar months, so the leftmost
+          columns belong to a month that is only partly shown. It used to say so, because a
+          two-column "May" jammed against "Jun" needed explaining; now that a barely-present
+          first month goes unlabelled there is nothing left to explain, and the width of the
+          window is the only fact worth stating. */}
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', opacity: 0.8, marginTop: 2 }}>
-        13 weeks to today · the first month is partial
+        13 weeks to today
       </div>
 
       {total === 0 && (

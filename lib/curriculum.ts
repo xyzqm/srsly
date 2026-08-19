@@ -76,6 +76,9 @@ export async function loadCurriculumWords(lang: LanguageCode): Promise<Set<strin
   }
 }
 
+/** Resolved level tables, keyed by language. Populated only by a completed load. */
+const levelTableCache = new Map<LanguageCode, Record<number, string[]>>();
+
 /**
  * The language's level table: level (1 = easiest) → its word list.
  *
@@ -86,18 +89,43 @@ export async function loadCurriculumWords(lang: LanguageCode): Promise<Set<strin
  * render nothing rather than a bar reading zero.
  */
 export async function loadLevelTable(lang: LanguageCode): Promise<Record<number, string[]> | null> {
+  const hit = levelTableCache.get(lang);
+  if (hit) return hit;
   try {
-    switch (lang) {
-      case 'zh': return (await import('./data/hsk-levels')).HSK_LEVELS;
-      case 'ja': return (await import('./data/jlpt-levels')).JLPT_LEVELS;
-      case 'es': return (await import('./data/cefr-levels')).CEFR_LEVELS;
-      case 'fr': return (await import('./data/fr-levels')).FR_LEVELS;
-      default: return null;
-    }
+    const table = await (async () => {
+      switch (lang) {
+        case 'zh': return (await import('./data/hsk-levels')).HSK_LEVELS;
+        case 'ja': return (await import('./data/jlpt-levels')).JLPT_LEVELS;
+        case 'es': return (await import('./data/cefr-levels')).CEFR_LEVELS;
+        case 'fr': return (await import('./data/fr-levels')).FR_LEVELS;
+        default: return null;
+      }
+    })();
+    if (table) levelTableCache.set(lang, table);
+    return table;
   } catch {
     return null;
   }
 }
+
+/**
+ * The already-loaded table, or null — SYNCHRONOUS, so a component can render it on its very
+ * first frame instead of after an await.
+ *
+ * The dynamic import above is memoized by the bundler, so a second `loadLevelTable` costs no
+ * network. It still costs a microtask, and that is enough to matter: a component that
+ * renders nothing until the promise settles will blink in one frame late every time it
+ * mounts. Stats' milestone ring did exactly that on each visit to the tab.
+ *
+ * Nothing here changes the lazy-loading contract — the cache is only ever populated by a
+ * completed `loadLevelTable`, so a table that has not been fetched is still not in the
+ * bundle. Callers must keep the async path as their real source and treat this as a
+ * fast-start hint.
+ */
+export function cachedLevelTable(lang: LanguageCode): Record<number, string[]> | null {
+  return levelTableCache.get(lang) ?? null;
+}
+
 
 /**
  * The language's word → { meaning, reading } table.

@@ -1,14 +1,16 @@
 'use client';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Sentence } from '@/lib/types';
 import { speakSequence, primeTTS } from '@/lib/speech';
 
 interface Props {
   sentences: Sentence[];
   onSentenceChange: (idx: number) => void;
+  /** False when the Read tab is hidden. Playback stops rather than following the reader. */
+  active?: boolean;
 }
 
-export default function PassagePlayer({ sentences, onSentenceChange }: Props) {
+export default function PassagePlayer({ sentences, onSentenceChange, active = true }: Props) {
   const [playing, setPlaying] = useState(false);
   const [idx, setIdx] = useState(0);
   const stopRef = useRef<(() => void) | null>(null);
@@ -31,6 +33,19 @@ export default function PassagePlayer({ sentences, onSentenceChange }: Props) {
     );
     stopRef.current = stopFn;
   }, [sentences, onSentenceChange, stop]);
+
+  /**
+   * Stop when the tab is hidden, and when this really does unmount.
+   *
+   * `speakSequence` returns a stop function and speaks through the global
+   * `speechSynthesis` queue — dropping the reference does not silence it. Before the Read
+   * tab was kept alive this leaked on unmount too; now that it survives a tab switch, the
+   * audio would simply carry on over whatever you switched to.
+   */
+  useEffect(() => {
+    if (!active) stop();
+    return () => { stopRef.current?.(); stopRef.current = null; };
+  }, [active, stop]);
 
   const toggle = useCallback(() => {
     if (playing) stop();

@@ -5,6 +5,11 @@ import type { LanguageCode } from '@/lib/types';
 
 export interface MissedWord { h: string; p: string; m: string; }
 
+/** One practice answer: what was typed (`v`) and whether it has been checked (`s`). */
+interface Answer { v: string; s: boolean }
+type AnswerMap = Record<string, Answer>;
+const EMPTY_ANSWER: Answer = { v: '', s: false };
+
 interface Props {
   words: MissedWord[];
   missedCount?: number;
@@ -13,9 +18,24 @@ interface Props {
   level: number;
 }
 
-function ClozeSentence({ sentence, targetWord }: { sentence: string; targetWord: string }) {
-  const [value, setValue] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+/**
+ * One practice sentence. Deliberately CONTROLLED — the answer and whether it has been
+ * checked are owned by MissedWordReview, not by this component.
+ *
+ * They used to be local `useState`, which meant switching tabs threw them away: the Read tab
+ * unmounts when you leave it, so a reader who answered three sentences, glanced at Stats and
+ * came back found every input empty again.
+ */
+function ClozeSentence({
+  sentence, targetWord, answer, onChange, onSubmit,
+}: {
+  sentence: string;
+  targetWord: string;
+  answer: Answer;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+}) {
+  const { v: value, s: submitted } = answer;
   const inputRef = useRef<HTMLInputElement>(null);
 
   const idx = sentence.indexOf(targetWord);
@@ -26,7 +46,7 @@ function ClozeSentence({ sentence, targetWord }: { sentence: string; targetWord:
 
   function submit() {
     if (!value.trim() || submitted) return;
-    setSubmitted(true);
+    onSubmit();
   }
 
   const inputWidth = `${Math.max(targetWord.length * 1.4, 3)}em`;
@@ -42,7 +62,7 @@ function ClozeSentence({ sentence, targetWord }: { sentence: string; targetWord:
           <input
             ref={inputRef}
             value={value}
-            onChange={e => { if (!submitted) setValue(e.target.value); }}
+            onChange={e => { if (!submitted) onChange(e.target.value); }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(); }}
             placeholder="　"
             style={{
@@ -96,7 +116,14 @@ function ClozeSentence({ sentence, targetWord }: { sentence: string; targetWord:
   );
 }
 
-function WordSection({ word, sentences }: { word: MissedWord; sentences: string[] }) {
+function WordSection({
+  word, sentences, answers, setAnswer,
+}: {
+  word: MissedWord;
+  sentences: string[];
+  answers: AnswerMap;
+  setAnswer: (key: string, next: Answer) => void;
+}) {
   return (
     <div className="mt-6">
       {/* Word header */}
@@ -105,10 +132,6 @@ function WordSection({ word, sentences }: { word: MissedWord; sentences: string[
         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 13, color: 'var(--accent)' }}>{word.p}</span>
         <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{word.m}</span>
       </div>
-      {/* The other place this belongs: you have just failed to recall this word, so the
-          answer is already on screen and a mnemonic costs nothing. Offering it before the
-          attempt would have given the answer away; offering it now is the whole point. */}
-      <CharacterBreakdown word={word.h} gloss={word.m} />
       {/* Sentences */}
       {sentences.length === 0 ? (
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
@@ -116,11 +139,30 @@ function WordSection({ word, sentences }: { word: MissedWord; sentences: string[
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {sentences.map((s, i) => (
-            <ClozeSentence key={i} sentence={s} targetWord={word.h} />
-          ))}
+          {sentences.map((s, i) => {
+            const key = `${word.h}|${i}`;
+            const answer = answers[key] ?? EMPTY_ANSWER;
+            return (
+              <ClozeSentence
+                key={i}
+                sentence={s}
+                targetWord={word.h}
+                answer={answer}
+                onChange={v => setAnswer(key, { v, s: false })}
+                onSubmit={() => setAnswer(key, { v: answer.v, s: true })}
+              />
+            );
+          })}
         </div>
       )}
+      {/* The breakdown sits BELOW the practice, not between the header and it.
+          You have just failed to recall this word, so the answer is already on screen and a
+          mnemonic costs nothing — but a collapsed toggle wedged under the header split the
+          word from the sentences it belongs to and read as an interruption. As a footer it
+          is where you reach for it: after the attempt. */}
+      <div className="mt-2">
+        <CharacterBreakdown word={word.h} gloss={word.m} />
+      </div>
     </div>
   );
 }
@@ -130,8 +172,20 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
   const [sentences, setSentences] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [answers, setAnswers] = useState<AnswerMap>({});
 
-  // Restore cached sentences so we never regenerate for the same passage.
+  /**
+   * Everything here is derived from `cacheKey`, which already identifies the passage —
+   * `srsly-missed-sentences|{contentKey}|{passageIdx}`. Keeping the suffixes under that same
+   * prefix is what lets the day-rollover sweep in lib/storage/local.ts drop them with the
+   * sentences they belong to, instead of leaving orphaned answers behind forever.
+   */
+  const openKey    = cacheKey ? `${cacheKey}|open` : '';
+  const answersKey = cacheKey ? `${cacheKey}|answers` : '';
+
+  // Restore cached sentences, whether the section was open, and any answers already typed.
+  // All three are lost on unmount — the Read tab is torn down when you switch tabs — so
+  // without this, coming back closed the review and blanked every input.
   useEffect(() => {
     if (!cacheKey) return;
     try {
@@ -139,9 +193,31 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
       if (raw) {
         setSentences(JSON.parse(raw));
         setFetched(true);
+        // Only meaningful once the sentences exist: reopening with nothing to show would
+        // fire a fresh generation on mount, which is not what the reader asked for.
+        setOpen(localStorage.getItem(openKey) === '1');
       }
+      const savedAnswers = localStorage.getItem(answersKey);
+      if (savedAnswers) setAnswers(JSON.parse(savedAnswers));
     } catch { /* ignore */ }
-  }, [cacheKey]);
+  }, [cacheKey, openKey, answersKey]);
+
+  function setAnswer(key: string, next: Answer) {
+    setAnswers(prev => {
+      const merged = { ...prev, [key]: next };
+      if (answersKey) {
+        try { localStorage.setItem(answersKey, JSON.stringify(merged)); } catch { /* ignore */ }
+      }
+      return merged;
+    });
+  }
+
+  function setOpenPersisted(next: boolean) {
+    setOpen(next);
+    if (openKey) {
+      try { localStorage.setItem(openKey, next ? '1' : '0'); } catch { /* ignore */ }
+    }
+  }
 
   if (words.length === 0) return null;
 
@@ -164,7 +240,7 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
       } catch { /* show empty state */ }
       setLoading(false);
     }
-    setOpen(v => !v);
+    setOpenPersisted(!open);
   }
 
   return (
@@ -215,7 +291,7 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
         ) : (
           <div>
             {words.map(w => (
-              <WordSection key={w.h} word={w} sentences={sentences[w.h] ?? []} />
+              <WordSection key={w.h} word={w} sentences={sentences[w.h] ?? []} answers={answers} setAnswer={setAnswer} />
             ))}
           </div>
         )

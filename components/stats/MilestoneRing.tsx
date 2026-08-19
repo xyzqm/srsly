@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
-import { loadLevelTable } from '@/lib/curriculum';
+import { loadLevelTable, cachedLevelTable } from '@/lib/curriculum';
 import { levelLabel, levelNumbers, levelFor } from '@/lib/languageConfig';
 import { levelStandings, RETAINED_DAYS } from '@/lib/unlock';
 
@@ -26,13 +26,14 @@ const SIZE = 132;
 const STROKE = 11;
 
 export default function MilestoneRing({ deck, language }: Props) {
-  const [table, setTable] = useState<Record<number, string[]> | null>(null);
+  // Seeded from the cache so a revisit draws on the first frame — see cachedLevelTable.
+  const [table, setTable] = useState<Record<number, string[]> | null>(() => cachedLevelTable(language));
   const [testedLevel, setTestedLevel] = useState(0);
   const [selected, setSelected] = useState(0);
 
   useEffect(() => {
     let live = true;
-    setTable(null);
+    setTable(cachedLevelTable(language));
     loadLevelTable(language).then(t => { if (live) setTable(t); });
     storage.getPrefs().then(p => {
       if (!live) return;

@@ -129,6 +129,12 @@ export interface UserPrefs {
    */
   poolActivateCount?: number;
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
+  /**
+   * How the Read tab answers comprehension questions — typed ('fr') or multiple choice
+   * ('mc'). A preference, not passage state: someone who works in multiple choice wants it
+   * on the next passage too, and it used to reset to 'fr' every time the tab remounted.
+   */
+  readResponseMode?: ResponseMode;
   /** Highest level unlocked by PASSING ITS TEST, per language (see lib/unlock.ts). Levels
    *  unlocked by retention are derived from the deck and deliberately not stored — a
    *  persisted copy could disagree with the deck it was computed from. */

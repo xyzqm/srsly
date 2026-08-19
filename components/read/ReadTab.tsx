@@ -40,6 +40,8 @@ interface Props {
   onAnswer: (correct: boolean) => void;
   onRequireSignIn?: (reason?: string) => void;
   onNavigateVocab?: () => void;
+  /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
+  active?: boolean;
 }
 
 const READ_WANT: ContentSection[] = ['passage'];
@@ -57,7 +59,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, active = true }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -75,6 +77,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     storage.getPrefs().then(p => {
       setHskLevel(levelFor(language, p));
       setBlankDensity(p.blankDensity);
+      if (p.readResponseMode) setResponseMode(p.readResponseMode);
     });
   }, [language]);
 
@@ -335,7 +338,13 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   const [activeSentence, setActiveSentence] = useState(0);
   const [audioOnly, setAudioOnly] = useState(false);
+  // Loaded from prefs just below, and written back on every change — the Read tab unmounts
+  // when you switch tabs, so held in state alone this silently reverted to 'fr'.
   const [responseMode, setResponseMode] = useState<ResponseMode>('fr');
+  const chooseResponseMode = useCallback((mode: ResponseMode) => {
+    setResponseMode(mode);
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, readResponseMode: mode }));
+  }, []);
   const [showClozeHints, setShowClozeHints] = useState(true);
   /** The primer is open until the reader starts answering — see the block that renders it. */
   const [primerOpen, setPrimerOpen] = useState(true);
@@ -470,6 +479,39 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     clozeGrades.forEach((entry, oid) => { state[oid] = entry; });
     storage.savePassageState(contentKey, passageIdx, state);
   }, [clozeGrades, contentKey, passageIdx]);
+
+  /**
+   * Comprehension answers, per passage.
+   *
+   * The blanks were already durable; the questions were not, and they are the slower half of
+   * the work — a graded free response is a paragraph the reader wrote and an API round trip.
+   * Switching tabs unmounts this component, so answering a question and glancing at Stats
+   * threw both away. Same key shape as the cloze state, so the day-rollover sweep in
+   * lib/storage/local.ts drops them together.
+   */
+  const qaKey = contentKey ? `srsly-qa|${contentKey}|${passageIdx}` : '';
+  useEffect(() => {
+    if (!qaKey) return;
+    try {
+      const raw = localStorage.getItem(qaKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { fr?: Record<number, FRResponse>; mc?: Record<number, FsrsGrade> };
+      if (saved.fr) setFrResponses(saved.fr);
+      if (saved.mc) setMcGrades(saved.mc);
+    } catch { /* ignore */ }
+  }, [qaKey]);
+
+  useEffect(() => {
+    // Never write the empty object: this effect also runs on the render right after a reset,
+    // which would clobber the answers the restore above is about to read.
+    if (!qaKey) return;
+    const frCount = Object.keys(frResponses).length;
+    const mcCount = Object.keys(mcGrades).length;
+    if (frCount === 0 && mcCount === 0) return;
+    try {
+      localStorage.setItem(qaKey, JSON.stringify({ fr: frResponses, mc: mcGrades }));
+    } catch { /* ignore */ }
+  }, [frResponses, mcGrades, qaKey]);
 
   // "+ New passage" must stay disabled until EVERY generated passage today is fully filled
   // in, not just the one currently being viewed — otherwise navigating back to an already-
@@ -681,7 +723,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       const rows = allResultWords.map(w => {
         const deckWord = deck.find(d => d.h === w);
         const grade = getWordGrade(w);
-        const days = deckWord ? Math.max(1, fsrsNextInterval(deckWord, grade)) : 1;
+        const days = deckWord ? fsrsNextInterval(deckWord, grade, undefined, { minDaysOut: 1 }) : 1;
         const label = fmtInterval(days);
         if (wordGrades.has(w)) {
           return grade === 3
@@ -717,7 +759,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       });
       const anchorRows = [...byCard.values()].map(({ anchor, compounds, grade }) => {
         const card = deck.find(d => d.id === anchor.id);
-        const days = card ? Math.max(1, fsrsNextInterval(card, grade)) : 1;
+        const days = card ? fsrsNextInterval(card, grade, undefined, { minDaysOut: 1 }) : 1;
         const label = fmtInterval(days);
         const tag = `${anchor.hanzi} ${anchor.pinyin}`;
         const shown = compounds.join('、');
@@ -970,7 +1012,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       ) : (
         <>
           <div className="flex gap-2 items-center mb-4 flex-wrap">
-            <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} />
+            {/* The panel stays mounted when you leave the tab, so playback would otherwise
+                follow you onto Stats. `active` is what stops it. */}
+            <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} active={active} />
             <div className="ml-auto flex gap-2 items-center flex-wrap">
               {/* Scoped to ONE thing: the English meaning shown when you hover a blank.
                   It briefly also gated the letter-by-letter colouring as you type, which
@@ -1144,8 +1188,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   Reading comprehension · {QUESTIONS.length} questions
                 </span>
                 <div className="flex gap-1.5">
-                  <button style={toggleStyle(responseMode === 'fr')} onClick={() => setResponseMode('fr')}>Free response</button>
-                  <button style={toggleStyle(responseMode === 'mc')} onClick={() => setResponseMode('mc')}>Multiple choice</button>
+                  <button style={toggleStyle(responseMode === 'fr')} onClick={() => chooseResponseMode('fr')}>Free response</button>
+                  <button style={toggleStyle(responseMode === 'mc')} onClick={() => chooseResponseMode('mc')}>Multiple choice</button>
                 </div>
               </div>
               <div>
@@ -1163,6 +1207,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                     deckReadings={deckReadings}
                     claimsStore={claimsStore}
                     onMcGrade={(qi, grade) => setMcGrades(prev => ({ ...prev, [qi]: grade }))}
+                    savedMcGrade={mcGrades[i]}
                   />
                 ))}
               </div>

@@ -283,11 +283,26 @@ export function fsrsSchedule(
  * Returns fractional days until next review for each grade.
  * Values < 1 represent sub-day intervals:
  *   1/1440 ≈ 0.000694 = 1 min
+ *
+ * `minDaysOut` mirrors the identically-named option on `gradeCard`/`updateWordReview`: pass
+ * the same value the caller will persist with, and the preview follows the same rule. It
+ * floors a graduated card to that many days out and — exactly as the persist path does —
+ * leaves a learning card's step alone.
+ *
+ * It is still a FORECAST, not the stored date: fuzz is applied only when persisting a real
+ * grade (see the `fz` helper), so a card previewed at 4 days can land on 3 or 5. That
+ * scatter is the point of fuzz, and quoting the un-fuzzed number is what Anki shows too.
+ *
+ * Reading used to floor this at the call site with `Math.max(1, …)`, which is not the same
+ * rule: it swallowed every learning step too, so a word met in a passage reported "review in
+ * 1 day" when it was really coming back in ten minutes. That is why the results list read as
+ * though every missed word had been given the same interval.
  */
 export function fsrsNextInterval(
   word: DeckWord,
   grade: FsrsGrade,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+  opts?: { minDaysOut?: number },
 ): number {
   const result = fsrsSchedule(word, grade, settings);
   const today  = todayStr();
@@ -297,7 +312,8 @@ export function fsrsNextInterval(
     return Math.max(1 / 1440, msFromNow / 86_400_000);
   }
   if (!result.dueAt) return 1;
-  return Math.max(1, daysBetween(today, result.dueAt as string));
+  const days = Math.max(1, daysBetween(today, result.dueAt as string));
+  return opts?.minDaysOut ? Math.max(opts.minDaysOut, days) : days;
 }
 
 // ── Display ───────────────────────────────────────────────────────────────────
