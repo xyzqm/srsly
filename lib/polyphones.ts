@@ -4,39 +4,53 @@
  * `m` uses semicolons as separators, matching the dictionary convention,
  * so AddWordForm's split(';') logic handles them uniformly.
  *
- * `compounds` lists common multi-character words that carry THAT reading. A
- * reading that rarely stands alone (e.g. 行 háng — almost always inside 银行,
- * 行业) provides compounds so generated passages can surface it naturally.
+ * TWO FIELDS, AND THE DIFFERENCE IS LOAD-BEARING.
+ *
+ * `compounds` means the reading CANNOT appear as a bare character. It is stored on the card
+ * and becomes a hard instruction to the generator — "you MUST use it through one of these,
+ * never the bare character" (see compoundNote in app/api/daily-content/route.ts). 行 háng is
+ * the case it was built for: it is essentially always inside 银行 or 行业.
+ *
+ * `examples` are words that merely SHOW the reading. They are offered in the add-word form
+ * as one-tap chips and stored only if tapped, because a reading that stands perfectly well
+ * on its own should not be locked out of appearing on its own. 行 xíng carried compounds
+ * until now, which meant the generator was forbidden from ever writing a bare 行 — and 行 on
+ * its own is one of the commonest words in the language ("OK"). Same for 好 hǎo, 长 cháng and
+ * 重 zhòng. Eleven of the twenty-one readings that carried compounds did not need them.
+ *
+ * When in doubt the reading goes in `examples`: forcing a compound onto a free reading makes
+ * natural sentences impossible to write, while leaving one off a bound reading only means
+ * the generator has to lean on the polyphone guidance instead.
  */
-export interface Reading { p: string; m: string; compounds?: string[] }
+export interface Reading { p: string; m: string; compounds?: string[]; examples?: string[] }
 
 export const POLYPHONES: Record<string, Reading[]> = {
   '行': [
-    { p: 'xíng', m: 'OK; to do; capable; to walk; to travel', compounds: ['行走', '旅行', '进行'] },
+    { p: 'xíng', m: 'OK; to do; capable; to walk; to travel', examples: ['行走', '旅行', '进行'] },
     { p: 'háng', m: 'row; line; profession; trade; industry', compounds: ['银行', '行业', '同行'] },
   ],
   '好': [
-    { p: 'hǎo', m: 'good; well; fine; friendly', compounds: ['好处', '友好'] },
+    { p: 'hǎo', m: 'good; well; fine; friendly', examples: ['好处', '友好'] },
     { p: 'hào', m: 'to like; to be fond of; to have a tendency to', compounds: ['爱好', '好奇'] },
   ],
   '还': [
     { p: 'hái', m: 'still; also; yet; even more' },
-    { p: 'huán', m: 'to return; to give back', compounds: ['还书', '归还', '还钱'] },
+    { p: 'huán', m: 'to return; to give back', examples: ['还书', '归还', '还钱'] },
   ],
   '长': [
-    { p: 'cháng', m: 'long; length; forte; strong point', compounds: ['长度', '长短'] },
-    { p: 'zhǎng', m: 'to grow; to increase; elder; chief; head', compounds: ['长大', '成长', '校长'] },
+    { p: 'cháng', m: 'long; length; forte; strong point', examples: ['长度', '长短'] },
+    { p: 'zhǎng', m: 'to grow; to increase; elder; chief; head', examples: ['长大', '成长', '校长'] },
   ],
   '重': [
-    { p: 'zhòng', m: 'heavy; important; serious; to attach importance to', compounds: ['重要', '重量'] },
+    { p: 'zhòng', m: 'heavy; important; serious; to attach importance to', examples: ['重要', '重量'] },
     { p: 'chóng', m: 'again; once more; repeat; layer', compounds: ['重新', '重复'] },
   ],
   '中': [
-    { p: 'zhōng', m: 'middle; center; China; in the process of', compounds: ['中间', '中心'] },
+    { p: 'zhōng', m: 'middle; center; China; in the process of', examples: ['中间', '中心'] },
     { p: 'zhòng', m: 'to hit; to be hit by; to fit exactly', compounds: ['中奖', '打中'] },
   ],
   '乐': [
-    { p: 'lè', m: 'happy; joyful; to enjoy; to find pleasure in', compounds: ['快乐', '欢乐'] },
+    { p: 'lè', m: 'happy; joyful; to enjoy; to find pleasure in', examples: ['快乐', '欢乐'] },
     { p: 'yuè', m: 'music', compounds: ['音乐', '乐器'] },
   ],
   '着': [
@@ -56,7 +70,7 @@ export const POLYPHONES: Record<string, Reading[]> = {
   ],
   '数': [
     { p: 'shù', m: 'number; figure; several; to count', compounds: ['数字', '数量'] },
-    { p: 'shǔ', m: 'to count; to be reckoned as outstanding', compounds: ['数数', '数一数'] },
+    { p: 'shǔ', m: 'to count; to be reckoned as outstanding', examples: ['数数', '数一数'] },
   ],
   '觉': [
     { p: 'jué', m: 'to feel; to perceive; to be aware of; sense', compounds: ['觉得', '感觉'] },
@@ -95,11 +109,11 @@ export const POLYPHONES: Record<string, Reading[]> = {
     { p: 'zhòng', m: 'to plant; to grow; to cultivate' },
   ],
   '发': [
-    { p: 'fā', m: 'to send; to emit; to issue; to distribute; to happen', compounds: ['发现', '发展'] },
+    { p: 'fā', m: 'to send; to emit; to issue; to distribute; to happen', examples: ['发现', '发展'] },
     { p: 'fà', m: 'hair (on the head)', compounds: ['头发', '理发'] },
   ],
   '教': [
-    { p: 'jiāo', m: 'to teach; to instruct', compounds: ['教书', '教课'] },
+    { p: 'jiāo', m: 'to teach; to instruct', examples: ['教书', '教课'] },
     { p: 'jiào', m: 'teaching; education; religion; (religious) doctrine', compounds: ['教育', '老师教'] },
   ],
   '调': [

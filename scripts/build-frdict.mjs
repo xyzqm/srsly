@@ -53,6 +53,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const LANG = 'fr';
 
+/** œ/æ are one letter in French orthography and two in Lexique. Folding a QUERY is safe —
+ *  œ always means oe — while the reverse would invent words (`moelle` → `mœlle`). */
+const deligature = w => w.replace(/œ/g, 'oe').replace(/æ/g, 'ae');
+
 const KAIKKI_URL = 'https://kaikki.org/dictionary/French/kaikki.org-dictionary-French.jsonl';
 
 /** Cumulative lemma counts per CEFR tier — the commonly cited receptive-vocabulary
@@ -162,7 +166,16 @@ async function main() {
         const l = lemma.trim().toLowerCase();
         // Only forms we could plausibly meet in a passage are worth bundling — the full
         // form table for every Spanish verb is far too large to ship.
-        if (l && l !== lower && LETTER_RE.test(l) && lexiqueForms.has(lower) && !forms.has(lower)) {
+        //
+        // The ligature has to be folded for that test. Lexique writes œ and æ as two letters
+        // in ALL of its 142,695 rows, so `œufs`, `œuvres`, `vœux` and `nœuds` each failed
+        // `lexiqueForms.has` and were dropped — leaving the lemmatizer to guess them from
+        // suffix rules, which try verb endings first and answered `œuvres` → `œuvrer`
+        // ("to work") instead of `œuvre` ("work, opus"). Only the QUERY is folded; the key
+        // stored is the real French spelling, because œ unambiguously means oe in that
+        // direction and never the reverse (`moelle` is not `mœlle`).
+        if (l && l !== lower && LETTER_RE.test(l) && !forms.has(lower)
+            && (lexiqueForms.has(lower) || lexiqueForms.has(deligature(lower)))) {
           forms.set(lower, l);
         }
         continue;

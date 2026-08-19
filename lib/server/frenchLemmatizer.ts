@@ -106,6 +106,37 @@ function deaccent(s: string): string {
   return s.replace(/[àâäéèêëîïôöùûüÿç]/g, c => ACCENTS[c] ?? c);
 }
 
+/**
+ * The plural of a LIGATURE noun, resolved before the verb rules get a look.
+ *
+ * FR_FORMS is scoped by Lexique's inflection inventory (see build-frdict.mjs), and Lexique
+ * writes no ligature at all — zero of its 142,695 rows contain œ or æ. So every ligature
+ * plural is missing from FR_FORMS and falls through to SUFFIX_RULES, where the verb endings
+ * are tried first by design: `œuvres` became `œuvrer` "to work" and `manœuvres` became
+ * `manœuvrer` "to maneuver". Ordinary plurals never hit this because FR_FORMS answers them
+ * first — `portes` → `porte`, `livres` → `livre` — so the ordering is only wrong in exactly
+ * the hole the ligature opens.
+ *
+ * This restores the noun reading for that hole and nowhere else: it fires only on a word
+ * containing œ or æ, and only when stripping the plural leaves a headword with an ordinary
+ * sense of its own. The trade-off it accepts is the one the module already accepts
+ * everywhere else — a surface that is a common noun stays a noun, so `tu manœuvres` reads as
+ * the noun. That is the same call `portes` and `fermes` get.
+ */
+function ligatureNounPlural(word: string, dict: LemmaDict): string | undefined {
+  if (!/[œæ]/.test(word)) return undefined;
+  for (const ending of ['eaux', 'aux', 'x', 's']) {
+    if (!word.endsWith(ending)) continue;
+    const stem = word.slice(0, word.length - ending.length);
+    if (stem.length < 2) continue;
+    for (const rep of ending === 'eaux' ? ['eau'] : ending === 'aux' ? ['al'] : ['']) {
+      const candidate = stem + rep;
+      if (candidate !== word && dict.isCommonWord(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
 /** Try each suffix rewrite, returning the first candidate the dictionary confirms. */
 function applySuffixRules(word: string, dict: LemmaDict): string | undefined {
   for (const [ending, ...replacements] of SUFFIX_RULES) {
@@ -167,6 +198,10 @@ export function lemmatizeFr(word: string, dict: LemmaDict): string | undefined {
 
   const viaElision = stripElision(lower, dict);
   if (viaElision && viaElision !== lower) return viaElision;
+
+  // Before the generic rules — see ligatureNounPlural for why the ordering matters here.
+  const viaLigature = ligatureNounPlural(lower, dict);
+  if (viaLigature) return viaLigature;
 
   const viaRules = applySuffixRules(lower, dict);
   if (viaRules && viaRules !== lower) return viaRules;

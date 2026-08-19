@@ -82,7 +82,11 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
     const poly = isZh ? POLYPHONES[trimmed] : undefined;
     if (!poly?.length) return;
     setPinyin(poly[0].p);
+    // Only a REQUIRED compound is filled in. A reading that stands alone (行 xíng, 好 hǎo)
+    // carries `examples` instead, which are offered as chips and stored only if tapped —
+    // storing them would forbid the generator from ever writing the bare character.
     setCompounds(poly[0].compounds ?? []);
+    setOffered(poly[0].examples ?? []);
     setPinHint('auto-filled — tap to edit');
   }, [trimmed, isZh]);
 
@@ -303,6 +307,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
                     setPinyin(r.p);
                     setPinHint('auto-filled — tap to edit');
                     setCompounds(r.compounds ?? []);
+                    setOffered(r.examples ?? []);
                   }}
                   className="cursor-pointer transition-all duration-150"
                   style={{
@@ -402,9 +407,11 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
                 telling readings apart; the bound case is about the character not being a word
                 at all, which is worth saying outright — it is why the field appeared. */}
             <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-soft)' }}>
-              {offered.length > 0
+              {strictlyBound
                 ? `— ${hanzi.trim()} doesn't appear on its own, so passages will use it inside these`
-                : '— words that use this reading; generated passages can use these to show it in context'}
+                : compounds.length > 0
+                  ? '— this reading only appears inside a word, so passages will use one of these'
+                  : '— optional: pick one and passages will show the reading inside it'}
             </span>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
