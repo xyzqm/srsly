@@ -1,11 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
-import type { RawTok } from '@/lib/server/kuromojiSegmenter';
-import { buildPastedPassage } from '@/hooks/useDailyContent';
-import { selectClozeTargets } from '@/lib/clozeTargets';
-import { getSrsSettings } from '@/lib/fsrs';
-import { getTodayCounts } from '@/lib/reviewCounts';
+import { buildEpubSection } from '@/lib/epubSection';
+import { setActiveBookId, getActiveBookId } from '@/lib/epubProgress';
 import { parseEpub, EpubError } from '@/lib/epub';
 import { chunkChapter } from '@/lib/epubChunk';
 import { bookId, putBook, listBooks, removeBook, savePosition, type StoredBook } from '@/lib/epubStore';
@@ -50,6 +47,23 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
   }, []);
   useEffect(() => { if (open) void refresh(); }, [open, refresh]);
 
+  /**
+   * Reopen the book you were reading, at the section you stopped on.
+   *
+   * Only selects it — it does not segment anything. Re-reading a section you already finished
+   * the moment you open the tab would be presumptuous and would spend a segment call; the
+   * "Next section" button on the results screen is the thing that actually moves you on.
+   */
+  useEffect(() => {
+    if (!open || activeId) return;
+    const remembered = getActiveBookId(language);
+    if (!remembered) return;
+    const book = books.find(b => b.id === remembered);
+    if (!book) return;
+    setActiveId(book.id);
+    setChapterIdx(book.position?.chapter ?? 0);
+  }, [open, activeId, books, language]);
+
   const active = books.find(b => b.id === activeId);
 
   const ingest = useCallback(async (file: File) => {
@@ -65,6 +79,7 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
       await putBook(stored);
       await refresh();
       setActiveId(stored.id);
+      setActiveBookId(language, stored.id);
       setChapterIdx(stored.position?.chapter ?? 0);
     } catch (err) {
       // An EpubError is a diagnosis worth showing; anything else is ours and reads as noise.
@@ -72,7 +87,7 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
     } finally {
       setBusy('');
     }
-  }, [refresh]);
+  }, [refresh, language]);
 
   /** Segment one section and hand it over as a passage, exactly as the paste panel does. */
   const readSection = useCallback(async (book: StoredBook, chapter: number, section: number) => {
@@ -82,35 +97,12 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
     setError('');
     setBusy(`Preparing section ${section + 1} of ${sections.length}…`);
     try {
-      const res = await fetch('/api/segment-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          // The chapter's own title, so the passage is identifiable on the shelf later.
-          title: sections.length > 1
-            ? `${book.chapters[chapter].title} (${section + 1}/${sections.length})`
-            : book.chapters[chapter].title,
-          language,
-          words: deck.map(w => ({ h: w.h, p: w.p, m: w.m })),
-          names: [],
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
-      }
-      const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][] };
-      const built = buildPastedPassage(raw, deck, language, []);
-      // Same call the paste panel makes, so a book section blanks by the same rules and
-      // against the same daily new-card ledger as anything else.
-      const targets = selectClozeTargets(
-        built.sentences, deck, dueWords, blankDensity,
-        getSrsSettings().newPerDay - getTodayCounts().newCount,
-      );
+      const passage = await buildEpubSection(book, chapter, section, { language, deck, dueWords, blankDensity });
+      if (!passage) return;
       await savePosition(book.id, chapter, section);
+      setActiveBookId(language, book.id);   // so the next visit reopens here
       await refresh();
-      onCommit({ ...built, vocabWords: [...targets.words] });
+      onCommit(passage);
       setOpen(false);
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -221,7 +213,10 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
                     {b.position ? ` · at ${b.position.chapter + 1}.${b.position.section + 1}` : ''}
                   </span>
                 </button>
-                <button onClick={() => { void removeBook(b.id).then(refresh); if (activeId === b.id) setActiveId(null); }}
+                <button onClick={() => {
+                          void removeBook(b.id).then(refresh);
+                          if (activeId === b.id) { setActiveId(null); setActiveBookId(language, null); }
+                        }}
                         className="cursor-pointer" style={{ ...mono, fontSize: 10, background: 'none', border: 'none', color: 'var(--ink-faint)' }}>
                   remove
                 </button>

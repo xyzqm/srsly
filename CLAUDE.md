@@ -250,6 +250,13 @@ Three things worth knowing:
 - **A chapter is not a passage.** `/api/segment-text` caps at `MAX_PASTE_CHARS`, so
   `lib/epubChunk.ts` cuts each chapter into sections at paragraph boundaries — never
   mid-sentence, since a truncated final word is what the lemmatizer would then see.
+- **The position has ONE home.** Chapter and section live on the book record in IndexedDB;
+  localStorage holds only `srsly-epub-active-{lang}`, a pointer to which book is open. Copying
+  the position into localStorage as well would be two records of one fact, and they disagree
+  the moment either is written alone. `nextPosition` in `lib/epubProgress.ts` crosses chapter
+  boundaries and skips empty chapters — a chapter stripped to nothing still occupies an index,
+  so advancing has to walk rather than add one — and returns null at the end of the book,
+  which renders as a sentence rather than a disabled button claiming there is more.
 - **Books live in IndexedDB** (`lib/epubStore.ts`), not localStorage. A novel is megabytes;
   localStorage caps ~5 MB for the whole origin and already holds every deck, the shelf and
   the daily cache. JSZip is dynamically imported for the same reason the level tables are —

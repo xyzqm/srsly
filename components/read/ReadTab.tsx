@@ -24,6 +24,7 @@ import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
 import PasteTextPanel from './PasteTextPanel';
 import EpubPanel from './EpubPanel';
+import NextSection from './NextSection';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -1307,6 +1308,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             const cacheKey = contentKey ? `srsly-missed-sentences|${contentKey}|${passageIdx}` : undefined;
             return <MissedWordReview words={reviewWords} missedCount={missedWords.length} cacheKey={cacheKey} language={language} level={hskLevel} />;
           })()}
+
+          {/* Carry on with the book, if one is open. Above the proverb, because it is the
+              action and the proverb is the send-off. Renders nothing unless a book is
+              actually being read. */}
+          {showResults && (
+            <NextSection
+              language={language}
+              deck={deck}
+              dueWords={dueDeckWords}
+              blankDensity={blankDensity}
+              onCommit={commitPastedPassage}
+            />
+          )}
 
           {/* The reward. Only once the reading is actually finished — see DailyProverb.
               Sitting permanently at the foot of the tab it was wallpaper; here it is the

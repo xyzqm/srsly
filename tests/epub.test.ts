@@ -148,3 +148,69 @@ describe('chunkChapter', () => {
     for (let i = 0; i < 30; i++) expect(rejoined).toContain(`Párrafo ${i}.`);
   });
 });
+
+// ── Progression ───────────────────────────────────────────────────────────────
+import { nextPosition, sectionCount, positionLabel } from '@/lib/epubProgress';
+import type { StoredBook } from '@/lib/epubStore';
+
+/** `n` paragraphs of filler — enough of them to force a chapter into several sections. */
+const filler = (n: number) => Array.from({ length: n }, (_, i) =>
+  `Párrafo ${i}. ${'Una oración de relleno bastante larga para ocupar espacio. '.repeat(12)}`).join('\n');
+
+const book = (chapters: string[]): StoredBook => ({
+  id: 'b', addedAt: '2026-08-19', title: 'Libro', chapters:
+    chapters.map((text, i) => ({ id: `c${i}`, href: `c${i}.xhtml`, title: `Capítulo ${i + 1}`, text })),
+});
+
+describe('nextPosition', () => {
+  it('advances within a chapter while sections remain', () => {
+    const b = book([filler(30)]);                       // one multi-section chapter
+    expect(sectionCount(b, 0)).toBeGreaterThan(1);
+    expect(nextPosition(b, 0, 0)).toEqual({ chapter: 0, section: 1 });
+  });
+
+  it('crosses into the next chapter from the last section', () => {
+    const b = book([filler(4), filler(4)]);             // one section each
+    expect(sectionCount(b, 0)).toBe(1);
+    expect(nextPosition(b, 0, 0)).toEqual({ chapter: 1, section: 0 });
+  });
+
+  it('crosses from the LAST section of a multi-section chapter', () => {
+    const b = book([filler(30), filler(4)]);
+    const last = sectionCount(b, 0) - 1;
+    expect(nextPosition(b, 0, last)).toEqual({ chapter: 1, section: 0 });
+  });
+
+  it('returns null at the end of the book', () => {
+    const b = book([filler(4), filler(4)]);
+    expect(nextPosition(b, 1, 0)).toBeNull();
+  });
+
+  it('returns null from the last section of the last chapter', () => {
+    const b = book([filler(4), filler(30)]);
+    expect(nextPosition(b, 1, sectionCount(b, 1) - 1)).toBeNull();
+  });
+
+  it('skips a chapter that has no sections rather than landing on it', () => {
+    // An empty chapter still occupies an index; adding one would report section 0 of nothing.
+    const b = book([filler(4), '', filler(4)]);
+    expect(sectionCount(b, 1)).toBe(0);
+    expect(nextPosition(b, 0, 0)).toEqual({ chapter: 2, section: 0 });
+  });
+
+  it('returns null when every later chapter is empty', () => {
+    const b = book([filler(4), '', '   ']);
+    expect(nextPosition(b, 0, 0)).toBeNull();
+  });
+});
+
+describe('positionLabel', () => {
+  it('names the chapter alone when it is one section', () => {
+    expect(positionLabel(book([filler(4)]), 0, 0)).toBe('Capítulo 1');
+  });
+
+  it('numbers the section when a chapter has several', () => {
+    const b = book([filler(30)]);
+    expect(positionLabel(b, 0, 1)).toMatch(/^Capítulo 1 \(2\/\d+\)$/);
+  });
+});
