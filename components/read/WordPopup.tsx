@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import CharacterBreakdown from './CharacterBreakdown';
 
@@ -105,21 +105,37 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
     setBelow(isBelow);
   }, [data]);
 
-  useEffect(() => {
+  /**
+   * Measure and position BEFORE the browser paints — useLayoutEffect, never rAF.
+   *
+   * This used to hide the popup, then schedule `requestAnimationFrame` to place it and make
+   * it visible again. Browsers do not run rAF in a document whose `visibilityState` is
+   * `hidden`, so in a background tab the callback never fired and the popup stayed
+   * permanently invisible: mounted, correct, holding the right word and gloss, and silently
+   * showing nothing. No error, no fallback, no way for the reader to tell it had opened.
+   *
+   * useLayoutEffect runs synchronously after the DOM is updated and before paint, which is
+   * exactly the moment to measure — and it runs whether or not the document is visible, so
+   * there is no state the popup can get stuck in. It also removes the reason `ready` existed:
+   * there is no longer a frame where the box is drawn at (0,0) waiting to be moved.
+   */
+  useLayoutEffect(() => {
     if (!data) { setReady(false); return; }
-    const pop = popRef.current;
-    if (!pop) return;
-
-    pop.style.visibility = 'hidden';
-    pop.style.top = '0px';
-
-    requestAnimationFrame(() => {
-      if (!popRef.current) return;
-      place();
-      pop.style.visibility = '';
-      setReady(true);
-    });
+    if (!popRef.current) return;
+    place();
   }, [data, place]);
+
+  /**
+   * Reveal in a PLAIN effect, one commit after placing.
+   *
+   * `setReady` inside the layout effect above would flush before paint, so the box would
+   * appear already at opacity 1 and the fade would never play. A regular effect runs after
+   * paint, which gives the transition a frame to run from — and, unlike rAF, it still runs in
+   * a hidden document, so the popup cannot get stuck invisible.
+   */
+  useEffect(() => {
+    if (data) setReady(true);
+  }, [data]);
 
   // Re-place whenever the content resizes — opening the breakdown is the case that matters.
   useEffect(() => {
