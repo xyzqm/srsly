@@ -41,7 +41,26 @@ Two consequences worth knowing:
 - If an alias is ever dropped the build fails loudly with "module not found" — it cannot
   regress quietly.
 
-No test suite exists yet.
+```bash
+npm test          # vitest run — the pure logic in lib/
+npm run test:watch
+```
+
+**Tests cover `lib/`, not components.** The suite exists because the bugs that actually
+happened were in pure functions with documented-but-unasserted contracts: `œuvres` lemmatising
+to a verb, NFD text shredding every accented word, `d'accord` resolving to "chord" under a
+typographic apostrophe. Those are cheap to pin and expensive to notice.
+
+The lemmatizer tests load the REAL dictionary through `@dict`, deliberately. Their rules are
+claims about that data — "`est` is a headword meaning east, which is why peeling `n'est` needs
+a second pass" — so a stub would test the regex rather than the behaviour. `vitest.config.mts`
+repeats the `@data`/`@dict` aliases because tsconfig deliberately lacks them.
+
+Two fixture traps worth knowing, both of which produced false failures while writing these:
+a `DeckWord` without `lastReview` looks to FSRS like it was reviewed one second ago, so
+retrievability is 1 and no passing grade grows stability; and a punctuation token without
+`type: 'punct'` is spaced like a word, because the spacing rules read the type and not the
+character.
 
 ## Environment
 
