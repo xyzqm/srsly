@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Sentence } from '@/lib/types';
-import { speakSequence, primeTTS, prefetchAudio, hasUsedAudio, markAudioUsed } from '@/lib/speech';
+import { speakSequence, primeTTS, prefetchAudio } from '@/lib/speech';
 
 interface Props {
   sentences: Sentence[];
@@ -23,27 +23,23 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
    * play. Every LATER sentence was already covered: speakSequence fetches idx+1 while idx is
    * still speaking, so only the cold start was ever slow.
    *
-   * WHY IT IS NOT SIMPLY DONE ON MOUNT. /api/tts is a paid OpenAI call and the reading tab
-   * loads a passage on every visit, so warming unconditionally would buy speech nobody asked
-   * for, daily, for every learner who never touches the player. Two triggers instead:
+   * ONLY ON PHYSICAL INTENT — pointer over the controls, pointer down, or focus. Never on
+   * mount, and never on a guess about what this learner usually does.
    *
-   *   - on mount, but ONLY for someone who has played audio before. They will probably play
-   *     it again, so the call is one they were going to make.
-   *   - otherwise on intent — pointer over the controls, or focus. Hover-to-click is a few
-   *     hundred milliseconds, which is most of a short sentence's fetch, and it costs nothing
-   *     for a reader who never goes near the button.
+   * /api/tts is a paid OpenAI call and the reading tab loads a passage on every visit, so
+   * anything that fires without the reader reaching for the button is buying speech nobody
+   * requested. An earlier version warmed on arrival for anyone who had played audio before,
+   * which is the same mistake one step removed: having used audio on a previous passage does
+   * not mean using it on this one, and the wasted call is just as paid for.
    *
-   * `prefetchAudio` is idempotent: it returns from the cache once warm, so firing on both
-   * triggers and on every hover is free after the first.
+   * Hover-to-click is a few hundred milliseconds, which is most of a short sentence's fetch,
+   * and pointerDown buys the finger-down-to-click gap on touch. `prefetchAudio` is
+   * idempotent, so firing on all three and on every hover is free after the first.
    */
   const warmFirst = useCallback(() => {
     const first = sentences[0]?.plainText;
     if (first) void prefetchAudio(first);
   }, [sentences]);
-
-  useEffect(() => {
-    if (hasUsedAudio()) warmFirst();
-  }, [warmFirst]);
 
   const stop = useCallback(() => {
     stopRef.current?.();
@@ -53,7 +49,6 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
 
   const play = useCallback((startIdx: number) => {
     primeTTS();
-    markAudioUsed();   // from now on this passage's opening is warmed on arrival
     stop();
     setPlaying(true);
     const stopFn = speakSequence(
@@ -106,9 +101,9 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
   };
 
   return (
-    // Intent triggers sit on the whole control cluster, not just play: reaching for ⏭ or
-    // hovering the group is the same signal. pointerEnter covers mouse and pen; pointerDown
-    // covers touch, where it still buys the gap between finger-down and the click firing.
+    // The only triggers there are. They sit on the whole control cluster, not just play:
+    // reaching for ⏭ is the same signal. pointerEnter covers mouse and pen; pointerDown
+    // covers touch, where it buys the gap between finger-down and the click firing.
     <div
       className="flex items-center gap-2"
       onPointerEnter={warmFirst}
