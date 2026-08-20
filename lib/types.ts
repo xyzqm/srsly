@@ -264,7 +264,22 @@ export interface ShelfEntry {
   language: LanguageCode;
   level: number;
   title: string;
+  /**
+   * Flattened text. KEPT, but only as a fallback for entries shelved before `sentences`
+   * existed — everything written since carries tokens and renders from those.
+   */
   text: string;
+  /**
+   * The passage as TOKENS, so a shelved passage stays a passage.
+   *
+   * Storing only flattened text made the shelf a dead archive: you could look at what you
+   * read and nothing else. Tokens make every word clickable again — look one up a month
+   * later, add it to your deck from there — and they make the entry re-renderable, which
+   * flattened text is not. Passages shelved before commit 8c87283 had their spacing baked in
+   * wrong and could never be fixed; with tokens, the same mistake would have been a
+   * re-render.
+   */
+  sentences?: Sentence[];
   vocabWords: string[];    // the target words this passage was built around
   /** First-try blanks, when the passage had any. */
   score?: { correct: number; total: number };

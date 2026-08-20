@@ -82,6 +82,9 @@ export function entriesFrom(
       // Same rule as the body: a local join renders "Undíasoleado" in every spaced language.
       title: tokensToText(p.titleTokens, getLanguageConfig(language).scriptIsUnspaced).trim(),
       text,
+      // Tokens as well as text: the text is what older entries have and what a search would
+      // scan, the tokens are what the shelf actually renders. See ShelfEntry.sentences.
+      sentences: p.sentences,
       vocabWords: p.vocabWords ?? [],
       score: scoreCloze(clozeFor(i)),
       results: resultsCloze(clozeFor(i)),

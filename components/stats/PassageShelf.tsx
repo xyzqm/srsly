@@ -4,6 +4,12 @@ import type { LanguageCode, ShelfEntry } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getLanguageConfig, levelLabel } from '@/lib/languageConfig';
 import { lengthOf } from '@/lib/shelf';
+import { needsSpaceBefore } from '@/lib/tokenText';
+import ClickableWord from '@/components/shared/ClickableWord';
+import WordPopup from '@/components/read/WordPopup';
+import { useWordPopup } from '@/hooks/useWordPopup';
+import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { Fragment } from 'react';
 
 /**
  * Everything you've actually read, kept.
@@ -21,11 +27,12 @@ const PAGE = 6;
 /**
  * Is this stored body unreadable — words run together with no spaces?
  *
- * A shelf entry keeps TEXT, not tokens, so it is a snapshot taken the day the passage was
- * finished and cannot be re-derived later. Passages shelved before 8c87283 (2026-08-16) were
- * written with a flush join instead of `tokensToText`, which in a spaced language produced
- * "¿Quétalelclimahoy?Sí,esundíamuybonito." — and there is no way back, because recovering the
- * word boundaries would mean re-segmenting prose against a dictionary.
+ * Only ever true for OLD entries. Everything shelved since ShelfEntry gained `sentences`
+ * renders from tokens and cannot lose its spacing; this covers the ones that kept only text,
+ * written before 8c87283 (2026-08-16) with a flush join instead of `tokensToText`, which in
+ * a spaced language produced "¿Quétalelclimahoy?Sí,esundíamuybonito." There is no way back
+ * for those — recovering the word boundaries would mean re-segmenting prose against a
+ * dictionary.
  *
  * So the body is hidden and the rest of the entry kept. The date, title, score and per-word
  * verdicts were never affected and are the parts worth looking back at; the run-together
@@ -46,6 +53,20 @@ export default function PassageShelf({ language }: Props) {
   const [entries, setEntries] = useState<ShelfEntry[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
+
+  /**
+   * Looking a word up from the shelf, and adding it, is the point of keeping tokens.
+   *
+   * The deck is passed so an already-known word is marked as such rather than offered again,
+   * exactly as it behaves in the reading tab — a shelved passage should not invite you to
+   * re-add half your deck.
+   */
+  const { deck, addWord } = useVocabDeck(language);
+  const deckWords = useMemo(() => new Set(deck.map(d => d.h)), [deck]);
+  const popup = useWordPopup(
+    (word, pinyin, meaning) => { void addWord({ h: word, p: pinyin, m: meaning }); },
+    deckWords,
+  );
 
   useEffect(() => {
     let live = true;
@@ -120,7 +141,28 @@ export default function PassageShelf({ language }: Props) {
 
               {isOpen && (
                 <div className="px-4 pb-4" style={{ borderTop: '1px solid var(--line)' }}>
-                  {isRunTogether(e.text, cfg.scriptIsUnspaced) ? (
+                  {/* Rendered from TOKENS when the entry has them, so every word is still
+                      clickable — look one up a month later and add it to your deck from
+                      here. Older entries kept only flattened text and fall through to the
+                      paragraph below. */}
+                  {e.sentences?.length ? (
+                    <p style={{
+                      fontFamily: cfg.scriptIsUnspaced ? 'var(--f-han)' : 'var(--f-display)',
+                      fontSize: 16, lineHeight: 1.85, color: 'var(--ink)', marginTop: 14,
+                    }}>
+                      {e.sentences.map((sent, si) => (
+                        <Fragment key={si}>
+                          {si > 0 && (cfg.scriptIsUnspaced ? '' : ' ')}
+                          {sent.tokens.map((t, ti) => (
+                            <Fragment key={ti}>
+                              {needsSpaceBefore(sent.tokens, ti, cfg.scriptIsUnspaced)}
+                              <ClickableWord token={t} onOpen={popup.openPopup} />
+                            </Fragment>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </p>
+                  ) : isRunTogether(e.text, cfg.scriptIsUnspaced) ? (
                     <p style={{
                       fontFamily: 'var(--f-mono)', fontSize: 12, lineHeight: 1.6,
                       color: 'var(--ink-faint)', marginTop: 14, fontStyle: 'italic',
@@ -182,6 +224,11 @@ export default function PassageShelf({ language }: Props) {
           Show {Math.min(PAGE * 2, entries.length - shown)} more
         </button>
       )}
+      <WordPopup
+        data={popup.popup}
+        onClose={popup.closePopup}
+        onAddVocab={popup.handleAddVocab}
+      />
     </div>
   );
 }
