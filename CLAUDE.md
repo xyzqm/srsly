@@ -231,6 +231,30 @@ Two filters gate **band eligibility only** — never the dictionary, which stays
 
 **CEFR levels are not an official word list.** (This applies to French as well as Spanish — both are graded on CEFR, but each gets its own prefs key, `cefrLevel` and `frLevel`, so the two studies stay independent.) Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list: the Instituto Cervantes and Beacco Reference Level Descriptions are copyrighted books, and **CEFRLex** (FLELex for French, ELELex for Spanish) — which genuinely is CEFR-graded, from learner textbooks — states **no license anywhere**, so it is not vendored. `lib/data/cefr-levels.ts` (Spanish) is therefore still a **frequency approximation**, now cross-register rather than subtitle-derived, and `lib/data/fr-levels.ts` a Lexique-derived one. Don't present it to users as an official mapping.
 
+### Reading an EPUB
+
+`lib/epub.ts` unzips the book in the browser and returns ordered chapters of PLAIN TEXT,
+which then go through `/api/segment-text` exactly as pasted text does. **No iframe reader.**
+An embedded reader renders the publisher's XHTML in a document this app cannot reach, which
+would put every word beyond the segmenters, the spacing rules and `WordPopup` — the whole
+reason text is rendered as tokens here.
+
+Three things worth knowing:
+
+- **The spine is the book, not the manifest.** The manifest lists every file including the
+  cover image and stylesheets; only `<spine>` says which are body text and in what order.
+  Metadata and manifest lookups go through `getElementsByTagName` and compare LOCAL names,
+  because a real OPF namespaces everything (`<dc:title>`, `<opf:item>`) and a CSS selector
+  has to guess whether the prefix is part of the name — which differs between XML and HTML
+  parsing. Selectors worked on a hand-written fixture and would have failed on every real book.
+- **A chapter is not a passage.** `/api/segment-text` caps at `MAX_PASTE_CHARS`, so
+  `lib/epubChunk.ts` cuts each chapter into sections at paragraph boundaries — never
+  mid-sentence, since a truncated final word is what the lemmatizer would then see.
+- **Books live in IndexedDB** (`lib/epubStore.ts`), not localStorage. A novel is megabytes;
+  localStorage caps ~5 MB for the whole origin and already holds every deck, the shelf and
+  the daily cache. JSZip is dynamically imported for the same reason the level tables are —
+  a static import put 30 kB in the initial bundle for every learner.
+
 ### Client bundle
 
 The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 kB of source. They are loaded **on demand**, never imported statically:

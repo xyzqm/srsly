@@ -23,6 +23,7 @@ import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
 import PasteTextPanel from './PasteTextPanel';
+import EpubPanel from './EpubPanel';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -946,13 +947,25 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           states where there is nothing to read — an empty deck, a failed generation, no API
           key at all — and those are exactly the branches that render instead of a passage. */}
       {hskLevel > 0 && (
-        <PasteTextPanel
-          language={language}
-          deck={deck}
-          dueWords={dueDeckWords}
-          blankDensity={blankDensity}
-          onCommit={commitPastedPassage}
-        />
+        <div className="flex flex-col gap-2 items-start">
+          <PasteTextPanel
+            language={language}
+            deck={deck}
+            dueWords={dueDeckWords}
+            blankDensity={blankDensity}
+            onCommit={commitPastedPassage}
+          />
+          {/* A book arrives by the same door and leaves by the same one: EpubPanel hands back
+              a DailyPassage through the identical onCommit, so a chapter section is a passage
+              like any other from here on. */}
+          <EpubPanel
+            language={language}
+            deck={deck}
+            dueWords={dueDeckWords}
+            blankDensity={blankDensity}
+            onCommit={commitPastedPassage}
+          />
+        </div>
       )}
 
       {/* The skeleton stands in for a passage that is not here yet — so it must not cover one
