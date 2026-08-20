@@ -13,6 +13,7 @@ import { matchesSearch, searchRank } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import { loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
 import { RECOMMENDED_POOL_ACTIVATE, cardInsight, getSrsSettings, fmtInterval } from '@/lib/fsrs';
+import SetLegend, { SET_HELP } from '@/components/shared/SetLegend';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -838,6 +839,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
               <button
                 key={key}
                 onClick={() => setFilter(key)}
+                title={SET_HELP[key]}
                 className="cursor-pointer transition-all duration-150"
                 style={{
                   fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
@@ -850,6 +852,10 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                 {label}
               </button>
             ))}
+            <SetLegend
+              keys={['all', 'due', 'soon', 'new', 'pool', 'focus', 'forgotten', 'leech', 'paused', 'snoozed']}
+              labels={{ all: 'All', due: 'Due', soon: 'Due soon', new: 'New', pool: 'Pool', focus: '★ Focus', forgotten: 'Forgotten', leech: 'Stuck', paused: 'Paused', snoozed: 'Snoozed' }}
+            />
             {/* Bulk action for the active filter */}
             {filter === 'pool'    && counts.pool    > 0 && <ActivatePoolBtn poolCount={counts.pool} onActivate={releaseFromPool} onUndo={restoreToPool} />}
             {filter === 'focus'   && counts.focus   > 0 && <BulkBtn label="Unfocus all"   onClick={unfocusAll} />}

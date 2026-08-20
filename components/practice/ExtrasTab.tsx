@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { PracticeMode } from '@/lib/types';
 import { weakestWords } from '@/lib/weakWords';
+import SetLegend, { SET_HELP } from '@/components/shared/SetLegend';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import { dateInDays } from '@/lib/deck';
@@ -108,7 +109,7 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
             schedule. Good for cramming before a test. &ldquo;Again&rdquo; re-shows the card
             later in this session.
           </p>
-          <div className="flex flex-wrap gap-1.5 mb-6">
+          <div className="flex flex-wrap items-center gap-1.5 mb-6">
             {([
               ['all',       `All ${scopedDeck.length}`],
               ['weak',      `Trouble ${weakestWords(scopedDeck).length}`],
@@ -120,6 +121,7 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
               <button
                 key={key}
                 onClick={() => setCramScope(key)}
+                title={SET_HELP[key]}
                 className="cursor-pointer transition-all duration-150"
                 style={{
                   fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
@@ -132,6 +134,10 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
                 {label}
               </button>
             ))}
+            <SetLegend
+              keys={['all', 'weak', 'focus', 'leech', 'forgotten', 'soon']}
+              labels={{ all: 'All', weak: 'Trouble', focus: '★ Focus', leech: 'Stuck', forgotten: 'Forgotten', soon: 'Due soon' }}
+            />
           </div>
           {cramDeck.length === 0 ? (
             <div className="text-center py-12" style={{ color: 'var(--ink-soft)', fontFamily: 'var(--f-mono)', fontSize: 13 }}>
