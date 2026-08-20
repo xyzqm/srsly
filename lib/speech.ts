@@ -391,6 +391,29 @@ export async function prefetchAudio(text: string): Promise<void> {
   try { await fetchApiAudio(text); } catch { /* ignore */ }
 }
 
+/**
+ * Has this learner ever actually played passage audio?
+ *
+ * Gates the eager first-sentence prefetch. /api/tts is a paid OpenAI call, and the reading
+ * tab loads a passage on every visit — so warming audio for everyone would buy speech nobody
+ * requested, every day, for every learner who never touches the player. Once someone has
+ * pressed play even once, the odds flip and the prefetch pays for itself.
+ *
+ * Device-local, like the other "what has been done to this copy" markers. A false negative
+ * costs one slower first play; there is nothing here worth syncing.
+ */
+const USED_AUDIO_KEY = 'srsly-used-audio';
+
+export function hasUsedAudio(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try { return localStorage.getItem(USED_AUDIO_KEY) === '1'; } catch { return false; }
+}
+
+export function markAudioUsed(): void {
+  if (typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(USED_AUDIO_KEY, '1'); } catch { /* private mode */ }
+}
+
 /** Prime the voice list — call once on a user gesture to avoid the async delay. */
 export function primeTTS(): void {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {

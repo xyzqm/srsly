@@ -1,7 +1,7 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Sentence } from '@/lib/types';
-import { speakSequence, primeTTS } from '@/lib/speech';
+import { speakSequence, primeTTS, prefetchAudio, hasUsedAudio, markAudioUsed } from '@/lib/speech';
 
 interface Props {
   sentences: Sentence[];
@@ -15,6 +15,36 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
   const [idx, setIdx] = useState(0);
   const stopRef = useRef<(() => void) | null>(null);
 
+  /**
+   * Warm the FIRST sentence so pressing play starts it immediately.
+   *
+   * Without this, `speakAt` awaits a round trip to /api/tts before a sound comes out — and
+   * that gap sits precisely where the learner is least willing to wait, having just pressed
+   * play. Every LATER sentence was already covered: speakSequence fetches idx+1 while idx is
+   * still speaking, so only the cold start was ever slow.
+   *
+   * WHY IT IS NOT SIMPLY DONE ON MOUNT. /api/tts is a paid OpenAI call and the reading tab
+   * loads a passage on every visit, so warming unconditionally would buy speech nobody asked
+   * for, daily, for every learner who never touches the player. Two triggers instead:
+   *
+   *   - on mount, but ONLY for someone who has played audio before. They will probably play
+   *     it again, so the call is one they were going to make.
+   *   - otherwise on intent — pointer over the controls, or focus. Hover-to-click is a few
+   *     hundred milliseconds, which is most of a short sentence's fetch, and it costs nothing
+   *     for a reader who never goes near the button.
+   *
+   * `prefetchAudio` is idempotent: it returns from the cache once warm, so firing on both
+   * triggers and on every hover is free after the first.
+   */
+  const warmFirst = useCallback(() => {
+    const first = sentences[0]?.plainText;
+    if (first) void prefetchAudio(first);
+  }, [sentences]);
+
+  useEffect(() => {
+    if (hasUsedAudio()) warmFirst();
+  }, [warmFirst]);
+
   const stop = useCallback(() => {
     stopRef.current?.();
     stopRef.current = null;
@@ -23,6 +53,7 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
 
   const play = useCallback((startIdx: number) => {
     primeTTS();
+    markAudioUsed();   // from now on this passage's opening is warmed on arrival
     stop();
     setPlaying(true);
     const stopFn = speakSequence(
@@ -75,7 +106,15 @@ export default function PassagePlayer({ sentences, onSentenceChange, active = tr
   };
 
   return (
-    <div className="flex items-center gap-2">
+    // Intent triggers sit on the whole control cluster, not just play: reaching for ⏭ or
+    // hovering the group is the same signal. pointerEnter covers mouse and pen; pointerDown
+    // covers touch, where it still buys the gap between finger-down and the click firing.
+    <div
+      className="flex items-center gap-2"
+      onPointerEnter={warmFirst}
+      onPointerDown={warmFirst}
+      onFocusCapture={warmFirst}
+    >
       <button onClick={prev} style={btnStyle} title="Previous sentence">⏮</button>
       <button
         onClick={toggle}
