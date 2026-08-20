@@ -64,6 +64,16 @@ character.
 
 ## Environment
 
+**`SRSLY_STUB_AI=1` serves canned content instead of calling Anthropic** — no key, no credit,
+no cost (`lib/server/stubContent.ts`). It exists because the reading pipeline is the largest
+thing in the app and the hardest to work on: every run costs tokens, the guest budget runs
+out, and once it has, nothing in the tab is reachable — no passage, no blank, no question, no
+results screen. The stub substitutes only the model's raw JSON, so the canned text still runs
+through the real segmenters and lemmatizers and you see what the route would actually emit.
+It fires on the explicit flag alone and is **never** a fallback for a missing key or a failed
+call; content the learner cannot tell apart from real output is what this codebase refuses
+everywhere else.
+
 AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it (or once a guest exhausts their free-generation budget), the ReadTab shows a "no API key" / limit-reached warning with no passage underneath — there is no static fallback content.
 
 ## Architecture

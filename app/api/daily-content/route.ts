@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { consumeAiCredit } from '@/lib/supabase/server';
+import { stubDailyContent, stubEnabled } from '@/lib/server/stubContent';
 import type { LanguageCode } from '@/lib/types';
 import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
@@ -150,11 +151,14 @@ async function generateJson(
 export async function POST(req: NextRequest) {
   // Use SRSLY_API_KEY to avoid being blocked by Claude Code's ANTHROPIC_API_KEY='' override.
   // Falls back to ANTHROPIC_API_KEY for standard deployments.
+  // SRSLY_STUB_AI=1 serves canned content and needs no key — see lib/server/stubContent.ts.
+  // Checked before the key so the reading tab is workable with no credentials at all.
+  const stub = stubEnabled();
   const apiKey = process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || apiKey === 'your-api-key-here') {
+  if (!stub && (!apiKey || apiKey === 'your-api-key-here')) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 503 });
   }
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey: apiKey ?? 'stub' });
 
   let words: { h: string; p: string; m: string; compounds?: string[] }[];
   let hskLevel: number;
@@ -193,7 +197,8 @@ export async function POST(req: NextRequest) {
 
   // Meter generation: guests get a small budget, signed-in users are unlimited. Checked
   // (and decremented) before we spend any Anthropic tokens. No-op when Supabase is off.
-  const credit = await consumeAiCredit();
+  // The stub spends nothing, so it must not decrement anyone's budget either.
+  const credit = stub ? { allowed: true, remaining: null } : await consumeAiCredit();
   if (!credit.allowed) {
     return NextResponse.json({ error: 'guest_limit', message: GUEST_LIMIT_MSG, aiRemaining: 0 }, { status: 402 });
   }
@@ -666,10 +671,29 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     };
   }
 
+  /**
+   * Under the stub, this replaces the model's reply and NOTHING else changes.
+   *
+   * Substituting the raw JSON rather than the finished response is the point: the canned text
+   * then runs through the same `expandTokens`, the same segmenters and the same lemmatizers
+   * the live path uses, so what you see is what the route would really emit. Returning a
+   * ready-made passage would test the renderer against data the route never produces.
+   */
+  const stubbed = stub ? stubDailyContent(language, words) : null;
+  async function reply(prompt: string, complete: (j: Record<string, unknown>) => boolean, tag: string) {
+    if (!stubbed) return generateJson(client, prompt, complete, tag as Parameters<typeof generateJson>[3]);
+    const json =
+      tag === 'passage'   ? { passages: [{ title: stubbed.title, sentences: stubbed.sentences, contextualMeanings: stubbed.contextualMeanings }] }
+    : tag === 'questions' ? { questions: stubbed.questions }
+    : tag === 'fill'      ? { fill: [] }
+    :                       { convo: [] };
+    return { json: json as Record<string, unknown>, best: null };
+  }
+
   // ── Generate the requested sections concurrently ───────────────────────────
   const jobs = sections.map(async (section): Promise<[Section, { complete: boolean; out: unknown }]> => {
     if (section === 'passage') {
-      const { json, best } = await generateJson(client, passagePrompt, passageComplete, 'passage');
+      const { json, best } = await reply(passagePrompt, passageComplete, 'passage');
       const j = json ?? best;
       const map = resolveMap(j);
       const passages = Array.isArray((j as { passages?: unknown })?.passages)
@@ -678,7 +702,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       return ['passage', { complete: json !== null, out: passages }];
     }
     if (section === 'fill') {
-      const { json, best } = await generateJson(client, fillPrompt, fillComplete, 'fill');
+      const { json, best } = await reply(fillPrompt, fillComplete, 'fill');
       const j = json ?? best;
       const map = resolveMap(j);
       const fill = Array.isArray((j as { fill?: unknown })?.fill)
@@ -687,7 +711,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       return ['fill', { complete: json !== null, out: fill }];
     }
     if (section === 'questions') {
-      const { json, best } = await generateJson(client, questionsPrompt, questionsComplete, 'questions');
+      const { json, best } = await reply(questionsPrompt, questionsComplete, 'questions');
       const j = json ?? best;
       const map = resolveMap(j);
       const qsRaw = Array.isArray((j as { questions?: unknown })?.questions)
@@ -708,7 +732,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
       }));
       return ['questions', { complete: json !== null, out: qs }];
     }
-    const { json, best } = await generateJson(client, convoPrompt, convoComplete, 'convo');
+    const { json, best } = await reply(convoPrompt, convoComplete, 'convo');
     const j = json ?? best;
     const map = resolveMap(j);
     const convo = Array.isArray((j as { convo?: unknown })?.convo)
