@@ -12,7 +12,7 @@ import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch, searchRank } from '@/lib/deckSearch';
 import { storage } from '@/lib/storage';
 import { loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
-import { RECOMMENDED_POOL_ACTIVATE } from '@/lib/fsrs';
+import { RECOMMENDED_POOL_ACTIVATE, cardInsight, getSrsSettings, fmtInterval } from '@/lib/fsrs';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -379,6 +379,39 @@ function CardManage({ word, today, onPause, onSnooze, onUnsnooze, onReschedule, 
         {word.stability !== undefined && stat('Stability', `${word.stability.toFixed(1)}d`)}
         {word.difficulty !== undefined && stat('Difficulty', word.difficulty.toFixed(1))}
       </div>
+      {/* WHY IT IS DUE WHEN IT IS.
+          The grid above is the card's raw state, which answers "what does FSRS think" and
+          not the question anyone actually has. The scheduler is otherwise a black box that
+          hands you a date; this is the one sentence that makes the date follow from
+          something. Absent for new and learning cards, because there is no curve to
+          describe before the first graduation and inventing one would be worse than
+          silence. */}
+      {(() => {
+        const ins = cardInsight(word, getSrsSettings(), today);
+        if (!ins) return null;
+        const pct = (v: number) => `${Math.round(v * 100)}%`;
+        const harder = ins.difficulty >= 6.5;
+        const easier = ins.difficulty <= 4;
+        return (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6, marginBottom: 13, maxWidth: '62ch' }}>
+            <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', display: 'block', marginBottom: 4 }}>
+              Why this date
+            </span>
+            {ins.daysSince === null
+              ? <>Scheduled from a stability of {fmtInterval(ins.stability)}. </>
+              : <>Last reviewed {ins.daysSince === 0 ? 'today' : `${ins.daysSince} day${ins.daysSince === 1 ? '' : 's'} ago`}. </>}
+            Right now the model puts your chance of recalling it at{' '}
+            <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>{pct(ins.recallNow)}</strong>,
+            and it comes back when that falls to your target of {pct(ins.targetRetention)} — which
+            for this card is {fmtInterval(ins.plannedInterval)} after a review.
+            {' '}Difficulty {ins.difficulty.toFixed(1)}/10
+            {harder ? ' — harder than average, so its interval grows more slowly each time.'
+              : easier ? ' — easier than average, so its interval grows quickly.'
+              : ' — about average, so its interval grows at a normal rate.'}
+          </div>
+        );
+      })()}
+
       <div className="flex flex-wrap gap-2 items-center">
         {word.pool && onRelease && actBtn('Release now', onRelease)}
         {!word.pool && (word.paused ? actBtn('Resume', () => onPause(false)) : actBtn('Pause', () => onPause(true)))}

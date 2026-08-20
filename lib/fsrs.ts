@@ -316,6 +316,52 @@ export function fsrsNextInterval(
   return opts?.minDaysOut ? Math.max(opts.minDaysOut, days) : days;
 }
 
+/**
+ * What FSRS currently believes about a card, in numbers a person can be shown.
+ *
+ * The Vocab tab already listed stability and difficulty as bare figures, which is the raw
+ * state and not an answer to the question anyone actually has — "why is this due when it
+ * is?". These are the pieces that make that answerable: how likely you are to recall it
+ * RIGHT NOW, and the fact that the due date is simply where that probability crosses your
+ * desired retention. Everything here is read off the card; nothing is re-derived or guessed.
+ *
+ * Returns null for a card FSRS has no model of yet — new, or still in learning steps. There
+ * is no honest curve to describe before the first graduation, and inventing one would be
+ * worse than saying nothing.
+ */
+export interface CardInsight {
+  /** Predicted recall probability today, 0–1. */
+  recallNow: number;
+  /** The retention the schedule is aiming at, from settings. */
+  targetRetention: number;
+  /** Days since the last review, or null if never reviewed. */
+  daysSince: number | null;
+  stability: number;
+  difficulty: number;
+  /** Days the current interval was set to — stability translated at the target retention. */
+  plannedInterval: number;
+}
+
+export function cardInsight(
+  word: DeckWord,
+  settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+  today: string = todayStr(),
+): CardInsight | null {
+  const s = word.stability;
+  const d = word.difficulty;
+  if (s === undefined || d === undefined || word.phase === 'learning') return null;
+
+  const daysSince = word.lastReview ? Math.max(0, daysBetween(word.lastReview, today)) : null;
+  return {
+    recallNow: retrievability(daysSince ?? 0, s),
+    targetRetention: settings.desiredRetention,
+    daysSince,
+    stability: s,
+    difficulty: d,
+    plannedInterval: nextInterval(s, settings.desiredRetention, settings.maxIntervalDays),
+  };
+}
+
 // ── Display ───────────────────────────────────────────────────────────────────
 
 export function fmtInterval(days: number): string {
