@@ -76,6 +76,21 @@ export interface ConvoTurn {
   suggestions: PassageToken[][];
 }
 
+/**
+ * One language's own streak, kept alongside the global one.
+ *
+ * Same three fields the global streak uses and the same functions operate on both — a
+ * per-language streak is not a different rule, it is the same rule asked of a smaller deck.
+ * That matters for the forgiveness check especially: "did I owe anything on the day I
+ * missed" should mean "in THIS language", or studying Spanish would keep forgiving your
+ * Chinese gaps.
+ */
+export interface LanguageStreak {
+  streak: number;
+  lastActive: string;
+  forgivenDays?: string[];
+}
+
 export interface SRSState {
   streak: number;
   lastVisit: string;   // YYYY-MM-DD
@@ -88,6 +103,13 @@ export interface SRSState {
    *  questions left the streak untouched. Absent on states written before the honest
    *  streak; useSRS falls back to `todayScoreDate` once. See lib/streak.ts. */
   lastActive?: string;
+  /**
+   * Per-language streaks. The global `streak` above is unchanged and still answers "did you
+   * study today" across everything; this answers it per language, so a Chinese streak is not
+   * kept alive by a week of Spanish. Absent for states written before it existed, and for
+   * languages never studied.
+   */
+  byLanguage?: Partial<Record<LanguageCode, LanguageStreak>>;
   /** Missed days forgiven because nothing was due — kept so the UI can say how much of a
    *  streak was rest rather than silently implying every day was studied. */
   forgivenDays?: string[];

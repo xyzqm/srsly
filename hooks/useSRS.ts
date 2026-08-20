@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
-import type { DailyAccuracy, DeckWord, LanguageCode } from '@/lib/types';
+import type { DailyAccuracy, DeckWord, LanguageCode, SRSState } from '@/lib/types';
 import { todayStr, dateInDays } from '@/lib/deck';
-import { applyActivity, dueCountOn, forgivenInStreak, reconcileStreak } from '@/lib/streak';
+import { applyActivity, dueCountOn, forgivenInStreak, reconcileStreak, languageActivity, languageStreakDisplay, withLanguageStreak } from '@/lib/streak';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
 interface EmojiState { emoji: string; tip: string }
@@ -75,12 +75,18 @@ export function rollingAccuracy(history: DailyAccuracy[] | undefined, days: numb
   return { right, total, pct: total ? Math.round((right / total) * 100) : null, days: recent.length };
 }
 
-export function useSRS() {
+/**
+ * `language` enables the per-language streak. Optional because Header only wants the emoji,
+ * and asking every caller for a language it does not use would be noise — omitted simply
+ * means the global streak behaves exactly as before and `langStreak` stays 0.
+ */
+export function useSRS(language?: LanguageCode) {
   const [emojiState, setEmojiState] = useState<EmojiState>({ emoji: '🤔', tip: '' });
   const [streak, setStreak] = useState(0);
   const [sessions, setSessions] = useState(0);
   const [accuracy, setAccuracy] = useState<DailyAccuracy[]>([]);
   const [forgiven, setForgiven] = useState(0);
+  const [langStreak, setLangStreak] = useState(0);
 
   useEffect(() => {
     const today = todayStr();
@@ -113,6 +119,18 @@ export function useSRS() {
       const live = lastActive === today || lastActive === yest;
       const displayStreak = live ? state.streak : 0;
 
+      // The language's own counter, settled the same way and against its own deck only.
+      if (language) {
+        const langDeck = await storage.getVocabDeck(language);
+        const { streak: shown, settled: langSettled } =
+          languageStreakDisplay(state.byLanguage?.[language], langDeck, today, yest);
+        if (langSettled) {
+          state = withLanguageStreak(state, language, langSettled);
+          await storage.saveSRSState(state);
+        }
+        setLangStreak(shown);
+      }
+
       setStreak(displayStreak);
       setSessions(state.sessions ?? 0);
       setAccuracy(state.accuracy ?? []);
@@ -133,7 +151,8 @@ export function useSRS() {
       const scoreFresh = state.todayScoreDate === today && state.todayScore >= 0;
       setEmojiState(pickEmoji(displayStreak, daysAway, state.todayScore, scoreFresh, restToday));
     })();
-  }, []);
+    // Re-runs on a language switch so the new language's own streak is settled and shown.
+  }, [language]);
 
   /**
    * Mark today as studied. Extends the streak, and nothing else.
@@ -144,6 +163,21 @@ export function useSRS() {
    * report — and folding them together is exactly why reading used to leave the streak
    * untouched.
    */
+  /**
+   * Record today in the active language's streak, if there is one.
+   *
+   * Separate from the global bump because the two can disagree: study Spanish and the global
+   * streak counts today, but Chinese has still not been touched. Returns the state rather
+   * than saving, so the caller writes once.
+   */
+  const bumpLanguage = useCallback(async (state: SRSState, today: string, yest: string): Promise<SRSState> => {
+    if (!language) return state;
+    const cur = state.byLanguage?.[language];
+    if (cur?.lastActive === today) return state;
+    const deck = await storage.getVocabDeck(language);
+    return withLanguageStreak(state, language, languageActivity(cur, deck, today, yest));
+  }, [language]);
+
   const recordActivity = useCallback(async () => {
     const today = todayStr();
     const yest = yesterday();
@@ -155,11 +189,12 @@ export function useSRS() {
     if (settled) state = settled;
 
     state = applyActivity(state, today, yest);
+    state = await bumpLanguage(state, today, yest);
     await storage.saveSRSState(state);
     setStreak(state.streak);
     setForgiven(forgivenInStreak(state, today));
     return state.streak;
-  }, []);
+  }, [bumpLanguage]);
 
   const recordScore = useCallback(async (score: number) => {
     const today = todayStr();
@@ -172,6 +207,9 @@ export function useSRS() {
       if (settled) state = settled;
       state = applyActivity(state, today, yest);
     }
+    // Independently of `firstToday`: the global streak may already be counted today from
+    // another language, while THIS one has not studied yet.
+    state = await bumpLanguage(state, today, yest);
 
     // Only count a new session if this is the first score recorded today
     const newSessions = state.todayScoreDate === today
@@ -189,7 +227,7 @@ export function useSRS() {
     setForgiven(forgivenInStreak(updated, today));
     // A score means they just studied, so neither away nor resting — the score emoji wins.
     setEmojiState(pickEmoji(updated.streak, 0, score, true, false));
-  }, []);
+  }, [bumpLanguage]);
 
   /**
    * Log one passage-cloze answer. Called per blank rather than per session so a passage
@@ -207,5 +245,5 @@ export function useSRS() {
     setAccuracy(trimmed);
   }, []);
 
-  return { ...emojiState, recordScore, recordActivity, recordAnswer, streak, sessions, accuracy, forgiven };
+  return { ...emojiState, recordScore, recordActivity, recordAnswer, streak, langStreak, sessions, accuracy, forgiven };
 }

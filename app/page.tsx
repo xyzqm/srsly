@@ -77,7 +77,14 @@ function AppShell() {
   const [tab, setTab] = useState<TabId>('read');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
-  const { recordScore, recordActivity, recordAnswer } = useSRS();
+
+  // Active study language. Persisted in prefs; drives deck namespacing, dictionary lookups,
+  // proficiency labels and TTS locale via LanguageProvider below. Declared BEFORE useSRS,
+  // which now takes it — a `const` is not hoisted, so reading it above this line is a
+  // temporal-dead-zone crash rather than a warning.
+  const [language, setLanguage] = useState<LanguageCode>('zh');
+
+  const { recordScore, recordActivity, recordAnswer } = useSRS(language);
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
   /**
@@ -94,9 +101,6 @@ function AppShell() {
     setTab(next);
   }, []);
 
-  // Active study language. Persisted in prefs; drives deck namespacing, dictionary
-  // lookups, proficiency labels and TTS locale via LanguageProvider below.
-  const [language, setLanguage] = useState<LanguageCode>('zh');
   /** Languages the learner has added. null until prefs load — distinct from [], which is a
    *  genuinely empty account and the one state that forces onboarding. */
   const [languages, setLanguages] = useState<LanguageCode[] | null>(null);

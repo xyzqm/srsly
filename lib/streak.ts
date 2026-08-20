@@ -1,4 +1,4 @@
-import type { DeckWord, SRSState } from './types';
+import type { DeckWord, LanguageCode, LanguageStreak, SRSState } from './types';
 import { isActive } from './deck';
 
 /**
@@ -153,4 +153,70 @@ function dateMinus(day: string, n: number): string {
   const d = new Date(day + 'T00:00:00');
   d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+
+// ── Per-language streaks ──────────────────────────────────────────────────────
+
+/**
+ * The same two operations, applied to one language's own counter.
+ *
+ * Deliberately reusing `reconcileStreak` and `applyActivity` by adapting a `LanguageStreak`
+ * into the `SRSState` shape they read, rather than reimplementing the rules. A per-language
+ * streak is not a different rule — it is the same rule asked of a smaller deck, and the
+ * forgiveness check in particular has to be scoped that way: "did I owe anything on the day I
+ * missed" must mean "in THIS language", or a week of Spanish would forgive every Chinese gap.
+ *
+ * Only three fields matter to those functions, so the adapter is honest about carrying
+ * nothing else.
+ */
+function asState(s: LanguageStreak): SRSState {
+  return {
+    streak: s.streak, lastActive: s.lastActive, forgivenDays: s.forgivenDays,
+    lastVisit: '', todayScore: -1, todayScoreDate: '',
+  };
+}
+
+const EMPTY: LanguageStreak = { streak: 0, lastActive: '' };
+
+/** Settle any gap in one language's streak, then record today's activity in it. */
+export function languageActivity(
+  current: LanguageStreak | undefined,
+  deck: DeckWord[],
+  today: string,
+  yesterday: string,
+): LanguageStreak {
+  let st = asState(current ?? EMPTY);
+  const settled = reconcileStreak(st, deck, today, yesterday);
+  if (settled) st = settled;
+  const next = applyActivity(st, today, yesterday);
+  return { streak: next.streak, lastActive: next.lastActive ?? '', forgivenDays: next.forgivenDays };
+}
+
+/**
+ * What to SHOW for a language, without recording anything.
+ *
+ * A streak is live only while it reaches today or yesterday; past that it reads 0 even though
+ * the stored number is untouched, exactly as the global one behaves. Gaps are settled here
+ * too so a run of rest days still displays as continuous.
+ */
+export function languageStreakDisplay(
+  current: LanguageStreak | undefined,
+  deck: DeckWord[],
+  today: string,
+  yesterday: string,
+): { streak: number; settled: LanguageStreak | null } {
+  if (!current) return { streak: 0, settled: null };
+  const settled = reconcileStreak(asState(current), deck, today, yesterday);
+  const st = settled ?? asState(current);
+  const live = st.lastActive === today || st.lastActive === yesterday;
+  return {
+    streak: live ? st.streak : 0,
+    settled: settled ? { streak: settled.streak, lastActive: settled.lastActive ?? '', forgivenDays: settled.forgivenDays } : null,
+  };
+}
+
+/** Merge one language's streak back into the whole state. */
+export function withLanguageStreak(state: SRSState, lang: LanguageCode, next: LanguageStreak): SRSState {
+  return { ...state, byLanguage: { ...(state.byLanguage ?? {}), [lang]: next } };
 }

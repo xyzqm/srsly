@@ -2,6 +2,7 @@
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import PieChart from './PieChart';
 import MilestoneRing from './MilestoneRing';
 import ReviewHeatmap from './ReviewHeatmap';
@@ -16,7 +17,7 @@ interface Props { onNavigateRead: () => void; onDrillWeak: () => void; }
 export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
   const language = useLanguage();
   const { deck } = useVocabDeck(language);
-  const { streak, sessions, accuracy, forgiven } = useSRS();
+  const { streak, langStreak, sessions, accuracy, forgiven } = useSRS(language);
 
   return (
     <div
@@ -84,6 +85,15 @@ export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
             <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', marginTop: 5, lineHeight: 1.4 }}>
               incl. {forgiven} rest day{forgiven === 1 ? '' : 's'}
               <span style={{ opacity: 0.75 }}> · nothing was due</span>
+            </div>
+          )}
+          {/* The language's own run, under the all-languages one. Only when they differ:
+              for a learner studying one language they are the same number, and printing it
+              twice would imply a distinction that is not there. */}
+          {langStreak !== streak && (
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', marginTop: 5, lineHeight: 1.4 }}>
+              {langStreak}d in {getLanguageConfig(language).name}
+              <span style={{ opacity: 0.75 }}> · this language alone</span>
             </div>
           )}
         </div>
