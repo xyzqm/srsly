@@ -28,7 +28,21 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
   const [mode, setMode] = useState<PracticeMode>(initialMode);
 
   // One deck per language, so practice always pulls from the whole of it.
-  const scopedDeck = deck;
+  /**
+   * Pool words are not studiable, in any mode.
+   *
+   * Normal review already excludes them — `isDueToday` goes through `isActive`, which returns
+   * false for anything pooled. Cram deliberately ignores due dates, so it never reaches that
+   * test, and this was the whole deck: import HSK 3 and "Cram · All" offered 600 words you had
+   * just deliberately parked. Cram also does not change schedules, so drilling them recorded
+   * nothing and left them pooled — study with no progress attached to it.
+   *
+   * Only `pool`. Paused and snoozed cards stay available on purpose: those are cards in
+   * circulation that you deferred, and "drill this now regardless" is exactly what cram is
+   * for — the Stuck set is auto-paused leeches and would be empty otherwise. A pooled word is
+   * categorically different: it has never entered circulation at all.
+   */
+  const scopedDeck = useMemo(() => deck.filter(w => !w.pool), [deck]);
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');
