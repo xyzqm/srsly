@@ -14,6 +14,7 @@ import { storage } from '@/lib/storage';
 import { loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
 import { RECOMMENDED_POOL_ACTIVATE, cardInsight, getSrsSettings, fmtInterval } from '@/lib/fsrs';
 import SetLegend, { SET_HELP } from '@/components/shared/SetLegend';
+import LeechTriage from './LeechTriage';
 import { weakestWords } from '@/lib/weakWords';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
@@ -484,7 +485,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const {
-    deck, addWord, addWords, removeWord, updateWord, clearDeck,
+    deck, addWord, addWords, removeWord, updateWord, patchCard, unstickCard, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
   } = useVocabDeck(language);
@@ -863,6 +864,17 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
             {filter === 'paused'  && counts.paused  > 0 && <BulkBtn label="Resume all"    onClick={resumeAll} />}
             {filter === 'snoozed' && counts.snoozed > 0 && <BulkBtn label="Un-snooze all" onClick={unsnoozeAll} />}
           </div>
+        )}
+
+        {/* Only under Stuck, because that is the filter you open when you have decided to do
+            something about these — a triage panel on every view would be nagging. */}
+        {filter === 'leech' && chipFiltered.length > 0 && (
+          <LeechTriage
+            words={chipFiltered}
+            onSave={(id, patch) => patchCard(id, patch)}
+            onUnstick={unstickCard}
+            onRemove={handleRemove}
+          />
         )}
 
         {/* Cross-fade the whole list (rows + empty states) when the deck changes. */}

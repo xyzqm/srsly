@@ -515,6 +515,16 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 500, marginTop: 6 }}>{sdm(card.m)}</div>
             </>
           )}
+          {/* The learner's own hook, written during leech triage. On the ANSWER side only —
+              on the front it would be the answer. */}
+          {card.note && (
+            <div style={{
+              marginTop: 16, fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '34ch',
+              lineHeight: 1.55, fontStyle: 'italic',
+            }}>
+              {card.note}
+            </div>
+          )}
           {card.cn && (
             <div style={{ marginTop: 18, fontSize: 15, color: 'var(--ink-soft)', maxWidth: '34ch', lineHeight: 1.6 }}>
               <span style={{ fontFamily: 'var(--f-han)', color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: card.cn }} />

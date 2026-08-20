@@ -268,6 +268,23 @@ Six themes (`paper`, `ink`, `tea`, `slate`, `bone`, `dusk`) and five fonts are t
 | `useWordPopup` | Click-to-lookup popup state on clickable Chinese words |
 | `useSpeech` | Web Speech API TTS for passage playback |
 
+#### A leech is a card to fix, not to keep reviewing
+
+A word auto-flags as a leech at `LEECH_THRESHOLD` lapses and auto-pauses. That stops it
+eating review time, which is the immediate problem, but it fixes nothing — and until
+`components/vocab/LeechTriage.tsx` the card simply sat in the Stuck filter forever.
+
+The premise is that a card failed eight times is rarely failing for want of a ninth review:
+the gloss is a five-sense dictionary dump nobody can hold, or the word has no hook. So all
+three actions **change the card** — trim the meaning, add a mnemonic (`DeckWord.note`,
+rendered on the flashcard's answer side only), or remove it — and none of them is "review it
+again". Unsticking clears `leech` as well as the schedule, because leaving the flag set would
+re-pause the card on its very next lapse under `applyLeech`'s half-threshold rule.
+
+Shown one card at a time, and only under the Stuck filter. A list of thirty leeches is the
+thing the learner has already been ignoring; a queue of one asks a question small enough to
+answer.
+
 ### Practice modes
 
 The Practice tab (`components/practice/ExtrasTab.tsx`) offers three modes selected via `PracticeMode`:

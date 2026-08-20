@@ -31,6 +31,14 @@ export interface DeckWord {
   paused?: boolean;      // excluded from all review until resumed (cf. Anki "suspend")
   snoozeUntil?: string;  // YYYY-MM-DD; hidden from review until this date (cf. Anki "bury")
   leech?: boolean;       // auto-flagged after too many lapses (then auto-paused; re-suspends periodically)
+  /**
+   * The learner's own hook for remembering this word — a mnemonic, a context, a warning.
+   *
+   * Exists for leech triage. A card you have failed eight times is usually not failing for
+   * want of another review; something about it is not sticking, and the fix is to change the
+   * card rather than to keep showing it. Rendered on the flashcard's answer side.
+   */
+  note?: string;
   pool?: boolean;        // staged — added to deck but not yet in circulation; excluded from all review
 }
 

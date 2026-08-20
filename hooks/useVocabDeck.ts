@@ -361,6 +361,21 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   }, [commit]);
 
   /** Reset a word to "new": clears FSRS scheduling/history but keeps content + focus. */
+  /**
+   * Put a stuck card back into circulation, with its history cleared.
+   *
+   * Clearing `leech` alongside the schedule is the point: leaving the flag set would re-pause
+   * the card on its very next lapse (see applyLeech's half-threshold rule), so a card you had
+   * just decided to give another chance would be suspended again almost immediately.
+   */
+  const unstickCard = useCallback((id: string) =>
+    patchCard(id, {
+      leech: undefined, paused: undefined,
+      stability: undefined, difficulty: undefined, lapses: undefined, reviews: undefined,
+      dueAt: undefined, lastReview: undefined, phase: undefined, learningStep: undefined, dueAtMs: undefined,
+    }),
+  [patchCard]);
+
   const resetProgress = useCallback((id: string) =>
     patchCard(id, {
       stability: undefined, difficulty: undefined, lapses: undefined, reviews: undefined,
@@ -440,6 +455,6 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   return {
     deck, deckLoaded, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
-    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord,
+    resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord, unstickCard, patchCard,
   };
 }
