@@ -201,9 +201,19 @@ function AppShell() {
               onNavigateVocab={() => changeTab('vocab')}
             />
           </TabPanel>
-          {tab === 'practice' && (
-            <ExtrasTab onScore={recordScore} initialMode={studyStartMode} initialCramScope={cramScopeRequest} />
-          )}
+          {/* Kept alive too. A flashcard session holds its queue and its results in local
+              state, so unmounting threw away a review you were in the middle of — answer a
+              card, glance at Vocab, and you came back to a fresh session. It also came back
+              in whatever mode the last handoff had requested rather than the one you were
+              in. */}
+          <TabPanel active={tab === 'practice'}>
+            <ExtrasTab
+              active={tab === 'practice'}
+              onScore={recordScore}
+              initialMode={studyStartMode}
+              initialCramScope={cramScopeRequest}
+            />
+          </TabPanel>
           <TabPanel active={tab === 'dash'}>
             <StatsTab onNavigateRead={() => changeTab('read')} onDrillWeak={drillWeak} />
           </TabPanel>

@@ -2,10 +2,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { PracticeMode } from '@/lib/types';
 import { weakestWords } from '@/lib/weakWords';
-import SetLegend, { SET_HELP } from '@/components/shared/SetLegend';
+import SetLegend, { SET_HELP, CRAM_HELP } from '@/components/shared/SetLegend';
+import { stopAll } from '@/lib/speech';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
-import { dateInDays } from '@/lib/deck';
 import Flashcards from './Flashcards';
 
 const MODES: { id: PracticeMode; label: string }[] = [
@@ -13,17 +13,19 @@ const MODES: { id: PracticeMode; label: string }[] = [
   { id: 'cram',  label: 'Cram' },
 ];
 
-type CramScope = 'all' | 'weak' | 'focus' | 'leech' | 'soon';
+type CramScope = 'all' | 'weak' | 'focus' | 'leech';
 
 interface Props {
   onScore: (score: number) => void;
   /** Mode to open in — 'flash' for review-due, 'cram' for a whole-deck drill. */
   initialMode?: PracticeMode;
+  /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
+  active?: boolean;
   /** Cram set to open on, when the caller is handing off to a specific one. */
   initialCramScope?: string;
 }
 
-export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramScope }: Props) {
+export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramScope, active = true }: Props) {
   const language = useLanguage();
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
   const [mode, setMode] = useState<PracticeMode>(initialMode);
@@ -52,6 +54,20 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
   useEffect(() => {
     if (initialCramScope) setCramScope(initialCramScope as CramScope);
   }, [initialCramScope]);
+
+  /**
+   * The panel now survives a tab switch, so `useState(initialMode)` only ever runs once — a
+   * later handoff from Vocab or Stats would arrive at a component that had already chosen its
+   * mode and be ignored. Keyed on the request rather than merged into the effect above,
+   * because "study now" sets only the mode and "drill these" sets both.
+   */
+  useEffect(() => { setMode(initialMode); }, [initialMode]);
+
+  /**
+   * Stop speech when the tab is hidden. Flashcards speak on reveal and on replay, and with
+   * the panel kept alive that audio would otherwise follow you onto whatever you switched to.
+   */
+  useEffect(() => { if (!active) stopAll(); }, [active]);
   const cramDeck = useMemo(() => {
     switch (cramScope) {
       // Ranked, not filtered — the ORDER is the feature, so it comes from weakestWords
@@ -59,7 +75,6 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
       case 'weak':      return weakestWords(scopedDeck).map(x => x.word);
       case 'focus':     return scopedDeck.filter(w => w.focus);
       case 'leech':     return scopedDeck.filter(w => w.leech);
-      case 'soon':      { const lim = dateInDays(7); return scopedDeck.filter(w => w.dueAt && w.dueAt <= lim); }
       default:          return scopedDeck;
     }
   }, [scopedDeck, cramScope]);
@@ -114,12 +129,11 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
               ['weak',      `Trouble ${weakestWords(scopedDeck).length}`],
               ['focus',     `★ Focus ${scopedDeck.filter(w => w.focus).length}`],
               ['leech',     `Stuck ${scopedDeck.filter(w => w.leech).length}`],
-              ['soon',      `Due soon ${scopedDeck.filter(w => w.dueAt && w.dueAt <= dateInDays(7)).length}`],
             ] as [CramScope, string][]).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setCramScope(key)}
-                title={SET_HELP[key]}
+                title={CRAM_HELP[key] ?? SET_HELP[key]}
                 className="cursor-pointer transition-all duration-150"
                 style={{
                   fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.04em',
@@ -133,8 +147,9 @@ export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramS
               </button>
             ))}
             <SetLegend
-              keys={['all', 'weak', 'focus', 'leech', 'soon']}
-              labels={{ all: 'All', weak: 'Trouble', focus: '★ Focus', leech: 'Stuck', soon: 'Due soon' }}
+              keys={['all', 'weak', 'focus', 'leech']}
+              labels={{ all: 'All', weak: 'Trouble', focus: '★ Focus', leech: 'Stuck' }}
+              overrides={CRAM_HELP}
             />
           </div>
           {cramDeck.length === 0 ? (

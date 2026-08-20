@@ -16,8 +16,13 @@ import { LEECH_THRESHOLD } from '@/lib/fsrs';
  * side by side. Each chip also carries its own line as a `title`, so hovering one works too.
  */
 
+/** Cram's "All" is narrower than the deck — see the note on `overrides` below. */
+export const CRAM_HELP: Record<string, string> = {
+  all: 'Every word you can drill. Smaller than the deck total in Vocab, because pool words are left out — they have not entered circulation yet.',
+};
+
 export const SET_HELP: Record<string, string> = {
-  all:       'Every word in the set — nothing filtered out.',
+  all:       'Every word in your deck, including ones parked in the pool.',
   due:       'Ready to review right now.',
   soon:      'Scheduled within the next 7 days.',
   new:       'Added to your deck but never reviewed.',
@@ -29,8 +34,19 @@ export const SET_HELP: Record<string, string> = {
   snoozed:   'Pushed to a later date without changing its schedule.',
 };
 
-/** The ⓘ toggle plus the panel it opens. `keys` is the row's chips, in the row's order. */
-export default function SetLegend({ keys, labels }: { keys: string[]; labels: Record<string, string> }) {
+/**
+ * `overrides` lets one row describe a set differently where it genuinely differs. Only "all"
+ * needs it today: in the Vocab tab it is the whole deck, and in Cram it is the whole deck
+ * MINUS pool words, which is why the two rows show different totals for the same word. That
+ * is not a bug to reconcile — a browsing view should list words you have parked, and a study
+ * set should not offer them — but the label has to admit it.
+ */
+export default function SetLegend({ keys, labels, overrides }: {
+  keys: string[];
+  labels: Record<string, string>;
+  overrides?: Record<string, string>;
+}) {
+  const help = (k: string) => overrides?.[k] ?? SET_HELP[k];
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -56,13 +72,13 @@ export default function SetLegend({ keys, labels }: { keys: string[]; labels: Re
           style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
         >
           <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '7px 14px', margin: 0 }}>
-            {keys.filter(k => SET_HELP[k]).map(k => (
+            {keys.filter(k => help(k)).map(k => (
               <div key={k} style={{ display: 'contents' }}>
                 <dt style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink)', whiteSpace: 'nowrap' }}>
                   {labels[k] ?? k}
                 </dt>
                 <dd style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.5, margin: 0 }}>
-                  {SET_HELP[k]}
+                  {help(k)}
                 </dd>
               </div>
             ))}
