@@ -159,8 +159,17 @@ function AppShell() {
   // Which Practice mode to open in when the Vocab tab hands off: 'flash' = review what is
   // due, 'cram' = drill the whole deck ignoring due dates.
   const [studyStartMode, setStudyStartMode] = useState<PracticeMode>('flash');
+  /** Set when the handoff should land on a particular cram set rather than the whole deck. */
+  const [cramScopeRequest, setCramScopeRequest] = useState<string | undefined>(undefined);
   const startStudy = useCallback((mode: PracticeMode) => {
+    setCramScopeRequest(undefined);
     setStudyStartMode(mode);
+    changeTab('practice');
+  }, [changeTab]);
+  /** Stats' "Drill these" — lands in Cram already scoped to the words giving trouble. */
+  const drillWeak = useCallback(() => {
+    setCramScopeRequest('weak');
+    setStudyStartMode('cram');
     changeTab('practice');
   }, [changeTab]);
 
@@ -193,10 +202,10 @@ function AppShell() {
             />
           </TabPanel>
           {tab === 'practice' && (
-            <ExtrasTab onScore={recordScore} initialMode={studyStartMode} />
+            <ExtrasTab onScore={recordScore} initialMode={studyStartMode} initialCramScope={cramScopeRequest} />
           )}
           <TabPanel active={tab === 'dash'}>
-            <StatsTab onNavigateRead={() => changeTab('read')} />
+            <StatsTab onNavigateRead={() => changeTab('read')} onDrillWeak={drillWeak} />
           </TabPanel>
           {tab === 'vocab' && (
             <VocabTab onStudy={startStudy} />

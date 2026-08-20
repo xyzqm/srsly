@@ -9,10 +9,11 @@ import FutureLoad from './FutureLoad';
 import LevelProgress from './LevelProgress';
 import PassageShelf from './PassageShelf';
 import AccuracyTrend from './AccuracyTrend';
+import WeakWords from './WeakWords';
 
-interface Props { onNavigateRead: () => void; }
+interface Props { onNavigateRead: () => void; onDrillWeak: () => void; }
 
-export default function StatsTab({ onNavigateRead }: Props) {
+export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
   const language = useLanguage();
   const { deck } = useVocabDeck(language);
   const { streak, sessions, accuracy, forgiven } = useSRS();
@@ -35,6 +36,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
       </p>
 
       <MilestoneRing deck={deck} language={language} />
+
+      <WeakWords deck={deck} onDrill={onDrillWeak} />
 
       <ReviewHeatmap deck={deck} />
 

@@ -1,6 +1,7 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { PracticeMode } from '@/lib/types';
+import { weakestWords } from '@/lib/weakWords';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import { dateInDays } from '@/lib/deck';
@@ -11,15 +12,17 @@ const MODES: { id: PracticeMode; label: string }[] = [
   { id: 'cram',  label: 'Cram' },
 ];
 
-type CramScope = 'all' | 'focus' | 'leech' | 'forgotten' | 'soon';
+type CramScope = 'all' | 'weak' | 'focus' | 'leech' | 'forgotten' | 'soon';
 
 interface Props {
   onScore: (score: number) => void;
   /** Mode to open in — 'flash' for review-due, 'cram' for a whole-deck drill. */
   initialMode?: PracticeMode;
+  /** Cram set to open on, when the caller is handing off to a specific one. */
+  initialCramScope?: string;
 }
 
-export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
+export default function ExtrasTab({ onScore, initialMode = 'flash', initialCramScope }: Props) {
   const language = useLanguage();
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
   const [mode, setMode] = useState<PracticeMode>(initialMode);
@@ -29,8 +32,16 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
 
   // Cram: a deliberate drill of a chosen subset, ignoring due dates and schedule.
   const [cramScope, setCramScope] = useState<CramScope>('all');
+  // Adopt a requested set when the caller changes it — Stats' "Drill these" arrives this way,
+  // and arrives AFTER this component may already be mounted, so a lazy initial value misses it.
+  useEffect(() => {
+    if (initialCramScope) setCramScope(initialCramScope as CramScope);
+  }, [initialCramScope]);
   const cramDeck = useMemo(() => {
     switch (cramScope) {
+      // Ranked, not filtered — the ORDER is the feature, so it comes from weakestWords
+      // rather than being another predicate here. See lib/weakWords.ts.
+      case 'weak':      return weakestWords(scopedDeck).map(x => x.word);
       case 'focus':     return scopedDeck.filter(w => w.focus);
       case 'leech':     return scopedDeck.filter(w => w.leech);
       case 'forgotten': return scopedDeck.filter(w => (w.lapses ?? 0) > 0);
@@ -86,6 +97,7 @@ export default function ExtrasTab({ onScore, initialMode = 'flash' }: Props) {
           <div className="flex flex-wrap gap-1.5 mb-6">
             {([
               ['all',       `All ${scopedDeck.length}`],
+              ['weak',      `Trouble ${weakestWords(scopedDeck).length}`],
               ['focus',     `★ Focus ${scopedDeck.filter(w => w.focus).length}`],
               ['leech',     `Stuck ${scopedDeck.filter(w => w.leech).length}`],
               ['forgotten', `Forgotten ${scopedDeck.filter(w => (w.lapses ?? 0) > 0).length}`],
