@@ -37,7 +37,13 @@ export interface WeakWord {
 /** Below this a lapse record is noise rather than a pattern — see above. */
 export const MIN_LAPSES = 2;
 
-export function weakestWords(deck: DeckWord[], limit = 8): WeakWord[] {
+/**
+ * `limit` is a DISPLAY cap and defaults to none. The Stats panel shows a top handful because
+ * a list you scroll is not a shortlist; the Vocab and Cram filters pass nothing, because a
+ * chip labelled "Trouble 30" that reveals 8 words is lying about its own count. The set is
+ * the same in all three — only how much of it you are shown differs.
+ */
+export function weakestWords(deck: DeckWord[], limit = Infinity): WeakWord[] {
   return deck
     // Pool words have never been studied, so they have no record to rank.
     .filter(w => !w.pool && (w.lapses ?? 0) >= MIN_LAPSES)

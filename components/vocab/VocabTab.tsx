@@ -14,6 +14,7 @@ import { storage } from '@/lib/storage';
 import { loadCurriculumRank, byCurriculum } from '@/lib/curriculum';
 import { RECOMMENDED_POOL_ACTIVATE, cardInsight, getSrsSettings, fmtInterval } from '@/lib/fsrs';
 import SetLegend, { SET_HELP } from '@/components/shared/SetLegend';
+import { weakestWords } from '@/lib/weakWords';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 
@@ -490,7 +491,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [managingId, setManagingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'forgotten' | 'leech' | 'paused' | 'snoozed'>('all');
+  const [filter, setFilter] = useState<'all' | 'due' | 'soon' | 'new' | 'pool' | 'focus' | 'weak' | 'leech' | 'paused' | 'snoozed'>('all');
   const [query, setQuery] = useState('');
   /**
    * Study order for the pool list, loaded only while that filter is open.
@@ -611,7 +612,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
       case 'new':       return displayDeck.filter(isNewCard);
       case 'pool':      return displayDeck.filter(w => !!w.pool);
       case 'focus':     return displayDeck.filter(w => w.focus);
-      case 'forgotten': return displayDeck.filter(w => (w.lapses ?? 0) > 0);
+      case 'weak':      return weakestWords(displayDeck).map(x => x.word);
       case 'leech':     return displayDeck.filter(w => w.leech);
       case 'paused':    return displayDeck.filter(w => w.paused);
       case 'snoozed':   return displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today);
@@ -651,7 +652,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
     new:       displayDeck.filter(isNewCard).length,
     pool:      displayDeck.filter(w => !!w.pool).length,
     focus:     displayDeck.filter(w => w.focus).length,
-    forgotten: displayDeck.filter(w => (w.lapses ?? 0) > 0).length,
+    weak:      weakestWords(displayDeck).length,
     leech:     displayDeck.filter(w => w.leech).length,
     paused:    displayDeck.filter(w => w.paused).length,
     snoozed:   displayDeck.filter(w => !!w.snoozeUntil && w.snoozeUntil > today).length,
@@ -831,7 +832,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
               ['new', `New ${counts.new}`],
               ['pool', `Pool ${counts.pool}`],
               ['focus', `★ Focus ${counts.focus}`],
-              ['forgotten', `Forgotten ${counts.forgotten}`],
+              ['weak', `Trouble ${counts.weak}`],
               ['leech', `Stuck ${counts.leech}`],
               ['paused', `Paused ${counts.paused}`],
               ['snoozed', `Snoozed ${counts.snoozed}`],
@@ -853,8 +854,8 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
               </button>
             ))}
             <SetLegend
-              keys={['all', 'due', 'soon', 'new', 'pool', 'focus', 'forgotten', 'leech', 'paused', 'snoozed']}
-              labels={{ all: 'All', due: 'Due', soon: 'Due soon', new: 'New', pool: 'Pool', focus: '★ Focus', forgotten: 'Forgotten', leech: 'Stuck', paused: 'Paused', snoozed: 'Snoozed' }}
+              keys={['all', 'due', 'soon', 'new', 'pool', 'focus', 'weak', 'leech', 'paused', 'snoozed']}
+              labels={{ all: 'All', due: 'Due', soon: 'Due soon', new: 'New', pool: 'Pool', focus: '★ Focus', weak: 'Trouble', leech: 'Stuck', paused: 'Paused', snoozed: 'Snoozed' }}
             />
             {/* Bulk action for the active filter */}
             {filter === 'pool'    && counts.pool    > 0 && <ActivatePoolBtn poolCount={counts.pool} onActivate={releaseFromPool} onUndo={restoreToPool} />}

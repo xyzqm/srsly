@@ -25,7 +25,9 @@ interface Props {
 export default function WeakWords({ deck, onDrill }: Props) {
   const language = useLanguage();
   const { scriptIsUnspaced } = getLanguageConfig(language);
-  const weak = weakestWords(deck);
+  // Top handful only — the panel is a shortlist, not a browsable list. The Vocab tab's
+  // "Trouble" filter shows the whole set.
+  const weak = weakestWords(deck, 8);
 
   // Silence rather than an empty state. "No weak words yet" on a new deck reads as a missing
   // feature; on a deck with no lapses it is bragging about nothing.
@@ -47,7 +49,8 @@ export default function WeakWords({ deck, onDrill }: Props) {
       </div>
       <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, margin: '6px 0 0', maxWidth: '52ch', lineHeight: 1.5 }}>
         Ranked by how often you miss them, not how many times — a word failed six times in nine
-        tries is a bigger problem than one failed six times in sixty.
+        tries is a bigger problem than one failed six times in sixty. The Vocab tab&rsquo;s
+        Trouble filter has the full list.
       </p>
 
       <div className="mt-4 flex flex-col gap-1.5">
