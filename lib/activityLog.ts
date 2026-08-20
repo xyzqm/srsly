@@ -62,35 +62,23 @@ export function logGraded(count = 1): void {
 }
 
 /**
- * What the DECK can tell us about days before the log existed.
+ * Recorded study, as a date → count map. `firstRecorded` is the first day covered.
  *
- * Each card carries `lastReview`, the date it was most recently graded, so a card is
- * evidence of exactly one review on exactly one day. That makes this a FLOOR, never a true
- * count: a card reviewed on five days contributes only to the latest, and a day whose cards
- * have all since been reviewed again contributes nothing at all.
+ * ONLY WHAT WAS ACTUALLY LOGGED. This used to merge in a reconstruction from each card's
+ * `lastReview`, drawn hollow and labelled "a minimum, not a total". The count was indeed a
+ * floor — but the SHAPE was wrong, which the label did not admit. `lastReview` holds one
+ * date per card, so a card reviewed forty times over two months contributed a single square
+ * on the day it was last seen. Study fifty cards on Monday and review the same fifty on
+ * Friday and Monday reads as a rest day while Friday shows fifty: the session did not
+ * undercount, it moved.
  *
- * It is therefore merged with `max`, not added — adding a floor to a real count would
- * inflate days that have both. And the UI must say which region is reconstructed, because
- * an undercount presented as history is a lie about how much work someone did.
- */
-export function backfillFromDeck(deck: DeckWord[]): Map<string, number> {
-  const out = new Map<string, number>();
-  const min = cutoff();
-  for (const w of deck) {
-    if (!w.lastReview || w.lastReview < min) continue;
-    out.set(w.lastReview, (out.get(w.lastReview) ?? 0) + 1);
-  }
-  return out;
-}
-
-/**
- * Recorded counts merged with the deck-derived floor, as a date → count map.
- * `firstRecorded` is the first day the log itself covers; everything before it is
- * reconstruction and the caller must label it as such.
+ * A heatmap whose bars are in the wrong places is worse than a short one, so the graph now
+ * starts where the log does and says so.
  */
 export function mergedActivity(deck: DeckWord[]): { counts: Map<string, number>; firstRecorded: string | null } {
+  void deck;   // kept in the signature so callers need not change; nothing is derived from it
   const log = getActivityLog();
-  const counts = backfillFromDeck(deck);
-  for (const { d, n } of log) counts.set(d, Math.max(n, counts.get(d) ?? 0));
+  const counts = new Map<string, number>();
+  for (const { d, n } of log) counts.set(d, n);
   return { counts, firstRecorded: log.length ? log[0].d : null };
 }

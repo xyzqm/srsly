@@ -928,6 +928,23 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                           {langConfig.readingLabel}
                         </button>
                       )}
+                      {/* One click, on the row. Releasing is the ONE thing you do to a pool
+                          word — the pool exists to be drained — and burying it behind Manage
+                          meant three clicks and a panel to do it once, times however many
+                          words you wanted out. Manage keeps its "Release now" for when the
+                          panel is already open. */}
+                      {w.pool && (
+                        <button
+                          onClick={() => w.id && releaseWord(w.id)}
+                          title="Bring this word into circulation now"
+                          className="cursor-pointer transition-all duration-150 whitespace-nowrap"
+                          style={{ ...btnGhost, borderColor: 'color-mix(in srgb, var(--jade) 45%, transparent)', color: 'var(--jade)' }}
+                          onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--jade)'; }}
+                          onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'color-mix(in srgb, var(--jade) 45%, transparent)'; }}
+                        >
+                          Release
+                        </button>
+                      )}
                       <button
                         onClick={() => setManagingId(managing ? null : (w.id ?? null))}
                         className="cursor-pointer transition-all duration-150 whitespace-nowrap"

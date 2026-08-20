@@ -10,11 +10,11 @@ import { mergedActivity } from '@/lib/activityLog';
  * same weekday on the same row, so "I never study on Wednesdays" is visible as a pale stripe
  * rather than something you would have to count out.
  *
- * HONESTY ABOUT THE DATA. Days before the activity log existed are RECONSTRUCTED from each
- * card's `lastReview`, which records only its most recent grading — so those days are a floor
- * and are drawn hollow, with the legend saying so. Presenting an undercount as history would
- * misreport how much work someone did, and on a long-running deck it would misreport it
- * badly. Everything from `firstRecorded` onward is counted directly.
+ * HONESTY ABOUT THE DATA. Every square is a day that was actually recorded — nothing is
+ * inferred. Days before the activity log existed are simply blank, and the legend says which
+ * day the record starts. An earlier version reconstructed them from each card's `lastReview`
+ * and drew them hollow; that put squares on the wrong days rather than merely small ones,
+ * which no legend can make honest. See lib/activityLog.ts.
  */
 
 interface Props { deck: DeckWord[]; }
@@ -151,29 +151,18 @@ export default function ReviewHeatmap({ deck }: Props) {
 
             {grid.map((col, w) => (
               <div key={w} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
-                {col.map(({ date, n, future }) => {
-                  const reconstructed = !future && n > 0 && (!firstRecorded || date < firstRecorded);
-                  return (
-                    <div
-                      key={date}
-                      title={future
-                        ? date
-                        : `${date} — ${n} card${n === 1 ? '' : 's'}${reconstructed ? ' (at least; reconstructed)' : ''}`}
-                      style={{
-                        width: CELL, height: CELL, borderRadius: 2.5,
-                        background: future ? 'transparent' : swatch(intensity(n, max)),
-                        border: future
-                          ? '1px dashed color-mix(in srgb, var(--line) 60%, transparent)'
-                          : reconstructed
-                            ? '1px solid color-mix(in srgb, var(--accent) 55%, transparent)'
-                            : '1px solid transparent',
-                        // Reconstructed days are drawn hollow: the count is a floor, so a
-                        // solid square would overstate what we actually know.
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  );
-                })}
+                {col.map(({ date, n, future }) => (
+                  <div
+                    key={date}
+                    title={future ? date : `${date} — ${n} card${n === 1 ? '' : 's'}`}
+                    style={{
+                      width: CELL, height: CELL, borderRadius: 2.5,
+                      background: future ? 'transparent' : swatch(intensity(n, max)),
+                      border: future ? '1px dashed color-mix(in srgb, var(--line) 60%, transparent)' : '1px solid transparent',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                ))}
               </div>
             ))}
           </div>
@@ -188,11 +177,10 @@ export default function ReviewHeatmap({ deck }: Props) {
           ))}
           more
         </span>
+        {/* Says where the data begins, rather than dressing up a guess about what came
+            before it. See mergedActivity for why the reconstruction was removed. */}
         {firstRecorded && (
-          <span className="inline-flex items-center gap-1.5">
-            <span style={{ width: CELL, height: CELL, borderRadius: 2.5, boxSizing: 'border-box', background: swatch(2), border: '1px solid color-mix(in srgb, var(--accent) 55%, transparent)', display: 'inline-block' }} />
-            outlined = before {firstRecorded}, reconstructed from each card&apos;s last review — a minimum, not a total
-          </span>
+          <span>counting from {firstRecorded}</span>
         )}
       </div>
     </div>
