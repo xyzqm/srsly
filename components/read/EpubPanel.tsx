@@ -4,6 +4,7 @@ import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import { buildEpubSection } from '@/lib/epubSection';
 import { setActiveBookId, getActiveBookId } from '@/lib/epubProgress';
 import { parseEpub, EpubError } from '@/lib/epub';
+import { mismatchWarning } from '@/lib/languageMismatch';
 import { chunkChapter } from '@/lib/epubChunk';
 import { bookId, putBook, listBooks, removeBook, savePosition, type StoredBook } from '@/lib/epubStore';
 
@@ -65,6 +66,18 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
   }, [open, activeId, books, language]);
 
   const active = books.find(b => b.id === activeId);
+
+  /**
+   * The publisher declares `dc:language`; until now it was parsed and never read.
+   *
+   * The book is segmented as the ACTIVE STUDY LANGUAGE whatever it actually is, so a Spanish
+   * novel opened during a Chinese session is handed to the Chinese segmenter and comes back
+   * as character fragments — with no error to explain it. The first chapter's text backs the
+   * check up when the metadata is missing or wrong.
+   */
+  const warning = active
+    ? mismatchWarning(language, { declared: active.language, text: active.chapters[0]?.text })
+    : null;
 
   const ingest = useCallback(async (file: File) => {
     setError('');
@@ -228,6 +241,14 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
 
       {active && (
         <div className="mt-4">
+          {warning && (
+            <p className="rounded-lg px-3 py-2 mb-3" role="alert"
+               style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)',
+                        background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--gold) 40%, transparent)' }}>
+              {warning}
+            </p>
+          )}
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7 }}>
             Chapters
           </div>

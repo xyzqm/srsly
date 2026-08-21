@@ -8,6 +8,7 @@ import { analyzeCoverage, verdictFor, type TextCoverage } from '@/lib/coverage';
 import { getSrsSettings } from '@/lib/fsrs';
 import { getTodayCounts } from '@/lib/reviewCounts';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
+import { mismatchWarning } from '@/lib/languageMismatch';
 
 interface Props {
   language: LanguageCode;
@@ -87,6 +88,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
    */
   const [names, setNames] = useState<string[]>([]);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
 
   const cfg = getLanguageConfig(language);
@@ -101,6 +103,10 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
     if (!text.trim() || tooLong) return;
     setBusy(true);
     setError('');
+    // Checked on the raw text, so it costs nothing and lands before the request rather than
+    // after a page of fragments comes back. Pasted text declares no language; script is all
+    // there is to go on — see lib/languageMismatch.
+    setWarning(mismatchWarning(language, { text }));
     try {
       const split = splitTitle(text, title.trim());
       const res = await fetch('/api/segment-text', {
@@ -246,6 +252,15 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
 
       {error && (
         <p style={{ ...mono, fontSize: 11.5, color: 'var(--wrong)', marginTop: 10 }}>{error}</p>
+      )}
+
+      {warning && (
+        <p className="rounded-lg px-3 py-2 mt-3" role="alert"
+           style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)',
+                    background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--gold) 40%, transparent)' }}>
+          {warning}
+        </p>
       )}
 
       {/* Offered, not applied. A wrong guess is one click from corrected here; applied

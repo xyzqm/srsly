@@ -9,6 +9,7 @@ import { getLanguageConfig } from '@/lib/languageConfig';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import { useWordPopup } from '@/hooks/useWordPopup';
+import { mismatchWarning } from '@/lib/languageMismatch';
 
 /**
  * Learn from a song: synced lyrics where every word is still a token.
@@ -43,6 +44,8 @@ export default function LyricPlayer({ language, deck }: Props) {
   const [active, setActive] = useState(-1);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  // An .lrc declares no language, so the script is the only signal — see lib/languageMismatch.
+  const [warning, setWarning] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -63,6 +66,7 @@ export default function LyricPlayer({ language, deck }: Props) {
       const parsed = parseLrc(await file.text());
       if (parsed.lines.length === 0) throw new Error('No timestamped lines found in that .lrc file.');
       setLines(parsed.lines);
+      setWarning(mismatchWarning(language, { text: parsed.lines.map(l => l.text).join(' ') }));
       setTitle([parsed.title, parsed.artist].filter(Boolean).join(' — ') || file.name.replace(/\.lrc$/i, ''));
       setActive(-1);
 
@@ -179,6 +183,14 @@ export default function LyricPlayer({ language, deck }: Props) {
         Both stay on this device — only the lyric text is sent, to our own word lookup.
       </div>
 
+      {warning && (
+        <p className="rounded-lg px-3 py-2 mt-3" role="alert"
+           style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)',
+                    background: 'color-mix(in srgb, var(--gold) 12%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--gold) 40%, transparent)' }}>
+          {warning}
+        </p>
+      )}
       {busy && <p style={{ ...mono, fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 10 }}>{busy}</p>}
       {error && <p style={{ ...mono, fontSize: 11.5, color: 'var(--wrong)', marginTop: 10 }}>{error}</p>}
 
