@@ -949,7 +949,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       {/* Every source arrives by the same door: each hands back a DailyPassage through the
           identical onCommit, so a pasted article and a book chapter are passages like any
           other from here on. */}
+      {/* Owns the gap to whatever follows it — the passage player sits immediately below and
+          nothing there carries a top margin, so without this the dashed button and the play
+          control touch. */}
       {hskLevel > 0 && (
+        <div className="mb-5">
         <ReadingSources
           language={language}
           deck={deck}
@@ -958,6 +962,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           onCommit={commitPastedPassage}
           emptyTab={!currentPassage}
         />
+        </div>
       )}
 
       {/* The skeleton stands in for a passage that is not here yet — so it must not cover one
