@@ -123,11 +123,26 @@ function updateStabilityPass(d: number, s: number, r: number, rating: FsrsGrade)
   return Math.max(0.1, newS);
 }
 
+/**
+ * Post-lapse stability, CAPPED AT THE STABILITY IT ALREADY HAD.
+ *
+ * The FSRS-4.5 formula on its own can return more than it was given. Its last term,
+ * `exp((1 - R) * w14)`, grows as retrievability falls, so a card that is badly overdue gets a
+ * large multiplier — and on a low-stability card that outruns the shrinking factors. Swept
+ * over a grid of stability × difficulty × elapsed days, 226 of 616 states came out HIGHER
+ * after a lapse than before, the worst by a factor of five (0.1 → 0.51 days).
+ *
+ * Whatever that means inside the model, it is indefensible as behaviour: pressing Again is
+ * the learner saying they have forgotten the word, and the app answering that it now believes
+ * they know it better. The interval that follows is derived straight from this number, so the
+ * effect is visible — a forgotten card coming back LATER than if it had been recalled.
+ *
+ * The clamp is a guard, not a correction to the formula: the computed value is still used
+ * whenever it is a decrease, which is every ordinary case.
+ */
 function updateStabilityFail(d: number, s: number, r: number): number {
-  return Math.max(
-    0.1,
-    W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14]),
-  );
+  const computed = W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14]);
+  return Math.max(0.1, Math.min(computed, s));
 }
 
 // ── Learning phase ────────────────────────────────────────────────────────────
@@ -250,7 +265,22 @@ export function fsrsSchedule(
   }
 
   D = D ?? 5;
-  const t = daysBetween(word.lastReview ?? today, today);
+  /**
+   * Elapsed days since the last review — and what to assume when that was never recorded.
+   *
+   * `?? today` was the old fallback, and it quietly wasted a review. It makes elapsed time 0,
+   * so retrievability is 1, and `updateStabilityPass` multiplies by `exp((1-R)*w10) - 1`,
+   * which is exactly 0 at R=1: Hard, Good and Easy all leave stability untouched. Cards
+   * migrated by the bootstrap above have stability but no `lastReview`, so the first review
+   * after an upgrade taught the model nothing.
+   *
+   * A card with no recorded review is assumed to be exactly DUE instead — elapsed equals the
+   * interval its own stability implies, which puts retrievability at the desired retention,
+   * the model's own expectation for a card arriving on time. It is a guess either way; this
+   * one is neutral rather than one that guarantees no learning.
+   */
+  const assumedElapsed = nextInterval(S, settings.desiredRetention, settings.maxIntervalDays);
+  const t = word.lastReview ? daysBetween(word.lastReview, today) : assumedElapsed;
   const r = retrievability(t, S);
 
   if (grade === 1) {
