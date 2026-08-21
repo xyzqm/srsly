@@ -107,6 +107,21 @@ The core data primitive is `PassageToken` (`lib/types.ts`): `{ text, reading?, m
 
 **Decorative glyphs and language-facing copy live in `lib/uiStrings.ts`**, keyed by `LanguageCode` (`空/好/完/填` for Chinese, the equivalents elsewhere, plus the reply placeholder). Use `uiStrings(language)` and size the glyph with `stateGlyphSize()` — a hardcoded 空 in a shared component is a Chinese character sitting in the middle of a French session.
 
+#### A passage is generated only when asked for
+
+Generation used to fire on the day's first load, so opening the app spent Anthropic tokens on
+a passage nobody had asked to read — and most opens are not a reading session. The cost landed
+whether or not the tab was even looked at. `loadMore` is now the ONLY path that writes a
+passage, driven by the "Generate passage" button in the empty state.
+
+Fill and conversation are still generated on the day's first load: they are cheap next to a
+passage, and the Practice tab has no equivalent affordance to hang them off.
+
+The three ways to bring your own text — paste, EPUB, lyrics — live behind one
+`ReadingSources` control rather than three permanent dashed buttons. It starts expanded when
+there is nothing to read (there, the chooser IS the screen) and folds to "+ Add reading" once
+a passage arrives.
+
 ### AI-generated daily content
 
 `app/api/daily-content/route.ts` is a Next.js API route that calls `claude-haiku-4-5-20251001` with the user's due vocab words, returning a JSON blob of passage, fill items, and conversation keyed to those words. The hook `hooks/useDailyContent.ts` handles caching (localStorage keyed by `srsly-daily-{hskLevel}-{date}`), calls the API route, and parses the raw JSON into typed structures. There is no static fallback content for either language — a failed or incomplete generation surfaces as an error state rather than silently substituting sample content. Daily content is regenerated once per day per HSK/JLPT level.

@@ -645,11 +645,22 @@ export function useDailyContent(
       // words to build it around — never a generic vocab-less passage. On a later HSK-level
       // / deck switch (when other content already exists today), show this scope's cache
       // (or nothing) instead — the user gets a fresh AI passage via "+ new passage".
-      const firstLoadToday = !hasAnyDailyContentToday(today);
+      /**
+       * A PASSAGE IS NEVER GENERATED HERE.
+       *
+       * It used to be, on the day's first load — so opening the app spent Anthropic tokens on
+       * a passage nobody had asked to read, and most opens are not a reading session. The cost
+       * landed whether or not the tab was even looked at. `loadMore` is now the only path that
+       * writes one, and it runs from the "Generate passage" button.
+       *
+       * Fill and conversation are still generated on the day's first load: they are cheap
+       * relative to a passage, and the Practice tab has no equivalent "generate" affordance to
+       * hang them off.
+       */
+      const alreadyToday = hasAnyDailyContentToday(today);
       const needed: ContentSection[] = [];
-      if (wantSet.has('passage') && !flags.passage && firstLoadToday && hasDueWords) needed.push('passage');
-      if (wantSet.has('fill')    && hasDueWords && !flags.fill)  needed.push('fill');
-      if (wantSet.has('convo')   && hasDueWords && !flags.convo) needed.push('convo');
+      if (wantSet.has('fill')    && hasDueWords && !flags.fill  && !alreadyToday) needed.push('fill');
+      if (wantSet.has('convo')   && hasDueWords && !flags.convo && !alreadyToday) needed.push('convo');
 
       // If a fresh passage is being generated (none cached yet), stay in 'loading' so the
       // user sees the skeleton until the real passage lands. When an AI passage is already

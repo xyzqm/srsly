@@ -22,10 +22,8 @@ import WordPopup from './WordPopup';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
-import PasteTextPanel from './PasteTextPanel';
-import EpubPanel from './EpubPanel';
+import ReadingSources from './ReadingSources';
 import NextSection from './NextSection';
-import LyricPlayer from './LyricPlayer';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -948,30 +946,18 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       {/* Outside every branch below, deliberately. The paste panel is most wanted in the
           states where there is nothing to read — an empty deck, a failed generation, no API
           key at all — and those are exactly the branches that render instead of a passage. */}
+      {/* Every source arrives by the same door: each hands back a DailyPassage through the
+          identical onCommit, so a pasted article and a book chapter are passages like any
+          other from here on. */}
       {hskLevel > 0 && (
-        <div className="flex flex-col gap-2 items-start">
-          <PasteTextPanel
-            language={language}
-            deck={deck}
-            dueWords={dueDeckWords}
-            blankDensity={blankDensity}
-            onCommit={commitPastedPassage}
-          />
-          {/* A book arrives by the same door and leaves by the same one: EpubPanel hands back
-              a DailyPassage through the identical onCommit, so a chapter section is a passage
-              like any other from here on. */}
-          <EpubPanel
-            language={language}
-            deck={deck}
-            dueWords={dueDeckWords}
-            blankDensity={blankDensity}
-            onCommit={commitPastedPassage}
-          />
-          {/* A song does NOT become a passage — the sync is the point, and committing the
-              lyrics would flatten it back into prose. It renders its own tokens instead,
-              through the same ClickableWord and WordPopup everything else uses. */}
-          <LyricPlayer language={language} deck={deck} />
-        </div>
+        <ReadingSources
+          language={language}
+          deck={deck}
+          dueWords={dueDeckWords}
+          blankDensity={blankDensity}
+          onCommit={commitPastedPassage}
+          emptyTab={!currentPassage}
+        />
       )}
 
       {/* The skeleton stands in for a passage that is not here yet — so it must not cover one
@@ -998,13 +984,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   word congratulates them for work they have not done, and buries the one
                   instruction they actually need. */}
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                {deck.length === 0 ? 'Nothing to read yet' : 'All caught up'}
+                {deck.length === 0 ? 'Nothing to read yet' : 'Ready when you are'}
               </div>
-              <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
+              <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 400 }}>
                 {deck.length === 0
-                  ? 'Passages are built around the words in your deck, and yours is empty. Add a few and one will be written around them — or paste your own text above to read straight away.'
-                  : 'You have no words due for review today. Add new words to your deck to get a fresh passage built around them.'}
+                  ? 'Passages are built around the words in your deck, and yours is empty. Add a few and one can be written around them — or read your own text, a book or a song above.'
+                  : totalReviewWordCount > 0
+                    ? 'A passage will be written around the words you have due. It takes a few seconds and uses one AI generation, so it happens when you ask rather than the moment you open the app.'
+                    : 'You have no words due for review today. Add new words to your deck to get a fresh passage built around them.'}
               </p>
+              {/* Only "add words" here. This branch renders when nothing is DUE, and a
+                  passage is built around due words — offering to generate one would be
+                  offering to build from nothing. The working generate button lives in the
+                  "No passage yet" branch below, which is the state that has words. */}
               <button
                 onClick={onNavigateVocab}
                 className="cursor-pointer transition-all duration-150"
