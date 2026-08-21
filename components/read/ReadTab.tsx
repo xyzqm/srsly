@@ -25,6 +25,7 @@ import PassageSkeleton from './PassageSkeleton';
 import PasteTextPanel from './PasteTextPanel';
 import EpubPanel from './EpubPanel';
 import NextSection from './NextSection';
+import LyricPlayer from './LyricPlayer';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
@@ -966,6 +967,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             blankDensity={blankDensity}
             onCommit={commitPastedPassage}
           />
+          {/* A song does NOT become a passage — the sync is the point, and committing the
+              lyrics would flatten it back into prose. It renders its own tokens instead,
+              through the same ClickableWord and WordPopup everything else uses. */}
+          <LyricPlayer language={language} deck={deck} />
         </div>
       )}
 

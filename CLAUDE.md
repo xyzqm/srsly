@@ -262,6 +262,33 @@ Three things worth knowing:
   the daily cache. JSZip is dynamically imported for the same reason the level tables are —
   a static import put 30 kB in the initial bundle for every learner.
 
+### Learning from a song
+
+`components/read/LyricPlayer.tsx` plays a local audio file against a local `.lrc`, and — the
+part that makes it belong in this app rather than being a karaoke widget — runs the lyrics
+through `/api/segment-text` so every word is a clickable, glossed token like any other.
+A song is the one input a learner replays twenty times, which makes it the best place to meet
+a word. Nothing is uploaded but the lyric text; the audio never leaves the browser.
+
+A song **does not become a passage**. The sync is the point, and committing the lyrics would
+flatten them back into prose, so it renders its own tokens instead.
+
+Three things the format demands (`lib/lrc.ts`):
+
+- **One line can carry several timestamps.** A repeated chorus is written once with each time
+  it recurs, so lines are returned in TIME order — file order and playback order are
+  different documents the moment any line repeats.
+- **The fraction is hundredths in most files and milliseconds in some.** Reading `45` as 45ms,
+  or `450` as 4.5s, drifts the whole song; padding to three digits reads both correctly.
+- **`alignToLines` exists because a lyric line is not a sentence.** The whole song goes to the
+  segmenter in one request and `splitSentences` treats a newline as a hard boundary — so
+  lines mostly survive one-to-one. Mostly is not enough: a line containing `.` splits further
+  and shifts every later line by one, highlighting the wrong words for the rest of the song.
+
+Sync uses `timeupdate`, not `requestAnimationFrame`: it fires about four times a second,
+which is far finer than a lyric line changes, costs nothing while paused, and is not
+suspended in a hidden tab — which is exactly when music is left playing.
+
 ### Client bundle
 
 The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 kB of source. They are loaded **on demand**, never imported statically:
