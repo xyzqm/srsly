@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DeckWord, LanguageCode, PassageToken } from '@/lib/types';
 import type { RawTok } from '@/lib/server/kuromojiSegmenter';
-import { parseLrc, activeLineIndex, alignToLines, type LyricLine } from '@/lib/lrc';
+import { parseLrc, decodeLrc, activeLineIndex, alignToLines, type LyricLine } from '@/lib/lrc';
 import { buildPastedPassage } from '@/hooks/useDailyContent';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import { getLanguageConfig } from '@/lib/languageConfig';
@@ -12,12 +12,16 @@ import { useWordPopup } from '@/hooks/useWordPopup';
 import { mismatchWarning } from '@/lib/languageMismatch';
 
 /**
- * Learn from a song: synced lyrics where every word is still a token.
+ * Listen along: synced transcript where every word is still a token.
  *
- * THE WHOLE POINT IS THE LAST PART. Rendering lyrics as plain text would make this a karaoke
- * widget; running them through /api/segment-text makes every word clickable, glossed and
- * addable to the deck, exactly as in a passage or an EPUB chapter. Music is the one input a
- * learner will replay twenty times, which makes it the best place in the app to meet a word.
+ * NOT ONLY SONGS. The pairing is an audio file and a timestamped .lrc, and the audio can be
+ * anything the browser plays — a track, a podcast episode, an audiobook chapter, a recorded
+ * lesson. Naming it after music narrowed it in the reader's head for no reason.
+ *
+ * THE WHOLE POINT IS THE TOKENS. Rendering the transcript as plain text would make this a
+ * karaoke widget; running it through /api/segment-text makes every word clickable, glossed and
+ * addable to the deck, exactly as in a passage or an EPUB chapter. Audio you replay is the
+ * best place in the app to meet a word.
  *
  * ONE REQUEST FOR THE WHOLE SONG. Lyrics are a few hundred words, well under MAX_PASTE_CHARS,
  * and `splitSentences` treats a newline as a hard boundary — so sending the lines joined by
@@ -63,8 +67,9 @@ export default function LyricPlayer({ language, deck }: Props) {
     setError('');
     setBusy('Reading lyrics…');
     try {
-      const parsed = parseLrc(await file.text());
-      if (parsed.lines.length === 0) throw new Error('No timestamped lines found in that .lrc file.');
+      // Not file.text(): that assumes UTF-8, and lyric files routinely are not. See decodeLrc.
+      const parsed = parseLrc(decodeLrc(await file.arrayBuffer(), language));
+      if (parsed.lines.length === 0) throw new Error('No timestamped lines found. An .lrc needs lines like [00:12.34]the words.');
       setLines(parsed.lines);
       setWarning(mismatchWarning(language, { text: parsed.lines.map(l => l.text).join(' ') }));
       setTitle([parsed.title, parsed.artist].filter(Boolean).join(' — ') || file.name.replace(/\.lrc$/i, ''));
@@ -147,7 +152,7 @@ export default function LyricPlayer({ language, deck }: Props) {
           padding: '9px 15px', color: 'var(--ink-soft)',
         }}
       >
-        + Learn from a song
+        + Listen along
       </button>
     );
   }
@@ -166,7 +171,7 @@ export default function LyricPlayer({ language, deck }: Props) {
     <div className="rounded-xl px-5 py-5 animate-rise w-full" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
         <span style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          {title || 'Learn from a song'}
+          {title || 'Listen along'}
         </span>
         <button onClick={() => setOpen(false)} className="cursor-pointer"
                 style={{ ...mono, fontSize: 11, background: 'none', border: 'none', color: 'var(--ink-faint)' }}>
@@ -175,12 +180,12 @@ export default function LyricPlayer({ language, deck }: Props) {
       </div>
 
       <div className="flex gap-2 flex-wrap">
-        {filePicker('Choose lyrics', '.lrc,text/plain', loadLrc, '.lrc with timestamps')}
-        {filePicker('Choose audio', 'audio/*', loadAudio, 'mp3, m4a, ogg…')}
+        {filePicker('Choose transcript', '.lrc,text/plain', loadLrc, '.lrc with timestamps')}
+        {filePicker('Choose audio', 'audio/*', loadAudio, 'mp3, m4a, wav, ogg…')}
       </div>
 
       <div style={{ ...mono, fontSize: 10, color: 'var(--ink-faint)', marginTop: 6 }}>
-        Both stay on this device — only the lyric text is sent, to our own word lookup.
+        Both stay on this device — only the text is sent, to our own word lookup.
       </div>
 
       {warning && (

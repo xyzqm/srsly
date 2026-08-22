@@ -9,7 +9,7 @@ import LyricPlayer from './LyricPlayer';
  * The ways to get something to read, behind one control.
  *
  * They used to sit as three dashed buttons stacked permanently above the passage — "read your
- * own text", "read a book", "learn from a song" — which is three pieces of furniture on every
+ * own text", "read a book", "listen along" — which is three pieces of furniture on every
  * visit for something most sessions never touch, and it grew by one every time a source was
  * added. One "+ Add reading" opens the lot.
  *
@@ -76,8 +76,8 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
         blankDensity={blankDensity}
         onCommit={onCommit}
       />
-      {/* A song does NOT become a passage — the sync is the point, and committing the lyrics
-          would flatten them back into prose. It renders its own tokens instead. */}
+      {/* Audio does NOT become a passage — the sync is the point, and committing the
+          transcript would flatten it back into prose. It renders its own tokens instead. */}
       <LyricPlayer language={language} deck={deck} />
     </div>
   );

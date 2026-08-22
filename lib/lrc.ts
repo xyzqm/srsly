@@ -136,3 +136,53 @@ export function alignToLines<T extends { text: string }[]>(
   }
   return out;
 }
+
+
+/**
+ * Decode a .lrc file, which is very often NOT UTF-8.
+ *
+ * Lyric files carry no encoding declaration and circulate in whatever codepage the uploader's
+ * machine used — Shift_JIS for Japanese, GBK for Chinese, windows-1252 for European languages.
+ * `File.text()` assumes UTF-8 unconditionally, so those arrive as mojibake: the timestamps
+ * still parse (they are ASCII) and every lyric is garbage, which looks exactly like a broken
+ * parser rather than a broken assumption.
+ *
+ * THE FALLBACK IS CHOSEN BY STUDY LANGUAGE, NOT BY GUESSING. Trying decoders in a fixed order
+ * with `fatal: true` looks principled and is not: Shift_JIS accepts the windows-1252 bytes of
+ * `camarón` without complaint and silently returns `camar`, so a Spanish file would be
+ * mangled by a Japanese decoder purely because it was tried first. The app already knows which
+ * language is being studied, which is far better evidence than byte statistics — a learner
+ * loading a .lrc during a Japanese session is loading Japanese lyrics.
+ *
+ * UTF-8 is still tried first and kept whenever it decodes cleanly, which is the common case;
+ * `fatal: true` makes that a real test rather than a silent substitution of U+FFFD.
+ */
+const LEGACY_FALLBACK: Record<string, string> = {
+  ja: 'shift_jis',
+  zh: 'gb18030',
+  ko: 'euc-kr',
+};
+
+export function decodeLrc(buffer: ArrayBuffer, language?: string): string {
+  const bytes = new Uint8Array(buffer);
+
+  // A byte-order mark settles it outright.
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return new TextDecoder('utf-8').decode(bytes.subarray(3));
+  }
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes);
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes);
+
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    // Not UTF-8. Fall back to the legacy codepage this language is actually written in;
+    // windows-1252 covers the Latin-script languages and never rejects a byte.
+    const enc = LEGACY_FALLBACK[language ?? ''] ?? 'windows-1252';
+    try {
+      return new TextDecoder(enc).decode(bytes);
+    } catch {
+      return new TextDecoder('windows-1252').decode(bytes);
+    }
+  }
+}

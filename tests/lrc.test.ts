@@ -117,3 +117,60 @@ describe('alignToLines', () => {
     expect(out[1]).toEqual([]);
   });
 });
+
+// ── Encoding ──────────────────────────────────────────────────────────────────
+import { decodeLrc } from '@/lib/lrc';
+
+/**
+ * Lyric files carry no encoding declaration and circulate in whatever codepage the uploader
+ * had. `File.text()` assumes UTF-8, so a Shift_JIS file arrives as mojibake with its ASCII
+ * timestamps still parsing — which looks exactly like a broken parser rather than a broken
+ * assumption.
+ */
+describe('decodeLrc', () => {
+  const enc = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer;
+  const bytes = (...b: number[]) => new Uint8Array(b).buffer as ArrayBuffer;
+
+  it('reads plain UTF-8', () => {
+    expect(decodeLrc(enc('[00:01.00]El camarón'), 'es')).toBe('[00:01.00]El camarón');
+  });
+
+  it('keeps UTF-8 even when a legacy fallback is configured for the language', () => {
+    expect(decodeLrc(enc('[00:01.00]わたし'), 'ja')).toBe('[00:01.00]わたし');
+  });
+
+  it('strips a UTF-8 BOM rather than leaving it in the first tag', () => {
+    const withBom = new Uint8Array([0xEF, 0xBB, 0xBF, ...new TextEncoder().encode('[ti:X]')]);
+    expect(decodeLrc(withBom.buffer as ArrayBuffer, 'es')).toBe('[ti:X]');
+  });
+
+  it('recovers a windows-1252 Spanish file', () => {
+    // 0xF3 is ó in cp1252 and an invalid lone byte in UTF-8.
+    const b = new Uint8Array([...new TextEncoder().encode('[00:01.00]camar'), 0xF3, 0x6E]);
+    expect(decodeLrc(b.buffer as ArrayBuffer, 'es')).toContain('camarón');
+  });
+
+  it('does NOT let a Japanese decoder mangle a Spanish file', () => {
+    // Shift_JIS accepts these bytes and silently drops the ón — which is why the fallback is
+    // chosen by study language rather than by trying decoders in order.
+    const b = new Uint8Array([...new TextEncoder().encode('[00:01.00]camar'), 0xF3, 0x6E]);
+    expect(decodeLrc(b.buffer as ArrayBuffer, 'es')).not.toBe('[00:01.00]camar');
+  });
+
+  it('uses Shift_JIS for a Japanese session', () => {
+    // 0x82 0xA0 is あ in Shift_JIS.
+    const b = new Uint8Array([...new TextEncoder().encode('[00:01.00]'), 0x82, 0xA0]);
+    expect(decodeLrc(b.buffer as ArrayBuffer, 'ja')).toBe('[00:01.00]あ');
+  });
+
+  it('never throws, whatever the bytes', () => {
+    expect(() => decodeLrc(bytes(0xFF, 0x00, 0x91, 0xC3, 0x28, 0xED, 0xA0, 0x80), 'es')).not.toThrow();
+    expect(() => decodeLrc(bytes(), 'zh')).not.toThrow();
+  });
+
+  it('a decoded file still parses to real lines', () => {
+    const b = new Uint8Array([...new TextEncoder().encode('[00:02.00]caf'), 0xE9]);
+    const { lines } = parseLrc(decodeLrc(b.buffer as ArrayBuffer, 'fr'));
+    expect(lines[0]).toEqual({ timeInSeconds: 2, text: 'café' });
+  });
+});

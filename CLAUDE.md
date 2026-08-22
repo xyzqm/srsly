@@ -277,15 +277,16 @@ Three things worth knowing:
   the daily cache. JSZip is dynamically imported for the same reason the level tables are —
   a static import put 30 kB in the initial bundle for every learner.
 
-### Learning from a song
+### Listening along to audio
 
 `components/read/LyricPlayer.tsx` plays a local audio file against a local `.lrc`, and — the
-part that makes it belong in this app rather than being a karaoke widget — runs the lyrics
-through `/api/segment-text` so every word is a clickable, glossed token like any other.
-A song is the one input a learner replays twenty times, which makes it the best place to meet
-a word. Nothing is uploaded but the lyric text; the audio never leaves the browser.
+part that makes it belong in this app rather than being a karaoke widget — runs the transcript
+through `/api/segment-text` so every word is a clickable, glossed token like any other. **Not
+only songs**: the audio is anything the browser plays — a track, a podcast, an audiobook
+chapter, a recorded lesson. Audio you replay is the best place to meet a word. Nothing is
+uploaded but the text; the audio never leaves the browser.
 
-A song **does not become a passage**. The sync is the point, and committing the lyrics would
+Audio **does not become a passage**. The sync is the point, and committing the lyrics would
 flatten them back into prose, so it renders its own tokens instead.
 
 Three things the format demands (`lib/lrc.ts`):
@@ -294,7 +295,12 @@ Three things the format demands (`lib/lrc.ts`):
   it recurs, so lines are returned in TIME order — file order and playback order are
   different documents the moment any line repeats.
 - **The fraction is hundredths in most files and milliseconds in some.** Reading `45` as 45ms,
-  or `450` as 4.5s, drifts the whole song; padding to three digits reads both correctly.
+  or `450` as 4.5s, drifts the whole track; padding to three digits reads both correctly.
+- **`.lrc` is very often not UTF-8.** Lyric files carry no encoding declaration and circulate
+  in whatever codepage the uploader had — Shift_JIS, GBK, windows-1252. `File.text()` assumes
+  UTF-8, so those arrived as mojibake with the ASCII timestamps still parsing, which looks
+  exactly like a broken parser. `decodeLrc` checks the BOM, then tries decoders with
+  `fatal: true` so an invalid sequence throws instead of silently becoming U+FFFD.
 - **`alignToLines` exists because a lyric line is not a sentence.** The whole song goes to the
   segmenter in one request and `splitSentences` treats a newline as a hard boundary — so
   lines mostly survive one-to-one. Mostly is not enough: a line containing `.` splits further

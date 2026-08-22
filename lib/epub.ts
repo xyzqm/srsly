@@ -121,9 +121,26 @@ export async function parseEpub(data: ArrayBuffer | Blob): Promise<EpubBook> {
   }
 
   const parser = new DOMParser();
+  /**
+   * Read one entry, trying the spellings a real EPUB actually uses.
+   *
+   * An href in the OPF is a URI, so a file called `chapter 1.xhtml` is written
+   * `chapter%201.xhtml` — while the ZIP entry keeps the literal space. Accented and CJK
+   * filenames are percent-encoded the same way. Looking up only the raw href silently found
+   * nothing, and a book whose chapters all have spaces in their names parsed to zero
+   * chapters and reported "no readable text", which is true and useless.
+   */
   const read = async (path: string): Promise<string> => {
-    const f = zip.file(path) ?? zip.file(path.replace(/^\//, ''));
-    return f ? f.async('string') : '';
+    const candidates = [path, path.replace(/^\//, '')];
+    try {
+      const decoded = decodeURIComponent(path);
+      if (decoded !== path) candidates.push(decoded, decoded.replace(/^\//, ''));
+    } catch { /* a stray % that is not an escape — the raw path is all we have */ }
+    for (const c of candidates) {
+      const f = zip.file(c);
+      if (f) return f.async('string');
+    }
+    return '';
   };
 
   // ── container.xml → the OPF ────────────────────────────────────────────────
