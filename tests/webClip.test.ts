@@ -48,6 +48,35 @@ describe('a clip survives the round trip', () => {
   });
 });
 
+/**
+ * A clip carries the language of the page it came from. Without it the text is segmented in
+ * whatever language the app happened to be showing — clip a Spanish article during a Chinese
+ * session and it is analysed as Chinese, and the reader has to notice, switch, and re-paste.
+ */
+describe('a clip remembers what language the page was in', () => {
+  it('round-trips a language tag', () => {
+    const clip = { title: 'Impresoras 3D', text: 'La impresión 3D construye capa por capa.', lang: 'es' };
+    expect(decodeClip(encodeClip(clip))).toEqual(clip);
+  });
+
+  it('round-trips a regional tag unchanged, for languageFromTag to interpret', () => {
+    const clip = { title: 'T', text: 'Some text.', lang: 'es-419' };
+    expect(decodeClip(encodeClip(clip))!.lang).toBe('es-419');
+  });
+
+  // A page with no lang attribute is the common case and must not become an empty string,
+  // which would read as "declared, but blank".
+  it('omits the field entirely when the page declared nothing', () => {
+    const decoded = decodeClip(encodeClip({ title: 'T', text: 'Some text.' }))!;
+    expect(decoded.lang).toBeUndefined();
+    expect('lang' in decoded).toBe(false);
+  });
+
+  it('reads the page language in the bookmarklet', () => {
+    expect(bookmarkletSource('https://x.test')).toContain("getAttribute('lang')");
+  });
+});
+
 describe('a hash that is not a clip is not treated as one', () => {
   it.each([
     ['an ordinary anchor', '#section-2'],

@@ -434,6 +434,20 @@ Two things that only surface when you click it, both found that way:
   so `ClipperPanel` assigns the attribute through the DOM. The panel looked correct either way;
   only the dragged bookmark was dead.
 
+**A clip carries the page's language**, read from `<html lang>` by the bookmarklet. Without it
+the text is segmented in whatever language the app happened to be showing — clip a Spanish
+article during a Chinese session and it is analysed as Chinese, and the reader has to notice,
+switch language, and paste it again by hand, which is the whole saving of the feature spent on
+a detour. The app honours the tag only when `languageFromTag` can read it AND the learner has
+actually added that language.
+
+That switch has an ORDERING TRAP worth knowing. The request arrives on ReadTab's mount, which
+is before `languages` has loaded from prefs, so checking the list at call time always failed
+and the switch silently never happened. `wantLanguage` parks the request until the list is
+known. The same class of bug is why `language` is now seeded synchronously from localStorage
+rather than defaulting to `'zh'` — a Spanish learner's app opened as Chinese at HSK 3, and
+anything reading the language in that window got the wrong answer.
+
 **No songs ship with the app.** Lyrics are licensed separately from recordings and both are
 enforced, so a "starter songs" shelf is not available to us at any level of curation. What can
 be given away is knowing what to look for, which is what the listen-along panel's "New to this?"

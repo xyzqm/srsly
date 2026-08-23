@@ -29,6 +29,18 @@ const CLIP_PREFIX = '#clip=';
 export interface WebClip {
   title: string;
   text: string;
+  /**
+   * The page's own `<html lang>`, when it declared one.
+   *
+   * Without this a clip is segmented in whatever language the app happened to be showing —
+   * clip a Spanish article while studying Chinese and it is analysed as Chinese, which is
+   * nonsense. The reader then has to notice, switch language, and re-paste by hand, which is
+   * the entire saving of the feature spent on a detour.
+   *
+   * A raw tag, not a LanguageCode: the page can say anything (`es-419`, `zh-Hans`, `English`),
+   * and deciding what it means is `languageFromTag`'s job, not the bookmarklet's.
+   */
+  lang?: string;
 }
 
 /**
@@ -44,7 +56,11 @@ export interface WebClip {
  * round-trip test, which passed happily because it never went through a browser.
  */
 export function encodeClip(clip: WebClip): string {
-  const payload = JSON.stringify({ t: clip.title, x: clip.text.slice(0, MAX_PASTE_CHARS) });
+  const payload = JSON.stringify({
+    t: clip.title,
+    x: clip.text.slice(0, MAX_PASTE_CHARS),
+    ...(clip.lang ? { l: clip.lang } : {}),
+  });
   return `${CLIP_PREFIX}${encodeURIComponent(payload)}`;
 }
 
@@ -60,12 +76,13 @@ export function decodeClip(hash: string): WebClip | null {
   try {
     const parsed = JSON.parse(decodeURIComponent(hash.slice(CLIP_PREFIX.length)));
     if (!parsed || typeof parsed !== 'object') return null;
-    const { t, x } = parsed as { t?: unknown; x?: unknown };
+    const { t, x, l } = parsed as { t?: unknown; x?: unknown; l?: unknown };
     const text = typeof x === 'string' ? x.trim() : '';
     if (!text) return null;
     return {
       title: typeof t === 'string' ? t.trim() : '',
       text: text.slice(0, MAX_PASTE_CHARS),
+      ...(typeof l === 'string' && l.trim() ? { lang: l.trim().slice(0, 20) } : {}),
     };
   } catch {
     return null;   // malformed percent-encoding, or not JSON
@@ -108,6 +125,7 @@ t=t.replace(/\\n{3,}/g,'\\n\\n').trim().slice(0,${MAX_PASTE_CHARS});
 if(!t){alert('srsly: no article text found on this page.');return;}
 var h=document.querySelector('h1');
 var ti=(h&&h.innerText||document.title||'').trim().slice(0,120);
-window.open('${origin}/'+'${CLIP_PREFIX}'+encodeURIComponent(JSON.stringify({t:ti,x:t})),'_blank');
+var lg=(document.documentElement.getAttribute('lang')||'').trim();
+window.open('${origin}/'+'${CLIP_PREFIX}'+encodeURIComponent(JSON.stringify({t:ti,x:t,l:lg})),'_blank');
 })();`.replace(/\n/g, '');
 }

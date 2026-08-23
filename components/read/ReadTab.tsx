@@ -45,6 +45,14 @@ interface Props {
   onRequireSignIn?: (reason?: string) => void;
   onNavigateVocab?: () => void;
   onNavigateSettings?: () => void;
+  /**
+   * Ask the app to switch study language, given a raw page language tag.
+   *
+   * Used only by the web clipper: a clip carries the language of the page it came from, and
+   * segmenting a Spanish article as Chinese is nonsense. The app decides whether to honour it
+   * — the tag may be junk, or a language this learner has not added.
+   */
+  onRequestLanguage?: (tag: string) => void;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
@@ -64,7 +72,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, active = true }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, onRequestLanguage, active = true }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -91,7 +99,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     const found = decodeClip(window.location.hash);
     if (!found) return;
     setClip(found);
+    // Match the page's language before the text is analysed, so a Spanish article clipped
+    // during a Chinese session is not segmented as Chinese.
+    if (found.lang) onRequestLanguage?.(found.lang);
     history.replaceState(null, '', window.location.pathname + window.location.search);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     storage.getPrefs().then(p => {

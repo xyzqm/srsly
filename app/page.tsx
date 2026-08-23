@@ -2,7 +2,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { TabId, PracticeMode, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
-import { getLanguageConfig } from '@/lib/languageConfig';
+import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
+import { languageFromTag } from '@/lib/languageMismatch';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
 import AddLanguage from '@/components/level/AddLanguage';
 import { setSpeechLang } from '@/lib/speech';
@@ -73,6 +74,18 @@ function AccountChip({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
+/** Last language the learner chose, read straight from localStorage. 'zh' only as a floor. */
+function savedLanguage(): LanguageCode {
+  if (typeof localStorage === 'undefined') return 'zh';
+  try {
+    const raw = localStorage.getItem('srsly-prefs');
+    const lang = raw ? (JSON.parse(raw) as { language?: string }).language : null;
+    return SUPPORTED_LANGUAGES.some(c => c.code === lang) ? lang as LanguageCode : 'zh';
+  } catch {
+    return 'zh';
+  }
+}
+
 function AppShell() {
   const [tab, setTab] = useState<TabId>('read');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -82,7 +95,20 @@ function AppShell() {
   // proficiency labels and TTS locale via LanguageProvider below. Declared BEFORE useSRS,
   // which now takes it — a `const` is not hoisted, so reading it above this line is a
   // temporal-dead-zone crash rather than a warning.
-  const [language, setLanguage] = useState<LanguageCode>('zh');
+  /**
+   * Seeded SYNCHRONOUSLY from saved prefs, not defaulted to Chinese.
+   *
+   * `storage.getPrefs()` is async, so the first render used to commit to `'zh'` and correct
+   * itself a tick later — a Spanish learner's app opened as Chinese at HSK 3, and anything
+   * that read the language during that window got the wrong answer. localStorage is
+   * synchronous underneath, so the right value is available immediately; the effect below
+   * still resolves authoritatively (it validates against the added-languages list and
+   * migrates old prefs), this only stops the wrong value being shown on the way there.
+   *
+   * Client-only by necessity — there is no localStorage on the server. `<html>` and `<body>`
+   * already carry suppressHydrationWarning for exactly this class of value.
+   */
+  const [language, setLanguage] = useState<LanguageCode>(savedLanguage);
 
   const { recordScore, recordActivity, recordAnswer } = useSRS(language);
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
@@ -105,6 +131,30 @@ function AppShell() {
    *  genuinely empty account and the one state that forces onboarding. */
   const [languages, setLanguages] = useState<LanguageCode[] | null>(null);
   const [addingLanguage, setAddingLanguage] = useState(false);
+
+  /**
+   * A language a clip asked for, held until we know which languages exist.
+   *
+   * The request arrives on ReadTab's mount, which is BEFORE `languages` has loaded from
+   * prefs — so checking the list at call time always failed and the switch silently never
+   * happened. Parking the request and applying it once the list is known is the fix; the
+   * check itself still matters, because switching to a language the learner never added
+   * would trade one wrong context for another.
+   */
+  const [wantLanguage, setWantLanguage] = useState<LanguageCode | null>(null);
+  const requestLanguage = useCallback((tag: string) => {
+    const want = languageFromTag(tag);
+    if (want) setWantLanguage(want);
+  }, []);
+
+  useEffect(() => {
+    if (!wantLanguage || !languages) return;
+    if (languages.includes(wantLanguage) && wantLanguage !== language) {
+      setLanguage(wantLanguage);
+      setSpeechLang(getLanguageConfig(wantLanguage).bcp47);
+    }
+    setWantLanguage(null);
+  }, [wantLanguage, languages, language]);
 
   useEffect(() => {
     storage.getPrefs().then(async p => {
@@ -204,6 +254,7 @@ function AppShell() {
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => changeTab('vocab')}
               onNavigateSettings={() => changeTab('settings')}
+              onRequestLanguage={requestLanguage}
             />
           </TabPanel>
           {/* Kept alive too. A flashcard session holds its queue and its results in local

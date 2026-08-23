@@ -61,8 +61,16 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
   // passage it just produced, which is the clutter it exists to remove.
   useEffect(() => { if (!emptyTab) { setOpen(false); setSource(null); } }, [emptyTab]);
 
-  // A clip is a source already chosen: skip the four cards and open paste with it loaded.
-  useEffect(() => { if (clip) { setOpen(true); setSource('paste'); } }, [clip]);
+  /**
+   * A clip is a source already chosen: skip the four cards and open paste with it loaded.
+   *
+   * Keyed on `language` as well as the clip, because a clip can CAUSE a language switch — it
+   * carries the language of the page it came from. The switch re-renders everything beneath
+   * it, and without this the panel closed and the clipped text was silently dropped, leaving
+   * the reader to open Paste and paste it again by hand. Re-asserting is safe: the clip is
+   * cleared once used.
+   */
+  useEffect(() => { if (clip) { setOpen(true); setSource('paste'); } }, [clip, language]);
 
   const panelProps = { language, deck, dueWords, blankDensity, onCommit };
 
