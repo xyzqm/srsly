@@ -193,7 +193,18 @@ async function main() {
       // with a grammar note for a definition and never linked to the `avoir` card. Dropping
       // the sense lets the proclitic peel and resolve. `aujourd'hui` and `d'accord` are
       // ordinary headwords, not contractions, so they match neither pattern and survive.
-      if (/^(contraction|compound) of /i.test(clean)) continue;
+      //
+      // ONLY WHERE THERE IS AN APOSTROPHE TO PEEL. That reasoning is entirely about proclitics
+      // the lemmatizer can split, and `au` (à + le), `aux` (à + les) and `du` (de + le) have
+      // nothing to split on — there is no rule that recovers `à` and `le` from `au`, so
+      // dropping them does not free a card, it deletes the word. `au` and `aux` have no other
+      // sense, so they vanished from the dictionary entirely and a learner tapping the `au` in
+      // the very first French starter text got "definition not in local dictionary". `du`
+      // survived only by accident, on a second sense reading "Forms the partitive article."
+      //
+      // The gloss even carries what the learner needs: Wiktionary writes `au` as
+      // "contraction of à + le, literally 'to the, for the, at the'".
+      if (word.includes("'") && /^(contraction|compound) of /i.test(clean)) continue;
       // Per-sense, so `mercado` keeps "market" and loses only "a locative surname".
       if (isNameSense(clean)) continue;
       const restricted = (s.tags ?? []).some(t => RESTRICTED_TAGS.has(t))
