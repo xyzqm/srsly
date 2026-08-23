@@ -71,7 +71,13 @@ function parseLine(line) {
   // Normalise pinyin: space-separated syllables, u: → v for toneNumToMark
   const pinyinRaw = pinyinNum.toLowerCase().replace(/u:/g, 'v');
   // Convert each syllable
-  const pinyin = pinyinRaw.split(' ').map(s => toneNumToMark(s)).join('');
+  // Hanyu Pinyin's syllable-dividing apostrophe: required before a syllable beginning with
+  // a, o or e when it is not word-initial, because the boundary is otherwise ambiguous
+  // (可爱 is kě'ài, not kěài; 西安 is xī'ān, not xīan). Mirrors joinPinyin in lib/pinyin.ts.
+  // Decided from the NUMBERED syllable — plain ASCII — rather than the tone-marked output,
+  // where the initial vowel could be any of fifteen accented forms.
+  const pinyin = pinyinRaw.split(' ').reduce(
+    (acc, syl, i) => acc + (i > 0 && /^[aoe]/.test(syl) ? "'" : '') + toneNumToMark(syl), '');
   // Take first definition, cap at 80 chars
   let meaning = defs[0].trim();
   if (meaning.length > 80) meaning = meaning.slice(0, 77) + '…';

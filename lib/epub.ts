@@ -71,6 +71,30 @@ function resolveFrom(base: string, href: string): string {
  * `<script>`, `<style>` and the rest are dropped by taking `textContent` only from block
  * elements we choose, not from the whole document.
  */
+/**
+ * How much text a page needs before it counts as a chapter rather than front matter.
+ *
+ * MEASURED IN THE SCRIPT'S OWN UNITS, because a character is not a constant amount of
+ * content. 200 Latin characters is about 35 words — a cover page or a copyright line, which
+ * is exactly what this is meant to skip. 200 CJK characters is closer to 200 words, a full
+ * page of prose, so a flat threshold silently dropped real chapters out of Chinese and
+ * Japanese books while behaving correctly for European ones.
+ *
+ * Decided from the text itself rather than the study language: `parseEpub` runs before any
+ * language is known, and a book's script is a property of the book, not of the reader.
+ */
+const CJK_CHARS = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g;
+const LATIN_LETTERS = /[A-Za-z\u00c0-\u024f]/g;
+
+export function minChapterChars(text: string): number {
+  // Compared against the OTHER script, not against the page length. Whitespace, digits and
+  // punctuation are script-neutral and count toward `length`, so a Chinese page with heavy
+  // punctuation could otherwise fall under a share-of-total test and be judged Latin.
+  const cjk = (text.match(CJK_CHARS) ?? []).length;
+  const latin = (text.match(LATIN_LETTERS) ?? []).length;
+  return cjk > latin ? 40 : 200;
+}
+
 function chapterText(doc: Document): string {
   doc.querySelectorAll('script, style, svg, head').forEach(n => n.remove());
   const body = doc.body ?? doc.documentElement;
@@ -213,7 +237,7 @@ export async function parseEpub(data: ArrayBuffer | Blob): Promise<EpubBook> {
     const text = chapterText(doc);
     // Front matter is often a near-empty page — a cover link, a copyright line. Keeping them
     // would open the book on three chapters with nothing to read.
-    if (text.length < 200) continue;
+    if (text.length < minChapterChars(text)) continue;
 
     chapters.push({
       id,

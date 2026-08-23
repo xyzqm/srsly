@@ -7,6 +7,30 @@ const TONE_MAP: Record<string, string[]> = {
   v: ['ü','ǖ','ǘ','ǚ','ǜ'],
 };
 
+/**
+ * Join tone-marked syllables into a word, with the syllable-dividing apostrophe.
+ *
+ * Hanyu Pinyin orthography requires an apostrophe before a syllable that begins with a, o or
+ * e when it is not the first in the word, because without one the boundary is genuinely
+ * ambiguous: `xian` is one syllable, `xi'an` (西安) is two, and `keai` could be read `ke-ai`
+ * or `kea-i`. Joining with `''` produced `kěài` for 可爱 where the correct form is `kě'ài`.
+ *
+ * Decided from the NUMBERED syllable, not the tone-marked one. After conversion the initial
+ * vowel may be any of `a ā á ǎ à o ō ó ǒ ò e ē é ě è`, so testing the output would mean
+ * matching fifteen characters and getting the ü cases wrong; the input is plain ASCII and
+ * says exactly the same thing.
+ *
+ * `normalizePinyin` already strips apostrophes, so nothing that COMPARES pinyin is affected —
+ * this changes how it is written, never what it matches.
+ */
+export function joinPinyin(numberedSyllables: string[]): string {
+  return numberedSyllables.reduce((acc, syl, i) => {
+    const mark = toneNumToMark(syl);
+    if (i > 0 && /^[aoe]/i.test(syl)) return `${acc}'${mark}`;
+    return acc + mark;
+  }, '');
+}
+
 /** Convert tone-number string to tone-mark string: "laji3" → "lǎjī", "lv4" → "lǜ" */
 export function toneNumToMark(s: string): string {
   // neutral tone (5 or no number): strip number
@@ -127,5 +151,5 @@ export function autoFillPinyin(hanzi: string): string {
   const chars = [...hanzi];
   const parts = chars.map(c => HAN_PIN[c]);
   if (parts.some(p => !p)) return '';
-  return parts.map(p => toneNumToMark(p)).join('');
+  return joinPinyin(parts);
 }

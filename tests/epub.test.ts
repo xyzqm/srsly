@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { parseEpub, EpubError } from '@/lib/epub';
+import { parseEpub, EpubError, minChapterChars } from '@/lib/epub';
 import { chunkChapter } from '@/lib/epubChunk';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
 
@@ -212,5 +212,37 @@ describe('positionLabel', () => {
   it('numbers the section when a chapter has several', () => {
     const b = book([filler(30)]);
     expect(positionLabel(b, 0, 1)).toMatch(/^Capítulo 1 \(2\/\d+\)$/);
+  });
+});
+
+/**
+ * A character is not a constant amount of content. The front-matter filter was a flat
+ * `text.length < 200`, which is a cover page in English and a full page of prose in Chinese —
+ * so real chapters were silently dropped out of CJK books while European ones behaved.
+ */
+describe('the front-matter threshold is measured in the script own units', () => {
+  it('keeps a short but real CJK chapter', () => {
+    const zh = '我家的小猫很可爱。每天早上它都在窗户旁边睡觉，阳光照在它的身上，它就慢慢地醒过来。'
+             + '我的女儿给它起了一个名字，叫做小白。她说这个名字很好听。';
+    expect(zh.length).toBeLessThan(200);          // would have been dropped
+    expect(zh.length).toBeGreaterThanOrEqual(minChapterChars(zh));
+  });
+
+  it('still drops a CJK cover page', () => {
+    const cover = '封面';
+    expect(cover.length).toBeLessThan(minChapterChars(cover));
+  });
+
+  it('is unchanged for Latin script', () => {
+    expect(minChapterChars('The quick brown fox jumps over the lazy dog.')).toBe(200);
+    const frontMatter = 'Copyright 2026. All rights reserved.';
+    expect(frontMatter.length).toBeLessThan(minChapterChars(frontMatter));
+  });
+
+  // Judged by which script dominates, not by share of total length — spaces, digits and
+  // punctuation belong to neither and would otherwise drag a CJK page under the bar.
+  it('treats a mixed page by whichever script dominates', () => {
+    expect(minChapterChars('我家的小猫很可爱，它喜欢睡觉 (a cat)')).toBe(40);
+    expect(minChapterChars('A mostly English sentence with 猫 in it')).toBe(200);
   });
 });
