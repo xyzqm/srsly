@@ -4,7 +4,7 @@ import { getLanguageConfig, SUPPORTED_LANGUAGES } from './languageConfig';
 /**
  * Is this text in a different language from the one being studied?
  *
- * WHY IT MATTERS. Every reader in the app — paste, EPUB, lyrics — hands its text to the
+ * WHY IT MATTERS. Every reader in the app — paste, clip, EPUB — hands its text to the
  * segmenter for the ACTIVE STUDY LANGUAGE, because that is the only one whose dictionary and
  * lemmatizer are loaded. Give the Chinese segmenter Spanish prose and it does not fail; it
  * shreds `camarón` into `camar`, `ó`, `n`, because its word rule only knows Han and ASCII.

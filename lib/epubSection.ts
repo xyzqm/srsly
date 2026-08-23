@@ -2,9 +2,6 @@ import type { DeckWord, DailyPassage, LanguageCode } from './types';
 import type { RawTok } from './server/kuromojiSegmenter';
 import type { StoredBook } from './epubStore';
 import { buildPastedPassage } from '@/hooks/useDailyContent';
-import { selectClozeTargets } from './clozeTargets';
-import { getSrsSettings } from './fsrs';
-import { getTodayCounts } from './reviewCounts';
 import { chunkChapter } from './epubChunk';
 import { positionLabel } from './epubProgress';
 
@@ -50,10 +47,16 @@ export async function buildEpubSection(
   }
 
   const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][] };
-  const built = buildPastedPassage(raw, opts.deck, opts.language, []);
-  const targets = selectClozeTargets(
-    built.sentences, opts.deck, opts.dueWords, opts.blankDensity,
-    getSrsSettings().newPerDay - getTodayCounts().newCount,
-  );
-  return { ...built, vocabWords: [...targets.words] };
+  /**
+   * `vocabWords: []` — a book has NO BLANKS and touches no schedule.
+   *
+   * Blanks exist because a generated passage is written around the words you owe today; that
+   * is a contract the app made with itself and can therefore test you on. A book you chose
+   * carries no such contract — you are reading it because you want to read it, and turning a
+   * novel into an exercise is how reading stops being the reward.
+   *
+   * Words still enter the deck from here, but only when you tap one and press Add to deck.
+   * Reading still counts toward the streak: reading is studying.
+   */
+  return { ...buildPastedPassage(raw, opts.deck, opts.language, []), vocabWords: [] };
 }

@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import PasteTextPanel from './PasteTextPanel';
 import EpubPanel from './EpubPanel';
-import LyricPlayer from './LyricPlayer';
 import StarterPanel from './StarterPanel';
 
 /**
@@ -33,24 +32,28 @@ interface Props {
   dueWords: Set<string>;
   blankDensity?: number;
   onCommit: (passage: DailyPassage) => void;
+  /**
+   * Where a BOOK section goes. Separate from `onCommit` because a book is not another article
+   * in the list — it has its own place, its own position, and its own way out. See ReadTab.
+   */
+  onCommitBook: (passage: DailyPassage) => void;
   /** True when the tab has no passage — the chooser then leads the screen. */
   emptyTab: boolean;
   /** An article sent in by the web clipper — opens the paste source with it loaded. */
   clip?: { title: string; text: string } | null;
 }
 
-type Source = 'starter' | 'paste' | 'epub' | 'lyrics';
+type Source = 'starter' | 'paste' | 'epub';
 
 const CARDS: { id: Source; icon: string; label: string; hint: string }[] = [
   { id: 'starter', icon: '📖', label: 'Start with a story', hint: 'Three short texts, ready to read' },
   { id: 'paste',   icon: '📋', label: 'Paste any article',  hint: 'Anything you already want to read' },
   { id: 'epub',    icon: '📚', label: 'Upload a book',      hint: 'EPUB — read a chapter at a time' },
-  { id: 'lyrics',  icon: '🎵', label: 'Listen along',       hint: 'Any audio with a synced transcript' },
 ];
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, emptyTab, clip = null }: Props) {
+export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, onCommitBook, emptyTab, clip = null }: Props) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
 
@@ -66,10 +69,7 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
   function panel(s: Source) {
     if (s === 'starter') return <StarterPanel {...panelProps} />;
     if (s === 'paste') return <PasteTextPanel {...panelProps} startOpen clip={clip} />;
-    if (s === 'epub') return <EpubPanel {...panelProps} startOpen />;
-    // Audio does NOT become a passage — the sync is the point, and committing the transcript
-    // would flatten it back into prose. It renders its own tokens instead.
-    return <LyricPlayer language={language} deck={deck} startOpen />;
+    return <EpubPanel {...panelProps} onCommit={onCommitBook} startOpen />;
   }
 
   const back = (

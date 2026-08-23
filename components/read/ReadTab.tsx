@@ -122,7 +122,22 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const numPassagesRef = useRef(numPassages);
   numPassagesRef.current = numPassages;
 
-  const currentPassage = dailyContent?.passages[passageIdx];
+  /**
+   * ── A BOOK HAS ITS OWN READING SPACE ──────────────────────────────────────────────────
+   *
+   * A book section is NOT another entry in the passage list. Sections used to be appended to
+   * it, so a novel's chapters were interleaved with pasted articles and generated passages,
+   * and "passage 7 / 12" told you nothing about where you were in the book. Reading a novel
+   * and dipping into an article at the same time meant paging past one to reach the other.
+   *
+   * So the book takes over while it is open, keeps its own position (already stored per book
+   * in IndexedDB — see lib/epubProgress.ts), and closing it puts the passage list back exactly
+   * as it was. Nothing about the list is disturbed in the meantime.
+   */
+  const [bookPassage, setBookPassage] = useState<DailyPassage | null>(null);
+
+  // The book wins while it is open; otherwise the ordinary list.
+  const currentPassage = bookPassage ?? dailyContent?.passages[passageIdx];
 
   /**
    * The daily new-card budget AS IT STOOD WHEN THIS PASSAGE WAS OPENED.
@@ -645,6 +660,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   /** Both doors that add a passage on purpose ask to be taken to it. */
   const requestJump = useCallback(() => { jumpOnArrival.current = true; }, []);
+
+  /** Open a book section — it replaces the view without touching the passage list. */
+  const commitBookSection = useCallback((passage: DailyPassage) => {
+    requestJump();
+    setBookPassage(passage);
+  }, [requestJump]);
+
+  /** Put the book down. The list is exactly where it was, because it was never disturbed. */
+  const closeBook = useCallback(() => setBookPassage(null), []);
   const commitPastedPassage = useCallback((passage: DailyPassage) => {
     requestJump();
     addPastedPassage(passage);
@@ -934,7 +958,29 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         </div>
       </div>
 
-      {dailyStatus === 'ready' && numPassages > 1 && (
+      {/* ── Reading a book ──────────────────────────────────────────────────────
+          The bar that says where you are and how to get out. It replaces the passage
+          nav rather than sitting beside it: paging between "passage 3 / 9" while inside
+          a novel is the confusion this whole separation exists to remove. */}
+      {bookPassage && (
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            📚 Reading a book
+          </span>
+          <button
+            onClick={closeBook}
+            className="cursor-pointer transition-all duration-150"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 10px', color: 'var(--ink-soft)' }}
+          >
+            ← close book
+          </button>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+            Your place is saved.
+          </span>
+        </div>
+      )}
+
+      {!bookPassage && dailyStatus === 'ready' && numPassages > 1 && (
         <div className="flex items-center gap-3 mb-2 flex-wrap">
           <button
             onClick={() => handlePassageChange(-1)}
@@ -978,6 +1024,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           dueWords={dueDeckWords}
           blankDensity={blankDensity}
           onCommit={commitPastedPassage}
+          onCommitBook={commitBookSection}
           emptyTab={!currentPassage}
           clip={clip}
         />
@@ -1370,12 +1417,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               next section on it put the rest of the novel behind a perfect score on this
               slice — the reading is the point, and the blanks are practice along the way.
               Anything left unfilled is simply not graded, which is the learner's call. */}
+          {/* Advancing goes back into the BOOK, not onto the passage list — otherwise
+              "next section" would quietly turn the novel into a pile of articles. */}
           <NextSection
             language={language}
             deck={deck}
             dueWords={dueDeckWords}
             blankDensity={blankDensity}
-            onCommit={commitPastedPassage}
+            onCommit={commitBookSection}
           />
 
           {/* The reward. Only once the reading is actually finished — see DailyProverb.

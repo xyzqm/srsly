@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 import { bookmarkletSource } from '@/lib/webClip';
 
 /**
- * Install the one-click web clipper.
+ * Install the one-click web clipper — shown inside the paste panel.
+ *
+ * It belongs here rather than in Settings because it IS pasting, just without the copying:
+ * the same article, the same segmenter, the same result. Someone who has just pasted an
+ * article by hand is exactly the person who wants to stop doing that, and Settings is where
+ * they were never going to look.
  *
  * A bookmarklet cannot be installed by a button — the browser only accepts one by being
  * dragged to the bookmarks bar, or copied and pasted into a new bookmark by hand. So this
@@ -17,7 +22,7 @@ import { bookmarkletSource } from '@/lib/webClip';
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ClipperPanel() {
+export default function ClipperInstall() {
   const [origin, setOrigin] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -37,15 +42,15 @@ export default function ClipperPanel() {
   }
 
   return (
-    <div className="mb-8">
-      <div style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
-        Web clipper
+    <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--line-soft)' }}>
+      <div style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
+        Skip the copying
       </div>
 
-      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 14 }}>
-        Reading a Spanish blog or a Chinese article somewhere else? Click this from any page and
-        it opens here, segmented and ready to mine. Drag it to your bookmarks bar — a browser
-        will not let a page install a bookmark for you.
+      <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
+        Drag this to your bookmarks bar, and any page you are reading opens here in one click —
+        no copy, no paste. A browser will not let a page install a bookmark for you, so the drag
+        is unavoidable.
       </p>
 
       <div className="flex items-center gap-3 flex-wrap">

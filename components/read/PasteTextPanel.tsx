@@ -1,14 +1,12 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DailyPassage, DeckWord, LanguageCode } from '@/lib/types';
-import { getLanguageConfig, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import { buildPastedPassage, type RawTok } from '@/hooks/useDailyContent';
-import { selectClozeTargets, type ClozeTargetResult } from '@/lib/clozeTargets';
 import { analyzeCoverage, verdictFor, type TextCoverage } from '@/lib/coverage';
-import { getSrsSettings } from '@/lib/fsrs';
-import { getTodayCounts } from '@/lib/reviewCounts';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
 import { mismatchWarning } from '@/lib/languageMismatch';
+import ClipperInstall from './ClipperInstall';
 
 interface Props {
   /**
@@ -28,14 +26,12 @@ interface Props {
   deck: DeckWord[];
   /** Words ready for review right now — the blank candidates, keyed as tokens resolve. */
   dueWords: Set<string>;
-  blankDensity?: number;
   onCommit: (passage: DailyPassage) => void;
 }
 
 interface Analysis {
   passage: DailyPassage;
   coverage: TextCoverage;
-  targets: ClozeTargetResult;
   /** Names the segmenter thinks are in the text but that were not confirmed — see below. */
   suggestedNames: string[];
 }
@@ -78,7 +74,7 @@ function splitTitle(text: string, manual: string): { title: string; body: string
   return { title: label, body: text };
 }
 
-export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false, clip = null }: Props) {
+export default function PasteTextPanel({ language, deck, dueWords, onCommit, startOpen = false, clip = null }: Props) {
   const [open, setOpen] = useState(startOpen);
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
@@ -157,14 +153,11 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
       // Chosen here, once, against the ledger as it stands right now — and then RECORDED on
       // the passage. The readout below and the blanks you will see are therefore the same
       // computation, not two that are supposed to agree.
-      const targets = selectClozeTargets(
-        built.sentences, deck, dueWords, blankDensity,
-        getSrsSettings().newPerDay - getTodayCounts().newCount,
-      );
       setAnalysis({
-        passage: { ...built, vocabWords: [...targets.words] },
+        // vocabWords: [] — your own text has no blanks and touches no schedule.
+        // See lib/epubSection.ts for the reasoning; this is the same rule.
+        passage: { ...built, vocabWords: [] },
         coverage: analyzeCoverage(built.sentences, new Set(deck.map(d => d.h)), dueWords),
-        targets,
         suggestedNames: raw.suggestedNames ?? [],
       });
     } catch (err) {
@@ -172,7 +165,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
     } finally {
       setBusy(false);
     }
-  }, [text, title, names, tooLong, language, deck, dueWords, blankDensity]);
+  }, [text, title, names, tooLong, language, deck, dueWords]);
 
   const commit = useCallback(() => {
     if (!analysis) return;
@@ -184,7 +177,6 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
     setOpen(false);
   }, [analysis, onCommit]);
 
-  const density = blankDensity ?? RECOMMENDED_BLANK_DENSITY;
 
   const btn = (primary: boolean): React.CSSProperties => ({
     ...mono, fontSize: 11.5, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500,
@@ -315,7 +307,11 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
         </div>
       )}
 
-      {analysis && <CoverageReadout {...analysis} language={language} density={density} />}
+      {analysis && <CoverageReadout {...analysis} language={language} />}
+
+      {/* Shown only before anything is pasted — once there is text on screen, the reader is
+          already doing the thing and does not need to be sold the shortcut. */}
+      {!text.trim() && <ClipperInstall />}
     </div>
   );
 }
@@ -323,32 +319,29 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
 /**
  * The readout. Its job is to be believed, so it reports what it can actually see — how much
  * of the text your DECK covers — and never dresses that up as what you know.
+ *
+ * It used to lead with how many blanks the text would carry. Your own reading has no blanks
+ * now, so the only question left is the one that was always the more useful one: can you
+ * actually read this?
  */
-function CoverageReadout({ coverage, targets, language, density }: Analysis & { language: LanguageCode; density: number }) {
+function CoverageReadout({ coverage, language }: Analysis & { language: LanguageCode }) {
   const cfg = getLanguageConfig(language);
   const verdict = verdictFor(coverage);
   const pct = (n: number) => coverage.tokens ? Math.round((n / coverage.tokens) * 100) : 0;
 
   const bars = useMemo(() => ([
-    { key: 'due',   n: coverage.dueTokens,                             color: 'var(--accent)' },
-    { key: 'deck',  n: coverage.inDeckTokens - coverage.dueTokens,     color: 'var(--jade)' },
-    { key: 'out',   n: coverage.notInDeckTokens,                       color: 'var(--line)' },
+    { key: 'deck',  n: coverage.inDeckTokens,     color: 'var(--jade)' },
+    { key: 'out',   n: coverage.notInDeckTokens,  color: 'var(--line)' },
   ]), [coverage]);
 
-  // The headline. Named for the two facts that are actually in tension: the blanks are
-  // right, and the prose around them may be unreadable.
   const headline =
-    targets.words.size === 0
-      ? coverage.dueTypes === 0
-        ? 'Nothing in this text is due for review, so it will have no blanks. It is still worth reading — every word stays clickable — but it will not move your schedule.'
-        : `${coverage.dueTypes} due word${coverage.dueTypes === 1 ? '' : 's'} appear${coverage.dueTypes === 1 ? 's' : ''} here, but none fit: ${targets.heldBackByBudget > 0 ? "today's new-card limit is spent" : `the ${density}% density leaves room for ${targets.budget} blank${targets.budget === 1 ? '' : 's'}`}.`
-      : verdict === 'beyond'
-        ? `${targets.blanks} blank${targets.blanks === 1 ? '' : 's'} will be right — and ${pct(coverage.notInDeckTokens)}% of the running words here are not in your deck. Expect the blanks to work and the reading not to.`
-        : verdict === 'heavy'
-          ? `${targets.blanks} blank${targets.blanks === 1 ? '' : 's'}, with ${pct(coverage.notInDeckTokens)}% of the running words outside your deck — heavy going between them.`
-          : verdict === 'workable'
-            ? `${targets.blanks} blank${targets.blanks === 1 ? '' : 's'}, with ${pct(coverage.notInDeckTokens)}% of the running words outside your deck — readable with lookups.`
-            : `${targets.blanks} blank${targets.blanks === 1 ? '' : 's'}, and ${pct(coverage.inDeckTokens)}% of the running words are already in your deck.`;
+    verdict === 'beyond'
+      ? `${pct(coverage.notInDeckTokens)}% of the running words here are not in your deck. Expect to look up a lot — worth it if you want this text, heavy going if you do not.`
+      : verdict === 'heavy'
+        ? `${pct(coverage.notInDeckTokens)}% of the running words are outside your deck. Slow going, but readable with lookups.`
+        : verdict === 'workable'
+          ? `${pct(coverage.notInDeckTokens)}% of the running words are outside your deck — readable with lookups.`
+          : `${pct(coverage.inDeckTokens)}% of the running words are already in your deck. This should read comfortably.`;
 
   const row = (n: number, color: string, text: string) => (
     <div className="flex items-baseline gap-2.5" style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.5 }}>
@@ -371,8 +364,7 @@ function CoverageReadout({ coverage, targets, language, density }: Analysis & { 
       </div>
 
       <div className="flex flex-col gap-1.5 mb-3">
-        {row(targets.blanks, 'var(--accent)', `blank${targets.blanks === 1 ? '' : 's'} from ${targets.words.size} due word${targets.words.size === 1 ? '' : 's'}`)}
-        {row(coverage.inDeckTokens - coverage.dueTokens, 'var(--jade)', 'in your deck, not due today')}
+        {row(coverage.inDeckTokens, 'var(--jade)', 'already in your deck')}
         {row(coverage.notInDeckTypes, 'var(--line)', `distinct word${coverage.notInDeckTypes === 1 ? '' : 's'} not in your deck (${pct(coverage.notInDeckTokens)}% of the running text)`)}
       </div>
 
@@ -398,17 +390,6 @@ function CoverageReadout({ coverage, targets, language, density }: Analysis & { 
         </p>
       )}
 
-      {targets.heldBackByBudget > 0 && (
-        <p style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '8px 0 0' }}>
-          {targets.heldBackByBudget} due word{targets.heldBackByBudget === 1 ? '' : 's'} held back by your{' '}
-          {getSrsSettings().newPerDay}/day new-card limit — the same budget Practice spends from.
-        </p>
-      )}
-      {targets.heldBackByDensity > 0 && (
-        <p style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.5, margin: '4px 0 0' }}>
-          {targets.heldBackByDensity} more would not fit at {density}% density ({targets.budget} blanks for this length).
-        </p>
-      )}
     </div>
   );
 }

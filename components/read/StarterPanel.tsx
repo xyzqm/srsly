@@ -2,9 +2,6 @@
 import { useCallback, useState } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import { buildPastedPassage, type RawTok } from '@/hooks/useDailyContent';
-import { selectClozeTargets } from '@/lib/clozeTargets';
-import { getSrsSettings } from '@/lib/fsrs';
-import { getTodayCounts } from '@/lib/reviewCounts';
 import { starterTexts, type StarterText } from '@/lib/data/starterTexts';
 
 /**
@@ -25,14 +22,12 @@ import { starterTexts, type StarterText } from '@/lib/data/starterTexts';
 interface Props {
   language: LanguageCode;
   deck: DeckWord[];
-  dueWords: Set<string>;
-  blankDensity?: number;
   onCommit: (passage: DailyPassage) => void;
 }
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function StarterPanel({ language, deck, dueWords, blankDensity, onCommit }: Props) {
+export default function StarterPanel({ language, deck, onCommit }: Props) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const texts = starterTexts(language);
@@ -57,18 +52,14 @@ export default function StarterPanel({ language, deck, dueWords, blankDensity, o
         throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
       }
       const raw = await res.json() as { title: RawTok[]; sentences: RawTok[][] };
-      const built = buildPastedPassage(raw, deck, language, []);
-      const targets = selectClozeTargets(
-        built.sentences, deck, dueWords, blankDensity,
-        getSrsSettings().newPerDay - getTodayCounts().newCount,
-      );
-      onCommit({ ...built, vocabWords: [...targets.words] });
+      // No blanks and no grading — see lib/epubSection.ts. Your own reading is reading.
+      onCommit({ ...buildPastedPassage(raw, deck, language, []), vocabWords: [] });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setBusy('');
     }
-  }, [language, deck, dueWords, blankDensity, onCommit]);
+  }, [language, deck, onCommit]);
 
   if (texts.length === 0) return null;
 

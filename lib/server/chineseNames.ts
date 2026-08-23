@@ -1,4 +1,5 @@
 import cedictData from '@dict/cedict.json';
+import { HSK_LEVELS } from '@/lib/data/hsk-levels';
 
 /**
  * Guess the personal names in a piece of Chinese text.
@@ -44,6 +45,79 @@ function bestLen(text: string, i: number, end: number): number {
     if (isWord(text.slice(i, i + len))) return len;
   }
   return 0;
+}
+
+/* ── Transliterated foreign names ────────────────────────────────────────────────────────
+ *
+ * `guessChineseNames` looks for a Chinese SURNAME followed by a given name, which is the right
+ * shape for 李华 and the wrong shape for every foreign name in translated literature. Reading
+ * Le Petit Prince, the dedication to Léon Werth — 列翁·维尔特 — came out as six separate
+ * characters, each glossed as though it were vocabulary.
+ *
+ * The middle dot IS the signal. Chinese writes foreign personal names with `·` between the
+ * parts and uses it for almost nothing else in running prose, so a Han run touching one is a
+ * name part with high confidence.
+ *
+ * The hard part is where the part ENDS on the left, since the run before the dot runs back
+ * into the sentence: in 献给列翁·维尔特 the name is 列翁, not 献给列翁. Transliteration picks
+ * characters for their sound, so a name part does not contain everyday grammatical words —
+ * scanning outward and stopping at the first HSK 1–2 character lands exactly on the boundary
+ * (翁 ✓, 列 ✓, 给 is HSK 2 ✗ stop). It is a heuristic, but its failure mode is a name one
+ * character short, which is a great deal better than one shredded into six.
+ */
+
+/** `·` and the variants that turn up in real books. */
+const NAME_DOT = /[·‧・･]/;
+
+/**
+ * Characters that are everyday HSK vocabulary AND standard transliteration syllables.
+ *
+ * These are the exception the stop-rule needs. 里 is HSK 1, and it is also in a large share of
+ * transliterated names — so stopping at it truncated 罗德里格斯 to 罗德 and 圣埃克苏佩里 to
+ * 圣埃克苏佩, leaving the remainder to be shredded exactly as before. Kept short and only for
+ * syllables that genuinely recur in names, since every entry is a character the scan will
+ * now run THROUGH.
+ */
+const TRANSLIT_CHARS = new Set([
+  '里', '尔', '特', '德', '安', '马', '拉', '亚', '利', '加', '美', '大', '力', '斯', '克',
+]);
+
+/** Characters common enough that they are sentence, not name. */
+const COMMON_CHARS: Set<string> = (() => {
+  const s = new Set<string>();
+  for (const level of ['1', '2']) {
+    for (const w of (HSK_LEVELS as Record<string, string[]>)[level] ?? []) {
+      if (w.length === 1 && !TRANSLIT_CHARS.has(w)) s.add(w);
+    }
+  }
+  return s;
+})();
+
+/** Longest run either side of the dot we will claim. Real name parts are short. */
+const MAX_NAME_PART = 6;
+
+export function guessTransliteratedNames(text: string): string[] {
+  const found = new Set<string>();
+
+  const scan = (start: number, step: -1 | 1): string => {
+    const chars: string[] = [];
+    for (let i = start; i >= 0 && i < text.length && chars.length < MAX_NAME_PART; i += step) {
+      const ch = text[i];
+      if (!HAN.test(ch) || COMMON_CHARS.has(ch)) break;
+      chars.push(ch);
+    }
+    return step === -1 ? chars.reverse().join('') : chars.join('');
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    if (!NAME_DOT.test(text[i])) continue;
+    for (const part of [scan(i - 1, -1), scan(i + 1, 1)]) {
+      // A part that is already a dictionary word is a word, not a name — leaving it alone
+      // costs nothing, since the segmenter keeps a real word whole anyway.
+      if (part.length >= 1 && !isWord(part)) found.add(part);
+    }
+  }
+  return [...found];
 }
 
 export function guessChineseNames(text: string): string[] {

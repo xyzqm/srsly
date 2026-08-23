@@ -6,7 +6,7 @@ import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { segmentZh } from '@/lib/server/chineseSegmenter';
 import { splitSentences } from '@/lib/server/sentenceSplit';
-import { guessChineseNames, nameReading } from '@/lib/server/chineseNames';
+import { guessChineseNames, guessTransliteratedNames, nameReading } from '@/lib/server/chineseNames';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
 
 /**
@@ -112,6 +112,22 @@ export async function POST(req: NextRequest) {
     // The reading matters — see nameReading. Without one the client drops the token back to
     // plain text and re-splits it into characters.
     overrides.set(t, { p: language === 'zh' ? nameReading(t) : '', m: `(name) ${t}` });
+  }
+
+  /**
+   * Transliterated foreign names are APPLIED, not suggested — unlike surname guesses.
+   *
+   * The two are different kinds of evidence. A surname guess reads 李 and infers a person,
+   * which a dictionary cannot settle (see lib/server/chineseNames.ts). A `·` is a typographic
+   * marker the author actually wrote, and Chinese uses it for almost nothing but foreign
+   * personal names. Waiting for confirmation there would mean EPUB never gets it at all —
+   * a book has no confirmation UI — which is how Le Petit Prince's dedication to 列翁·维尔特
+   * came out as six loose characters.
+   */
+  if (language === 'zh') {
+    for (const n of guessTransliteratedNames(text)) {
+      if (!overrides.has(n)) overrides.set(n, { p: nameReading(n), m: `(name) ${n}` });
+    }
   }
 
   const unspaced = getLanguageConfig(language).scriptIsUnspaced;
