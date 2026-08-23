@@ -4,6 +4,7 @@ import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { languageFromTag } from '@/lib/languageMismatch';
+import { decodeClip } from '@/lib/webClip';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
 import AddLanguage from '@/components/level/AddLanguage';
 import { setSpeechLang } from '@/lib/speech';
@@ -86,8 +87,29 @@ function savedLanguage(): LanguageCode {
   }
 }
 
+/**
+ * Which tab to open on.
+ *
+ * SRS, normally — it is the first tab and the scheduled work is what a returning learner came
+ * back for. The exception is a WEB CLIP, which is a request to read something specific, so it
+ * lands in Read.
+ *
+ * That exception is load-bearing, not a nicety. `TabPanel` mounts a tab only once it has been
+ * activated, and the clipper reads its payload from `window.location.hash` in an effect inside
+ * ReadTab — gated to the 'read' variant so the SRS copy cannot swallow it. Land on SRS with a
+ * clip in the URL and that effect never runs, so the clipped article would sit unread until
+ * the learner opened Read by hand, which is the exact papercut the clipper exists to remove.
+ *
+ * Decided in a lazy initialiser so the first render is already right, for the same reason
+ * `savedLanguage()` reads localStorage synchronously instead of correcting itself a tick later.
+ */
+function initialTab(): TabId {
+  if (typeof window === 'undefined') return 'practice';
+  return decodeClip(window.location.hash) ? 'read' : 'practice';
+}
+
 function AppShell() {
-  const [tab, setTab] = useState<TabId>('read');
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
 

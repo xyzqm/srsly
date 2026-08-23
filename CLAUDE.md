@@ -576,6 +576,14 @@ One line down the middle, and it is the app's main organising idea:
 - **SRS** is what FSRS actually drives: flashcards, and generated passages, which keep their
   blanks because a generated passage is written around the words you owe today.
 
+**SRS is the landing tab**, with one exception that is load-bearing rather than a nicety: a
+URL carrying a web clip lands on Read instead. `TabPanel` mounts a tab only once it has been
+activated, and the clipper reads its payload from the location hash in an effect inside
+ReadTab — so landing on SRS with a clip in the URL would leave that effect unmounted and the
+clipped article unread until the learner opened Read by hand, which is the exact papercut the
+clipper removes. `initialTab()` in `app/page.tsx` decides it in a lazy initialiser, reusing
+`decodeClip`.
+
 `ReadTab` renders BOTH, and `variant` decides which: `'read'` draws the passages marked
 `pasted` (every own-text source goes through `buildPastedPassage`, so that flag already
 separates the two halves — there is deliberately no second `source` field to drift out of sync
