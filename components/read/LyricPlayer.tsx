@@ -45,6 +45,15 @@ interface Props {
 
 const mono = { fontFamily: 'var(--f-mono)' as const };
 
+/**
+ * Playback speeds, weighted BELOW normal on purpose.
+ *
+ * Native-speed audio is the thing a learner cannot follow; 0.75× is usually the difference
+ * between hearing a wall of sound and hearing words. Faster than 1.25× stops being useful for
+ * comprehension, so the range is not symmetric.
+ */
+const RATES = [0.5, 0.75, 1, 1.25, 1.5] as const;
+
 export default function LyricPlayer({ language, deck, startOpen = false}: Props) {
   const [open, setOpen] = useState(startOpen);
   const [lines, setLines] = useState<LyricLine[]>([]);
@@ -56,6 +65,13 @@ export default function LyricPlayer({ language, deck, startOpen = false}: Props)
   const [error, setError] = useState('');
   // An .lrc declares no language, so the script is the only signal — see lib/languageMismatch.
   const [warning, setWarning] = useState<string | null>(null);
+  /**
+   * Playback speed and looping — the two controls that make audio a study tool rather than a
+   * player. Slowing a native recording to 0.75x is what makes it parseable at all early on,
+   * and looping is what turns one track into repetition practice.
+   */
+  const [rate, setRate] = useState(1);
+  const [loop, setLoop] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -140,6 +156,18 @@ export default function LyricPlayer({ language, deck, startOpen = false}: Props)
     box.scrollTo({ top: el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2, behavior: 'smooth' });
   }, [active]);
 
+  /**
+   * Push the rate onto the element rather than passing it as a prop.
+   *
+   * `playbackRate` is a DOM property with no React attribute behind it, and browsers reset it
+   * to 1 whenever the source changes — so it has to be re-applied on load as well as on
+   * change, or picking a new audio file silently snaps the speed back.
+   */
+  useEffect(() => {
+    const a = audioRef.current;
+    if (a) a.playbackRate = rate;
+  }, [rate, audioUrl]);
+
   const seekTo = useCallback((i: number) => {
     const a = audioRef.current;
     if (!a || !lines[i]) return;
@@ -210,11 +238,52 @@ export default function LyricPlayer({ language, deck, startOpen = false}: Props)
           ref={audioRef}
           src={audioUrl}
           controls
+          loop={loop}
+          onLoadedMetadata={e => { e.currentTarget.playbackRate = rate; }}
           onTimeUpdate={onTimeUpdate}
           onSeeked={onTimeUpdate}
           className="w-full mt-3"
           style={{ height: 36 }}
         />
+      )}
+
+      {audioUrl && (
+        <div className="flex items-center gap-2 flex-wrap mt-2">
+          <span style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            Speed
+          </span>
+          {RATES.map(r => (
+            <button
+              key={r}
+              onClick={() => setRate(r)}
+              aria-pressed={rate === r}
+              className="cursor-pointer transition-all duration-150"
+              style={{
+                ...mono, fontSize: 11, borderRadius: 7, padding: '5px 9px',
+                border: `1px solid ${rate === r ? 'var(--accent)' : 'var(--line)'}`,
+                background: rate === r ? 'var(--accent)' : 'none',
+                color: rate === r ? '#fff' : 'var(--ink-soft)',
+              }}
+            >
+              {r}×
+            </button>
+          ))}
+
+          <button
+            onClick={() => setLoop(v => !v)}
+            aria-pressed={loop}
+            title={loop ? 'Repeating the whole track' : 'Play once and stop'}
+            className="cursor-pointer transition-all duration-150"
+            style={{
+              ...mono, fontSize: 11, borderRadius: 7, padding: '5px 10px', marginLeft: 4,
+              border: `1px solid ${loop ? 'var(--accent)' : 'var(--line)'}`,
+              background: loop ? 'var(--accent)' : 'none',
+              color: loop ? '#fff' : 'var(--ink-soft)',
+            }}
+          >
+            ↻ Loop
+          </button>
+        </div>
       )}
 
       {lines.length > 0 && (

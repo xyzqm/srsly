@@ -1,5 +1,6 @@
 import cedictData from '@dict/cedict.json';
 import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
+import { HSK_LEVELS } from '@/lib/data/hsk-levels';
 
 /**
  * Server-only Chinese segmenter — the one language that had none.
@@ -43,64 +44,122 @@ function isWord(word: string): boolean {
   return word in cedict || word in HSK_VOCAB;
 }
 
+/* ── How likely is this actually the word the writer meant? ──────────────────────────────
+ *
+ * Longest-match alone is wrong, and wrong in two directions that a dictionary of 121k entries
+ * makes routine:
+ *
+ *   我家的小猫  →  我 + 家的 + 小猫     家的 is CC-CEDICT's "(old) wife"; the sentence means
+ *                                        "my home's cat" and wants 家 + 的.
+ *   中国人民    →  中国人 + 民          "Chinese person" + a stranded bare 民, where 中国 +
+ *                                        人民 is two ordinary words.
+ *
+ * Both are the same failure: a longer entry that exists outranks a shorter pair that is far
+ * commoner. So each candidate word gets a score standing in for log P(word), and the run is
+ * segmented to maximise the total. Because every score is NEGATIVE, adding a word costs
+ * something — which is what keeps 小猫 together rather than splitting it into two very common
+ * single characters, while still letting 家 + 的 beat an archaic 家的.
+ *
+ * The frequency signal is HSK LEVEL, which is the only graded one this repo has and is a real
+ * one: HSK 1 is the vocabulary a first-week learner meets. Everything outside HSK falls back
+ * to a flat "in the dictionary" score, and CC-CEDICT's own register tags demote the entries
+ * that cause the problem.
+ */
+
+/** word → HSK band (1 easiest). Built once; hsk-levels.json is keyed the other way round. */
+const HSK_LEVEL: Map<string, number> = (() => {
+  const m = new Map<string, number>();
+  for (const [level, words] of Object.entries(HSK_LEVELS)) {
+    const n = Number(level);
+    for (const w of words as string[]) if (!m.has(w)) m.set(w, n);
+  }
+  return m;
+})();
+
+/**
+ * Entries CC-CEDICT itself marks as not-current usage.
+ *
+ * Deliberately NOT `(coll.)`, `(slang)` or `(dialect)`: those are things people actually say,
+ * and a learner meeting them still wants the gloss. This is only about which reading wins a
+ * boundary contest — an archaic sense should never outrank two everyday words.
+ */
+const NOT_CURRENT = /\((old|archaic|literary|obsolete|classical)\b|\bold variant of\b/i;
+
+/** Natural log of a rough unigram probability. Negative; larger (nearer 0) is likelier. */
+function wordScore(word: string, overrides: Map<string, DictOverride>): number {
+  /**
+   * A deck word is not a guess — the caller supplied it, so it must win any contest it enters.
+   *
+   * BUT ONLY FROM TWO CHARACTERS UP. Inside a two-character word the halves are morphemes,
+   * not words: a learner holding 生 and 活 as separate cards must not have 生活 torn in two,
+   * and 中国人 must not shed a bare 人. A single-character override therefore gets no bonus at
+   * all and competes on frequency like any other candidate — which is enough to keep 生活 and
+   * 中国人 whole, because one ordinary word outscores two very common characters.
+   */
+  if (word.length >= 2 && overrides.has(word)) return 100;
+
+  const level = HSK_LEVEL.get(word);
+  if (level !== undefined) return Math.log(1e-3 / level);   // HSK 1 likeliest, HSK 6 least
+  if (word in HSK_VOCAB) return Math.log(1e-3 / 6);         // in HSK, band unknown
+
+  const gloss = cedict[word]?.m;
+  if (gloss !== undefined) return Math.log(NOT_CURRENT.test(gloss) ? 1e-9 : 1e-5);
+
+  return Math.log(1e-7);   // a hanzi the dictionary has never heard of
+}
+
+/**
+ * Best segmentation of one run of Han characters, by total score.
+ *
+ * A plain left-to-right DP: `best[k]` is the best score for the first k characters, and every
+ * candidate word ending at k extends some earlier prefix. O(n · maxLen), which for a run of
+ * prose is nothing.
+ */
+function segmentRun(run: string, overrides: Map<string, DictOverride>): string[] {
+  const n = run.length;
+  const best = new Array<number>(n + 1).fill(-Infinity);
+  const from = new Array<number>(n + 1).fill(0);
+  best[0] = 0;
+
+  for (let k = 1; k <= n; k++) {
+    for (let len = Math.min(MAX_OVERRIDE_LEN, k); len >= 1; len--) {
+      const start = k - len;
+      if (best[start] === -Infinity) continue;
+      const cand = run.slice(start, k);
+      // Single characters are always allowed, so the DP can never dead-end on a hanzi the
+      // dictionary does not know.
+      const usable = len === 1 || overrides.has(cand) || (len <= MAX_DICT_LEN && isWord(cand));
+      if (!usable) continue;
+      const score = best[start] + wordScore(cand, overrides);
+      if (score > best[k]) { best[k] = score; from[k] = start; }
+    }
+  }
+
+  const out: string[] = [];
+  for (let k = n; k > 0; k = from[k]) out.unshift(run.slice(from[k], k));
+  return out;
+}
+
 /**
  * ── A DICTIONARY MATCH MUST NOT HIDE A DECK WORD ─────────────────────────────────────────
  *
- * The two helpers below are one rule in two shapes, and they are what makes this segmenter
- * usable for cross-referencing rather than merely correct on average. CC-CEDICT holds 121k
- * entries including phrases, place names and compounds, so a plain longest match regularly
- * eats a word the learner actually has a card for — and it fails SILENTLY: no blank appears,
- * and nothing says why.
- *
- * Both helpers only ever shorten a DICTIONARY match. A match on the deck's own card is
- * authoritative and is never taken apart.
- *
- * The minimum piece length of two characters is what stops this from running wild. Inside a
- * two-character word the halves are morphemes, not words, so a learner holding 生 and 活 as
- * separate cards must not have 生活 torn in two, and 中国人 must not shed a bare 人.
- */
-
-/**
- * Case 1 — the deck words sit exactly INSIDE the match: 经济发展 is a CC-CEDICT phrase, and a
+ * CC-CEDICT holds 121k entries including phrases, place names and compounds, so a plain
+ * longest match regularly eats a word the learner actually has a card for — and it fails
+ * SILENTLY: no blank appears, and nothing says why. 经济发展 is a CC-CEDICT phrase, and a
  * learner with both 经济 and 发展 due got nothing from a sentence containing both.
- */
-function tileByDeckWords(word: string, overrides: Map<string, DictOverride>): string[] | null {
-  if (word.length < 4) return null;   // two pieces of two characters is the smallest tiling
-  const walk = (rest: string, acc: string[]): string[] | null => {
-    if (!rest) return acc.length >= 2 ? acc : null;
-    for (let len = Math.min(MAX_OVERRIDE_LEN, rest.length); len >= 2; len--) {
-      const head = rest.slice(0, len);
-      if (!overrides.has(head)) continue;
-      const done = walk(rest.slice(len), [...acc, head]);
-      if (done) return done;
-    }
-    return null;
-  };
-  return walk(word, []);
-}
-
-/**
- * Case 2 — the deck word STRADDLES the match's right edge, so tiling can't see it. 中国城市 is
- * 中国 + 城市, but CC-CEDICT has 中国城 ("Chinatown"), which is longer, wins, and leaves 市
- * stranded — with 城市 (HSK 1, in almost every Chinese deck) nowhere in the output.
  *
- * Returns how far to shorten the match, or null to keep it whole. The prefix that is left
- * behind must itself be a real word: shortening is only worth doing if what remains is
- * something a reader would recognise, not an arbitrary cut.
+ * This used to need two helpers that re-cut a greedy match after the fact, plus a minimum
+ * piece length of two characters to stop the re-cutting running wild (so a learner holding 生
+ * and 活 separately did not have 生活 torn in half).
+ *
+ * `wordScore` subsumes the re-cutting: a deck word of two characters or more scores so far
+ * above any dictionary entry that the DP never chooses a segmentation burying one, and it
+ * weighs the whole run rather than patching up one greedy decision.
+ *
+ * THE TWO-CHARACTER MINIMUM SURVIVES, as a rule about which overrides get that bonus. Dropping
+ * it re-broke exactly what it was written for: with 生 and 活 both in the deck, two overrides
+ * outscored one dictionary word and 生活 came apart.
  */
-function shortenForDeckWord(
-  text: string, i: number, len: number, runEnd: number, overrides: Map<string, DictOverride>,
-): number | null {
-  for (let k = 1; k < len; k++) {
-    for (let dl = Math.min(MAX_OVERRIDE_LEN, runEnd - (i + k)); dl >= 2; dl--) {
-      if (k + dl <= len) break;   // fits inside the match — that is tileByDeckWords' case
-      if (!overrides.has(text.slice(i + k, i + k + dl))) continue;
-      const prefix = text.slice(i, i + k);
-      return isWord(prefix) || overrides.has(prefix) ? k : null;
-    }
-  }
-  return null;
-}
 
 /**
  * One token on the wire.
@@ -146,32 +205,13 @@ export function segmentZh(text: string, overrides: Map<string, DictOverride>): R
     let runEnd = i;
     while (runEnd < text.length && HAN.test(text[runEnd])) runEnd++;
 
-    while (i < runEnd) {
-      const room = runEnd - i;
-      let matched = false;
-      for (let len = Math.min(MAX_OVERRIDE_LEN, room); len >= 1; len--) {
-        let cand = text.slice(i, i + len);
-        if (!overrides.has(cand) && !(len <= MAX_DICT_LEN && isWord(cand))) continue;
-        matched = true;
-        // A match on the deck's own card is authoritative and is never re-cut. Only a
-        // dictionary match gives way to the words the learner actually holds.
-        if (overrides.has(cand)) {
-          out.push(emit(cand, overrides));
-          i += cand.length;
-          break;
-        }
-        const cut = shortenForDeckWord(text, i, len, runEnd, overrides);
-        if (cut !== null) cand = text.slice(i, i + cut);
-        for (const piece of tileByDeckWords(cand, overrides) ?? [cand]) {
-          out.push(emit(piece, overrides));
-          i += piece.length;
-        }
-        break;
-      }
-      // Nothing matched at all — a single hanzi CC-CEDICT has never heard of. Still a word,
-      // not punctuation.
-      if (!matched) { out.push(emit(text[i], overrides)); i += 1; }
+    // The whole run at once, scored — see segmentRun. Deck words score so far above anything
+    // else that a segmentation containing them always wins, which is what the two helpers
+    // above used to arrange by re-cutting a greedy match after the fact.
+    for (const piece of segmentRun(text.slice(i, runEnd), overrides)) {
+      out.push(emit(piece, overrides));
     }
+    i = runEnd;
   }
 
   return out;

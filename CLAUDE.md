@@ -281,6 +281,26 @@ it matches — nothing comparing readings was affected.
 verb-object or two-word compounds; CC-CEDICT joins everything, which is the less careful
 choice. Normalising them against cedict would make them worse.
 
+**Chinese segmentation is SCORED, not greedy-longest** (`lib/server/chineseSegmenter.ts`).
+A 121k-entry dictionary makes longest-match wrong in two directions: a long rare entry beats a
+short common pair (我家的小猫 read 家的, CC-CEDICT's "(old) wife", instead of 家 + 的), and a
+long match strands what it leaves (中国人民 → 中国人 + a bare 民). `wordScore` stands in for
+log P(word) and a DP maximises the total over each Han run. Because every score is NEGATIVE,
+adding a word costs something — which is what keeps 小猫 whole rather than splitting it into
+two commoner characters, while still letting 家 + 的 beat an archaic 家的.
+
+HSK LEVEL is the frequency signal: it is the only graded one in the repo and a real one.
+Outside HSK, entries take a flat in-the-dictionary score, and CC-CEDICT's own register tags
+demote the ones that cause the trouble. `(coll.)`, `(slang)` and `(dialect)` are deliberately
+NOT demoted — people say those, and a learner meeting one still wants the gloss.
+
+**The two-character minimum survives, as a rule about which deck words get the override
+bonus.** A deck word of 2+ characters outscores anything and so is never buried — that is what
+the old greedy re-cutting helpers arranged, and they are gone. But a SINGLE-character card
+gets no bonus at all: inside a two-character word the halves are morphemes, so a learner
+holding 生 and 活 must not have 生活 torn in two, and 中国人 must not shed a bare 人. Dropping
+that while moving to scoring re-broke exactly those two cases.
+
 #### The daily proverb is chosen, not generated
 
 It is a **completion reward**, shown in exactly two places, both of them "you have finished"
@@ -445,6 +465,13 @@ Three things the format demands (`lib/lrc.ts`):
   segmenter in one request and `splitSentences` treats a newline as a hard boundary — so
   lines mostly survive one-to-one. Mostly is not enough: a line containing `.` splits further
   and shifts every later line by one, highlighting the wrong words for the rest of the song.
+
+**Speed and loop are study controls, not player chrome.** `RATES` is weighted below normal
+(0.5–1.5, not symmetric): native-speed audio is the thing a learner cannot follow, and 0.75×
+is often the difference between a wall of sound and words. `playbackRate` is a DOM property
+with no React attribute behind it AND browsers reset it to 1 whenever the source changes, so
+it is applied in an effect keyed on `audioUrl` and re-applied on `loadedmetadata` — without
+that second half, picking a new track silently snaps the speed back to 1.
 
 Sync uses `timeupdate`, not `requestAnimationFrame`: it fires about four times a second,
 which is far finer than a lyric line changes, costs nothing while paused, and is not
