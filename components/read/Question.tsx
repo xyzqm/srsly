@@ -11,6 +11,7 @@ import { needsSpaceBefore, tokensToText } from '@/lib/tokenText';
 import { useLanguage } from '@/lib/LanguageContext';
 import type { ReadingHint } from '@/lib/readings';
 import type { ClaimsStore } from '@/hooks/useClaims';
+import { aiHeaders } from '@/lib/userApiKey';
 
 interface Props {
   question: Q;
@@ -122,7 +123,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
     try {
       const res = await fetch('/api/grade-response', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: aiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           question: questionText,
           model: question.model,

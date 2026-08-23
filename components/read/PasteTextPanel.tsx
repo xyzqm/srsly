@@ -11,6 +11,12 @@ import { MAX_PASTE_CHARS } from '@/lib/constants';
 import { mismatchWarning } from '@/lib/languageMismatch';
 
 interface Props {
+  /**
+   * Start expanded, for the card chooser on an empty tab. The panel still owns its open state
+   * from then on — this only seeds it, so the collapsed "+ …" button keeps working everywhere
+   * else exactly as before.
+   */
+  startOpen?: boolean;
   language: LanguageCode;
   deck: DeckWord[];
   /** Words ready for review right now — the blank candidates, keyed as tokens resolve. */
@@ -65,8 +71,8 @@ function splitTitle(text: string, manual: string): { title: string; body: string
   return { title: label, body: text };
 }
 
-export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit }: Props) {
-  const [open, setOpen] = useState(false);
+export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false}: Props) {
+  const [open, setOpen] = useState(startOpen);
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
@@ -170,13 +176,13 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
 
   if (!open) {
     return (
-      <div className="mb-4">
+      <div>
         <button
           onClick={() => setOpen(true)}
           className="cursor-pointer transition-all duration-150"
           style={{ ...mono, fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', background: 'none', border: '1px dashed var(--line)', borderRadius: 8, padding: '9px 15px', color: 'var(--ink-soft)' }}
         >
-          + Read your own text
+          + Paste text
         </button>
       </div>
     );
@@ -185,7 +191,7 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
   return (
     <div className="rounded-[11px] px-5 py-4 mb-4" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
       <div className="flex items-center justify-between gap-3 mb-3">
-        <span style={label}>Read your own text</span>
+        <span style={label}>Paste text</span>
         <button
           onClick={() => { setOpen(false); setAnalysis(null); setError(''); }}
           className="cursor-pointer"

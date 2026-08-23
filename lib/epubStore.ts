@@ -1,4 +1,6 @@
 import type { EpubBook } from './epub';
+import type { LanguageCode } from './types';
+import { languageFromTag } from './languageMismatch';
 
 /**
  * Books live in IndexedDB, not localStorage.
@@ -24,6 +26,16 @@ export interface StoredBook extends EpubBook {
   addedAt: string;
   /** Where the reader got to: chapter index and section index within it. */
   position?: { chapter: number; section: number };
+  /**
+   * The language being STUDIED when this book was added — deliberately not the publisher's
+   * `dc:language`, which is unreliable enough to have its own essay in lib/languageMismatch.ts
+   * (a Chinese book may declare `简体中文`, or nothing at all). This is a value we chose, so
+   * it can be trusted to scope the shelf.
+   *
+   * Undefined on books added before the field existed. Those stay visible in every language
+   * rather than vanishing from the shelf, and are stamped on first read.
+   */
+  studyLanguage?: LanguageCode;
 }
 
 function open(): Promise<IDBDatabase> {
@@ -58,9 +70,32 @@ export async function putBook(book: StoredBook): Promise<void> {
   await run('readwrite', s => s.put(book));
 }
 
-export async function listBooks(): Promise<StoredBook[]> {
+/**
+ * Which shelf a book belongs on, or undefined when there is genuinely no way to tell.
+ *
+ * `studyLanguage` is our own stamp and always wins. Failing that we will accept the
+ * publisher's `dc:language`, but ONLY when it parses as a tag for a language we teach — which
+ * is what `languageFromTag` checks and what keeps `简体中文` and `Chinese` out of this. That
+ * is enough to scope most books added before the stamp existed, so a Chinese novel does not
+ * sit on the Spanish shelf waiting to be opened once before it settles.
+ */
+export function shelfLanguage(book: StoredBook): LanguageCode | undefined {
+  return book.studyLanguage ?? languageFromTag(book.language);
+}
+
+/**
+ * The shelf for one study language, newest first.
+ *
+ * Filtering here rather than at the call site keeps the legacy rule in one place: a book we
+ * cannot place at all shows on every shelf rather than vanishing, and is stamped the first
+ * time it is read. Omit `language` to get every book.
+ */
+export async function listBooks(language?: LanguageCode): Promise<StoredBook[]> {
   const all = await run<StoredBook[]>('readonly', s => s.getAll());
-  return all.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+  const mine = language
+    ? all.filter(b => { const l = shelfLanguage(b); return l === undefined || l === language; })
+    : all;
+  return mine.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 }
 
 export async function getBook(id: string): Promise<StoredBook | undefined> {

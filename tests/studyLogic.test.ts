@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isActive, isDueToday, isReadyNow, todayStr, dateInDays } from '@/lib/deck';
-import { selectClozeTargets } from '@/lib/clozeTargets';
+import { selectClozeTargets, MIN_BLANKS } from '@/lib/clozeTargets';
 import type { DeckWord, Sentence, PassageToken } from '@/lib/types';
 
 const card = (over: Partial<DeckWord> = {}): DeckWord =>
@@ -74,6 +74,66 @@ describe('selectClozeTargets', () => {
 
   it('blanks nothing when nothing is due', () => {
     expect(selectClozeTargets(text, deck, new Set(), 15, 20).words.size).toBe(0);
+  });
+
+  /**
+   * Density is a SHARE, so the count scales with the passage and is not clamped. A ceiling was
+   * tried here and removed: a share that stops scaling past a threshold is not a share, and it
+   * silently overrode anyone who set the density high.
+   */
+  const longPassage = (n: number) => {
+    const sents: Sentence[] = [];
+    const words: DeckWord[] = [];
+    const dueMany = new Set<string>();
+    for (let i = 0; i < n; i++) {
+      const w = `w${i}`;
+      dueMany.add(w);
+      words.push(card({ h: w, reviews: 3, stability: 4 }));
+      sents.push(sentence(tok('el'), tok(w, true), tok('muy'), tok('bien')));
+    }
+    return { sents, words, dueMany };
+  };
+
+  it('never clamps the blank count — the share keeps scaling', () => {
+    const { sents, words, dueMany } = longPassage(60);
+    const { blanks, budget, tokens } = selectClozeTargets(sents, words, dueMany, 15, 100);
+    expect(budget).toBe(Math.round(tokens * 0.15));
+    expect(blanks).toBeGreaterThan(20);          // the old ceiling was 12
+  });
+
+  it('a longer passage yields proportionally more blanks at the same density', () => {
+    const small = longPassage(20);
+    const big = longPassage(80);
+    const a = selectClozeTargets(small.sents, small.words, small.dueMany, 15, 500).blanks;
+    const b = selectClozeTargets(big.sents, big.words, big.dueMany, 15, 500).blanks;
+    expect(b).toBeGreaterThan(a * 2);
+  });
+
+  it('density is the only control over how many blanks there are', () => {
+    const { sents, words, dueMany } = longPassage(60);
+    const at5 = selectClozeTargets(sents, words, dueMany, 5, 500).budget;
+    const at15 = selectClozeTargets(sents, words, dueMany, 15, 500).budget;
+    const at40 = selectClozeTargets(sents, words, dueMany, 40, 500).budget;
+    expect(at15).toBe(at5 * 3);
+    expect(at40 / at15).toBeCloseTo(40 / 15, 1);
+  });
+
+  // The cap and the all-or-nothing rule can deadlock: 25 occurrences never fit a small budget.
+  it('still blanks the most-owed word when it alone exceeds the budget', () => {
+    const repeated: Sentence[] = [];
+    for (let i = 0; i < 25; i++) {
+      repeated.push(sentence(tok('el'), tok('camarón'), tok('playa', true)));
+    }
+    const one = new Set(['playa']);
+    const { words, blanks } = selectClozeTargets(
+      repeated, [card({ h: 'playa', reviews: 3, stability: 4 })], one, 1, 20);
+    expect(words.has('playa')).toBe(true);
+    expect(blanks).toBe(25);
+  });
+
+  it('a very short passage still gets MIN_BLANKS worth of budget', () => {
+    const { budget } = selectClozeTargets(text, deck, due, 1, 20);
+    expect(budget).toBe(MIN_BLANKS);
   });
 
   it('does not invent blanks for words absent from the text', () => {

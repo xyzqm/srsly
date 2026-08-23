@@ -31,6 +31,24 @@ import { RECOMMENDED_BLANK_DENSITY } from './languageConfig';
 /** Short passages still get a usable number of blanks. */
 export const MIN_BLANKS = 3;
 
+/**
+ * THERE IS NO MAXIMUM. Blanks are `tokens × density`, whatever that comes to.
+ *
+ * A ceiling was tried and removed. It was anchored on the count the recommended density was
+ * calibrated against (~11 blanks in 76 words), which sounds principled and is not: density is
+ * a SHARE, and a share that stops scaling past a threshold is no longer a share. Settings →
+ * Blank density is the only control over how much of a passage is blanked, and its help text
+ * promises exactly that — a cap silently overrode anyone who set it high, and did so hardest
+ * on the longest passages, which is where an explicit setting deserves most to be believed.
+ *
+ * A book section is long, but it is a SECTION: `epubChunk` splits chapters into slices and
+ * each one gets the density applied on its own, so the learner never faces a whole novel's
+ * worth at once. Length is handled by chunking, not by capping.
+ *
+ * MIN_BLANKS and the most-owed fallback below both still apply. They only ever raise the
+ * count on a passage too short or too repetitive to honour the share, and never lower it.
+ */
+
 export interface ClozeTargetResult {
   /** The words to blank, keyed as tokens resolve (surface form, base form, or anchor compound). */
   words: Set<string>;
@@ -115,6 +133,25 @@ export function selectClozeTargets(
     }
     words.add(word);
     blanks += n;
+  }
+
+  /**
+   * A word is blanked in every one of its occurrences or in none of them — blanking `playa`
+   * in the third sentence while printing it in the first just hands over the answer. That
+   * rule and a tight budget can deadlock: a word occurring more times than the budget never
+   * fits, and if it is the only candidate the section comes out with no blanks at all.
+   *
+   * Zero practice is the worse outcome, so the most-owed word goes in regardless. It is also
+   * the cheap kind of over-budget — the same word again, not another unknown.
+   */
+  if (words.size === 0 && ranked.length > 0) {
+    const first = ranked[0];
+    const card = deck.find(d => d.h === first);
+    if (!card || !isNewCard(card) || newLeft > 0) {
+      words.add(first);
+      blanks = cost.get(first)!;
+      heldBackByDensity = Math.max(0, heldBackByDensity - 1);
+    }
   }
 
   return { words, blanks, tokens, budget, candidates: cost.size, heldBackByBudget, heldBackByDensity };

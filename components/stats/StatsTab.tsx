@@ -5,6 +5,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import PieChart from './PieChart';
 import MilestoneRing from './MilestoneRing';
+import Achievements from './Achievements';
 import ReviewHeatmap from './ReviewHeatmap';
 import FutureLoad from './FutureLoad';
 import LevelProgress from './LevelProgress';
@@ -37,6 +38,8 @@ export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
       </p>
 
       <MilestoneRing deck={deck} language={language} />
+
+      <Achievements />
 
       <WeakWords deck={deck} onDrill={onDrillWeak} />
 

@@ -33,14 +33,20 @@ import { mismatchWarning } from '@/lib/languageMismatch';
  */
 
 interface Props {
+  /**
+   * Start expanded, for the card chooser on an empty tab. The panel still owns its open state
+   * from then on — this only seeds it, so the collapsed "+ …" button keeps working everywhere
+   * else exactly as before.
+   */
+  startOpen?: boolean;
   language: LanguageCode;
   deck: DeckWord[];
 }
 
 const mono = { fontFamily: 'var(--f-mono)' as const };
 
-export default function LyricPlayer({ language, deck }: Props) {
-  const [open, setOpen] = useState(false);
+export default function LyricPlayer({ language, deck, startOpen = false}: Props) {
+  const [open, setOpen] = useState(startOpen);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [title, setTitle] = useState('');
   const [tokens, setTokens] = useState<PassageToken[][][]>([]);   // line → sentences → tokens

@@ -2,11 +2,21 @@ import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, levelLabel } from '@/lib/languageConfig';
+import { looksLikeAnthropicKey, USER_KEY_HEADER } from '@/lib/server/generator';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const client = new Anthropic();
+/**
+ * Built per request, not at module scope, so a learner's own key can be used for their own
+ * request. A module-level client is fixed at import time and would silently bill every
+ * learner's example sentences to the operator.
+ */
+function clientFor(req: NextRequest): Anthropic {
+  const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
+  if (looksLikeAnthropicKey(userKey)) return new Anthropic({ apiKey: userKey });
+  return new Anthropic({ apiKey: process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY });
+}
 
 interface WordInput { h: string; p: string; m: string; }
 
@@ -49,7 +59,7 @@ Output format:
 {"sentences": {"<word>": ["sentence1", "sentence2", "sentence3"]}}`;
 
   try {
-    const response = await client.messages.create({
+    const response = await clientFor(req).messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],

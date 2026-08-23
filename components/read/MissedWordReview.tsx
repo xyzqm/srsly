@@ -2,6 +2,7 @@
 import CharacterBreakdown from './CharacterBreakdown';
 import { useState, useEffect, useRef } from 'react';
 import type { LanguageCode } from '@/lib/types';
+import { aiHeaders } from '@/lib/userApiKey';
 
 export interface MissedWord { h: string; p: string; m: string; }
 
@@ -227,7 +228,7 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
       try {
         const res = await fetch('/api/missed-review', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: aiHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ words, language, level }),
         });
         const data = await res.json();

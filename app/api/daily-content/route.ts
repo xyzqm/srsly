@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { consumeAiCredit } from '@/lib/supabase/server';
 import { stubDailyContent, stubEnabled } from '@/lib/server/stubContent';
 import type { LanguageCode } from '@/lib/types';
@@ -7,6 +6,8 @@ import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, d
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
+import { passageTopic, passageForm } from '@/lib/passageTheme';
+import { userKeyGenerator, serverKeyGenerator, looksLikeAnthropicKey, USER_KEY_HEADER, type Generator } from '@/lib/server/generator';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
 
@@ -120,8 +121,10 @@ function extractJson(raw: string): Record<string, unknown> {
  * complete result as `json`, plus the last parseable result as `best` so callers
  * can degrade gracefully instead of failing outright.
  */
+const JSON_ONLY_SYSTEM = 'You output only valid JSON. No markdown, no code blocks, no explanations.';
+
 async function generateJson(
-  client: Anthropic,
+  generator: Generator,
   prompt: string,
   isComplete: (j: Record<string, unknown>) => boolean,
   label: string,
@@ -130,13 +133,7 @@ async function generateJson(
   let best: Record<string, unknown> | null = null;
   for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
     try {
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 16000,
-        system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+      const raw = await generator.complete(JSON_ONLY_SYSTEM, prompt);
       const parsed = extractJson(raw);
       best = parsed;
       if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
@@ -154,11 +151,32 @@ export async function POST(req: NextRequest) {
   // SRSLY_STUB_AI=1 serves canned content and needs no key — see lib/server/stubContent.ts.
   // Checked before the key so the reading tab is workable with no credentials at all.
   const stub = stubEnabled();
-  const apiKey = process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!stub && (!apiKey || apiKey === 'your-api-key-here')) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 503 });
+  const serverKey = process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY;
+
+  /**
+   * The learner's own key, if they connected one in Settings.
+   *
+   * Used for THIS REQUEST ONLY and never written anywhere — not to a log, not to a database,
+   * not into an error response. It arrives on a header rather than in the body or the URL
+   * because URLs are routinely logged by proxies and platforms, and a logged credential is a
+   * leaked one.
+   */
+  const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
+  const hasUserKey = looksLikeAnthropicKey(userKey);
+
+  const serverKeyUsable = !!serverKey && serverKey !== 'your-api-key-here';
+  if (!stub && !hasUserKey && !serverKeyUsable) {
+    return NextResponse.json({
+      error: 'no_api_key',
+      message: 'Add your own Anthropic API key in Settings to generate passages — or read your own text, a book or audio, which needs no key.',
+    }, { status: 503 });
   }
-  const client = new Anthropic({ apiKey: apiKey ?? 'stub' });
+
+  // The learner's key wins when present: they asked to pay for their own generations, so
+  // there is no reason to spend the operator's.
+  const generator = hasUserKey
+    ? userKeyGenerator(userKey)
+    : serverKeyGenerator(serverKey ?? 'stub');
 
   let words: { h: string; p: string; m: string; compounds?: string[] }[];
   let hskLevel: number;
@@ -197,8 +215,12 @@ export async function POST(req: NextRequest) {
 
   // Meter generation: guests get a small budget, signed-in users are unlimited. Checked
   // (and decremented) before we spend any Anthropic tokens. No-op when Supabase is off.
-  // The stub spends nothing, so it must not decrement anyone's budget either.
-  const credit = stub ? { allowed: true, remaining: null } : await consumeAiCredit();
+  //
+  // The meter exists to ration the OPERATOR'S tokens. A learner using their own key is
+  // spending their own money and must never be rationed on top of it, and the stub spends
+  // nothing at all — metering either is charging for something we did not pay for.
+  const metered = !stub && generator.operatorPays;
+  const credit = metered ? await consumeAiCredit() : { allowed: true, remaining: null };
   if (!credit.allowed) {
     return NextResponse.json({ error: 'guest_limit', message: GUEST_LIMIT_MSG, aiRemaining: 0 }, { status: 402 });
   }
@@ -218,17 +240,11 @@ export async function POST(req: NextRequest) {
   const langName = langConfig.name;
   const levelName = levelLabel(language, hskLevel);
 
-  // Pick a daily theme so passages vary across days even with the same vocab words
-  const DAILY_THEMES = [
-    'travel and transportation', 'food and restaurants', 'work and career',
-    'family and relationships', 'health and exercise', 'technology and the internet',
-    'nature and the environment', 'shopping and money', 'education and learning',
-    'art and entertainment', 'city life and neighborhoods', 'weather and seasons',
-    'friendship and social life', 'hobbies and free time', 'history and culture',
-  ];
+  // What the passage is about, and what shape it takes. Seeded on day AND language AND level
+  // — see lib/passageTheme.ts for why the old date-only seed repeated itself.
   const today = new Date().toISOString().slice(0, 10);
-  const dayHash = today.split('-').reduce((acc, n) => acc + parseInt(n), 0);
-  const dailyTheme = DAILY_THEMES[(dayHash + themeOffset) % DAILY_THEMES.length];
+  const dailyTheme = passageTopic(today, language, hskLevel, themeOffset);
+  const dailyForm = passageForm(today, language, hskLevel, themeOffset);
 
   // Split words into batches of batchSize (the user's configured words-per-passage) —
   // each batch gets its own passage.
@@ -378,6 +394,7 @@ glossed — the dictionary's coverage of proper nouns is incomplete.`.trim();
 
 LEVEL: ${levelName} (${levelDesc})
 TODAY'S THEME: ${dailyTheme} — the passage must revolve around this theme.
+FORM: write it as ${dailyForm}. Same vocabulary, but the shape of the text should match this.
 ${words.length > 0 ? `\nWORDS TO USE:\n${wordList}${readingNotes}` : `\nNo specific vocabulary required — choose naturally appropriate words for the level and theme.`}
 
 Generate a JSON object with EXACTLY this structure:
@@ -422,6 +439,9 @@ REQUIREMENTS:
 1. Exactly 1 passage in the "passages" array.
 2. ${sentenceCount}–${sentenceCount + 2} sentences.
 3. Difficulty appropriate for ${levelName}: ${difficultyNote}.
+4. "title" is a title YOU WRITE for this passage — 2–5 words, in ${langName}, describing what
+   it is about. "WORDS" above is a placeholder for the format, never a value: returning the
+   literal string "WORDS" as the title is invalid output.
 
 Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`;
 
@@ -681,7 +701,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
    */
   const stubbed = stub ? stubDailyContent(language, words) : null;
   async function reply(prompt: string, complete: (j: Record<string, unknown>) => boolean, tag: string) {
-    if (!stubbed) return generateJson(client, prompt, complete, tag as Parameters<typeof generateJson>[3]);
+    if (!stubbed) return generateJson(generator, prompt, complete, tag as Parameters<typeof generateJson>[3]);
     const json =
       tag === 'passage'   ? { passages: [{ title: stubbed.title, sentences: stubbed.sentences, contextualMeanings: stubbed.contextualMeanings }] }
     : tag === 'questions' ? { questions: stubbed.questions }

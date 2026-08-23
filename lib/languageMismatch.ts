@@ -1,5 +1,5 @@
 import type { LanguageCode } from './types';
-import { getLanguageConfig } from './languageConfig';
+import { getLanguageConfig, SUPPORTED_LANGUAGES } from './languageConfig';
 
 /**
  * Is this text in a different language from the one being studied?
@@ -20,16 +20,48 @@ const HAN = /[㐀-鿿豈-﫿]/;
 const KANA = /[぀-ヿ]/;
 const LATIN = /[A-Za-zÀ-ÖØ-öø-ÿ]/;
 
+/** A language tag's primary subtag: two or three ASCII letters, before any region or script. */
+const PRIMARY_SUBTAG = /^[a-z]{2,3}$/;
+
 /**
  * The publisher's own `dc:language`, when there is one.
  *
  * Compared on the PRIMARY SUBTAG only: `es-419`, `es-MX` and `es` are one language for our
  * purposes, and a book tagged `en-GB` against a Spanish study session is the case worth
- * catching. Absent or unparseable metadata returns false — a missing tag is not evidence.
+ * catching. Absent metadata returns false — a missing tag is not evidence.
+ *
+ * TWO THINGS THIS HAS TO GET RIGHT, both of which it once got wrong:
+ *
+ * `dc:language` IS OFTEN NOT A LANGUAGE TAG. The EPUB spec only *recommends* RFC 5646, and
+ * real publishers write display names — a Chinese edition of Le Petit Prince declares
+ * `简体中文`, others `Chinese` or `English (US)`. The old test was `tag.length >= 2 &&
+ * tag !== study`, which reads as obviously correct and warned that a Chinese book was not
+ * Chinese. So the shape is checked first: anything that is not a plausible primary subtag is
+ * not evidence either way, and we fall through to the script check, which reads the prose
+ * itself and stays correctly quiet.
+ *
+ * A LANGUAGE HAS MORE THAN ONE CODE. `zho`, `chi` and `cmn` are all Chinese; comparing
+ * against the bare two-letter `LanguageCode` called every one of them a mismatch. The full
+ * set lives on the language config, per CLAUDE.md's rule about where languages differ.
  */
 export function declaredMismatch(declared: string | undefined, study: LanguageCode): boolean {
   const tag = (declared ?? '').trim().toLowerCase().split(/[-_]/)[0];
-  return tag.length >= 2 && tag !== study;
+  if (!PRIMARY_SUBTAG.test(tag)) return false;
+  return !getLanguageConfig(study).langTags.includes(tag);
+}
+
+/**
+ * Which language we study, if `declared` names one of them — otherwise undefined.
+ *
+ * The same parse as above, read the other way round: `declaredMismatch` asks "does this
+ * contradict what I am studying", this asks "does this identify a language I study at all".
+ * A display name, a junk value, or a language the app does not teach all return undefined,
+ * which callers must treat as "no idea" rather than as "not this one".
+ */
+export function languageFromTag(declared: string | undefined): LanguageCode | undefined {
+  const tag = (declared ?? '').trim().toLowerCase().split(/[-_]/)[0];
+  if (!PRIMARY_SUBTAG.test(tag)) return undefined;
+  return SUPPORTED_LANGUAGES.find(c => c.langTags.includes(tag))?.code;
 }
 
 /**

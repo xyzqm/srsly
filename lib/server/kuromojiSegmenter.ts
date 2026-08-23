@@ -45,6 +45,9 @@ interface FusedToken {
   reading: string;
   baseForm?: string;
   isPunct: boolean;
+  /** kuromoji's part of speech for the HEAD morpheme. Carried so meaning lookup can tell a
+   *  grammatical particle from a noun that happens to be spelled the same way. */
+  pos?: string;
 }
 
 // Grammaticalized auxiliary/suffix verb usage (いる/おく/しまう/くれる/もらう in ている/ておく/…,
@@ -72,12 +75,12 @@ function fuseMorphemes(morphs: kuromoji.IpadicFeatures[]): FusedToken[] {
   while (i < morphs.length) {
     const m = morphs[i];
     if (m.pos === '記号') {
-      out.push({ surface: m.surface_form, reading: kataToHira(m.reading || m.surface_form), isPunct: true });
+      out.push({ surface: m.surface_form, reading: kataToHira(m.reading || m.surface_form), isPunct: true, pos: m.pos });
       i++;
       continue;
     }
     if (!isRunStart(m)) {
-      out.push({ surface: m.surface_form, reading: kataToHira(m.reading || m.surface_form), isPunct: false });
+      out.push({ surface: m.surface_form, reading: kataToHira(m.reading || m.surface_form), isPunct: false, pos: m.pos });
       i++;
       continue;
     }
@@ -95,7 +98,7 @@ function fuseMorphemes(morphs: kuromoji.IpadicFeatures[]): FusedToken[] {
       reading += kataToHira(n.reading || n.surface_form);
       j++;
     }
-    out.push({ surface, reading, baseForm: headBase !== surface ? headBase : undefined, isPunct: false });
+    out.push({ surface, reading, baseForm: headBase !== surface ? headBase : undefined, isPunct: false, pos: m.pos });
     i = j;
   }
   return out;
@@ -131,7 +134,58 @@ function mergeKnownRuns(tokens: FusedToken[], overrides: Map<string, DictOverrid
 
 const jmdict = jmdictData as unknown as Record<string, { p: string; m: string }>;
 
-function resolveMeaning(baseForm: string | undefined, surface: string): string {
+/**
+ * Grammatical words get their FUNCTION, not a dictionary entry.
+ *
+ * JMdict is keyed by spelling, and Japanese particles are kana that also spell ordinary nouns.
+ * A plain lookup therefore glossed the particle に as 荷 — "load; baggage; cargo" — in
+ * `六時に起きます`, and で, と, か and かい all have the same problem. A learner tapping the
+ * commonest word in the sentence got a confidently wrong noun, which is worse than nothing:
+ * it is unverifiable for exactly the beginner most likely to tap it.
+ *
+ * kuromoji already knows these are 助詞/助動詞, so the fix is to stop asking the dictionary and
+ * answer from grammar. The set is closed and small, which is what makes this tractable where
+ * the same problem in a content word would not be.
+ */
+const PARTICLE_GLOSS: Record<string, string> = {
+  は: 'topic marker — "as for …"',
+  が: 'subject marker; but',
+  を: 'object marker',
+  に: 'to, at, in — direction, time, or indirect object',
+  へ: 'to, toward — direction',
+  で: 'at, in — where an action happens; by means of',
+  と: 'and; with; quotation marker',
+  の: 'possessive marker; noun linker',
+  も: 'also, too; even',
+  や: 'and (a non-exhaustive list)',
+  か: 'question marker; or',
+  から: 'from; because',
+  まで: 'until, as far as',
+  より: 'than; from',
+  ね: 'right? — seeking agreement',
+  よ: 'you know — asserting',
+  な: 'casual emphasis; negative command',
+  ば: 'if — conditional',
+  ので: 'because, since',
+  のに: 'even though',
+  けど: 'but, although',
+  しか: 'only (with a negative)',
+  だけ: 'only, just',
+  ずつ: 'each, apiece',
+  ながら: 'while doing',
+  たり: 'doing things like',
+};
+
+/** kuromoji POS tags for words whose meaning is grammatical rather than lexical. */
+const GRAMMATICAL_POS = new Set(['助詞', '助動詞']);
+
+function resolveMeaning(baseForm: string | undefined, surface: string, pos?: string): string {
+  if (pos && GRAMMATICAL_POS.has(pos)) {
+    // Known particle → its function. Unknown one → NOTHING, deliberately: an unrecognised
+    // grammatical word is exactly the case where JMdict's homophone noun would be wrong, so
+    // falling through to it is the bug, not the fallback.
+    return PARTICLE_GLOSS[baseForm ?? surface] ?? PARTICLE_GLOSS[surface] ?? '';
+  }
   const key = baseForm ?? surface;
   return jmdict[key]?.m ?? jmdict[surface]?.m ?? JLPT_VOCAB[key]?.meaning ?? JLPT_VOCAB[surface]?.meaning ?? '';
 }
@@ -151,7 +205,7 @@ export async function segmentJa(text: string, overrides: Map<string, DictOverrid
     if (t.isPunct) return [t.surface];
     const override = overrides.get(t.baseForm ?? t.surface) ?? overrides.get(t.surface);
     const reading = override?.p ?? t.reading;
-    const meaning = override?.m ?? resolveMeaning(t.baseForm, t.surface);
+    const meaning = override?.m ?? resolveMeaning(t.baseForm, t.surface, t.pos);
     return t.baseForm ? [t.surface, reading, meaning, t.baseForm] : [t.surface, reading, meaning];
   });
 }

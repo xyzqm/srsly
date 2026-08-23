@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { isAnonymousGuest } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
+import { looksLikeAnthropicKey, USER_KEY_HEADER } from '@/lib/server/generator';
 
 /** Keyword-match fallback — used when no API key or Claude fails. */
 function keywordFallback(response: string, key: string[], langName: string): {
@@ -26,7 +27,12 @@ function keywordFallback(response: string, key: string[], langName: string): {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY;
+  // The learner's own key wins when they connected one — see lib/server/generator.ts.
+  // Used for this request only; never logged, stored, or echoed back.
+  const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
+  const apiKey = looksLikeAnthropicKey(userKey)
+    ? userKey
+    : (process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY);
 
   let question: string;
   let model: string;

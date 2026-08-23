@@ -15,6 +15,7 @@ import { loadLevelTable } from '@/lib/curriculum';
 import { levelStandings, wordsToUnlockNext, gateFor, levelAfter, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
+import ApiKeyPanel from './ApiKeyPanel';
 
 const RETENTION_PRESETS = [
   { value: 0.70, label: '70%', desc: 'Relaxed — longer intervals, more forgetting accepted' },
@@ -386,6 +387,9 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         </>
       )}
 
+      {/* ── AI passages (bring your own key) ──────────────────────────────── */}
+      <ApiKeyPanel />
+
       {/* ── Languages ─────────────────────────────────────────────────────── */}
       <SectionLabel>Languages</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
@@ -433,6 +437,12 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
 
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
       <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
+      <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 10 }}>
+        Your level tells srsly how hard to make the passages it writes for you, and marks
+        roughly where you are. <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>It is
+        not a ladder you have to climb.</strong> Reading your own text, a book or audio ignores
+        it completely — read whatever you actually want to read, at any level, from day one.
+      </p>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 12 }}>
         A level opens once you hold {Math.round(RETAINED_FRACTION * 100)}% of the one below it
         for a week or more — or as soon as you pass its test. Click a locked level to take

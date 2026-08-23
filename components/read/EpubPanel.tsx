@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import { buildEpubSection } from '@/lib/epubSection';
 import { setActiveBookId, getActiveBookId } from '@/lib/epubProgress';
@@ -25,6 +25,12 @@ import { bookId, putBook, listBooks, removeBook, savePosition, type StoredBook }
  */
 
 interface Props {
+  /**
+   * Start expanded, for the card chooser on an empty tab. The panel still owns its open state
+   * from then on — this only seeds it, so the collapsed "+ …" button keeps working everywhere
+   * else exactly as before.
+   */
+  startOpen?: boolean;
   language: LanguageCode;
   deck: DeckWord[];
   dueWords: Set<string>;
@@ -34,8 +40,8 @@ interface Props {
 
 const mono = { fontFamily: 'var(--f-mono)' as const };
 
-export default function EpubPanel({ language, deck, dueWords, blankDensity, onCommit }: Props) {
-  const [open, setOpen] = useState(false);
+export default function EpubPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false}: Props) {
+  const [open, setOpen] = useState(startOpen);
   const [books, setBooks] = useState<StoredBook[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [chapterIdx, setChapterIdx] = useState(0);
@@ -44,8 +50,8 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
   const [dragging, setDragging] = useState(false);
 
   const refresh = useCallback(async () => {
-    try { setBooks(await listBooks()); } catch { /* no IndexedDB — the panel stays empty */ }
-  }, []);
+    try { setBooks(await listBooks(language)); } catch { /* no IndexedDB — the panel stays empty */ }
+  }, [language]);
   useEffect(() => { if (open) void refresh(); }, [open, refresh]);
 
   /**
@@ -55,6 +61,26 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
    * the moment you open the tab would be presumptuous and would spend a segment call; the
    * "Next section" button on the results screen is the thing that actually moves you on.
    */
+  /**
+   * Drop the open book when the study language changes.
+   *
+   * `activeId` is component state and ReadingSources renders this panel without a `key`, so a
+   * Chinese novel stayed selected — and readable — after switching to Spanish, where every one
+   * of its words would be looked up in a Spanish dictionary. Clearing it lets the restore
+   * effect below pick up `srsly-epub-active-{lang}`, which has been per-language all along.
+   *
+   * Ref-guarded so it does not fire on mount, and declared BEFORE the restore effect so that
+   * within one commit the clear happens first and the restore sees a clean slate.
+   */
+  const prevLanguage = useRef(language);
+  useEffect(() => {
+    if (prevLanguage.current === language) return;
+    prevLanguage.current = language;
+    setActiveId(null);
+    setChapterIdx(0);
+    setError('');
+  }, [language]);
+
   useEffect(() => {
     if (!open || activeId) return;
     const remembered = getActiveBookId(language);
@@ -88,6 +114,7 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
         ...parsed,
         id: bookId(file.name, file.size),
         addedAt: new Date().toISOString(),
+        studyLanguage: language,
       };
       await putBook(stored);
       await refresh();
@@ -113,6 +140,9 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
       const passage = await buildEpubSection(book, chapter, section, { language, deck, dueWords, blankDensity });
       if (!passage) return;
       await savePosition(book.id, chapter, section);
+      // A book added before `studyLanguage` existed shows on every shelf; reading it is the
+      // first unambiguous evidence of which one it belongs to.
+      if (!book.studyLanguage) await putBook({ ...book, studyLanguage: language });
       setActiveBookId(language, book.id);   // so the next visit reopens here
       await refresh();
       onCommit(passage);

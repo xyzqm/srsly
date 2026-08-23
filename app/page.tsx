@@ -203,6 +203,7 @@ function AppShell() {
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => changeTab('vocab')}
+              onNavigateSettings={() => changeTab('settings')}
             />
           </TabPanel>
           {/* Kept alive too. A flashcard session holds its queue and its results in local

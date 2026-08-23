@@ -9,6 +9,7 @@ import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import DailyProverb from '@/components/read/DailyProverb';
+import AchievementToast from '@/components/stats/AchievementToast';
 import {
   fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
   DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings,
@@ -296,6 +297,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
             left-aligned inside the centred block, because a proverb is a sentence and
             centred sentences are hard to read. */}
         <div className="mx-auto text-left" style={{ maxWidth: 440 }}>
+          <AchievementToast />
           <DailyProverb showRule={false} />
         </div>
       </div>

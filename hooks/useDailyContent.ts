@@ -11,6 +11,7 @@ import { getSrsSettings } from '@/lib/fsrs';
 import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { tokensToText } from '@/lib/tokenText';
+import { aiHeaders } from '@/lib/userApiKey';
 
 export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
 
@@ -676,7 +677,7 @@ export function useDailyContent(
         try {
           const res = await fetch('/api/daily-content', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: aiHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
               hskLevel,
@@ -831,7 +832,7 @@ export function useDailyContent(
 
       const res = await fetch('/api/daily-content', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: aiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           words: selectedWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,
@@ -843,6 +844,9 @@ export function useDailyContent(
       });
 
       if (res.status === 402) { markGuestAiExhausted(); setGuestLimited(true); return; }
+      // No key anywhere — neither the learner's nor the server's. Surface it as the no-key
+      // state so the tab offers Settings, rather than as a generic failure they cannot act on.
+      if (res.status === 503) { setStatus('no-key'); return; }
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.detail ?? errBody.error ?? `HTTP ${res.status}`);
@@ -893,7 +897,7 @@ export function useDailyContent(
 
       const res = await fetch('/api/daily-content', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: aiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           words: vocabWords.map(w => ({ h: w.h, p: w.p, m: w.m, compounds: w.compounds })),
           hskLevel,

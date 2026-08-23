@@ -74,7 +74,49 @@ It fires on the explicit flag alone and is **never** a fallback for a missing ke
 call; content the learner cannot tell apart from real output is what this codebase refuses
 everywhere else.
 
-AI-generated content requires `ANTHROPIC_API_KEY` in `.env.local`. Without it (or once a guest exhausts their free-generation budget), the ReadTab shows a "no API key" / limit-reached warning with no passage underneath — there is no static fallback content.
+Generation uses the learner's own key (above); `SRSLY_API_KEY` / `ANTHROPIC_API_KEY` in
+`.env.local` is the operator-funded fallback for local development. With neither, the ReadTab
+shows a no-key state pointing at Settings and at the free reading paths — there is no static
+fallback content.
+
+**Generation is bring-your-own-key.** srsly is free to run and free to use; the ONE thing that
+costs money is having a new passage written, so that feature uses the learner's own Anthropic
+key. They pay Anthropic directly (~1c a passage) and the operator pays nothing.
+
+`lib/userApiKey.ts` (client) and `lib/server/generator.ts` (server) are the two halves. Rules
+that matter:
+
+- **The key travels on a header** (`x-srsly-anthropic-key`), never in the body or the URL.
+  URLs are logged as a matter of course by proxies, CDNs and platforms, and a logged
+  credential is a leaked one. It is used for that one request and never written anywhere.
+- **`Generator.operatorPays` decides metering, not the model.** `consumeAiCredit` exists to
+  ration the OPERATOR'S tokens; a learner spending their own money must never be rationed on
+  top of it. Getting this backwards either double-charges them or gives away tokens the
+  operator is billed for.
+- **It lives in its own localStorage entry**, not in `srsly-prefs`. Prefs get exported and
+  synced as one blob in a way a credential must not, and a key belongs to the device it was
+  typed on. It is masked (`sk-ant-…7f3a`) whenever displayed.
+- **The no-key state is not a paywall and must not read like one.** Reading your own text, an
+  EPUB or audio needs no key and is most of the app — `/api/segment-text` makes NO model call
+  in any language. The empty state says so and offers a route to Settings, because "Generate"
+  cannot succeed there and a button that reliably fails is worse than none.
+
+Three routes spend: `daily-content`, `grade-response`, `missed-review`. All three prefer the
+learner's key and fall back to the server's. `missed-review` builds its client PER REQUEST for
+this reason — a module-scoped client is fixed at import time and would silently bill every
+learner's example sentences to the operator.
+
+An **Ollama** generator was built and measured, then removed. Recording why so it is not
+rediscovered as a good idea: it works (5/5 usable passages from `qwen2.5:3b` on Spanish A1,
+4.6/5 target words, ~11s against Haiku's ~3.3s) but it runs on localhost, so it can only ever
+serve the machine it is installed on — it was reached for to make generation free for
+LEARNERS and cannot do that. Its one real benefit was free prompt iteration for the developer.
+BYO key solves the actual problem; a second provider for that residue was not worth carrying.
+
+That benchmark did leave one permanent fix. The schema writes `"title": "WORDS"` as a format
+placeholder, and the 3B model returned the literal string `WORDS` 2 times in 5 while Haiku
+never did — so the prompt now says explicitly that the title is one you write. **A weaker
+model is a good prompt linter.**
 
 ## Architecture
 
@@ -118,9 +160,71 @@ Fill and conversation are still generated on the day's first load: they are chea
 passage, and the Practice tab has no equivalent affordance to hang them off.
 
 The three ways to bring your own text — paste, EPUB, lyrics — live behind one
-`ReadingSources` control rather than three permanent dashed buttons. It starts expanded when
-there is nothing to read (there, the chooser IS the screen) and folds to "+ Add reading" once
-a passage arrives.
+`ReadingSources` control rather than three permanent dashed buttons. It is collapsed to
+"+ Add reading" in EVERY state, the empty tab included. It briefly started expanded when there
+was nothing to read, on the theory that the chooser IS the screen there — but that put the
+three dashed buttons back on the empty tab, which is the furniture the control exists to
+remove, and made it look like two different things depending on when you met it.
+
+**Levels are calibration and a map, NOT the goal.** This is a deliberate product answer and
+the code reflects it: a level tells the generator how hard to write and marks roughly where
+you are, and `lib/unlock.ts` gates the next band behind retention — but pasted text, EPUBs and
+audio ignore levels entirely, and always should. The app is for reading things you actually
+want to read; "advance through HSK 1–6" is what a textbook is for. Settings says so in as many
+words, because a learner who thinks the ladder is the point will not open their own book.
+
+**The empty Read tab leads with four reading cards** (`ReadingSources`), starter text first,
+with AI generation set apart below and badged `🔑 needs your API key`. Three of the four ask
+the learner to supply something — an article, a book, an audio file — so `lib/data/starterTexts.ts`
+ships three short texts per language as the fourth. They go through `/api/segment-text` exactly
+as pasted text does; a starter text IS a pasted text that happens to ship with the app.
+
+Those texts are WRITTEN, not sourced, for the same reason as `proverbs-seed.json` and the
+`beginner` sets: good graded readers are unlicensed or copyrighted, and real public-domain
+literature is almost never A1. `tests/starterTexts.test.ts` runs all twelve through the REAL
+dictionaries and segmenters — es/fr/ja resolve server-side so a gloss must land in the token,
+while zh is checked against cedict/HSK because `segmentZh` deliberately emits bare tokens for
+the client to resolve. A starter text with an unlookupable word teaches, in the first thirty
+seconds, that tapping words does not reliably work.
+
+**The empty-deck state must never say "add words in Vocab" first.** Reading is what fills the
+deck; sending a new learner to a word list inverts the loop and asks for the boring half before
+they have seen why it is worth doing. That button only returns once the deck has words but none
+are due. The earliest milestones (`first-word`, `first-steps` at 5) exist for the same reason —
+every other threshold was unreachable on day one, so the moment the app most needs to prove
+itself it had nothing to say.
+
+**Passage topics are seeded on day AND language AND level** (`lib/passageTheme.ts`). They were
+seeded on the date alone, and `themeOffset` counts passages within ONE language, so switching
+language restarted it at 0 and served the identical topic — a learner reported "the theme was
+always the same" and was right three times over. The old `dayHash` also summed the date's parts,
+so 2026-08-22 and 2026-09-21 collided outright, and consecutive days walked the list by one.
+A second axis, FORM (anecdote, diary entry, dialogue, how-to…), is seeded independently: topic
+alone still produced the same *kind* of text every time. Both are pure functions, like
+`lib/proverb.ts`, so they are tested without a network call.
+
+**Blanks have NO ceiling — the count is `tokens × density`, whatever that comes to.** A cap
+was tried and removed. It was anchored on the count the recommended density was calibrated
+against (~11 blanks in 76 words), which sounds principled and is not: `blankDensity` is a
+SHARE, and a share that stops scaling past a threshold is no longer a share. It is the only
+control over how much of a passage is blanked, and the setting's own help text promises
+exactly that — so a cap silently overrode anyone who set it high, and did so hardest on the
+longest passages, which is where an explicit setting most deserves to be believed. Length is
+handled by CHUNKING, not by capping: `epubChunk` splits a chapter into sections and each gets
+the density applied on its own, so a whole novel's worth is never on screen at once.
+
+`MIN_BLANKS` and the most-owed fallback still apply. Both only ever RAISE the count on a
+passage too short or too repetitive to honour the share, never lower it. The fallback exists
+because two rules deadlock: a word is blanked in ALL of its occurrences or none (blanking
+`playa` in the third sentence while printing it in the first hands over the answer), so a word
+occurring more times than the budget never fits — and if it is the only candidate the passage
+comes out with zero blanks.
+
+**Finishing is not gated on filling every blank**, for the same reason. With no ceiling, a long
+section against a large deck can carry a great many blanks, and requiring all of them put the
+results screen — and the proverb behind it — out of reach. Finish grades what was filled;
+empty blanks simply forgo their grades. **`NextSection` is deliberately not gated on `showResults`**
+for the same reason: the reading is the point and the blanks are practice along the way.
 
 ### AI-generated daily content
 
@@ -265,6 +369,21 @@ Three things worth knowing:
 - **A chapter is not a passage.** `/api/segment-text` caps at `MAX_PASTE_CHARS`, so
   `lib/epubChunk.ts` cuts each chapter into sections at paragraph boundaries — never
   mid-sentence, since a truncated final word is what the lemmatizer would then see.
+- **`dc:language` is not a language tag.** The spec only recommends RFC 5646 and publishers
+  write display names — a Chinese edition declares `简体中文`. `declaredMismatch` therefore
+  checks the SHAPE first (`/^[a-z]{2,3}$/` on the primary subtag) and compares against
+  `langTags` on the language config, since `zho`/`chi`/`cmn` are all Chinese. Testing
+  `tag.length >= 2 && tag !== study` reads as obviously correct and warned that a Chinese book
+  was not Chinese. Anything unparseable is **not evidence** and falls through to the script
+  check, which reads the prose itself.
+- **The shelf is per study language.** Each book carries `studyLanguage`, stamped from the
+  language being studied when it was added — never from `dc:language`. `shelfLanguage()` falls
+  back to the declared tag only when `languageFromTag` can actually parse it, so books added
+  before the field still land correctly; one it cannot place shows everywhere and is stamped on
+  first read. Switching language clears the open book (`EpubPanel` holds `activeId` in state and
+  is rendered without a `key`), letting the already-per-language `srsly-epub-active-{lang}`
+  pointer restore that language's book.
+
 - **The position has ONE home.** Chapter and section live on the book record in IndexedDB;
   localStorage holds only `srsly-epub-active-{lang}`, a pointer to which book is open. Copying
   the position into localStorage as well would be two records of one fact, and they disagree
@@ -317,7 +436,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS at ~250 kB instead of ~890 kB — if you add a language, follow the same pattern.
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS in the high 200s of kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured 287 kB for `/` at the time of writing; `npm run build` prints it. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
 
 ### Storage abstraction
 
@@ -335,6 +454,28 @@ LocalStorage keys:
 ### Theming
 
 Six themes (`paper`, `ink`, `tea`, `slate`, `bone`, `dusk`) and five fonts are toggled by setting `data-theme` and `data-font` attributes on `document.body`. CSS variables (`--ink`, `--paper`, `--card`, `--line`, `--accent`, `--f-display`, `--f-mono`, `--f-han`, etc.) drive all styling. `useTheme` manages this; `ThemeSheet` is the drawer UI. Never use hardcoded colors — always use CSS variables.
+
+#### Milestones are derived, never stored
+
+`lib/achievements.ts` computes every milestone from the deck and `srsly-srs-state` on read —
+"50 words mastered" is a count over the deck, not a counter kept in sync. That follows the
+"store only what cannot be derived" rule, and it is the feature most likely to violate it: the
+obvious build is a table of unlocked badges, which is a second record of what the deck already
+says and drifts the first time a word is deleted.
+
+Mastery is **stability, not review count**: `reviews >= n` calls eight passes on a card you keep
+forgetting mastery, and FSRS already measures the difference — `MASTERY_STABILITY_DAYS` asks
+whether the card would survive a month.
+
+The one thing that genuinely cannot be derived is which milestones have been ANNOUNCED, so
+`srsly-achievements-seen` holds those ids, device-local like `srsly-curriculum-pruned`. It
+**seeds silently on first run**: someone arriving with a full deck has earned a dozen at once,
+and a dozen toasts is a bug, not a reward.
+
+`AchievementToast` renders on the two "you finished" screens beside the daily proverb, and
+holds what it is showing in its OWN state rather than rendering from `fresh`. Those look like
+the same list and are not — acknowledging empties `fresh`, so rendering from it made the
+milestone vanish a second after it appeared.
 
 ### Key hooks
 

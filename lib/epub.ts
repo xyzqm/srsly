@@ -147,8 +147,16 @@ export async function parseEpub(data: ArrayBuffer | Blob): Promise<EpubBook> {
   const containerXml = await read('META-INF/container.xml');
   if (!containerXml) throw new EpubError('That file is not a valid EPUB (no META-INF/container.xml).');
   const container = parser.parseFromString(containerXml, XML);
+  // The OPF path is READ FROM THE ARCHIVE, never guessed. `OEBPS/content.opf` is only a
+  // convention — Calibre, InDesign and Sigil all place it differently, and container.xml is
+  // the one file whose location the spec actually fixes.
+  //
+  // getElementsByTagName, not a selector, for the same namespace reason as the manifest below:
+  // container.xml usually puts <rootfile> in the default OCF namespace, but a prefixed
+  // <ocf:rootfile> is legal and would need `ocf|rootfile` in a selector to match.
   const opfPath = must(
-    container.querySelector('rootfile')?.getAttribute('full-path'),
+    (container.getElementsByTagName('rootfile')[0]
+      ?? container.getElementsByTagName('ocf:rootfile')[0])?.getAttribute('full-path'),
     'That EPUB does not name a package document.',
   );
 

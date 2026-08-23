@@ -29,6 +29,7 @@ import Question from './Question';
 import VocabResults from './VocabResults';
 import MissedWordReview from './MissedWordReview';
 import DailyProverb from './DailyProverb';
+import ToastHost from '@/components/shared/ToastHost';
 
 interface Props {
   onScore: (score: number) => void;
@@ -42,6 +43,7 @@ interface Props {
   onAnswer: (correct: boolean) => void;
   onRequireSignIn?: (reason?: string) => void;
   onNavigateVocab?: () => void;
+  onNavigateSettings?: () => void;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
@@ -61,7 +63,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, active = true }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, active = true }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -989,19 +991,22 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   word congratulates them for work they have not done, and buries the one
                   instruction they actually need. */}
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                {deck.length === 0 ? 'Nothing to read yet' : 'Ready when you are'}
+                {deck.length === 0 ? 'Start anywhere above' : 'Ready when you are'}
               </div>
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 400 }}>
                 {deck.length === 0
-                  ? 'Passages are built around the words in your deck, and yours is empty. Add a few and one can be written around them — or read your own text, a book or a song above.'
+                  ? 'Open one of the four above and start reading. Tap any word you do not know — you will get its definition, and saving it schedules a review. That is how the deck gets built; you do not have to fill it first.'
                   : totalReviewWordCount > 0
                     ? 'A passage will be written around the words you have due. It takes a few seconds and uses one AI generation, so it happens when you ask rather than the moment you open the app.'
                     : 'You have no words due for review today. Add new words to your deck to get a fresh passage built around them.'}
               </p>
-              {/* Only "add words" here. This branch renders when nothing is DUE, and a
-                  passage is built around due words — offering to generate one would be
-                  offering to build from nothing. The working generate button lives in the
-                  "No passage yet" branch below, which is the state that has words. */}
+              {/* No "add words in Vocab" button while the deck is EMPTY. It inverts the loop
+                  the tab is built on: reading is what fills the deck, so sending a brand-new
+                  learner to a word list first is asking them to do the hard, boring half
+                  before they have seen why it is worth doing. The four reading cards above
+                  are the instruction. Once there ARE words but none are due, Vocab is the
+                  right destination and the button returns. */}
+              {deck.length > 0 && (
               <button
                 onClick={onNavigateVocab}
                 className="cursor-pointer transition-all duration-150"
@@ -1009,24 +1014,49 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               >
                 Add words in Vocab
               </button>
+              )}
             </>
           ) : (
             <>
+              {/* The AI generator is deliberately SET APART from the four reading cards above,
+                  and labelled with what it needs. It is the one feature in the app that costs
+                  money, and presenting it alongside the free ones taught new learners that
+                  srsly is a paid app that happens to be broken without a key — when in fact
+                  reading your own text, a book or audio is the larger half and needs nothing.
+                  A power feature, badged as one. */}
+              <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 10 }}>
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                  ✨ Or write one for me
+                </span>
+                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.04em', background: 'var(--paper-2)', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 6px' }}>
+                  🔑 needs your API key
+                </span>
+              </div>
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                {dailyStatus === 'no-key' ? 'AI passages are switched off'
+                {dailyStatus === 'no-key' ? 'Connect a key to write passages'
                   : dailyStatus === 'error' ? "Couldn't generate a passage"
-                  : 'No passage yet'}
+                  : 'A passage built around your due words'}
               </div>
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 380 }}>
                 {dailyStatus === 'no-key'
-                  ? 'This install has no ANTHROPIC_API_KEY, so passages cannot be written. Everything else still works — paste your own text above and it will be segmented and blanked against your deck.'
+                  ? 'Writing a new passage is the one thing srsly cannot do for free, so it uses your own Anthropic key — about a cent a passage, billed to you and stored only in this browser. Everything else already works without one: add your own text, a book or audio above and it is segmented and blanked against your deck exactly the same way.'
                   : dailyStatus === 'error'
                     ? 'Something went wrong generating today’s passage. Try again.'
-                    : 'Generate a passage built around your due words.'}
+                    : 'Written fresh around the words you have due today, at your level. Everything above is free and needs no key.'}
               </p>
-              {/* No button in the no-key state. It cannot succeed — the server has already
-                  said it has no key — and a button that reliably fails is worse than none.
-                  The paste panel above is the working path, so the copy points there. */}
+              {/* The no-key state gets a route to Settings rather than a Generate button.
+                  Generate cannot succeed — the server has already said there is no key — and
+                  a button that reliably fails is worse than none; connecting a key is what
+                  actually resolves the state, so that is what is offered. */}
+              {dailyStatus === 'no-key' && onNavigateSettings && (
+                <button
+                  onClick={onNavigateSettings}
+                  className="cursor-pointer transition-all duration-150"
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, background: 'none', color: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 20px' }}
+                >
+                  Connect a key in Settings
+                </button>
+              )}
               {dailyStatus !== 'no-key' && (
                 <button
                   onClick={() => generateMore()}
@@ -1249,11 +1279,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
             {(() => {
               const clozeIncomplete = clozeWordCount > 0 && clozeAnswered < clozeWordCount;
-              const isDisabled = alreadyFinished || clozeIncomplete;
+              // Finishing is NOT gated on filling every blank. Blank count is `tokens ×
+              // density` with no ceiling, so on a long section with a big deck that gate put
+              // the results screen — and the proverb behind it — out of reach entirely. It
+              // grades what was filled; leaving blanks empty simply forgoes those grades.
+              const isDisabled = alreadyFinished;
               const label = alreadyFinished
                 ? 'Already finished!'
                 : clozeIncomplete
-                  ? `${clozeAnswered}/${clozeWordCount} blanks filled in`
+                  ? `Finish · ${clozeAnswered}/${clozeWordCount} blanks filled`
                   : 'Finish & see vocabulary results';
               // A new passage can only be generated once every blank in EVERY generated
               // passage today is filled in — not just the one currently being viewed —
@@ -1313,16 +1347,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
           {/* Carry on with the book, if one is open. Above the proverb, because it is the
               action and the proverb is the send-off. Renders nothing unless a book is
-              actually being read. */}
-          {showResults && (
-            <NextSection
-              language={language}
-              deck={deck}
-              dueWords={dueDeckWords}
-              blankDensity={blankDensity}
-              onCommit={commitPastedPassage}
-            />
-          )}
+              actually being read.
+
+              NOT gated on `showResults`. Finishing requires every blank filled, so gating the
+              next section on it put the rest of the novel behind a perfect score on this
+              slice — the reading is the point, and the blanks are practice along the way.
+              Anything left unfilled is simply not graded, which is the learner's call. */}
+          <NextSection
+            language={language}
+            deck={deck}
+            dueWords={dueDeckWords}
+            blankDensity={blankDensity}
+            onCommit={commitPastedPassage}
+          />
 
           {/* The reward. Only once the reading is actually finished — see DailyProverb.
               Sitting permanently at the foot of the tab it was wallpaper; here it is the
@@ -1337,6 +1374,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         onAddVocab={titlePopup.handleAddVocab}
         onReleaseFromPool={titlePopup.onReleaseFromPool}
       />
+      <ToastHost deckSize={deck.length} />
     </div>
   );
 }
