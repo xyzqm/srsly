@@ -16,6 +16,7 @@ import { levelStandings, wordsToUnlockNext, gateFor, levelAfter, RETAINED_FRACTI
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
 import ApiKeyPanel from './ApiKeyPanel';
+import ClipperPanel from './ClipperPanel';
 
 const RETENTION_PRESETS = [
   { value: 0.70, label: '70%', desc: 'Relaxed — longer intervals, more forgetting accepted' },
@@ -386,6 +387,9 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           )}
         </>
       )}
+
+      {/* ── Web clipper ───────────────────────────────────────────────────── */}
+      <ClipperPanel />
 
       {/* ── AI passages (bring your own key) ──────────────────────────────── */}
       <ApiKeyPanel />

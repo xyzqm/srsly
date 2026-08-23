@@ -385,6 +385,36 @@ Two filters gate **band eligibility only** — never the dictionary, which stays
 
 **CEFR levels are not an official word list.** (This applies to French as well as Spanish — both are graded on CEFR, but each gets its own prefs key, `cefrLevel` and `frLevel`, so the two studies stay independent.) Unlike HSK and JLPT, which publish authoritative exam vocabulary, the CEFR defines no such list: the Instituto Cervantes and Beacco Reference Level Descriptions are copyrighted books, and **CEFRLex** (FLELex for French, ELELex for Spanish) — which genuinely is CEFR-graded, from learner textbooks — states **no license anywhere**, so it is not vendored. `lib/data/cefr-levels.ts` (Spanish) is therefore still a **frequency approximation**, now cross-register rather than subtitle-derived, and `lib/data/fr-levels.ts` a Lexique-derived one. Don't present it to users as an official mapping.
 
+### The web clipper
+
+`lib/webClip.ts` is a bookmarklet that scrapes the article from whatever page you are on and
+opens it here, segmented. Copy-paste is fine on day one and tedious by week two, and the whole
+argument for the app is that you read what you actually want to read.
+
+**The text travels in the URL HASH**, and that is the design rather than a shortcut. A fragment
+is never sent to the server, so the page you were reading stays on your device — the same
+promise the paste and EPUB panels already make. A POST endpoint would have been easier and
+would have quietly broken that promise for the one source where the content is someone else's
+page. It also means no storage, no expiry and nothing to clean up. The cap is `MAX_PASTE_CHARS`,
+so the clipper can never produce something the reader could not have pasted by hand.
+
+Two things that only surface when you click it, both found that way:
+
+- **The payload is JSON, not two fields joined by a separator.** `encodeURIComponent` escapes
+  `|` to `%7C` inside the title, and the browser escapes the literal separator to `%7C` too, so
+  the two become indistinguishable. Anything `encodeURIComponent` leaves alone (`~`, `!`, `*`)
+  has the mirror-image problem. The round-trip unit test passed throughout, because a string
+  never goes near a browser — `tests/webClip.test.ts` now decodes through a real `URL`.
+- **React refuses to render a `javascript:` href**, substituting a throwing stub. That is right
+  for user-supplied links and exactly wrong for a bookmarklet, whose whole nature is being one,
+  so `ClipperPanel` assigns the attribute through the DOM. The panel looked correct either way;
+  only the dragged bookmark was dead.
+
+**No songs ship with the app.** Lyrics are licensed separately from recordings and both are
+enforced, so a "starter songs" shelf is not available to us at any level of curation. What can
+be given away is knowing what to look for, which is what the listen-along panel's "New to this?"
+block does — what an `.lrc` is, how to find one, and what a working file looks like.
+
 ### Reading an EPUB
 
 `lib/epub.ts` unzips the book in the browser and returns ordered chapters of PLAIN TEXT,

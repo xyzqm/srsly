@@ -23,6 +23,7 @@ import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
 import ReadingSources from './ReadingSources';
+import { decodeClip, type WebClip } from '@/lib/webClip';
 import NextSection from './NextSection';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
@@ -77,6 +78,21 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
   const [hskLevel, setHskLevel] = useState(0);
   const [blankDensity, setBlankDensity] = useState<number | undefined>(undefined);
+
+  /**
+   * An article sent in by the web clipper, carried in the URL hash — see lib/webClip.ts.
+   *
+   * The hash is CLEARED as soon as it is read, for two reasons: refreshing the page should not
+   * silently re-import the same article, and an 8,000-character fragment sitting in the address
+   * bar is something the reader might copy and share without realising what is in it.
+   */
+  const [clip, setClip] = useState<WebClip | null>(null);
+  useEffect(() => {
+    const found = decodeClip(window.location.hash);
+    if (!found) return;
+    setClip(found);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
   useEffect(() => {
     storage.getPrefs().then(p => {
       setHskLevel(levelFor(language, p));
@@ -963,6 +979,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           blankDensity={blankDensity}
           onCommit={commitPastedPassage}
           emptyTab={!currentPassage}
+          clip={clip}
         />
         </div>
       )}

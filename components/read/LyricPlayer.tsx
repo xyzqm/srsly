@@ -45,6 +45,14 @@ interface Props {
 
 const mono = { fontFamily: 'var(--f-mono)' as const };
 
+/** A line in the learner's own language, so the example format is legible to them. */
+function exampleLine(language: LanguageCode): string {
+  if (language === 'zh') return '我家的小猫很可爱';
+  if (language === 'ja') return 'わたしの町は静かです';
+  if (language === 'fr') return 'Le matin je me lève tôt';
+  return 'Hoy voy al mercado';
+}
+
 /**
  * Playback speeds, weighted BELOW normal on purpose.
  *
@@ -221,6 +229,39 @@ export default function LyricPlayer({ language, deck, startOpen = false}: Props)
       <div style={{ ...mono, fontSize: 10, color: 'var(--ink-faint)', marginTop: 6 }}>
         Both stay on this device — only the text is sent, to our own word lookup.
       </div>
+
+      {/*
+        The two-file requirement is the whole barrier to this feature, and it used to be
+        unexplained — a learner who has never met an .lrc sees two file pickers and leaves.
+        No songs ship with the app because lyrics are separately licensed from recordings and
+        both are enforced; what CAN be given away is knowing what to look for and what a
+        working file looks like. Shown only before anything is loaded.
+      */}
+      {lines.length === 0 && !audioUrl && (
+        <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--line-soft)' }}>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
+            New to this?
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.6, maxWidth: '54ch', margin: 0 }}>
+            An <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>.lrc</strong> is a plain
+            text transcript with a timestamp on each line — the format most music players use
+            for synced lyrics. Searching for “<em>title</em> lrc” usually finds one, and several
+            desktop players can export theirs. Any audio you own works: a song, a podcast, an
+            audiobook chapter, a recorded lesson. Audio you replay is the best place to meet a
+            word twice.
+          </p>
+          <pre style={{
+            ...mono, fontSize: 11, lineHeight: 1.65, color: 'var(--ink-soft)',
+            background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 8,
+            padding: '10px 12px', marginTop: 10, overflowX: 'auto',
+          }}>{`[00:12.30] ${exampleLine(language)}
+[00:16.80] …`}</pre>
+          <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.55, marginTop: 8, maxWidth: '54ch' }}>
+            No timestamps? Paste the words into <strong style={{ color: 'var(--ink-soft)', fontWeight: 500 }}>Paste
+            text</strong> instead — you lose the sync, but every word is still tappable.
+          </p>
+        </div>
+      )}
 
       {warning && (
         <p className="rounded-lg px-3 py-2 mt-3" role="alert"

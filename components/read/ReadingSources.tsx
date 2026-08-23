@@ -35,6 +35,8 @@ interface Props {
   onCommit: (passage: DailyPassage) => void;
   /** True when the tab has no passage — the chooser then leads the screen. */
   emptyTab: boolean;
+  /** An article sent in by the web clipper — opens the paste source with it loaded. */
+  clip?: { title: string; text: string } | null;
 }
 
 type Source = 'starter' | 'paste' | 'epub' | 'lyrics';
@@ -48,7 +50,7 @@ const CARDS: { id: Source; icon: string; label: string; hint: string }[] = [
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, emptyTab }: Props) {
+export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, emptyTab, clip = null }: Props) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
 
@@ -56,11 +58,14 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
   // passage it just produced, which is the clutter it exists to remove.
   useEffect(() => { if (!emptyTab) { setOpen(false); setSource(null); } }, [emptyTab]);
 
+  // A clip is a source already chosen: skip the four cards and open paste with it loaded.
+  useEffect(() => { if (clip) { setOpen(true); setSource('paste'); } }, [clip]);
+
   const panelProps = { language, deck, dueWords, blankDensity, onCommit };
 
   function panel(s: Source) {
     if (s === 'starter') return <StarterPanel {...panelProps} />;
-    if (s === 'paste') return <PasteTextPanel {...panelProps} startOpen />;
+    if (s === 'paste') return <PasteTextPanel {...panelProps} startOpen clip={clip} />;
     if (s === 'epub') return <EpubPanel {...panelProps} startOpen />;
     // Audio does NOT become a passage — the sync is the point, and committing the transcript
     // would flatten it back into prose. It renders its own tokens instead.

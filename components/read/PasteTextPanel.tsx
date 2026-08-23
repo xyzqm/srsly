@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DailyPassage, DeckWord, LanguageCode } from '@/lib/types';
 import { getLanguageConfig, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { buildPastedPassage, type RawTok } from '@/hooks/useDailyContent';
@@ -17,6 +17,13 @@ interface Props {
    * else exactly as before.
    */
   startOpen?: boolean;
+  /**
+   * Text arriving from the web clipper, already scraped from a page. Seeds the box and runs
+   * the coverage check straight away — the clipper's whole promise is one click to something
+   * readable, and making the reader press "Check coverage" on text they did not type is a
+   * second click for nothing.
+   */
+  clip?: { title: string; text: string } | null;
   language: LanguageCode;
   deck: DeckWord[];
   /** Words ready for review right now — the blank candidates, keyed as tokens resolve. */
@@ -71,7 +78,7 @@ function splitTitle(text: string, manual: string): { title: string; body: string
   return { title: label, body: text };
 }
 
-export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false}: Props) {
+export default function PasteTextPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false, clip = null }: Props) {
   const [open, setOpen] = useState(startOpen);
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
@@ -104,6 +111,21 @@ export default function PasteTextPanel({ language, deck, dueWords, blankDensity,
   // coverage figure for text that is no longer in the box is the one failure mode this
   // panel must not have — the whole point of it is to be trusted before you commit.
   const edit = useCallback(<T,>(set: (v: T) => void) => (v: T) => { set(v); setAnalysis(null); setError(''); }, []);
+
+  /**
+   * Seed from a web clip, then check coverage without waiting to be asked.
+   *
+   * `analyzedClip` guards on the clip OBJECT, not its text: two clips of the same article
+   * should each run, while a re-render of the same one must not fire a second segment call.
+   */
+  const analyzedClip = useRef<unknown>(null);
+  useEffect(() => {
+    if (!clip || analyzedClip.current === clip) return;
+    analyzedClip.current = clip;
+    setOpen(true);
+    setText(clip.text);
+    setTitle(clip.title);
+  }, [clip]);
 
   const analyze = useCallback(async (overrideNames?: string[]) => {
     if (!text.trim() || tooLong) return;
