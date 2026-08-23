@@ -252,6 +252,11 @@ function AppShell() {
             <SrsTab
               active={tab === 'practice'}
               onScore={recordScore}
+              onActivity={recordActivity}
+              onAnswer={recordAnswer}
+              onRequireSignIn={requireSignIn}
+              onNavigateVocab={() => changeTab('vocab')}
+              onNavigateSettings={() => changeTab('settings')}
             />
           </TabPanel>
           <TabPanel active={tab === 'dash'}>

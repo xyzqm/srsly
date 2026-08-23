@@ -4,6 +4,7 @@ import { stopAll } from '@/lib/speech';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import Flashcards from './Flashcards';
+import ReadTab from '@/components/read/ReadTab';
 
 /**
  * The SRS tab — everything the scheduler drives.
@@ -20,11 +21,18 @@ import Flashcards from './Flashcards';
 
 interface Props {
   onScore: (score: number) => void;
+  onActivity: () => void;
+  onAnswer: (correct: boolean) => void;
+  onRequireSignIn?: (reason?: string) => void;
+  onNavigateVocab?: () => void;
+  onNavigateSettings?: () => void;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
 
-export default function SrsTab({ onScore, active = true }: Props) {
+export default function SrsTab({
+  onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, active = true,
+}: Props) {
   const language = useLanguage();
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
 
@@ -48,6 +56,24 @@ export default function SrsTab({ onScore, active = true }: Props) {
       className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      {/* The generated passage — the other half of the drill. It is written around the words
+          you owe today, which is why it carries blanks and grades them, and why it belongs
+          here rather than beside the book you chose to read. Same component as the Read tab
+          uses: a passage is a passage, and `variant` decides which list it draws from and
+          which controls it offers. */}
+      <ReadTab
+        variant="srs"
+        active={active}
+        onScore={onScore}
+        onActivity={onActivity}
+        onAnswer={onAnswer}
+        onRequireSignIn={onRequireSignIn}
+        onNavigateVocab={onNavigateVocab}
+        onNavigateSettings={onNavigateSettings}
+      />
+
+      <div className="h-px my-8" style={{ background: 'var(--line)' }} />
+
       {/* Keyed by language, and gated on deckLoaded.
           Flashcards latches its queue on first load and never rebuilds it — deliberately, so
           grading a card can't reshuffle the session underneath you. That made switching

@@ -576,6 +576,16 @@ One line down the middle, and it is the app's main organising idea:
 - **SRS** is what FSRS actually drives: flashcards, and generated passages, which keep their
   blanks because a generated passage is written around the words you owe today.
 
+`ReadTab` renders BOTH, and `variant` decides which: `'read'` draws the passages marked
+`pasted` (every own-text source goes through `buildPastedPassage`, so that flag already
+separates the two halves — there is deliberately no second `source` field to drift out of sync
+with it), and `'srs'` draws the rest. One component because a passage is a passage; the
+difference is which list it reads and which controls it offers.
+
+Both instances mount at once, since TabPanel keeps tabs alive. That is why **clip handling is
+gated to `variant === 'read'`** — a clip is someone's own article, and if the SRS instance
+consumed the URL hash first it would clear it and Read would find nothing.
+
 Anything gated on `clozeWordCount > 0` is gated on "this passage has blanks", which is the
 same distinction expressed in the one place the renderer can see it. That is why the Hints
 toggle and the finish row disappear on your own reading rather than being separately
@@ -586,8 +596,10 @@ scheduling, no counts, no streak — which made it the one thing in the SRS tab 
 SRS. It also had no stored state to clean up: being stateless WAS the feature. Stats' "Drill
 these" went with it, since cram was the only thing that could drill a scoped set.
 
-**THE DAILY PROVERB WAS REMOVED** from the UI. `lib/proverb.ts`, `lib/data/proverbs.ts` and
-`scripts/build-proverbs.mjs` are still in the tree and are now unused by the app.
+**The daily proverb is an SRS reward.** It shows on the two screens that say you finished
+scheduled work — a completed generated passage and a finished flashcard session. It does not
+appear on your own reading, which has no finish state to earn it: `showResults` only exists
+where blanks do.
 
 ### Key hooks
 

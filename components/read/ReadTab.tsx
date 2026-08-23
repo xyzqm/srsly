@@ -23,6 +23,7 @@ import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
 import ReadingSources from './ReadingSources';
+import DailyProverb from './DailyProverb';
 import { decodeClip, type WebClip } from '@/lib/webClip';
 import NextSection from './NextSection';
 import LookupSummary from './LookupSummary';
@@ -52,6 +53,15 @@ interface Props {
    * — the tag may be junk, or a language this learner has not added.
    */
   onRequestLanguage?: (tag: string) => void;
+  /**
+   * Which half of the app this instance is.
+   *
+   * 'read' shows only what you brought — starter texts, pasted articles, clips, books — and
+   * offers no generation. 'srs' shows only generated passages, which are written around the
+   * words you owe today and carry the blanks. One component renders both because a passage
+   * is a passage; the difference is which list it draws from and which controls it offers.
+   */
+  variant?: 'read' | 'srs';
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
@@ -71,7 +81,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, onRequestLanguage, active = true }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, onRequestLanguage, variant = 'read', active = true }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -95,6 +105,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    */
   const [clip, setClip] = useState<WebClip | null>(null);
   useEffect(() => {
+    // Read only. Both variants mount at once (TabPanel keeps tabs alive), and a clip is
+    // someone's own article — if the SRS instance consumed the hash first it would clear it
+    // and the Read instance would find nothing.
+    if (variant !== 'read') return;
     const found = decodeClip(window.location.hash);
     if (!found) return;
     setClip(found);
@@ -127,7 +141,16 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     }
   }, [showGuestLimit, onRequireSignIn]);
 
-  const numPassages = dailyContent?.passages.length ?? 0;
+  /**
+   * The passages THIS instance shows. `pasted` is the existing marker for "the learner
+   * brought this" — set by buildPastedPassage, which every own-text source goes through —
+   * so it already separates the two halves without a second field to keep in sync.
+   */
+  const visiblePassages = useMemo(
+    () => (dailyContent?.passages ?? []).filter(p => (variant === 'srs' ? !p.pasted : !!p.pasted)),
+    [dailyContent, variant],
+  );
+  const numPassages = visiblePassages.length;
   const [passageIdx, setPassageIdx] = useState(0);
   // Latest passage count, readable inside effects that shouldn't re-run on every change.
   const numPassagesRef = useRef(numPassages);
@@ -148,7 +171,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const [bookPassage, setBookPassage] = useState<DailyPassage | null>(null);
 
   // The book wins while it is open; otherwise the ordinary list.
-  const currentPassage = bookPassage ?? dailyContent?.passages[passageIdx];
+  const currentPassage = bookPassage ?? visiblePassages[passageIdx];
 
   /**
    * The daily new-card budget AS IT STOOD WHEN THIS PASSAGE WAS OPENED.
@@ -910,12 +933,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 words that are due, and naming the targeting is what explains why these
                 sentences and not others. It also stops being a lie once the shelf holds
                 several days' worth, or the reader pastes their own text. */}
-            {numPassages > 1
-              ? `Targeted reading · ${numPassages} passages · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'} total`
-              : totalReviewWordCount > 0
-                ? `Targeted reading · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'}`
-                : "Targeted reading · add words to your deck to track them here"
-            }
+            {variant === 'srs'
+              ? (numPassages > 1
+                  ? `Targeted reading · ${numPassages} passages · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'} total`
+                  : `Targeted reading · ${totalReviewWordCount} review word${totalReviewWordCount === 1 ? '' : 's'}`)
+              : 'Reading'}
             {dailyStatus === 'ready' && dailyContent?.sections?.passage && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', background: 'var(--jade-soft)', color: 'var(--jade)', border: '1px solid color-mix(in srgb, var(--jade) 30%, transparent)', borderRadius: 4, padding: '1px 5px' }}>
                 ✦ AI · {dailyContent.date}
@@ -962,9 +984,14 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             )}
           </div>
         </div>
+        {/* Level sizes a GENERATED passage. Your own reading ignores levels entirely — see
+            CLAUDE.md on levels being calibration, not a ladder — so stating one over a book
+            chapter claimed a relationship that does not exist. */}
         <div className="flex flex-col items-end gap-2">
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-            level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}
+            {variant === 'srs'
+              ? <>level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}</>
+              : <>~{charCount} {langConfig.countUnit}</>}
           </div>
         </div>
       </div>
@@ -1027,7 +1054,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       {/* Owns the gap to whatever follows it — the passage player sits immediately below and
           nothing there carries a top margin, so without this the dashed button and the play
           control touch. */}
-      {hskLevel > 0 && (
+      {variant === 'read' && hskLevel > 0 && (
         <div className="mb-5">
         <ReadingSources
           language={language}
@@ -1091,7 +1118,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               </button>
               )}
             </>
-          ) : (
+          ) : variant === 'srs' ? (
             <>
               {/* The AI generator is deliberately SET APART from the four reading cards above,
                   and labelled with what it needs. It is the one feature in the app that costs
@@ -1143,7 +1170,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 </button>
               )}
             </>
-          )}
+          ) : null}
         </div>
       ) : (
         <>
@@ -1422,6 +1449,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           )}
 
           {showResults && <VocabResults results={vocabResults} />}
+          {/* The reward, and only on a screen that says you finished. Shown for a GENERATED
+              passage — the SRS drill — because `showResults` only exists where blanks do. */}
+          {showResults && <DailyProverb />}
           {showResults && (() => {
             const missedSet = new Set(missedWords.map(w => w.h));
             const reviewWords = [...missedWords, ...sessionAddedWords.filter(w => !missedSet.has(w.h))];
@@ -1438,14 +1468,17 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               slice — the reading is the point, and the blanks are practice along the way.
               Anything left unfilled is simply not graded, which is the learner's call. */}
           {/* Advancing goes back into the BOOK, not onto the passage list — otherwise
-              "next section" would quietly turn the novel into a pile of articles. */}
-          <NextSection
-            language={language}
-            deck={deck}
-            dueWords={dueDeckWords}
-            blankDensity={blankDensity}
-            onCommit={commitBookSection}
-          />
+              "next section" would quietly turn the novel into a pile of articles.
+              Read only: the SRS tab has no shelf and nothing to carry on with. */}
+          {variant === 'read' && (
+            <NextSection
+              language={language}
+              deck={deck}
+              dueWords={dueDeckWords}
+              blankDensity={blankDensity}
+              onCommit={commitBookSection}
+            />
+          )}
 
         </>
       )}
