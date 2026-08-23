@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
-import type { TabId, PracticeMode, LanguageCode } from '@/lib/types';
+import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { languageFromTag } from '@/lib/languageMismatch';
@@ -13,7 +13,7 @@ import TabNav from '@/components/TabNav';
 import ThemeSheet from '@/components/ThemeSheet';
 import TabPanel from '@/components/TabPanel';
 import ReadTab from '@/components/read/ReadTab';
-import ExtrasTab from '@/components/practice/ExtrasTab';
+import SrsTab from '@/components/practice/SrsTab';
 import StatsTab from '@/components/stats/StatsTab';
 import VocabTab from '@/components/vocab/VocabTab';
 import SettingsTab from '@/components/settings/SettingsTab';
@@ -210,22 +210,8 @@ function AppShell() {
     await storage.savePrefs({ ...prefs, language: lang });
   }, []);
 
-  // Which Practice mode to open in when the Vocab tab hands off: 'flash' = review what is
-  // due, 'cram' = drill the whole deck ignoring due dates.
-  const [studyStartMode, setStudyStartMode] = useState<PracticeMode>('flash');
-  /** Set when the handoff should land on a particular cram set rather than the whole deck. */
-  const [cramScopeRequest, setCramScopeRequest] = useState<string | undefined>(undefined);
-  const startStudy = useCallback((mode: PracticeMode) => {
-    setCramScopeRequest(undefined);
-    setStudyStartMode(mode);
-    changeTab('practice');
-  }, [changeTab]);
-  /** Stats' "Drill these" — lands in Cram already scoped to the words giving trouble. */
-  const drillWeak = useCallback(() => {
-    setCramScopeRequest('weak');
-    setStudyStartMode('cram');
-    changeTab('practice');
-  }, [changeTab]);
+  /** Vocab's "Study" hands off to the SRS tab. */
+  const startStudy = useCallback(() => { changeTab('practice'); }, [changeTab]);
 
   return (
     <LanguageProvider value={language}>
@@ -263,15 +249,13 @@ function AppShell() {
               in whatever mode the last handoff had requested rather than the one you were
               in. */}
           <TabPanel active={tab === 'practice'}>
-            <ExtrasTab
+            <SrsTab
               active={tab === 'practice'}
               onScore={recordScore}
-              initialMode={studyStartMode}
-              initialCramScope={cramScopeRequest}
             />
           </TabPanel>
           <TabPanel active={tab === 'dash'}>
-            <StatsTab onNavigateRead={() => changeTab('read')} onDrillWeak={drillWeak} />
+            <StatsTab onNavigateRead={() => changeTab('read')} />
           </TabPanel>
           {tab === 'vocab' && (
             <VocabTab onStudy={startStudy} />

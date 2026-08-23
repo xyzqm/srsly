@@ -6,7 +6,7 @@ import { LEECH_THRESHOLD } from '@/lib/fsrs';
 /**
  * What each filter chip actually selects.
  *
- * ONE SOURCE, TWO ROWS. The Vocab tab and Cram both label sets "Forgotten", "Stuck",
+ * ONE SOURCE, TWO ROWS. The Vocab tab labels sets "Forgotten", "Stuck",
  * "★ Focus" and mean the same thing by them; defining that twice is how two rows that look
  * identical start selecting different cards.
  *
@@ -16,17 +16,13 @@ import { LEECH_THRESHOLD } from '@/lib/fsrs';
  * side by side. Each chip also carries its own line as a `title`, so hovering one works too.
  */
 
-/** Cram's "All" is narrower than the deck — see the note on `overrides` below. */
-export const CRAM_HELP: Record<string, string> = {
-  all: 'Every word you can drill. Smaller than the deck total in Vocab, because pool words are left out — they have not entered circulation yet.',
-};
 
 export const SET_HELP: Record<string, string> = {
   all:       'Every word in your deck, including ones parked in the pool.',
   due:       'Ready to review right now.',
   soon:      'Scheduled within the next 7 days.',
   new:       'Added to your deck but never reviewed.',
-  pool:      'Imported but not yet in circulation. Pool words never come up for review, and cram will not offer them either — activate them first.',
+  pool:      'Imported but not yet in circulation. Pool words never come up for review — activate them first.',
   focus:     'Words you starred yourself. Never cleared automatically.',
   weak:      `Words you have failed at least ${MIN_LAPSES} times, worst first by failure RATE — missed 6 of 9 outranks missed 6 of 60. One lapse is a bad day, so it takes two to appear here.`,
   leech:     `Failed ${LEECH_THRESHOLD} or more times. Automatically paused so it stops crowding out the rest of your reviews.`,
@@ -36,7 +32,7 @@ export const SET_HELP: Record<string, string> = {
 
 /**
  * `overrides` lets one row describe a set differently where it genuinely differs. Only "all"
- * needs it today: in the Vocab tab it is the whole deck, and in Cram it is the whole deck
+ * needs it today: in the Vocab tab it is the whole deck
  * MINUS pool words, which is why the two rows show different totals for the same word. That
  * is not a bug to reconcile — a browsing view should list words you have parked, and a study
  * set should not offer them — but the label has to admit it.

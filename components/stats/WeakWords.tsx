@@ -19,10 +19,9 @@ import { useLanguage } from '@/lib/LanguageContext';
 
 interface Props {
   deck: DeckWord[];
-  onDrill: () => void;
 }
 
-export default function WeakWords({ deck, onDrill }: Props) {
+export default function WeakWords({ deck }: Props) {
   const language = useLanguage();
   const { scriptIsUnspaced } = getLanguageConfig(language);
   // Top handful only — the panel is a shortlist, not a browsable list. The Vocab tab's
@@ -39,13 +38,6 @@ export default function WeakWords({ deck, onDrill }: Props) {
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
           Giving you trouble
         </div>
-        <button
-          onClick={onDrill}
-          className="cursor-pointer transition-all duration-150 rounded-md px-3 py-1.5"
-          style={{ fontFamily: 'var(--f-mono)', fontSize: 11, background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)' }}
-        >
-          Drill these →
-        </button>
       </div>
       <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, margin: '6px 0 0', maxWidth: '52ch', lineHeight: 1.5 }}>
         Ranked by how often you miss them, not how many times — a word failed six times in nine

@@ -8,7 +8,6 @@ import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
-import DailyProverb from '@/components/read/DailyProverb';
 import AchievementToast from '@/components/stats/AchievementToast';
 import {
   fsrsSchedule, fsrsNextInterval, fmtInterval, getSrsSettings, isLearningCard,
@@ -46,12 +45,8 @@ interface Props {
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
   /** Reports the session's recall rate (0–1) once, when it completes, to extend the daily
    *  streak. Fill-in-the-blank and Conversation used to be what marked Practice as "studied
-   *  today"; with those gone, flashcards are the only thing left that can. Withheld for cram,
-   *  same as onGrade — a stateless drill should not move the streak either. */
+   *  today"; with those gone, flashcards are the only thing left that can. */
   onScore?: (score: number) => void;
-  /** Cram mode: drill the given words regardless of due date or daily limits, and
-   *  WITHOUT changing their schedule (Again re-queues within the session; safe before a test). */
-  cram?: boolean;
 }
 
 function sdm(m: string) {
@@ -68,7 +63,7 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, onScore, cram = false }: Props) {
+export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, onScore }: Props) {
   const language = useLanguage();
   const ui = uiStrings(language);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
@@ -102,14 +97,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
     if (queue !== null) return;
     if (!deckLoaded) return;
     if (deck.length === 0) { setQueue([]); return; }
-    // Cram: drill the given subset as-is — no due/limit filtering, no scheduling.
-    if (cram) {
-      const q = deck.slice();
-      setQueue(q);
-      setTotalInitial(q.length);
-      setHiddenByLimit(0);
-      return;
-    }
     const today = todayStr();
     const due = deck
       .filter(w => isDueToday(w, today))
@@ -136,22 +123,22 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
     setQueue(q);
     setTotalInitial(q.length);
     setHiddenByLimit(hidden);
-  }, [deck, deckLoaded, queue, cram]);
+  }, [deck, deckLoaded, queue]);
 
   // Report the session once, on completion. Guarded by a ref so a later re-render (a hover,
   // a settings read) cannot extend the streak a second time.
   const scored = useRef(false);
   useEffect(() => {
-    if (scored.current || !onScore || cram) return;
+    if (scored.current || !onScore) return;
     if (queue === null || queue.length > 0 || results.length === 0) return;
     scored.current = true;
     onScore(results.filter(r => r.label === 'Good' || r.label === 'Easy').length / results.length);
-  }, [queue, results, onScore, cram]);
+  }, [queue, results, onScore]);
 
   // Re-render once a second ONLY while every remaining card is still on its delay, so the
   // countdown stays live without costing a render per second during normal grading.
   const waiting = queue !== null && queue.length > 0 &&
-    !cram && queue.every(c => c.dueAtMs && c.dueAtMs > Date.now() && !aheadKeys.has(c.id ?? c.h));
+    queue.every(c => c.dueAtMs && c.dueAtMs > Date.now() && !aheadKeys.has(c.id ?? c.h));
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(() => setTick(n => n + 1), 1000);
@@ -162,12 +149,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   // grade directly. A single listener reads live handlers from a ref so it always
   // acts on the current card without re-binding every render.
   const kbd = useRef<{
-    canAct: boolean; revealed: boolean; cram: boolean;
+    canAct: boolean; revealed: boolean;
     reveal: () => void; grade: (g: FsrsGrade) => void; replay: () => void;
-    cramAgain: () => void; cramGot: () => void;
   }>({
-    canAct: false, revealed: false, cram: false,
-    reveal: () => {}, grade: () => {}, replay: () => {}, cramAgain: () => {}, cramGot: () => {},
+    canAct: false, revealed: false,
+    reveal: () => {}, grade: () => {}, replay: () => {},
   });
   const lastPrefetch = useRef<string | null>(null);
   useEffect(() => {
@@ -177,14 +163,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); k.replay(); return; }
-      if (k.cram) {
-        // Quizlet-style: space/click reveals, then ←/1 = again, →/2 = got it.
-        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!k.revealed) k.reveal(); return; }
-        if (!k.revealed) return;
-        if (e.key === 'ArrowLeft' || e.key === '1') { e.preventDefault(); k.cramAgain(); }
-        else if (e.key === 'ArrowRight' || e.key === '2') { e.preventDefault(); k.cramGot(); }
-        return;
-      }
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
         if (!k.revealed) k.reveal(); else k.grade(3);
@@ -221,7 +199,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   // growth the scheduler was computing was never visible.
   const nowMs = Date.now();
   const keyOf = (c: DeckWord) => c.id ?? c.h;
-  const isReady = (c: DeckWord) => cram || !c.dueAtMs || c.dueAtMs <= nowMs || aheadKeys.has(keyOf(c));
+  const isReady = (c: DeckWord) => !c.dueAtMs || c.dueAtMs <= nowMs || aheadKeys.has(keyOf(c));
   const readyCards  = queue.filter(isReady);
   const futureCards = queue.filter(c => !isReady(c));
 
@@ -298,7 +276,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
             centred sentences are hard to read. */}
         <div className="mx-auto text-left" style={{ maxWidth: 440 }}>
           <AchievementToast />
-          <DailyProverb showRule={false} />
         </div>
       </div>
     );
@@ -340,21 +317,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   const cardIsLearning = isLearningCard(card);
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
-    // Cram is STATELESS, and this early return is the whole mechanism: it lands before
-    // onGrade (the only FSRS write) and before bumpCount (the only daily-limit write), so a
-    // crammed card keeps its stability, its due date, its review count and its status.
-    // ExtrasTab also declines to pass onGrade for the cram instance, so it is guarded twice.
-    // "Again" re-drills at the end of this session and nothing else changes.
-    if (cram) {
-      setResults(prev => [...prev, { label, color }]);
-      setQueue(prev => {
-        if (!prev) return prev;
-        const without = prev.filter(c => c !== card);
-        return fsrsGrade === 1 ? [...without, card] : without;
-      });
-      setRevealed(false);
-      return;
-    }
     onGrade?.(card.id ?? card.h, fsrsGrade);
     // Count toward the daily limits: a first-ever grade introduces a new card; a
     // graduated card being reviewed counts as a review. Learning repeats don't count.
@@ -398,12 +360,9 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   kbd.current = {
     canAct: true,
     revealed,
-    cram,
     reveal: () => setRevealed(true),
     grade: (g) => { const m = GRADES.find(x => x.grade === g)!; handleGrade(m.grade, m.label, m.color); },
     replay: () => { void speak(speechText); },
-    cramAgain: () => handleGrade(1, 'Again', 'var(--accent)'),
-    cramGot: () => handleGrade(3, 'Got it', 'var(--jade)'),
   };
 
   return (
@@ -412,11 +371,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       <div className="flex justify-between items-end mb-6 gap-4">
         <div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            {cram ? 'Cram · not scheduled' : 'Vocabulary review · FSRS'}
+            Vocabulary review · FSRS
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
             {results.length + 1} of {results.length + readyCards.length + futureCards.length}
-            {!cram && dueCount > 0 && (
+            {dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}
           </div>
@@ -445,8 +404,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
         </button>
       </div>
 
-      {/* Card state badge — hidden in cram (no scheduling, Quizlet-style clean face) */}
-      {!cram && <div className="flex justify-end mb-2 gap-2">
+      <div className="flex justify-end mb-2 gap-2">
         {cardIsLearning ? (
           <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'color-mix(in srgb, var(--gold) 15%, var(--paper))', color: 'var(--gold)', border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)', borderRadius: 4, padding: '2px 6px' }}>
             {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
@@ -462,13 +420,12 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
           {(card.reviews ?? 0) === 0 && !card.stability && ' · new'}
           {(card.reviews ?? 0) >= 5 && (card.lapses ?? 0) === 0 && ' · mature'}
         </span>
-      </div>}
+      </div>
 
-      {/* Card face — in cram, the whole card flips on click (Quizlet-style) */}
+      {/* Card face */}
       <div
-        onClick={cram && !revealed ? () => setRevealed(true) : undefined}
         className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[330px] px-10 py-14"
-        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)', cursor: cram && !revealed ? 'pointer' : 'default' }}
+        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)', cursor: 'default' }}
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
@@ -499,9 +456,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
           </div>
         )}
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
-          {cram
-            ? (revealed ? 'Did you know it?' : 'Click to reveal')
-            : (revealed ? 'How well did you remember?' : (reverse ? 'Recall the word, then reveal' : 'Think of the meaning, then reveal'))}
+          {revealed ? 'How well did you remember?' : (reverse ? 'Recall the word, then reveal' : 'Think of the meaning, then reveal')}
         </div>
 
         {/* Back (revealed): the answer — the word + pinyin (reverse) or pinyin + meaning (normal) */}
@@ -538,32 +493,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
 
       {/* Grade buttons */}
       <div className="text-center mt-5">
-        {cram ? (
-          // Cram: Quizlet-style two-way outcome — no scheduling, no intervals.
-          !revealed ? (
-            // A spacer, not a second prompt — the card face already says "Click to reveal".
-            // It holds the grade buttons' height so revealing doesn't shift the layout.
-            <div style={{ height: 39 }} aria-hidden />
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginTop: 22 }}>
-              {([
-                // No `sub` hint text: the cram face stays clean. The ←/1 and →/2 bindings
-                // are still live — see the `kbd` handler, which is deliberately untouched.
-                { label: 'Again',  color: 'var(--accent)', onClick: () => handleGrade(1, 'Again', 'var(--accent)') },
-                { label: 'Got it', color: 'var(--jade)',   onClick: () => handleGrade(3, 'Got it', 'var(--jade)') },
-              ]).map(b => (
-                <button
-                  key={b.label}
-                  onClick={b.onClick}
-                  className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-                  style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${b.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
-                >
-                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: b.color }}>{b.label}</div>
-                </button>
-              ))}
-            </div>
-          )
-        ) : !revealed ? (
+        {!revealed ? (
           <button
             onClick={() => setRevealed(true)}
             className="cursor-pointer transition-all duration-150"

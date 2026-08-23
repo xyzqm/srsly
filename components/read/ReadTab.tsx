@@ -29,7 +29,6 @@ import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
 import MissedWordReview from './MissedWordReview';
-import DailyProverb from './DailyProverb';
 import ToastHost from '@/components/shared/ToastHost';
 
 interface Props {
@@ -1158,15 +1157,19 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   made "off" mean two different kinds of help at once; the colouring is
                   feedback on what you have already typed, not a hint about what to type,
                   so it stays on and this switch is about the meaning alone. */}
-              <button
-                style={toggleStyle(showClozeHints)}
-                onClick={() => setShowClozeHints(v => !v)}
-                title={showClozeHints
-                  ? 'Hovering a blank shows its English meaning'
-                  : 'No meaning on hover — recall the word, then type it'}
-              >
-                Hints
-              </button>
+              {/* Only where there ARE blanks. Your own reading has none, so the toggle
+                  offered to hide a hint about nothing. */}
+              {clozeWordCount > 0 && (
+                <button
+                  style={toggleStyle(showClozeHints)}
+                  onClick={() => setShowClozeHints(v => !v)}
+                  title={showClozeHints
+                    ? 'Hovering a blank shows its English meaning'
+                    : 'No meaning on hover — recall the word, then type it'}
+                >
+                  Hints
+                </button>
+              )}
               {/* Only for scripts that don't delimit their own words. In Spanish and French
                   every space is already a boundary, so the toggle offered a choice between
                   "correct" and "correct with underlines" — a decoration masquerading as a
@@ -1352,6 +1355,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             </>
           ) : null}
 
+          {/* The finish row belongs to BLANKS, so it appears only where there are any.
+              Own reading grades nothing, so "Finish & see vocabulary results" reported on an
+              empty set and the vocabulary results screen behind it had nothing to show. */}
+          {clozeWordCount > 0 && (
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
             {(() => {
               const clozeIncomplete = clozeWordCount > 0 && clozeAnswered < clozeWordCount;
@@ -1412,6 +1419,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               );
             })()}
           </div>
+          )}
 
           {showResults && <VocabResults results={vocabResults} />}
           {showResults && (() => {
@@ -1439,10 +1447,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             onCommit={commitBookSection}
           />
 
-          {/* The reward. Only once the reading is actually finished — see DailyProverb.
-              Sitting permanently at the foot of the tab it was wallpaper; here it is the
-              last thing on a screen that otherwise just reports a score. */}
-          {showResults && <DailyProverb />}
         </>
       )}
 

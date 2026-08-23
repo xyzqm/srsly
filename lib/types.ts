@@ -194,7 +194,6 @@ export interface ClaimedWords {
 
 export type ResponseMode = 'fr' | 'mc';
 export type TabId = 'read' | 'practice' | 'dash' | 'vocab' | 'settings';
-export type PracticeMode = 'flash' | 'cram';
 
 /** One reading passage inside DailyContent. */
 export interface DailyPassage {

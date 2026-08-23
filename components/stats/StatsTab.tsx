@@ -13,9 +13,9 @@ import PassageShelf from './PassageShelf';
 import AccuracyTrend from './AccuracyTrend';
 import WeakWords from './WeakWords';
 
-interface Props { onNavigateRead: () => void; onDrillWeak: () => void; }
+interface Props { onNavigateRead: () => void; }
 
-export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
+export default function StatsTab({ onNavigateRead }: Props) {
   const language = useLanguage();
   const { deck } = useVocabDeck(language);
   const { streak, langStreak, sessions, accuracy, forgiven } = useSRS(language);
@@ -41,7 +41,7 @@ export default function StatsTab({ onNavigateRead, onDrillWeak }: Props) {
 
       <Achievements />
 
-      <WeakWords deck={deck} onDrill={onDrillWeak} />
+      <WeakWords deck={deck} />
 
       <ReviewHeatmap deck={deck} />
 

@@ -566,6 +566,29 @@ holds what it is showing in its OWN state rather than rendering from `fresh`. Th
 the same list and are not — acknowledging empties `fresh`, so rendering from it made the
 milestone vanish a second after it appeared.
 
+### Reading and SRS are separate tabs
+
+One line down the middle, and it is the app's main organising idea:
+
+- **Read** is your own material — starter texts, pasted articles, web clips, books. No blanks,
+  no grading, no schedule touched. Words enter the deck only when you tap one and press Add to
+  deck. Comprehension questions are available (they check understanding, not recall).
+- **SRS** is what FSRS actually drives: flashcards, and generated passages, which keep their
+  blanks because a generated passage is written around the words you owe today.
+
+Anything gated on `clozeWordCount > 0` is gated on "this passage has blanks", which is the
+same distinction expressed in the one place the renderer can see it. That is why the Hints
+toggle and the finish row disappear on your own reading rather than being separately
+suppressed.
+
+**CRAM WAS REMOVED.** It drilled a chosen set while deliberately changing nothing — no
+scheduling, no counts, no streak — which made it the one thing in the SRS tab that was not
+SRS. It also had no stored state to clean up: being stateless WAS the feature. Stats' "Drill
+these" went with it, since cram was the only thing that could drill a scoped set.
+
+**THE DAILY PROVERB WAS REMOVED** from the UI. `lib/proverb.ts`, `lib/data/proverbs.ts` and
+`scripts/build-proverbs.mjs` are still in the tree and are now unused by the app.
+
 ### Key hooks
 
 | Hook | Responsibility |
@@ -594,11 +617,3 @@ Shown one card at a time, and only under the Stuck filter. A list of thirty leec
 thing the learner has already been ignoring; a queue of one asks a question small enough to
 answer.
 
-### Practice modes
-
-The Practice tab (`components/practice/ExtrasTab.tsx`) offers three modes selected via `PracticeMode`:
-- **flash** — `Flashcards.tsx` — SRS card review with mastery grading
-- **fill** — `FillInBlank.tsx` — fill-in-the-blank from daily content
-- **convo** — `Conversation.tsx` — guided dialogue practice
-
-Reading comprehension (`ReadTab`) supports two response modes: free-response (`fr`) graded by Claude at `/api/daily-content` or multiple-choice (`mc`).

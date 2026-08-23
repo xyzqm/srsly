@@ -476,9 +476,8 @@ function CrossFade({ id, children }: { id: string; children: React.ReactNode }) 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 interface VocabTabProps {
-  /** Hand off to the Practice tab. 'flash' reviews what is due; 'cram' drills the whole
-   *  deck ignoring due dates. */
-  onStudy: (mode: 'flash' | 'cram') => void;
+  /** Hand off to the SRS tab to review what is due. */
+  onStudy: () => void;
 }
 
 export default function VocabTab({ onStudy }: VocabTabProps) {
@@ -700,7 +699,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
             {deck.length > 0 && (
               <>
                 <button
-                  onClick={() => onStudy('flash')}
+                  onClick={onStudy}
                   className="cursor-pointer transition-all duration-150"
                   title="Review the cards that are due"
                   style={{
@@ -710,19 +709,6 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                   }}
                 >
                   ▸ Study
-                </button>
-                <button
-                  onClick={() => onStudy('cram')}
-                  className="cursor-pointer transition-all duration-150"
-                  title="Drill the whole deck now, ignoring due dates (doesn't change scheduling)"
-                  style={{
-                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
-                    background: 'none', color: 'var(--accent)',
-                    border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)', borderRadius: 7,
-                    padding: '6px 13px',
-                  }}
-                >
-                  ⚡ Cram
                 </button>
               </>
             )}

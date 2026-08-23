@@ -30,9 +30,18 @@ function set(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/** Cache key for daily content, scoped by language + proficiency level + date. */
+/**
+ * Cache key for daily content, scoped by language + proficiency level + date.
+ *
+ * The `v2` is a CACHE BREAK, and the reason is worth keeping. Passages built before your own
+ * reading stopped carrying blanks were cached with their `vocabWords` intact, so a starter
+ * text opened from cache still rendered blanks — already filled in — long after the code that
+ * made them was gone. A cached passage carries no marker saying which rules built it, so the
+ * only honest fix is to stop reading the old ones. Bump this again if the passage shape ever
+ * changes in a way old entries cannot satisfy.
+ */
 function dailyKey(lang: LanguageCode, level: number, date: string): string {
-  return `srsly-daily-${lang}-${level}-${date}`;
+  return `srsly-daily-v2-${lang}-${level}-${date}`;
 }
 
 /** Storage key for a language's passage shelf. */
