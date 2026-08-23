@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import CharacterBreakdown from './CharacterBreakdown';
+import GrammarNote from './GrammarNote';
 
 function useIsMounted() {
   const [mounted, setMounted] = useState(false);
@@ -24,7 +25,7 @@ export interface PopupData {
   word: string;
   pinyin: string;
   meaning: string;
-  /** Dictionary (base) form when the word is a conjugated verb/adjective (ja only). */
+  /** Dictionary (base) form of an inflected word, resolved server-side (ja, es, fr). */
   baseForm?: string;
   baseReading?: string;
   /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);
@@ -245,6 +246,11 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
               : <em style={{ opacity: 0.35, fontSize: 12 }}>definition not in local dictionary</em>
             }
           </div>
+
+          {/* What the word is doing in this sentence — French only, where Lexique gives us the
+              inflection. Directly under the definition because it is part of reading the line
+              you are on, not reference material you go looking for. */}
+          <GrammarNote word={displayData.word} baseForm={displayData.baseForm} variant="popup" />
 
           {/* Other readings — shown when this character has more than one reading in the deck */}
           {displayData.otherReadings && displayData.otherReadings.length > 0 && (
