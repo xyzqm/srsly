@@ -13,6 +13,16 @@ import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
 import ThemeSheet from '@/components/ThemeSheet';
 import TabPanel from '@/components/TabPanel';
+import dynamic from 'next/dynamic';
+import { hasLessons } from '@/lib/lessons';
+
+/**
+ * The Learn tab carries its whole lesson tree, and is the one tab most learners never open —
+ * it does not even exist outside French. Loading it on demand keeps 12 kB of prose out of the
+ * initial bundle, the same discipline the level tables follow. `ssr: false` because it renders
+ * from localStorage.
+ */
+const LearnTab = dynamic(() => import('@/components/learn/LearnTab'), { ssr: false });
 import ReadTab from '@/components/read/ReadTab';
 import SrsTab from '@/components/practice/SrsTab';
 import StatsTab from '@/components/stats/StatsTab';
@@ -225,6 +235,10 @@ function AppShell() {
   }, []);
   const handleLanguageChange = useCallback(async (lang: LanguageCode) => {
     setLanguage(lang);
+    // Learn exists only where there is a lesson tree, so switching to a language without one
+    // would hide the tab while `tab` still pointed at it — a blank page with no tab selected.
+    // Falling back to Read rather than to SRS: someone who was reading lessons wants material.
+    if (!hasLessons(lang)) setTab(t => (t === 'learn' ? 'read' : t));
     const cfg = getLanguageConfig(lang);
     document.documentElement.setAttribute('lang', cfg.htmlLang);
     setSpeechLang(cfg.bcp47);
@@ -281,6 +295,11 @@ function AppShell() {
               onNavigateSettings={() => changeTab('settings')}
             />
           </TabPanel>
+          {/* Not kept alive: the lesson list is a static render off local state, so remounting
+              it costs nothing and there is no session in progress to lose. */}
+          {tab === 'learn' && (
+            <LearnTab onNavigateSrs={() => changeTab('practice')} />
+          )}
           <TabPanel active={tab === 'dash'}>
             <StatsTab onNavigateRead={() => changeTab('read')} />
           </TabPanel>

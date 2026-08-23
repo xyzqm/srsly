@@ -193,7 +193,7 @@ export interface ClaimedWords {
 }
 
 export type ResponseMode = 'fr' | 'mc';
-export type TabId = 'read' | 'practice' | 'dash' | 'vocab' | 'settings';
+export type TabId = 'read' | 'practice' | 'learn' | 'dash' | 'vocab' | 'settings';
 
 /** One reading passage inside DailyContent. */
 export interface DailyPassage {
