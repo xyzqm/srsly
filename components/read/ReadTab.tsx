@@ -1092,12 +1092,20 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   tell both the same thing. "All caught up" to someone who has never added a
                   word congratulates them for work they have not done, and buries the one
                   instruction they actually need. */}
+              {/* "above" means the reading cards, which exist only on the Read tab — on SRS
+                  this sits under a heading with nothing above it at all. It also counted the
+                  cards ("one of the four"), which stopped being true when audio was removed;
+                  the copy no longer names a number it cannot keep in step with. */}
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>
-                {deck.length === 0 ? 'Start anywhere above' : 'Ready when you are'}
+                {deck.length > 0 ? 'Ready when you are'
+                  : variant === 'srs' ? 'Nothing to review yet'
+                  : 'Start anywhere above'}
               </div>
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 400 }}>
                 {deck.length === 0
-                  ? 'Open one of the four above and start reading. Tap any word you do not know — you will get its definition, and saving it schedules a review. That is how the deck gets built; you do not have to fill it first.'
+                  ? variant === 'srs'
+                    ? 'A passage here is written around the words you have due, so it needs a deck first. Open the Read tab and start anything — tap a word you do not know, and saving it schedules a review.'
+                    : 'Open any of the readings above and start reading. Tap any word you do not know — you will get its definition, and saving it schedules a review. That is how the deck gets built; you do not have to fill it first.'
                   : totalReviewWordCount > 0
                     ? 'A passage will be written around the words you have due. It takes a few seconds and uses one AI generation, so it happens when you ask rather than the moment you open the app.'
                     : 'You have no words due for review today. Add new words to your deck to get a fresh passage built around them.'}
