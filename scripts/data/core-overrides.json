@@ -779,11 +779,17 @@
       "y": "and"
     },
     "fr": {
-      "ci": "alternative form of ici",
       "ne": "not, no",
       "se": "The third-person reflexive",
       "y": "there (at a place)",
-      "à": "to (destination)"
+      "à": "to (destination)",
+      "ce": "this, that",
+      "yaourt": "yoghurt",
+      "sol": "floor",
+      "salle": "room (in a house)",
+      "marron": "chestnut brown",
+      "rouge": "red",
+      "bureau": "office (room)"
     }
   },
   "curatedGloss": {
@@ -798,6 +804,17 @@
       "chica": "girl",
       "novia": "girlfriend; bride",
       "maestra": "teacher (female); schoolmistress"
+    },
+    "fr": {
+      "une": "a, an (feminine); front page (of a publication)",
+      "la": "the (feminine singular); her, it (direct object)",
+      "pas": "not (paired with ne); step, pace, footstep",
+      "nous": "we, us",
+      "vous": "you (plural, or polite singular)",
+      "assiette": "plate; seat",
+      "chambre": "bedroom; room, chamber",
+      "rose": "pink; rose (flower)",
+      "ci": "this one, here (as in celui-ci, ce livre-ci)"
     }
   },
   "inheritLemmaSense": {

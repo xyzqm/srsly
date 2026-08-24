@@ -255,7 +255,18 @@ async function main() {
     // Otherwise: a hand-set preference, which can only ever promote a sense already here.
     const want = LEAD_SENSE.get(word);
     if (want) {
-      const i = ranked.findIndex(g => g.toLowerCase().includes(want.toLowerCase()));
+      /**
+       * EXACT match first, substring only as a fallback.
+       *
+       * Substring alone silently does nothing whenever the wanted sense is a substring of one
+       * that already leads: `rouge` lists "red (of a red color)" before "red", so asking for
+       * "red" found index 0, and `i > 0` skipped the move. The override looked applied, was
+       * checked into the file, and changed nothing. Exact-first also keeps the fallback
+       * working for entries that name a prefix of a longer sense, like `se`.
+       */
+      const lower = want.toLowerCase();
+      let i = ranked.findIndex(g => g.trim().toLowerCase() === lower);
+      if (i < 0) i = ranked.findIndex(g => g.toLowerCase().includes(lower));
       if (i > 0) ranked.unshift(...ranked.splice(i, 1));
     }
     const m = [...new Set(ranked)].slice(0, MAX_SENSES).join('; ');
