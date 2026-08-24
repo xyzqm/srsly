@@ -34,6 +34,17 @@ export function needsSpaceBefore(
   if (!token || !prev) return '';
   if (token.type === 'punct' && !OPENING_PUNCT.has(token.text)) return '';
   if (prev.type === 'punct' && OPENING_PUNCT.has(prev.text)) return '';
+  /**
+   * A clitic keeps its hyphen and hugs the word before it: `est` + `-ce` is `est-ce`, never
+   * `est -ce`. The French segmenter splits inversion questions and imperatives so both halves
+   * can be looked up (`viens-tu` → `viens` + `-tu`), and without this the sentence would
+   * render with the pieces floating apart — and TTS would read them apart too, since it
+   * flattens through these same rules.
+   *
+   * Length is what separates this from a bare dash used as punctuation: a standalone `-` is
+   * one character and keeps whatever spacing it had.
+   */
+  if (token.text.length > 1 && token.text.startsWith('-')) return '';
   return ' ';
 }
 

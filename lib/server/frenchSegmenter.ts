@@ -51,7 +51,79 @@ const WORD_CHAR = /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎ
  *  `l'eau` whole means the passage still reads naturally while the card links to `eau`. */
 const JOINER = /[-'’]/;
 
-interface Piece { text: string; isPunct: boolean }
+interface Piece {
+  text: string;
+  isPunct: boolean;
+  /** Look this up instead of `text` — a clitic is written `-ce` but defined under `ce`. */
+  lookupAs?: string;
+}
+
+/**
+ * Pronouns that attach to a verb with a hyphen: inversion questions (`viens-tu`, `est-ce`)
+ * and imperatives (`donne-moi`, `vas-y`). Also the demonstrative tails of `ce livre-là`.
+ *
+ * These are the ONLY hyphens that get split. A hyphen in French usually makes one word out of
+ * two — `grand-père`, `arc-en-ciel`, `porte-monnaie` — and splitting those would be worse than
+ * the problem being fixed, which is why the dictionary is asked first and gets the final say.
+ */
+const CLITICS = new Set([
+  'je', 'tu', 'il', 'elle', 'on', 'nous', 'vous', 'ils', 'elles', 'ce',
+  'moi', 'toi', 'le', 'la', 'les', 'lui', 'leur', 'y', 'en',
+  'ci', 'là',
+]);
+
+/**
+ * The euphonic `t` of `parle-t-il` is NOT a word — it is inserted so two vowels do not collide,
+ * and it has no meaning to look up. Splitting on every hyphen would emit it as its own token
+ * and leave the reader tapping a `t` that no dictionary can define, so `-t-il` is peeled as a
+ * single unit and looked up as `il`.
+ */
+const T_PRONOUNS = new Set(['il', 'elle', 'on', 'ils', 'elles']);
+
+/**
+ * Peel clitic pronouns off a hyphenated word, or leave it alone.
+ *
+ * THE DICTIONARY IS ASKED FIRST, and again after every peel. Every hyphenated compound in the
+ * language that a learner is likely to meet is a headword — `grand-père`, `rendez-vous`,
+ * `peut-être`, `arc-en-ciel`, `celui-ci`, `vis-à-vis`, `c'est-à-dire`, `au-delà`,
+ * `porte-monnaie`, `sous-sol` were all checked — so the lookup, not the clitic list, is what
+ * keeps them whole. That matters for `rendez-vous`, whose tail IS a clitic: it survives only
+ * because the whole word is in the dictionary.
+ *
+ * The head must resolve too. Without that, an unknown compound whose tail happens to look like
+ * a pronoun would be torn in half and neither piece would mean anything.
+ */
+function splitClitics(piece: Piece): Piece[] {
+  if (piece.isPunct || !piece.text.includes('-')) return [piece];
+
+  const segments = piece.text.split('-');
+  const clitics: Piece[] = [];
+
+  while (segments.length > 1) {
+    // Asked before any peel, so the full word gets first refusal — and again after each one.
+    if (dict.has(segments.join('-').toLowerCase())) break;
+
+    const last = segments[segments.length - 1].toLowerCase();
+    if (segments.length >= 3 && segments[segments.length - 2].toLowerCase() === 't' && T_PRONOUNS.has(last)) {
+      clitics.unshift({ text: '-' + segments.slice(-2).join('-'), isPunct: false, lookupAs: last });
+      segments.splice(-2);
+    } else if (CLITICS.has(last)) {
+      clitics.unshift({ text: '-' + segments[segments.length - 1], isPunct: false, lookupAs: last });
+      segments.pop();
+    } else {
+      break;
+    }
+  }
+
+  if (!clitics.length) return [piece];
+
+  const head = segments.join('-');
+  const lower = head.toLowerCase();
+  // Nothing is gained by splitting a head that means nothing on its own.
+  if (!dict.has(lower) && !lemmatizeFr(head, dict)) return [piece];
+
+  return [{ text: head, isPunct: false }, ...clitics];
+}
 
 /**
  * Split a sentence into word and punctuation pieces. French uses « » guillemets alongside
@@ -113,10 +185,13 @@ function mergeKnownRuns(pieces: Piece[], overrides: Map<string, DictOverride>): 
 export function segmentFr(text: string, overrides: Map<string, DictOverride>): RawTok[] {
   if (!text) return [];
 
-  return mergeKnownRuns(splitPieces(text), overrides).map((piece): RawTok => {
+  return mergeKnownRuns(splitPieces(text), overrides).flatMap(splitClitics).map((piece): RawTok => {
     if (piece.isPunct) return [piece.text];
 
-    const surface = piece.text;
+    // What is DISPLAYED and what is LOOKED UP differ for a clitic: `-ce` is written with its
+    // hyphen so the sentence still reads `est-ce`, and defined under `ce`.
+    const display = piece.text;
+    const surface = piece.lookupAs ?? piece.text;
     const lower = surface.toLowerCase();
     // An override keyed by the EXACT surface is authoritative — that is the deck's own card,
     // spelled the way it appears here.
@@ -144,7 +219,11 @@ export function segmentFr(text: string, overrides: Map<string, DictOverride>): R
     const override = direct ?? (baseForm ? overrides.get(baseForm) : undefined);
     const meaning = override?.m ?? resolveMeaning(baseForm, surface);
 
+    // A clitic always carries a base form, even when it resolved to itself: every downstream
+    // matcher keys on `baseForm ?? text`, and `-ce` would never match the `ce` card.
+    const linked = baseForm ?? (piece.lookupAs && piece.lookupAs !== display ? piece.lookupAs : undefined);
+
     // Reading is always '' for French; the slot exists only to keep one wire format.
-    return baseForm ? [surface, '', meaning, baseForm] : [surface, '', meaning];
+    return linked ? [display, '', meaning, linked] : [display, '', meaning];
   });
 }

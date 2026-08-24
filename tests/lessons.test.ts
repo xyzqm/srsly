@@ -14,26 +14,6 @@ import { segmentFr } from '@/lib/server/frenchSegmenter';
  * words, so what matters is that the theme exists and is not empty. The words themselves were
  * already validated against the dictionary when `scripts/build-themes.mjs` emitted them.
  */
-/**
- * Words these examples use that the bundled dictionary cannot define YET. Each is a real
- * defect, listed here rather than written around, because avoiding them would mean teaching
- * French without `au` — and the gap is in the dictionary, not in the sentence.
- *
- * - `au` — French Wiktionary's only sense for it is "contraction of à + le", and
- *   `build-frdict.mjs` dropped every contraction sense. That rule is about proclitics the
- *   lemmatizer can PEEL (`j'ai`, `qu'il`); `au` has no apostrophe and nothing to peel, so
- *   dropping it deleted the word instead of freeing a card. `aux` went the same way, and `du`
- *   survived only by accident on a second sense. The filter is now narrowed to apostrophe
- *   contractions — but the fix only reaches the app when `public/frdict.json` is regenerated,
- *   which needs the 547 MB Wiktionary extract.
- * - `est-ce` — the segmenter keeps hyphenated words whole, which is right for `grand-père` and
- *   wrong here. It affects every inversion question (`viens-tu`, `parlez-vous`) too, and is a
- *   segmentation question rather than a dictionary one.
- *
- * Both predate this lesson tree: the French starter text already says "je pars au travail".
- */
-const KNOWN_DICTIONARY_GAPS = new Set(['au', 'est-ce']);
-
 const themes = (BEGINNER_THEMES as Record<string, Record<string, string[]>>).fr ?? {};
 const lessons = lessonsFor('fr');
 
@@ -96,6 +76,12 @@ describe('grammar lessons', () => {
    * meaning on every word token — the same check `tests/starterTexts.test.ts` applies, through
    * the same code path `/api/segment-text` takes at request time.
    */
+  /**
+   * No exemptions. This briefly carried two — `au`, which the dictionary's contraction filter
+   * had deleted outright, and `est-ce`, which the segmenter kept whole as one unlookupable
+   * token. Both are fixed at the source rather than written around, so every word of every
+   * example resolves.
+   */
   it('uses only words that resolve in the real dictionary', () => {
     const misses: string[] = [];
     for (const l of grammar) {
@@ -103,7 +89,6 @@ describe('grammar lessons', () => {
         for (const tok of segmentFr(ex.text, new Map())) {
           if (tok.length === 1) continue;                    // punctuation
           if (tok.length >= 3 && tok[2]) continue;           // resolved to a gloss
-          if (KNOWN_DICTIONARY_GAPS.has(tok[0].toLowerCase())) continue;
           misses.push(`${l.id}: "${tok[0]}" in «${ex.text}»`);
         }
       }
@@ -111,24 +96,6 @@ describe('grammar lessons', () => {
     expect(misses, `unlookupable words:\n  ${misses.join('\n  ')}`).toEqual([]);
   });
 
-  /**
-   * The exemptions are asserted to be REAL, so the list cannot quietly outlive the bugs it
-   * describes. When `au` starts resolving, this fails and the entry above must come out.
-   */
-  it('still has exactly the known gaps, and no more', () => {
-    const stillMissing = new Set<string>();
-    for (const l of grammar) {
-      for (const ex of l.examples ?? []) {
-        for (const tok of segmentFr(ex.text, new Map())) {
-          if (tok.length === 1) continue;
-          if (tok.length >= 3 && tok[2]) continue;
-          stillMissing.add(tok[0].toLowerCase());
-        }
-      }
-    }
-    expect([...stillMissing].sort(), 'a gap was fixed — remove it from KNOWN_DICTIONARY_GAPS')
-      .toEqual([...KNOWN_DICTIONARY_GAPS].sort());
-  });
 });
 
 describe('vocabulary lessons', () => {
