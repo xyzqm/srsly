@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import { buildEpubSection } from '@/lib/epubSection';
 import { setActiveBookId, getActiveBookId } from '@/lib/epubProgress';
@@ -7,6 +7,9 @@ import { parseEpub, EpubError } from '@/lib/epub';
 import { mismatchWarning } from '@/lib/languageMismatch';
 import { chunkChapter } from '@/lib/epubChunk';
 import { bookId, putBook, listBooks, removeBook, savePosition, type StoredBook } from '@/lib/epubStore';
+import ReadabilityNote from './ReadabilityNote';
+import { useTextReadability } from '@/hooks/useReadability';
+import { sampleChapters } from '@/lib/readability';
 
 /**
  * Read a book, through the same pipeline as everything else.
@@ -177,6 +180,25 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
     </button>
   );
 
+  /**
+   * How hard is this book, and how hard is the chapter you are looking at?
+   *
+   * The book figure is an ESTIMATE from a few excerpts, and says so. Scoring a novel exactly
+   * means one /api/segment-text request per chapter — thirty-plus round trips before the
+   * learner has even decided whether they want it — and three samples answer the same question
+   * closely enough. The chapter figure is exact, and costs one request when you select it.
+   */
+  const bookSamples = useMemo(
+    () => (active ? sampleChapters(active.chapters.map(c => c.text)) : null),
+    [active],
+  );
+  const bookReadability = useTextReadability(bookSamples);
+  const chapterSamples = useMemo(
+    () => (active ? [active.chapters[chapterIdx]?.text?.slice(0, 4000) ?? ''].filter(Boolean) : null),
+    [active, chapterIdx],
+  );
+  const chapterReadability = useTextReadability(chapterSamples);
+
   if (!open) {
     return (
       <button
@@ -279,6 +301,11 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
               {warning}
             </p>
           )}
+          {bookReadability && (
+            <div className="mb-3 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
+              <ReadabilityNote readability={bookReadability} estimated />
+            </div>
+          )}
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7 }}>
             Chapters
           </div>
@@ -292,6 +319,12 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
               <option key={c.id} value={i}>{i + 1}. {c.title}</option>
             ))}
           </select>
+
+          {chapterReadability && (
+            <div className="mb-3">
+              <ReadabilityNote readability={chapterReadability} />
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2 items-center">
             {sections.map((_, i) => btn(

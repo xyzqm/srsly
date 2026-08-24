@@ -19,6 +19,8 @@ import { selectClozeTargets, clozeKey } from '@/lib/clozeTargets';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
+import ReadabilityNote from './ReadabilityNote';
+import { useReadability } from '@/hooks/useReadability';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
@@ -211,6 +213,16 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         langConfig.scriptIsUnspaced ? /[一-鿿]/.test(t.text) : t.type !== 'punct'
       ).length
     : 0;
+
+  /**
+   * How much of THIS passage is at or below the learner's level.
+   *
+   * Read straight off the tokens the segmenter already produced, so it costs nothing and needs
+   * no extra request — see lib/readability.ts on why raw text could not be measured client-side.
+   */
+  const readability = useReadability(
+    useMemo(() => SENTENCES.flatMap(s => s.tokens), [SENTENCES]),
+  );
 
   const genEstShort = hskLevel <= 3 ? '~15–25s' : '~20–35s';
   const genEstLong  = hskLevel <= 3 ? 'about 15–25 seconds' : 'about 20–35 seconds';
@@ -993,6 +1005,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               ? <>level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}</>
               : <>~{charCount} {langConfig.countUnit}</>}
           </div>
+          {/* Information, never a gate — see ReadabilityNote. It sits BESIDE the passage rather
+              than in front of it, and nothing is withheld at any figure. */}
+          <div className="text-right"><ReadabilityNote readability={readability} /></div>
         </div>
       </div>
 

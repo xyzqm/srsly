@@ -397,6 +397,55 @@ raw / 433 kB over the wire, in its own chunk; `/` first-load JS is unchanged at 
 deliberately NOT attached to tokens server-side, which would inflate the wire format for
 information almost none of which is looked at.
 
+### How hard is this, for me?
+
+`lib/readability.ts` reports what share of a text sits at or below the learner's band, shown on
+any open passage and — for a book — as a per-chapter figure plus a sampled whole-book estimate
+(`components/read/ReadabilityNote.tsx`).
+
+**Information, never a gate.** This file's position is that levels are calibration and a MAP,
+and a readability figure is precisely that map: it answers "is this book near where I am?",
+which is the question standing between a learner and the novel they want to read. Nothing is
+withheld at any figure, and it renders beside the text rather than in front of it.
+
+**It measures TOKENS, not raw text, and that is not a detail.** Every segmenter is server-side,
+so nothing on the client can turn a string into words; and the level tables are keyed by LEMMA,
+so matching surface forms would count `parlons` and `maisons` as unknown and score a wholly-A1
+French text at about 40% — a confidently wrong number, which is worse than no number. Measuring
+the tokens the segmenter already produced sidesteps both: they carry `baseForm` and `meaning`
+already, so a passage costs nothing extra. This is why there is no figure in the paste panel —
+it holds a string, so a score there would need a segmentation round-trip *before* reading, for a
+text you have already chosen.
+
+**Token-weighted, not type-weighted.** The question is "what share of the words on this page do
+I know?" By types, a rare word met once weighs the same as `le` met forty times, which reads as
+a far harder text than it is. `types` is still reported, because the pair says something neither
+says alone: high token coverage with a large type count is a text with many one-off hard words,
+which is exactly the text a dictionary makes readable.
+
+**Two kinds of token are excluded from the measurement rather than graded**, because grading
+them would lie in one direction or the other:
+
+- **Proper nouns**, which `nameFilter.mjs` strips from the dictionaries at build time, so a
+  novel's characters resolve to nothing. Counting them as hard makes every novel look far above
+  its level.
+- **Undecomposed elisions.** `j'aime` is `je` + `aime`, both A1, but it survives as one token
+  because it is its own headword — so it is in no band, and grading it put "j'aime" at the top
+  of a beginner chapter's list of hardest words.
+
+**A book is ESTIMATED from a few excerpts, and says so.** `/api/segment-text` caps at
+`MAX_PASTE_CHARS`, so an exact novel-wide figure is one request per chapter — thirty-plus round
+trips before the learner has decided whether they want the book. `sampleChapters` takes three
+spread through it, skipping front matter and anything too short to be prose.
+
+**The verdict is bucketed on the ROUNDED percentage**, not the raw coverage, or 75% reads
+"very hard" on one text and "hard going" on the next.
+
+**Words the ranking cannot see were pinned, not worked around.** `au`, `aux`, `des`, `ma`, `ces`
+and `parce` were in NO band — contractions and possessives are excluded from band eligibility by
+construction — so they scored as above-level and turned up among a text's "hardest words". They
+are core A1 grammar; the fix belonged in `pin`, not in the metric.
+
 ### A gloss shows ONE sense
 
 `components/shared/GlossText.tsx` renders a dictionary gloss as its lead sense plus a `+N more`
