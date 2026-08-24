@@ -253,12 +253,27 @@ For French, the model writes plain prose and `lib/server/frenchSegmenter.ts` spl
 
 **There is deliberately no npm lemmatizer.** None exists for French — `lefff-lemmatizer`, `french-lemmatizer` and `fr-lemmatizer` are not published, and `lemmatizer` is English-only. The one real option is a Snowball *stemmer*, which is the wrong tool here: stemmers emit non-words (`manger` → `mang`) and every candidate in this codebase must validate against a real headword.
 
-Two French-specific wrinkles:
+Three French-specific wrinkles:
 
 - **Elision.** `l'eau` is kept as ONE token so the passage reads naturally, and the proclitic is peeled off during lemmatization to link the card to `eau`. Only known proclitics (`l' d' j' n' qu' s' c' m' t'`) split, and a token that is *itself* a headword never does — which is what keeps `aujourd'hui` and `d'accord` ("OK", not "agreement") intact. The peeled remainder is re-tested against `FORM_DOMINANT_LEMMAS`, not just looked up: `n'est` peels to `est`, which is a headword meaning "east", so without that second pass "is not" resolves to a compass direction.
 - **Homograph ordering.** A surface that is a common word normally wins over its inflected reading (`livre` is "book", not a form of `livrer`; likewise `porte`, `ferme`, `vers`). The exception is `FORM_DOMINANT_LEMMAS` — forms of a dozen very high-frequency verbs, where the verb reading dominates so clearly that it should win anyway (`est` is "is" far more often than the noun "east"; `été` is "been" before "summer"). `FORM_DOMINANT_EXCEPTIONS` then carves back the cases where that overshoots: `puis` is the everyday adverb "then", and `je puis` for "je peux" is literary.
 
+- **Hyphens do two opposite jobs.** Most BUILD a word — `grand-père`, `arc-en-ciel`,
+  `porte-monnaie` — and must stay whole. A few ATTACH a pronoun to a verb, in inversion
+  questions and imperatives, and leaving those joined meant `est-ce` and `viens-tu` resolved to
+  nothing at all: tapping the commonest question form in the language did nothing. `splitClitics`
+  peels only known clitics, and **asks the dictionary first and again after every peel** — which
+  is what keeps `rendez-vous` whole even though `vous` is a clitic. The head must resolve too, or
+  an unknown compound would be torn into two meaningless halves. The euphonic `t` of
+  `parle-t-il` is not a word, so `-t-il` is peeled as ONE unit and looked up as `il`; splitting
+  every hyphen would leave the reader tapping a `t` no dictionary can define. A clitic keeps its
+  hyphen (`-ce`, `-tu`) and `needsSpaceBefore` hugs it to the previous word, so the sentence and
+  the TTS plaintext still read `est-ce` — without that rule the halves float apart, since the
+  same rules flatten tokens for speech.
+
 **Contraction headwords are dropped at build time** (`contraction of` / `compound of` glosses). French Wiktionary lists `qu'il` and `n'est` as headwords, and the lemmatizer's first test is "is this surface already a headword?" — so they stopped at themselves with a grammar note for a definition and never linked to the `il` / `être` card. `j'ai` and `c'est` still survive, because they carry an ordinary gloss ("I have", "it is") alongside the contraction one; that gloss is serviceable, so they are left alone.
+
+**But only where there is an apostrophe to PEEL.** That reasoning is entirely about proclitics the lemmatizer can split. `au` (à + le) and `aux` (à + les) have nothing to split on — no rule recovers `à` and `le` from `au` — so dropping them did not free a card, it deleted the word: both have no other sense and vanished from the dictionary outright, which is why tapping the `au` in the very first French starter text returned nothing. It went unnoticed because the starter-text check allows 90%, for proper nouns. `du` survived only by accident, on a second sense reading "Forms the partitive article." The filter now tests `word.includes("'")` first, and the 21 entries this restored are exactly the apostrophe-less contractions (`au`, `aux`, `des`, `ès`, the legal `dudit`/`auxdits` family).
 
 ### Language data files
 
@@ -382,6 +397,37 @@ raw / 433 kB over the wire, in its own chunk; `/` first-load JS is unchanged at 
 deliberately NOT attached to tokens server-side, which would inflate the wire format for
 information almost none of which is looked at.
 
+### A gloss shows ONE sense
+
+`components/shared/GlossText.tsx` renders a dictionary gloss as its lead sense plus a `+N more`
+control, and is used by `WordPopup` (so the Read tab and generated passages both get it) and by
+the Learn tab's vocabulary lists. `jaune` glosses as "yellow; yolk (of egg); strikebreaker", and
+someone who tapped a colour should not have to read past two senses that have nothing to do with
+the sentence. It is the same judgement `LeechTriage` rests on: a five-sense dump is why a card
+will not stick.
+
+**Nothing is discarded.** The deck stores the full gloss; this only changes what is shown first.
+Flashcards deliberately do NOT collapse — the answer side is the one place you are specifically
+asking what a word means, and hiding senses there could conceal the one you added the card for.
+
+**The lead is the CONTEXTUAL sense where the generator identified one**, not blindly segment
+zero. Collapsing to the first would have hidden the very sense `contextualMeanings` exists to
+surface. The passage's hover tooltip renders with `pointerEvents: 'none'`, so collapsing is
+opt-in — a control the reader cannot click is worse than the full gloss.
+
+**Near-duplicate senses are dropped at render.** Wiktionary repeats itself more than you would
+expect: `gris` carries both "grey / gray" AND "gray / grey", `bleu` both "blue" and "the color
+blue", `rouge` both "red (of a red color)" and "red". The test is EXACT equality of content
+words after removing framing words (`the`, `of`, `color`, `used`…). The looser subset test was
+tried and rejected: it also swallows real senses, collapsing être's "to be; to be located; to be
+situated" down to "to be". A repeated sense is untidy; a deleted one is wrong.
+
+**Collapsing makes the LEAD SENSE load-bearing**, which is what surfaced a run of bad ones —
+`une` led with "front page (of a publication)", `pas` with "step, pace, footstep", `ce` with "a
+part of the primary school", `yaourt` with "a song where the singer makes up the words", and
+`assiette` with "seat". All are top-frequency or first-lesson words, and all are fixed in
+`core-overrides.json` rather than in the renderer.
+
 ### The lesson tree
 
 `components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: 33 lessons in 6
@@ -500,7 +546,11 @@ The adjustment **swaps pairs across a band boundary** rather than reassigning wo
 
 Spanish never showed the freeze because its three-register blend had A1 about right already. French exposed it: Lexique's two registers are film subtitles and books, **both narrative fiction**, so they agree with each other about drama and A1 filled with `souffrir`, `arme` and `âme` while the anchor sat powerless. Unfrozen, the cross-check moves 400 words in French and 504 in Spanish (~3–4%).
 
-**Hand-set level overrides.** `scripts/data/core-overrides.json` has three sections — `pin` (greetings, forced to level 1), `beginner` (thematic A1 sets, also forced to level 1) and `demote` (forced no higher than B1) — applied by `scripts/lib/coreOverrides.mjs` *after* the anchor and immediately before emission, so both bypass the derived signals. Demote runs first, pin second, so pinning wins if a word ever lands in both. It exists because frequency and the anchor share a blind spot: **nobody writes "hello" in an encyclopedia.** Against the corpora actually used, `hola` and `bonjour` landed at B1, `안녕하세요` and `아니요` at B2, and `por favor` / `s'il vous plaît` / `au revoir` / `여보세요` were never ranked at all, since the corpus tokenizer counts single tokens and those are multi-word. No tuning fixes that — the evidence is absent from the source.
+**Hand-set level overrides.** `scripts/data/core-overrides.json` has three sections — `pin` (greetings, forced to level 1), `beginner` (thematic A1 sets, also forced to level 1) and `demote` (forced no higher than B1) — applied by `scripts/lib/coreOverrides.mjs` *after* the anchor and immediately before emission, so both bypass the derived signals. Demote runs first, pin second, so pinning wins if a word ever lands in both. It exists because frequency and the anchor share a blind spot: **nobody writes "hello" in an encyclopedia.**
+
+`leadSense` and `curatedGloss` are two further sections, governing DEFINITIONS rather than levels. `leadSense` only reorders senses the dictionary already lists, so it stays inside the rule that a definition comes from the licensed source; `curatedGloss` replaces the gloss outright and is the one deliberate exception, for entries where the source is missing the core sense — Wiktionary's `assiette` has no "plate" at all, and `chambre` is a stub ending in a colon. Prefer `leadSense`, and keep the curated list short.
+
+**A `leadSense` value must match a sense EXACTLY, or it can silently do nothing.** The matcher took the first sense *containing* the value, then moved it only when `i > 0` — so `rouge`, which lists "red (of a red color)" ahead of "red", found index 0 and skipped the move. The override looked applied, was checked in, and changed nothing. It now tries an exact match before falling back to substring (the fallback still serves entries naming a prefix of a longer sense, like `se`). A stale entry can also never match: `ci` named a sense that no longer survives filtering, and sat there leaving the word defined as "see -ci". Against the corpora actually used, `hola` and `bonjour` landed at B1, `안녕하세요` and `아니요` at B2, and `por favor` / `s'il vous plaît` / `au revoir` / `여보세요` were never ranked at all, since the corpus tokenizer counts single tokens and those are multi-word. No tuning fixes that — the evidence is absent from the source.
 
 **`beginner` exists because no corpus contains a beginner's world.** Newspapers, encyclopedias, subtitles and novels almost never say fork, Thursday, purple or yogurt, so the ranking put `tenedor`, `zumo`, `verdura` and `yogur` at C2, `bolígrafo` and `morado` at C1, `manzana` and `cuchillo` at B2, and three of the seven weekdays at B1. Measured against an external A1 reference list, only **49%** of a real beginner vocabulary was in our A1. The `beginner` section fixes that with ~300 words per language in 21 themed sets (numbers, colours, weekdays, months, seasons, family, body, food, house, tableware, clothing, school, places, transport, weather, animals, routine, adjectives, basics, verbs, everyday), taking the yardstick to **93%**. The remainder are pure inflections (`amiga`, `zapatos`, `lavarse`) that have no dictionary headword and so cannot be pinned — the strict-dictionary rule holds here too.
 

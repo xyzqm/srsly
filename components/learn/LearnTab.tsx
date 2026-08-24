@@ -6,6 +6,7 @@ import { unitsFor, loadDone, saveDone, type Lesson } from '@/lib/lessons';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
+import GlossText from '@/components/shared/GlossText';
 
 /**
  * The lesson tree — a route in for someone who wants one.
@@ -300,17 +301,17 @@ function VocabLesson({ lesson, done, deck, addWords, onMark, onNavigateSrs, acti
         <div style={{ ...MONO, fontSize: 11, color: 'var(--ink-faint)' }}>loading definitions…</div>
       ) : (
         <div
-          className="grid gap-x-6 gap-y-1.5"
+          className="grid gap-x-6 gap-y-1.5 items-start"
           style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', maxWidth: 780 }}
         >
           {entries.map(e => (
             <div key={e.h} className="flex items-baseline gap-2 min-w-0">
               <span style={{ fontSize: 14, color: 'var(--ink)', flexShrink: 0 }}>{e.h}</span>
-              <span
-                className="min-w-0"
-                style={{ fontSize: 11.5, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
-                {e.m || '—'}
+              {/* One sense, the rest on a tap — the same treatment the word popup gives.
+                  Deliberately NOT truncated with an ellipsis any more: a row that can expand
+                  has to be allowed to wrap, or the extra senses open into a clipped line. */}
+              <span className="min-w-0" style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.45 }}>
+                {e.m ? <GlossText gloss={e.m} collapsible /> : '—'}
               </span>
               {inDeck.has(e.h) && (
                 <span style={{ ...MONO, fontSize: 9, color: 'var(--jade)', flexShrink: 0 }} title="already in your deck">✓</span>

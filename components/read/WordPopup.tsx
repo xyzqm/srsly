@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom';
 import CharacterBreakdown from './CharacterBreakdown';
 import GrammarNote from './GrammarNote';
+import GlossText from '@/components/shared/GlossText';
 
 function useIsMounted() {
   const [mounted, setMounted] = useState(false);
@@ -240,9 +241,13 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
               {displayData.baseReading ?? displayData.pinyin}
             </span>
           </div>
+          {/* One sense, with the rest a tap away. `jaune` glosses as "yellow; yolk (of egg);
+              strikebreaker", and someone who tapped a colour should not have to read past two
+              senses that have nothing to do with the sentence. Nothing is discarded — the deck
+              still stores the full gloss. */}
           <div style={{ fontSize: 13.5, marginTop: 5, lineHeight: 1.5 }}>
             {displayData.meaning
-              ? fmtMeaning(displayData.meaning)
+              ? <GlossText gloss={displayData.meaning} collapsible highlightColor="var(--pop-fg)" />
               : <em style={{ opacity: 0.35, fontSize: 12 }}>definition not in local dictionary</em>
             }
           </div>
