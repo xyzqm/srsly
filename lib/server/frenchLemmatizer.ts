@@ -37,7 +37,7 @@ export interface LemmaDict {
  */
 const FORM_DOMINANT_LEMMAS = new Set([
   'être', 'avoir', 'aller', 'faire', 'pouvoir', 'vouloir',
-  'devoir', 'dire', 'voir', 'savoir', 'venir', 'prendre',
+  'devoir', 'dire', 'voir', 'savoir', 'venir', 'prendre', 'donner',
 ]);
 
 /**
@@ -45,6 +45,13 @@ const FORM_DOMINANT_LEMMAS = new Set([
  * even though the verb is high-frequency. `puis` is the everyday adverb "then"; `je puis`
  * for "je peux" is literary and rare, so resolving `puis` to `pouvoir` mislabels almost
  * every occurrence a learner will meet.
+ *
+ * `donner` needs no entry here, and the reason is worth recording because it looks as though
+ * it should. Its dangerous homographs are `donnée` ("datum") and `données` ("data"), which are
+ * everywhere in modern French — but the lookup above is a SINGLE step, not a chain: both are
+ * recorded as forms of `donné`, not of `donner`, so they never reach this rule and fall through
+ * to the common-word test that keeps them as themselves. Only `donne` and `donné` map straight
+ * to `donner`, and those are exactly the two that should resolve.
  */
 const FORM_DOMINANT_EXCEPTIONS = new Set(['puis']);
 

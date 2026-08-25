@@ -44,10 +44,23 @@ describe('FORM_DOMINANT_LEMMAS override that, for a dozen very common verbs', ()
     ['suis', 'être'],
     ['ai',   'avoir'],
     ['fait', 'faire'],
+    ['donne', 'donner'],   // the noun "deal (in cards)" exists and must not win
+    ['donné', 'donner'],   // the adjective "affordable, cheap" exists and must not win
   ])('%s → %s', (w, want) => expect(lemma(w)).toBe(want));
 
   it('puis is the everyday adverb, not a literary form of pouvoir', () => {
     expect(lemma('puis')).toBeUndefined();
+  });
+
+  /**
+   * The reason `donner` needs no FORM_DOMINANT_EXCEPTIONS entry, pinned so a future change to
+   * the lookup cannot quietly break it. `données` is everywhere in modern French and must stay
+   * "data" — it survives only because the lookup is a SINGLE step and `données` is recorded as
+   * a form of `donné`, not of `donner`, so it never reaches the override at all. Make that
+   * lookup chain and "the data are clear" starts reading as "to give".
+   */
+  it.each(['données', 'donnée'])('%s stays a noun, not a form of donner', w => {
+    expect(lemma(w)).toBeUndefined();
   });
 });
 
