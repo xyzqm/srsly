@@ -48,6 +48,16 @@ export interface PassageToken {
                     // are written in the same script they are read in
   meaning?: string; // only on vocab/free words
   type?: 'vocab' | 'free' | 'punct';
+  /**
+   * Japanese only: the chain of auxiliaries fused onto this word, as dictionary forms joined
+   * by `|` — 読みました is `ます|た`. Decoded to English by lib/japaneseGrammar.ts at render.
+   *
+   * It travels on the token because Japanese morphology is PRODUCTIVE, so there is no finite
+   * table to generate and lazily fetch the way French and Spanish do, and kuromoji cannot run
+   * in a browser. A few bytes on the minority of tokens that are conjugated is the only way
+   * the client can know.
+   */
+  grammar?: string;
   /** Dictionary (lemma) form when `text` is inflected — a conjugated verb/adjective, a
    *  plural, or an elided French proclitic. Resolved server-side per language and
    *  used for cloze blank detection and grade attribution. */

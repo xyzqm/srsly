@@ -28,6 +28,8 @@ export interface PopupData {
   meaning: string;
   /** Dictionary (base) form of an inflected word, resolved server-side (ja, es, fr). */
   baseForm?: string;
+  /** Japanese only: the auxiliary chain, decoded by lib/japaneseGrammar.ts. */
+  grammar?: string;
   baseReading?: string;
   /** vocab = SRS word (show "revealed" warning); free = new word (show Add-to-vocab button);
    *  lookup = already in the vocab deck (definition only); pool = staged but not yet in play */
@@ -255,7 +257,7 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
           {/* What the word is doing in this sentence — French only, where Lexique gives us the
               inflection. Directly under the definition because it is part of reading the line
               you are on, not reference material you go looking for. */}
-          <GrammarNote word={displayData.word} baseForm={displayData.baseForm} variant="popup" />
+          <GrammarNote word={displayData.word} baseForm={displayData.baseForm} chain={displayData.grammar} variant="popup" />
 
           {/* Other readings — shown when this character has more than one reading in the deck */}
           {displayData.otherReadings && displayData.otherReadings.length > 0 && (

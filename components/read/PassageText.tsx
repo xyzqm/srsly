@@ -441,6 +441,10 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
       setPopup({
         word: token.text, pinyin: pin, meaning: mean, type, anchorRect: rect, otherReadings,
         baseForm: token.baseForm, baseReading,
+        // Japanese carries its conjugation on the token itself — see lib/japaneseGrammar.ts.
+        // This popup is built HERE rather than through useWordPopup, so the field has to be
+        // copied in both places or the grammar line silently never renders in the passage.
+        grammar: token.grammar,
         ...(type === 'free' ? { compounds: compoundHints } : {}),
       });
     });

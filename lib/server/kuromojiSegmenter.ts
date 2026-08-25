@@ -2,6 +2,7 @@ import * as kuromoji from 'kuromoji';
 import path from 'path';
 import jmdictData from '@dict/jmdict.json';
 import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
+import { encodeChain } from '@/lib/japaneseGrammar';
 
 /**
  * Server-only Japanese segmenter. Wraps kuromoji (IPADIC morpheme tokenizer) with a fusion
@@ -10,7 +11,14 @@ import { JLPT_VOCAB } from '@/lib/data/jlpt-vocab';
  * more fragmented than what a reader expects (使っています).
  */
 
-export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
+export type RawTok =
+  | [string]
+  | [string, string]
+  | [string, string, string]
+  | [string, string, string, string]
+  /** 5th slot: the auxiliary chain, `ます|た` — see lib/japaneseGrammar.ts on why it rides
+   *  on the token rather than being looked up in a table. */
+  | [string, string, string, string, string];
 
 interface DictOverride { p: string; m: string; }
 
@@ -48,6 +56,9 @@ interface FusedToken {
   /** kuromoji's part of speech for the HEAD morpheme. Carried so meaning lookup can tell a
    *  grammatical particle from a noun that happens to be spelled the same way. */
   pos?: string;
+  /** Base forms of the auxiliaries fused onto the head, in order: 読みました → ['ます','た'].
+   *  The fusion loop already walks them, so collecting the chain costs nothing. */
+  chain?: string[];
 }
 
 // Grammaticalized auxiliary/suffix verb usage (いる/おく/しまう/くれる/もらう in ている/ておく/…,
@@ -88,6 +99,7 @@ function fuseMorphemes(morphs: kuromoji.IpadicFeatures[]): FusedToken[] {
     let surface = m.surface_form;
     let reading = kataToHira(m.reading || m.surface_form);
     const headBase = m.basic_form;
+    const chain: string[] = [];
     while (j < morphs.length) {
       const n = morphs[j];
       const isAux = n.pos === '助動詞';
@@ -96,9 +108,15 @@ function fuseMorphemes(morphs: kuromoji.IpadicFeatures[]): FusedToken[] {
       if (!isAux && !isAuxVerb && !isTeConn) break;
       surface += n.surface_form;
       reading += kataToHira(n.reading || n.surface_form);
+      // The DICTIONARY form of each auxiliary, not its surface: まし and ませ are both ます, so
+      // the decoder sees one thing to recognise instead of every conjugated spelling.
+      chain.push(n.basic_form && n.basic_form !== '*' ? n.basic_form : n.surface_form);
       j++;
     }
-    out.push({ surface, reading, baseForm: headBase !== surface ? headBase : undefined, isPunct: false, pos: m.pos });
+    out.push({
+      surface, reading, baseForm: headBase !== surface ? headBase : undefined,
+      isPunct: false, pos: m.pos, chain: chain.length ? chain : undefined,
+    });
     i = j;
   }
   return out;
@@ -230,6 +248,11 @@ export async function segmentJa(text: string, overrides: Map<string, DictOverrid
     const override = overrides.get(t.baseForm ?? t.surface) ?? overrides.get(t.surface);
     const reading = override?.p ?? t.reading;
     const meaning = override?.m ?? resolveMeaning(t.baseForm, t.surface, t.pos);
+    // The chain only ever travels alongside a base form — an uninflected word has no chain,
+    // and the 5th slot cannot be filled without the 4th.
+    if (t.baseForm && t.chain?.length) {
+      return [t.surface, reading, meaning, t.baseForm, encodeChain(t.chain)];
+    }
     return t.baseForm ? [t.surface, reading, meaning, t.baseForm] : [t.surface, reading, meaning];
   });
 }

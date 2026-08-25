@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { loadFrGrammar, cachedFrGrammar, lookupGrammar as lookupFr } from '@/lib/frenchGrammar';
 import { loadEsGrammar, cachedEsGrammar, lookupGrammar as lookupEs } from '@/lib/spanishGrammar';
+import { describeChain } from '@/lib/japaneseGrammar';
 import type { LanguageCode } from '@/lib/types';
 
 /**
@@ -45,11 +46,18 @@ interface Props {
   word: string;
   /** The lemma the app resolved. Its ABSENCE is meaningful; see lookupGrammar. */
   baseForm?: string;
+  /**
+   * Japanese only: the auxiliary chain from the token, e.g. `ます|た`.
+   *
+   * Japanese needs no table and no loading — kuromoji already did the analysis at segmentation
+   * time and the answer travels on the token, so this renders synchronously on the first frame.
+   */
+  chain?: string;
   /** Rendered inside the dark lookup popup, which has its own palette. */
   variant?: 'popup' | 'panel';
 }
 
-export default function GrammarNote({ word, baseForm, variant = 'panel' }: Props) {
+export default function GrammarNote({ word, baseForm, chain, variant = 'panel' }: Props) {
   const language = useLanguage();
   // Seeded from the cache so a second popup renders on its first frame rather than blinking
   // the line in one commit late — the same reasoning as `cachedLevelTable` in lib/curriculum.ts.
@@ -70,7 +78,12 @@ export default function GrammarNote({ word, baseForm, variant = 'panel' }: Props
     return () => { live = false; };
   }, [language, word, baseForm]);
 
-  if (!lines.length) return null;
+  // Japanese is decoded straight from the token — no table, nothing to load, no lemma to agree
+  // with, because kuromoji already resolved the word AND its endings in one pass.
+  const japanese = language === 'ja' && chain ? describeChain(chain) : null;
+  const shown = japanese ? [japanese] : lines;
+
+  if (!shown.length) return null;
 
   const popup = variant === 'popup';
   return (
@@ -89,7 +102,7 @@ export default function GrammarNote({ word, baseForm, variant = 'panel' }: Props
           than French ones do. Joined with the same '·' the parts of ONE reading use, `llega`
           read "present · 3rd person singular · imperative · 2nd person singular" — one long
           chain that looks like a single description of something impossible. */}
-      {lines.map((l, i) => (
+      {shown.map((l, i) => (
         <div key={l}>
           {i > 0 && <span style={{ opacity: .5 }}>or </span>}
           {l}

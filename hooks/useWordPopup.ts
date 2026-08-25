@@ -107,6 +107,7 @@ export function useWordPopup(
       setPopup({
         word: token.text, pinyin, meaning, type, justAdded, anchorRect: rect, otherReadings,
         baseForm: token.baseForm, baseReading: token.baseForm ? entry.reading : undefined,
+        grammar: token.grammar,
       });
     });
   }, [claimsStore, vocabClaimed, deckWords, deckReadings, language, poolWords]);

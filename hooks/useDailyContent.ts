@@ -13,7 +13,15 @@ import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@
 import { tokensToText } from '@/lib/tokenText';
 import { aiHeaders } from '@/lib/userApiKey';
 
-export type RawTok = [string] | [string, string] | [string, string, string] | [string, string, string, string];
+export type RawTok =
+  | [string]
+  | [string, string]
+  | [string, string, string]
+  | [string, string, string, string]
+  /** 5th slot: Japanese only — the auxiliary chain (`ます|た`) that lib/japaneseGrammar.ts
+   *  decodes. It rides on the token because kuromoji cannot run in a browser and Japanese
+   *  morphology is productive, so there is no table to lazily fetch instead. */
+  | [string, string, string, string, string];
 
 const PUNCT_CHARS = new Set([
   '。','！','？','，','、','—','…','·','「','」','『','』',
@@ -44,7 +52,7 @@ function isPunct(text: string): boolean {
 }
 
 function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string, ReadingHint[]>, lang: LanguageCode): PassageToken {
-  const [text, rawReading, meaning, rawBaseForm] = arr as [string, string?, string?, string?];
+  const [text, rawReading, meaning, rawBaseForm, rawChain] = arr as [string, string?, string?, string?, string?];
   if (isPunct(text)) return { text, type: 'punct' };
   const cfg = getLanguageConfig(lang);
   const baseForm = cfg.usesBaseForms && rawBaseForm && rawBaseForm !== text ? rawBaseForm : undefined;
@@ -83,9 +91,13 @@ function rawToToken(arr: RawTok, dueWords: Set<string>, deckReadings: Map<string
     // しています) and "Add to vocab" stores/dedupes against the base-form card. Cloze-blank
     // detection and grade attribution in PassageText still gate on whether the base form is
     // actually a due word, so surfacing it here never turns a non-due word into a blank.
-    return baseForm
-      ? { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm }
-      : { text, reading, meaning: resolvedMeaning, type: 'vocab' };
+    if (baseForm) {
+      // The chain only ever accompanies a base form; see the RawTok note above.
+      return rawChain
+        ? { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm, grammar: rawChain }
+        : { text, reading, meaning: resolvedMeaning, type: 'vocab', baseForm };
+    }
+    return { text, reading, meaning: resolvedMeaning, type: 'vocab' };
   }
   return { text, reading };
 }
