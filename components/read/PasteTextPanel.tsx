@@ -7,6 +7,8 @@ import { analyzeCoverage, verdictFor, type TextCoverage } from '@/lib/coverage';
 import { MAX_PASTE_CHARS } from '@/lib/constants';
 import { mismatchWarning } from '@/lib/languageMismatch';
 import ClipperInstall from './ClipperInstall';
+import ReadabilityNote from './ReadabilityNote';
+import { useReadability } from '@/hooks/useReadability';
 
 interface Props {
   /**
@@ -324,10 +326,29 @@ export default function PasteTextPanel({ language, deck, dueWords, onCommit, sta
  * now, so the only question left is the one that was always the more useful one: can you
  * actually read this?
  */
-function CoverageReadout({ coverage, language }: Analysis & { language: LanguageCode }) {
+/**
+ * TWO NUMBERS, TWO QUESTIONS — which is why they are labelled rather than merged.
+ *
+ * DECK FAMILIARITY asks "how many of these particular words have I studied?" It is the only
+ * thing the app has direct evidence for, and it moves as you study. READABILITY asks "is this
+ * written near my level?" — a property of the TEXT, stable, and comparable between two books.
+ *
+ * They routinely disagree, and both readings are correct: a beginner's first article is often
+ * high on readability and near zero on deck familiarity, because most of a page is function
+ * words nobody makes cards for. Showing one number and calling it "coverage" is what made that
+ * confusing; showing both, named, is what fixes it.
+ */
+function CoverageReadout({ coverage, passage, language }: Analysis & { language: LanguageCode }) {
   const cfg = getLanguageConfig(language);
   const verdict = verdictFor(coverage);
   const pct = (n: number) => coverage.tokens ? Math.round((n / coverage.tokens) * 100) : 0;
+
+  // Free here: the text has already been segmented to produce `coverage`, so the level figure
+  // costs no extra request. That is why it earns a place in this panel, where a fresh
+  // round-trip before reading would not have.
+  const readability = useReadability(
+    useMemo(() => passage.sentences.flatMap(s => s.tokens), [passage]),
+  );
 
   const bars = useMemo(() => ([
     { key: 'deck',  n: coverage.inDeckTokens,     color: 'var(--jade)' },
@@ -357,6 +378,15 @@ function CoverageReadout({ coverage, language }: Analysis & { language: Language
         {coverage.tokens.toLocaleString()} {cfg.countUnit} · {coverage.types.toLocaleString()} distinct
       </div>
 
+      {readability && (
+        <div className="mb-4 pb-4" style={{ borderBottom: '1px solid var(--line)' }}>
+          <div style={{ ...label, marginBottom: 5 }}>Readability</div>
+          <ReadabilityNote readability={readability} />
+        </div>
+      )}
+
+      <div style={{ ...label, marginBottom: 8 }}>Deck familiarity</div>
+
       <div className="flex rounded-[3px] overflow-hidden mb-3" style={{ height: 8, background: 'var(--line)' }}>
         {bars.map(b => b.n > 0 && (
           <span key={b.key} style={{ width: `${(b.n / Math.max(1, coverage.tokens)) * 100}%`, background: b.color }} />
@@ -378,7 +408,7 @@ function CoverageReadout({ coverage, language }: Analysis & { language: Language
       {/* Said once, plainly. "Not in your deck" is the only thing the app can measure; it is
           not the same as "you don't know it", and the numbers above must not imply it is. */}
       <p style={{ ...mono, fontSize: 10.5, lineHeight: 1.5, color: 'var(--ink-faint)', maxWidth: '62ch', margin: '8px 0 0' }}>
-        Deck coverage only — plenty of words you know have never been made into cards.
+        Deck familiarity only — plenty of words you know have never been made into cards.
       </p>
 
       {coverage.notInDeckSample.length > 0 && (
