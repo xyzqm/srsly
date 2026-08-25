@@ -42,10 +42,10 @@ export interface Lesson {
 }
 
 /**
- * FRENCH ONLY, for now, and deliberately end to end rather than four languages half-done.
- * The grammar notes in the reader are French-only for a data reason (Lexique is vendored;
- * the other three have nothing equivalent), and a lesson tree that explains the imperfect
- * beside a reader that cannot label one is half a feature twice.
+ * FRENCH AND SPANISH — the two languages whose readers can also LABEL an inflection, which is
+ * the order this was built in on purpose. A lesson tree that explains the imperfect beside a
+ * reader that cannot point one out in the text is half a feature twice, so each language gets
+ * its grammar table first and its lesson tree second. Japanese and Chinese have neither yet.
  *
  * ── A LIST OF CODES, NOT THE LESSONS THEMSELVES ──
  * `TabNav` renders on every screen and needs `hasLessons` synchronously to decide whether the
@@ -54,7 +54,7 @@ export interface Lesson {
  * see the tab — the exact failure CLAUDE.md describes for the level tables. The prose lives in
  * lib/data/lessons/index.ts and rides in the Learn tab's own lazily-loaded chunk.
  */
-export const LESSON_LANGUAGES: LanguageCode[] = ['fr'];
+export const LESSON_LANGUAGES: LanguageCode[] = ['fr', 'es'];
 
 export function hasLessons(lang: LanguageCode): boolean {
   return LESSON_LANGUAGES.includes(lang);
