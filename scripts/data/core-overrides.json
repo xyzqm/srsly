@@ -820,7 +820,8 @@
       "assiette": "plate; seat",
       "chambre": "bedroom; room, chamber",
       "rose": "pink; rose (flower)",
-      "ci": "this one, here (as in celui-ci, ce livre-ci)"
+      "ci": "this one, here (as in celui-ci, ce livre-ci)",
+      "donne": "gives, give; deal (in cards)"
     }
   },
   "inheritLemmaSense": {
