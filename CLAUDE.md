@@ -485,6 +485,22 @@ spread through it, skipping front matter and anything too short to be prose.
 **The verdict is bucketed on the ROUNDED percentage**, not the raw coverage, or 75% reads
 "very hard" on one text and "hard going" on the next.
 
+**It compares RANK, not the level number, and Japanese is why.** HSK and CEFR number their bands
+easiest-first; JLPT numbers them the other way, N5 being the beginner level. Comparing raw
+numbers scored Japanese exactly backwards — a starter text read "0% at or below JLPT N4" with を
+and する among its hardest words. `LanguageConfig.levels` is already documented as "ordered
+easiest → hardest" and `lib/unlock.ts` already resolves through rank "so it is right for a
+descending curriculum too"; readability now does the same, so 0 is the easiest band whichever
+way the language counts.
+
+**Three more things surfaced by measuring Japanese**, all of which made a beginner text look
+far harder than it is. Particles are grammar, not vocabulary, so no JLPT list contains を or に
+and every one read as above-level — they are excluded like proper nouns. 22 JLPT entries hold
+several spellings in ONE key (`足; 脚`, `在る; 有る`), so neither spelling ever matched; the
+index splits them. And the list is written in formal orthography — 御飯 where real text says
+ご飯, 友達 where it says 友だち — so ordinary N5 words were unranked; the level vocab carries
+each word's reading, and the kana bridges the two spellings. Together: 0% → 91%.
+
 **Words the ranking cannot see were pinned, not worked around.** `au`, `aux`, `des`, `ma`, `ces`
 and `parce` were in NO band — contractions and possessives are excluded from band eligibility by
 construction — so they scored as above-level and turned up among a text's "hardest words". They
@@ -555,9 +571,28 @@ a French note carries is a separate WORD in Chinese — 了, 的, 把, a measure
 reader can already tap. What a dictionary cannot tell them is what those words are FOR, so prose
 is the only way, and the tree is the primary teaching surface rather than a supplement.
 
-**Japanese still owes its reader a grammar note.** kuromoji resolves 使っています to 使う at
-segmentation time, but nothing yet says "polite present progressive". That is a third design
-rather than a third table, so the tree shipped first and the note is outstanding.
+**Japanese got the third design rather than a third table**, and the reason is that its
+morphology is PRODUCTIVE: 食べる stacks into 食べさせられたくなかった, so no finite table can
+enumerate the forms and any table fails silently on exactly the long ones a reader needs help
+with. kuromoji already walks the auxiliary chain to fuse morphemes into one token, so
+`lib/japaneseGrammar.ts` composes a description from that chain instead — 読みました is
+読む + ます + た, and reads "polite · past".
+
+**The chain travels ON the token, which this file elsewhere forbids.** That rule was written
+about French, where a 2.70 MB table exists and can be lazily fetched, so per-token data would be
+paying twice for something almost never read. Neither half holds for Japanese: there is no table
+to fetch and kuromoji cannot run in a browser, so a few bytes on the minority of tokens that are
+conjugated is the only way the client can know. Raw auxiliaries travel; English is produced at
+render, the same split as the other two.
+
+**`れる`/`られる` is passive, potential AND honorific at once**, so the line says "passive or
+potential" rather than picking — the same discipline that stops the Spanish decoder naming a
+person for `hablaba`. And `て` is a JOIN, not a feature: what it means depends on what attaches
+to it, so `て|いる` is "ongoing" while a bare `て` is the connective form.
+
+**PopupData is built in TWO places** — `hooks/useWordPopup.ts` and `components/read/PassageText.tsx`
+— and the passage uses the second. A field added to only one silently never renders where it
+matters, which is exactly what happened to the chain first time round.
 
 **The Spanish tree follows the French one's SHAPE and not its content.** The hard parts of
 Spanish are not the hard parts of French: `ser` versus `estar`, `gustar`'s backwards

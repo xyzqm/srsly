@@ -27,7 +27,7 @@ export interface HardWord {
   word: string;
   /** How many times it occurs in this text. */
   count: number;
-  /** Its band, or 0 when it is in none. */
+  /** Its difficulty RANK — 0 is the easiest band — or -1 when it is in none. */
   level: number;
 }
 
@@ -38,9 +38,9 @@ export interface Readability {
   types: number;
   /** Share of measured tokens at or below `level`, 0–1. */
   coverage: number;
-  /** Measured token counts per band. Key 0 is "in no band at all". */
-  byLevel: Record<number, number>;
-  /** The band this was measured against. */
+  /** Measured token counts per difficulty RANK. Key -1 is "in no band at all". */
+  byRank: Record<number, number>;
+  /** The learner's own level, kept raw so it can be labelled for display. */
   level: number;
   /**
    * Tokens the dictionary could not define, excluded from `coverage` entirely.
@@ -54,19 +54,45 @@ export interface Readability {
    *   token because it is its own dictionary headword — so it is in no band, and grading it put
    *   "j'aime" at the top of a beginner chapter's list of hardest words. It is not a vocabulary
    *   item at all; it is two words glued together.
+   * - GRAMMAR WORDS, via `ungradeable`. Japanese particles are the case: no JLPT list contains
+   *   を or に because they are grammar, so every one read as above-level and a beginner text's
+   *   hardest words came out as を ×3, に ×2, は ×2.
    */
   unresolved: number;
   /** The commonest words above the level — what would actually slow you down. */
   hardest: HardWord[];
 }
 
-/** Word → band, from the emitted level tables. Build once and reuse across chapters. */
-export function buildLevelIndex(bands: LevelBands): Map<string, number> {
+/**
+ * Word → DIFFICULTY RANK, from the emitted level tables.
+ *
+ * ── RANK, NOT THE LEVEL NUMBER, AND JAPANESE IS WHY ──
+ * HSK and CEFR number their levels easiest-first: 1 is HSK 1 and A1. JLPT numbers them the
+ * other way — N5 is the beginner level and N1 the advanced one — so comparing raw level numbers
+ * scores Japanese exactly backwards. It did: a starter text against N1 read "0% at or below
+ * JLPT N1", with を and する listed among its hardest words.
+ *
+ * `LanguageConfig.levels` is already documented as "ordered easiest → hardest", and
+ * lib/unlock.ts already resolves through rank "so it is right for a descending curriculum too".
+ * This uses the same idea: `order` is that array's level numbers, and a word's rank is its
+ * position in it, so 0 is always the easiest band whichever way the language counts.
+ *
+ * Build once and reuse across chapters.
+ */
+export function buildLevelIndex(bands: LevelBands, order: number[]): Map<string, number> {
+  const rankOf = new Map(order.map((level, rank) => [level, rank]));
   const index = new Map<string, number>();
-  for (const [level, words] of Object.entries(bands)) {
-    const n = Number(level);
-    // Lower bands win: a word listed twice belongs to the easiest band that claims it.
-    for (const w of words) if (!index.has(w)) index.set(w, n);
+  // Easiest first, so a word listed in two bands is claimed by the easier one.
+  for (const level of order) {
+    const rank = rankOf.get(level)!;
+    for (const entry of bands[level] ?? []) {
+      // 22 JLPT entries hold SEVERAL spellings in one key — `足; 脚`, `在る; 有る`,
+      // `やはり; やっぱり`. Indexed whole, neither spelling ever matches a real token, so both
+      // read as unranked. Splitting costs nothing and is right for any language that does it.
+      for (const w of entry.split(';').map(x => x.trim()).filter(Boolean)) {
+        if (!index.has(w)) index.set(w, rank);
+      }
+    }
   }
   return index;
 }
@@ -95,9 +121,24 @@ export function calculateReadability(
   tokens: PassageToken[],
   index: Map<string, number>,
   level: number,
+  order: number[],
+  /** Words this language grades as grammar rather than vocabulary — see `unresolved`. */
+  ungradeable?: (form: string, token: PassageToken) => boolean,
+  /**
+   * A second key to try when the surface is not in the index.
+   *
+   * Japanese needs it: the JLPT list is written in formal orthography — 御飯 where real text
+   * says ご飯, 友達 where it says 友だち — so ordinary N5 words read as unranked and turned up
+   * among a beginner text's hardest words. The token already carries the reading (ごはん), and
+   * the level vocab is keyed by it, so the kana is the bridge between the two spellings.
+   */
+  altKey?: (token: PassageToken) => string | undefined,
 ): Readability {
+  // The learner's own position on the easiest → hardest scale. See buildLevelIndex.
+  const learnerRank = order.indexOf(level);
   const counts = new Map<string, number>();
-  const byLevel: Record<number, number> = {};
+  const ranked = new Map<string, number>();
+  const byRank: Record<number, number> = {};
   let measured = 0;
   let known = 0;
   let unresolved = 0;
@@ -110,17 +151,23 @@ export function calculateReadability(
     if (!t.meaning) { unresolved++; continue; }
     // An elision the lemmatizer could not split is not one word, so it has no one level.
     if (/['\u2019]/.test(form) && !index.has(form)) { unresolved++; continue; }
+    // A grammar word is not vocabulary, so no band grades it either way.
+    if (ungradeable?.(form, t) && !index.has(form)) { unresolved++; continue; }
 
     measured++;
     counts.set(form, (counts.get(form) ?? 0) + 1);
-    const band = index.get(form) ?? 0;
-    byLevel[band] = (byLevel[band] ?? 0) + 1;
-    if (band > 0 && band <= level) known++;
+    const alt = index.has(form) ? undefined : altKey?.(t);
+    const rank = index.get(form) ?? (alt !== undefined ? index.get(alt) ?? -1 : -1);
+    ranked.set(form, rank);
+    byRank[rank] = (byRank[rank] ?? 0) + 1;
+    if (rank >= 0 && learnerRank >= 0 && rank <= learnerRank) known++;
   }
 
+  // Ranks are recomputed here from the index alone, so a word matched only through `altKey`
+  // must not reappear as "hardest" — `ranked` remembers what was actually resolved.
   const hardest: HardWord[] = [...counts.entries()]
-    .map(([word, count]) => ({ word, count, level: index.get(word) ?? 0 }))
-    .filter(w => w.level === 0 || w.level > level)
+    .map(([word, count]) => ({ word, count, level: ranked.get(word) ?? -1 }))
+    .filter(w => w.level < 0 || learnerRank < 0 || w.level > learnerRank)
     // Commonest first: a hard word you meet six times costs more than six you meet once.
     // Ties break on the harder band, and then alphabetically so the list is stable.
     .sort((a, b) => b.count - a.count || b.level - a.level || (a.word < b.word ? -1 : 1))
@@ -130,7 +177,7 @@ export function calculateReadability(
     tokens: measured,
     types: counts.size,
     coverage: measured ? known / measured : 0,
-    byLevel,
+    byRank,
     level,
     unresolved,
     hardest,
