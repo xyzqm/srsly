@@ -35,11 +35,27 @@ describe('a common word is never re-read as an inflection', () => {
 
 describe('irregulars come from the form table', () => {
   it.each([
-    ['fui',     'ir'],
     ['dijeron', 'decir'],
     ['duerme',  'dormir'],
     ['tuve',    'tener'],
+    ['vende',   'vender'],   // not `vendar` — see the tie-break below
   ])('%s → %s', (w, want) => expect(lemma(w)).toBe(want));
+});
+
+/**
+ * WHEN A FORM BELONGS TO TWO LEMMAS, the commoner one wins — `es-forms` used to keep whichever
+ * Wiktionary emitted first, which handed `vende` to `vendar` ("to bandage") rather than `vender`
+ * ("to sell") and defined the verb in "el hombre que vende las naranjas" as bandaging.
+ *
+ * `fui` is the honest cost of that rule and is pinned here so the trade stays visible. It is the
+ * preterite of BOTH `ser` and `ir` — genuinely, not as an artefact — so "fui profesor" and "fui
+ * al mercado" are the same word doing two jobs. Frequency picks `ser`, which is right about as
+ * often as it is wrong; unlike `vende`, there is no reading here that is simply incorrect.
+ */
+describe('a form shared by two lemmas resolves to the commoner one', () => {
+  it('gives the ser/ir preterite to ser', () => {
+    for (const w of ['fui', 'fue', 'fuiste', 'fueron']) expect(lemma(w), w).toBe('ser');
+  });
 });
 
 describe('regular inflections resolve by suffix rule', () => {

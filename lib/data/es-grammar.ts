@@ -13,7 +13,7 @@
 // Tags are raw; lib/spanishGrammar.ts turns them into English at render time so the wording
 // can change without regenerating this file.
 //
-// 132,900 forms, 149,206 readings, 131 distinct codes, from 809,603 lines.
+// 132,741 forms, 148,957 readings, 132 distinct codes, from 809,603 lines.
 //
 // The data lives in the sibling .json file, not as a TypeScript object literal, and is
 // imported through the @data alias so TypeScript never opens it — see
