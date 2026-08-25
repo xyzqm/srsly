@@ -158,8 +158,22 @@ async function main() {
         const l = lemma.trim().toLowerCase();
         // Only forms we could plausibly meet in a passage are worth bundling — the full
         // form table for every Spanish verb is far too large to ship.
-        if (l && l !== lower && LETTER_RE.test(l) && freqRank.has(lower) && !forms.has(lower)) {
-          forms.set(lower, l);
+        if (l && l !== lower && LETTER_RE.test(l) && freqRank.has(lower)) {
+          /**
+           * WHEN A FORM BELONGS TO TWO LEMMAS, CREDIT THE COMMONER ONE.
+           *
+           * This was first-writer-wins, which hands the form to whichever lemma Wiktionary
+           * happened to emit first. `vende` went to `vendar` ("to bandage") rather than
+           * `vender` ("to sell") — both are real (it is vendar's subjunctive and vender's
+           * present indicative) but only one is what a reader meets, so "el hombre que vende
+           * las naranjas" defined its verb as bandaging.
+           *
+           * Frequency is the tie-break the rest of this file already trusts, and an unranked
+           * lemma loses to a ranked one.
+           */
+          const prev = forms.get(lower);
+          const rank = w => freqRank.get(w) ?? Number.POSITIVE_INFINITY;
+          if (!prev || rank(l) < rank(prev)) forms.set(lower, l);
         }
         continue;
       }
