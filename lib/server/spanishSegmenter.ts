@@ -41,8 +41,39 @@ const dict = {
   },
 };
 
+/**
+ * Forms that belong to two lemmas equally, glossed so the reader sees both.
+ *
+ * `ser` and `ir` share their entire preterite. That is not an artefact of our data or of
+ * Wiktionary's — it is a real merger in the language, and no amount of lemmatising resolves it,
+ * because "fui profesor" and "fui a la tienda" are the same six letters doing two jobs.
+ *
+ * `es-forms` has to pick ONE lemma so the card links somewhere, and frequency picks `ser`. That
+ * left a beginner reading "fui a la tienda" and being told the word means "to be", which is the
+ * confusing half of a coin flip. The dictionary cannot fix this — none of these six is a
+ * headword, so `curatedGloss` in core-overrides cannot reach them.
+ *
+ * So the gloss is supplied here, per person, naming both readings. Same shape and same
+ * justification as PARTICLE_GLOSS in lib/server/kuromojiSegmenter.ts: a closed, small set where
+ * the dictionary's answer is incomplete and grammar supplies the right one.
+ *
+ * DELIBERATELY ONE SENSE, with no `;` in it. GlossText splits on semicolons and collapses to the
+ * lead, so "was (ser); went (ir)" would show "was (ser)" and hide behind "+1 more" exactly the
+ * half this exists to surface.
+ */
+const SHARED_FORMS: Record<string, string> = {
+  fui: 'I was, or I went — preterite of both ser and ir',
+  fuiste: 'you were, or you went — preterite of both ser and ir',
+  fue: 'he/she/it was, or went — preterite of both ser and ir',
+  fuimos: 'we were, or we went — preterite of both ser and ir',
+  fuisteis: 'you all were, or you all went — preterite of both ser and ir',
+  fueron: 'they were, or they went — preterite of both ser and ir',
+};
+
 function resolveMeaning(baseForm: string | undefined, surface: string): string {
   const lower = surface.toLowerCase();
+  const shared = SHARED_FORMS[lower];
+  if (shared) return shared;
   const key = baseForm ?? lower;
   return esdict[key]?.m ?? esdict[lower]?.m
     ?? CEFR_VOCAB[key]?.meaning ?? CEFR_VOCAB[lower]?.meaning ?? '';
