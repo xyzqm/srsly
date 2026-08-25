@@ -41,3 +41,24 @@ export function isMetalinguisticGloss(gloss: string): boolean {
 export function isProperNounGloss(gloss: string): boolean {
   return /^\s*\((?:name|proper noun)\)/i.test(gloss.trim());
 }
+
+/**
+ * A gloss whose EVERY sense only names a person or place, so it defines nothing.
+ *
+ * CC-CEDICT lists a surname as its own entry, and for a handful of characters that entry sorts
+ * ahead of the real one — capitalised surname pinyin (`Mǎ`) before the lowercase reading (`mǎ`).
+ * `scripts/build-cedict.mjs` now prefers the real definition when it builds the dictionary, but
+ * `lib/data/hsk-vocab.ts` is checked-in data with no generator and still carries seven of these:
+ * 马 as "surname Ma" rather than "horse", 能 as "surname Neng" rather than "can".
+ *
+ * Since the HSK table is consulted BEFORE CC-CEDICT, those seven would shadow the fix. Treating
+ * a name-only gloss as no gloss lets the dictionary answer instead, and it is the right rule
+ * regardless: a surname is not what a learner tapping 马 in a sentence about horses wants.
+ */
+const NAME_ONLY_SENSE =
+  /^\s*(?:a\s+)?(?:surname|given name|patronymic|male name|female name)\b/i;
+
+export function isNameOnlyGloss(gloss: string): boolean {
+  const senses = String(gloss || '').split(/[;/]/).map(s => s.trim()).filter(Boolean);
+  return senses.length > 0 && senses.every(s => NAME_ONLY_SENSE.test(s));
+}

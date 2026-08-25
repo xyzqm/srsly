@@ -8,6 +8,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isNameSense } from './lib/nameFilter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT = path.join(__dirname, '..', 'public', 'cedict.json');
@@ -149,18 +150,34 @@ async function main() {
   const lines = text.split('\n');
   console.log(`Parsing ${lines.length.toLocaleString()} lines...`);
 
+  /** True when EVERY sense of a gloss only names a person or place, so it defines nothing. */
+  const isNameOnly = gloss =>
+    String(gloss || '').split(/[;/]/).map(x => x.trim()).filter(Boolean).every(isNameSense);
+
   const dict = {};
   let skipped = 0;
   for (const line of lines) {
     const entry = parseLine(line);
     if (!entry) { skipped++; continue; }
-    // Keep first entry per simplified form (alphabetical order in cedict = most common first),
-    // but if that entry is just a "variant of" pointer and a later entry (from a different
-    // traditional headword that collapses to the same simplified form) has a real definition,
-    // prefer the real one — otherwise resolveVariants() below can't tell a genuine circular
-    // reference apart from a same-key self-reference caused by this dedup discarding the target.
+    // Keep first entry per simplified form, but prefer a REAL definition over two kinds of
+    // entry that carry none.
+    //
+    // A "variant of" pointer loses to a later entry with a real definition — otherwise
+    // resolveVariants() below cannot tell a genuine circular reference apart from a
+    // same-key self-reference caused by this dedup discarding the target.
+    //
+    // A NAME-ONLY entry loses the same way, and that one was silently deleting core
+    // vocabulary. The old comment claimed cedict's order puts the commonest sense first;
+    // it does not for surnames, because capitalised surname pinyin (`Mǎ`) sorts ahead of
+    // the lowercase reading (`mǎ`). So 马 was "surname Ma" with no "horse" anywhere, 能 was
+    // "surname Neng" rather than "can, be able to", and 张 — the measure word for flat
+    // things — was "surname Zhang". Seven of the 597 words in HSK 1–3 were affected, and
+    // gloss collapsing made the wrong sense the only one shown.
     const existing = dict[entry.simplified];
-    if (!existing || (VARIANT_RE.test(existing.m) && !VARIANT_RE.test(entry.meaning))) {
+    const replaces = !existing
+      || (VARIANT_RE.test(existing.m) && !VARIANT_RE.test(entry.meaning))
+      || (isNameOnly(existing.m) && !isNameOnly(entry.meaning));
+    if (replaces) {
       dict[entry.simplified] = { p: entry.pinyin, m: entry.meaning };
     }
   }

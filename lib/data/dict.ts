@@ -1,4 +1,5 @@
 import { DICT_VERSION } from './dictVersion';
+import { isNameOnlyGloss } from '@/lib/glossQuality';
 export interface DictEntry { pinyin: string; meaning: string; }
 
 const DICT: Record<string, DictEntry> = {};
@@ -623,6 +624,9 @@ async function mergeHskVocab(): Promise<void> {
   try {
     const { HSK_VOCAB } = await import('./hsk-vocab');
     for (const [text, entry] of Object.entries(HSK_VOCAB)) {
+      // A name-only gloss is not a definition — see isNameOnlyGloss. DICT is consulted before
+      // CC-CEDICT, so letting these in would shadow the real entry the dictionary now carries.
+      if (isNameOnlyGloss(entry.meaning)) continue;
       if (!DICT[text] || !DICT[text].meaning) DICT[text] = entry;
     }
   } catch {

@@ -174,6 +174,30 @@ const PARTICLE_GLOSS: Record<string, string> = {
   ずつ: 'each, apiece',
   ながら: 'while doing',
   たり: 'doing things like',
+
+  /**
+   * AUXILIARIES, not just particles. kuromoji tags these 助動詞, which routes them here too —
+   * and with no entry they returned '' and a learner tapping the end of a polite sentence got
+   * nothing at all. `です` closes almost every polite sentence in the language, and `ます` is
+   * the case this table exists for: JMdict glosses it "measuring container; measuring box".
+   */
+  です: 'is, am, are — polite copula',
+  だ: 'is, am, are — plain copula',
+  ます: 'polite verb ending',
+  ない: 'not — negative ending',
+  ぬ: 'not — literary negative',
+  た: 'past tense ending',
+  たい: 'want to — desire ending',
+  たら: 'if, when — conditional',
+  だろう: 'probably, I think',
+  でしょう: 'probably, I think — polite',
+  らしい: 'seems, apparently',
+  そう: 'seems; I hear that',
+  よう: 'seems like; in order to',
+  れる: 'passive or potential ending',
+  られる: 'passive, potential, or honorific ending',
+  せる: 'causative ending — make/let someone do',
+  させる: 'causative ending — make/let someone do',
 };
 
 /** kuromoji POS tags for words whose meaning is grammatical rather than lexical. */
