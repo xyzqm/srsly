@@ -29,10 +29,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OVERRIDES = path.join(__dirname, 'data', 'core-overrides.json');
 const OUT = path.join(__dirname, '..', 'lib', 'data', 'beginner-themes.ts');
 
-/** Where each language's built dictionary and level vocab live. */
+/**
+ * Where each language's built dictionary and level vocab live.
+ *
+ * zh and ja are here for the Learn tab ONLY. Their `beginner` sets cannot reach a level table:
+ * `applyCoreOverrides` is called from build-esdict and build-frdict alone, and the HSK/JLPT
+ * tables are checked-in data with no generator. That separation matters — CEFR bands are a
+ * frequency approximation this repo derives and may re-pin, while HSK and JLPT are published
+ * exam vocabulary, and forcing a word into HSK 1 would corrupt an authoritative list.
+ */
 const SOURCES = {
   es: { dict: 'public/esdict.json', vocab: 'lib/data/cefr-vocab.json' },
   fr: { dict: 'public/frdict.json', vocab: 'lib/data/fr-vocab.json' },
+  zh: { dict: 'public/cedict.json', vocab: 'lib/data/hsk-vocab.json' },
+  ja: { dict: 'public/jmdict.json', vocab: 'lib/data/jlpt-vocab.json' },
 };
 
 async function loadKeys(lang) {

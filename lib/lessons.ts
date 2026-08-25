@@ -42,10 +42,21 @@ export interface Lesson {
 }
 
 /**
- * FRENCH AND SPANISH — the two languages whose readers can also LABEL an inflection, which is
- * the order this was built in on purpose. A lesson tree that explains the imperfect beside a
- * reader that cannot point one out in the text is half a feature twice, so each language gets
- * its grammar table first and its lesson tree second. Japanese and Chinese have neither yet.
+ * ALL FOUR LANGUAGES, but they arrived in a deliberate order.
+ *
+ * French and Spanish came first because a tree that explains the imperfect beside a reader that
+ * cannot point one out in the text is half a feature twice — so each got its grammar table
+ * first and its lesson tree second.
+ *
+ * Chinese is the one language that rule does not apply to, and for the same reason it has no
+ * table: it does not inflect, so there is no slot for a form to fill and nothing a grammar note
+ * could report. Everything a French note would carry is a separate word in Chinese — 了, 的, 把,
+ * a measure word — which the reader can already tap. What a dictionary cannot tell them is what
+ * those words are FOR, and prose is what does that.
+ *
+ * Japanese still owes its reader a grammar note: kuromoji resolves 使っています to 使う at
+ * segmentation time, but nothing yet says "polite present progressive". That is a third design
+ * rather than a third table, so the tree ships first here and the note is still outstanding.
  *
  * ── A LIST OF CODES, NOT THE LESSONS THEMSELVES ──
  * `TabNav` renders on every screen and needs `hasLessons` synchronously to decide whether the
@@ -54,7 +65,7 @@ export interface Lesson {
  * see the tab — the exact failure CLAUDE.md describes for the level tables. The prose lives in
  * lib/data/lessons/index.ts and rides in the Learn tab's own lazily-loaded chunk.
  */
-export const LESSON_LANGUAGES: LanguageCode[] = ['fr', 'es'];
+export const LESSON_LANGUAGES: LanguageCode[] = ['fr', 'es', 'zh', 'ja'];
 
 export function hasLessons(lang: LanguageCode): boolean {
   return LESSON_LANGUAGES.includes(lang);

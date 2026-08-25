@@ -9,7 +9,7 @@
 // Words only. Glosses are resolved at runtime through the dictionary the client already
 // fetches, so there is no second copy of them to go stale.
 //
-// 589 words across es:21 fr:21 themes; 0 dropped as not being headwords.
+// 1050 words across es:21 fr:21 zh:21 ja:21 themes; 0 dropped as not being headwords.
 //
 // The data lives in the sibling .json file, not as a TypeScript object literal, and is
 // imported through the @data alias so TypeScript never opens it — see

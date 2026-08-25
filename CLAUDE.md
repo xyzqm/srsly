@@ -14,10 +14,17 @@ Prioritize **elegance and concision** over volume. Concretely:
 
 ```bash
 npm run dev        # start dev server at localhost:3000
-npm run build      # production build
+npm run build      # production build (raises the Node heap — see below)
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
 ```
+
+**`npm run build` raises the Node heap to 4 GB, and needs to.** The default on a 16 GB Mac is
+~2.2 GB, and webpack has to parse and minify every generated table that a chunk imports — the
+French and Spanish grammar tables alone are 2.70 MB and 4.21 MB, on top of the dictionaries and
+level tables. Without the flag the build fails with "Reached heap limit", reproducibly, and it
+does so at the very end after several minutes of work. It is easy to misread as flaky: an
+earlier failure looked transient because a retry happened to pass while the tables were smaller.
 
 ### Generated data is JSON, imported through an alias
 
@@ -483,6 +490,24 @@ and `parce` were in NO band — contractions and possessives are excluded from b
 construction — so they scored as above-level and turned up among a text's "hardest words". They
 are core A1 grammar; the fix belonged in `pin`, not in the metric.
 
+**Two dictionary defects surfaced by writing the trees, both fixed at the source.**
+
+A Japanese auxiliary had no gloss at all. kuromoji tags です and ます as 助動詞, which routes them
+through `PARTICLE_GLOSS` in `kuromojiSegmenter.ts` — a table that held only particles, so they
+returned '' and tapping the end of any polite sentence gave nothing. です closes almost every
+polite sentence in the language, and ます is the case that table exists for: JMdict glosses it
+"measuring container; measuring box". The auxiliaries are now listed alongside the particles.
+
+And seven HSK 1–3 words were defined as surnames. CC-CEDICT lists a surname as its own entry, and
+`build-cedict.mjs` kept the FIRST entry per simplified form on the stated theory that cedict's
+order puts the commonest sense first. It does not for surnames, because capitalised surname
+pinyin (`Mǎ`) sorts ahead of the lowercase reading (`mǎ`) — so 马 was "surname Ma" with no
+"horse" anywhere, 能 was "surname Neng" rather than "can", and 张 — the measure word for flat
+things — was "surname Zhang". The build now prefers a real definition over a name-only entry, the
+same way it already preferred one over a "variant of" pointer. `lib/data/hsk-vocab.ts` is
+checked-in data with no generator and still carries the bad glosses, and it is consulted BEFORE
+CC-CEDICT, so `mergeHskVocab` drops a name-only gloss rather than letting it shadow the fix.
+
 ### A gloss shows ONE sense
 
 `components/shared/GlossText.tsx` renders a dictionary gloss as its lead sense plus a `+N more`
@@ -517,14 +542,22 @@ part of the primary school", `yaourt` with "a song where the singer makes up the
 ### The lesson tree
 
 `components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: 33 lessons in 6
-units per language, grammar and vocabulary interleaved. French and Spanish have one; the tab is
-hidden entirely elsewhere — `TabNav` filters on `hasLessons`, because an empty tab reads as a
-broken one.
+units per language, grammar and vocabulary interleaved — one tree per language, all four.
+`TabNav` still filters on `hasLessons`, because an empty tab reads as a broken one.
 
-**A language gets its GRAMMAR TABLE before its lesson tree**, and that order is deliberate: a
-tree that explains the imperfect beside a reader that cannot point one out in the text is half a
-feature twice. That is why French came first and Spanish second, and why Japanese and Chinese
-have neither.
+**A language gets its GRAMMAR TABLE before its lesson tree** where it can have one, and that
+order is deliberate: a tree that explains the imperfect beside a reader that cannot point one
+out in the text is half a feature twice. French came first and Spanish second for that reason.
+
+**Chinese is the exception, and for the same reason it has no table: it does not inflect.**
+There is no slot for a form to fill, so a `GrammarNote` would have nothing to report. Everything
+a French note carries is a separate WORD in Chinese — 了, 的, 把, a measure word — which the
+reader can already tap. What a dictionary cannot tell them is what those words are FOR, so prose
+is the only way, and the tree is the primary teaching surface rather than a supplement.
+
+**Japanese still owes its reader a grammar note.** kuromoji resolves 使っています to 使う at
+segmentation time, but nothing yet says "polite present progressive". That is a third design
+rather than a third table, so the tree shipped first and the note is outstanding.
 
 **The Spanish tree follows the French one's SHAPE and not its content.** The hard parts of
 Spanish are not the hard parts of French: `ser` versus `estar`, `gustar`'s backwards

@@ -4,6 +4,10 @@ import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
+import { segmentZh } from '@/lib/server/chineseSegmenter';
+import { segmentJa } from '@/lib/server/kuromojiSegmenter';
+import cedictData from '@dict/cedict.json';
+import { HSK_VOCAB } from '@/lib/data/hsk-vocab';
 import type { LanguageCode } from '@/lib/types';
 
 /**
@@ -20,6 +24,40 @@ import type { LanguageCode } from '@/lib/types';
  * suite for free and cannot ship without passing it.
  */
 type Segmenter = (s: string, o: Map<string, { p: string; m: string }>) => Array<string[]>;
+
+/**
+ * THREE VALIDATION STRATEGIES, because the pipelines genuinely differ.
+ *
+ * French, Spanish and Japanese resolve meanings SERVER-side, so a resolved token carries its
+ * gloss in the third slot and the check is on the tuple width. Chinese deliberately does not:
+ * `segmentZh` emits every non-deck token bare and the client looks it up through
+ * lib/data/dict.ts, because CC-CEDICT's first sense is often the wrong one. So Chinese is
+ * checked against the same tables the client consults — exactly as tests/starterTexts.test.ts
+ * does, and for the same reason.
+ *
+ * Japanese is the only async one, since kuromoji has to load.
+ */
+const cedict = cedictData as unknown as Record<string, { p: string; m: string }>;
+const HAN = /[\u4e00-\u9fff]/;
+
+/** Words a lesson example may use that are not vocabulary the dictionary carries. */
+async function unresolvedWords(lang: LanguageCode, text: string): Promise<string[]> {
+  if (lang === 'zh') {
+    // Bare tokens by design: check the Han words against what the client would consult.
+    return segmentZh(text, new Map())
+      .map(t => t[0])
+      .filter(w => HAN.test(w))
+      .filter(w => !(w in cedict) && !(w in HSK_VOCAB));
+  }
+  const toks = lang === 'ja'
+    ? await segmentJa(text, new Map())
+    : (lang === 'fr' ? segmentFr : segmentEs)(text, new Map()) as unknown as Array<string[]>;
+  return toks
+    .filter(t => t.length > 1)                    // punctuation is a 1-tuple
+    .filter(t => !(t.length >= 3 && t[2]))        // no gloss resolved
+    .map(t => t[0]);
+}
+
 const SEGMENTERS: Record<string, Segmenter> = {
   fr: segmentFr as unknown as Segmenter,
   es: segmentEs as unknown as Segmenter,
@@ -27,11 +65,9 @@ const SEGMENTERS: Record<string, Segmenter> = {
 
 const allThemes = BEGINNER_THEMES as Record<string, Record<string, string[]>>;
 
-describe('the lesson tree is offered for the languages that can label an inflection', () => {
-  it('exists for French and Spanish and not for the others', () => {
-    expect(hasLessons('fr')).toBe(true);
-    expect(hasLessons('es')).toBe(true);
-    for (const l of ['zh', 'ja'] as const) expect(hasLessons(l), l).toBe(false);
+describe('every language with a tree declares one', () => {
+  it('is offered for all four', () => {
+    for (const l of ['fr', 'es', 'zh', 'ja'] as const) expect(hasLessons(l), l).toBe(true);
   });
 
   it('never claims a language whose tree is actually empty', () => {
@@ -44,7 +80,6 @@ describe('the lesson tree is offered for the languages that can label an inflect
 for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
   const lessons = lessonsFor(lang);
   const themes = allThemes[lang] ?? {};
-  const segment = SEGMENTERS[lang];
 
   describe(`${lang}: the tree is structurally sound`, () => {
     it('has unique ids', () => {
@@ -99,19 +134,17 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
      * segmenter kept whole as one unlookupable token. Both were fixed at the source rather than
      * written around, and this list stays empty.
      */
-    it('uses only words that resolve in the real dictionary', () => {
+    it('uses only words that resolve in the real dictionary', async () => {
       const misses: string[] = [];
       for (const l of grammar) {
         for (const ex of l.examples ?? []) {
-          for (const tok of segment(ex.text, new Map())) {
-            if (tok.length === 1) continue;                    // punctuation
-            if (tok.length >= 3 && tok[2]) continue;           // resolved to a gloss
-            misses.push(`${l.id}: "${tok[0]}" in «${ex.text}»`);
+          for (const w of await unresolvedWords(lang, ex.text)) {
+            misses.push(`${l.id}: "${w}" in «${ex.text}»`);
           }
         }
       }
       expect(misses, `unlookupable words:\n  ${misses.join('\n  ')}`).toEqual([]);
-    });
+    }, 120_000);
   });
 
   describe(`${lang}: vocabulary lessons`, () => {
