@@ -431,4 +431,132 @@ All of them form the past with être.`,
     title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
   { id: 'fr-v-seasons',  unit: 'Past and future', kind: 'vocab', theme: 'seasons',
     title: 'Seasons', summary: 'Four words that turn up constantly' },
+
+  // ── Unit 7 ─────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'fr-object-pronouns',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Object pronouns go BEFORE the verb',
+    summary: 'le, la, les, lui, leur — and the order they queue in',
+    explanation: `English puts the object after the verb: "I see him". French puts the pronoun
+in front of it: "je le vois".
+
+Direct objects — the thing acted on — are me, te, le, la, nous, vous, les.
+Indirect objects — the person it is done TO — are me, te, lui, nous, vous, leur.
+
+The pair worth separating is le/la versus lui. "je le vois" is I see him; "je lui parle" is I
+speak TO him. Which one you need depends on the verb, and the reliable test is whether French
+uses à: parler à quelqu'un takes lui.
+
+In a negative, the pronoun stays glued to the verb and ne goes outside the whole group: "je ne
+le vois pas".`,
+    examples: [
+      { text: 'je le vois.', gloss: 'I see him — the pronoun comes before the verb.' },
+      { text: 'je lui parle.', gloss: 'I speak to him — parler à takes the indirect pronoun.' },
+      { text: 'elle nous attend.', gloss: 'She is waiting for us.' },
+      { text: 'je ne le vois pas.', gloss: 'I do not see him — ne … pas wraps the whole group.' },
+    ],
+  },
+  {
+    id: 'fr-y-en',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'y and en',
+    summary: 'Two tiny words that replace a whole phrase',
+    explanation: `y replaces a place, or a phrase beginning with à. "je vais à Paris" becomes
+"j'y vais".
+
+en replaces a phrase beginning with de, and anything counted or measured. "je viens de Paris"
+becomes "j'en viens"; "j'ai trois livres" becomes "j'en ai trois".
+
+Both sit in front of the verb like the other pronouns, and both are easy to skim past while
+reading because they are so short — which is exactly why they are worth learning to notice.
+
+en is obligatory with a quantity even when English drops it entirely: "combien en veux-tu ?"
+is "how many do you want?", and the en cannot be left out.`,
+    examples: [
+      { text: "j'y vais demain.", gloss: 'I am going there tomorrow.' },
+      { text: "j'en ai trois.", gloss: 'I have three of them — en is required.' },
+      { text: 'elle en parle souvent.', gloss: 'She talks about it often.' },
+    ],
+  },
+  {
+    id: 'fr-comparatives',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Comparing things',
+    summary: 'plus, moins, aussi — and the one irregular that matters',
+    explanation: `Comparison is built with three words in front of the adjective, and que for
+"than": plus … que (more), moins … que (less), aussi … que (as).
+
+il est plus grand que moi — he is taller than me.
+
+For the superlative, add the article: le plus grand, la plus belle. Where the adjective normally
+follows the noun, the superlative follows too and the article is repeated: "la ville la plus
+belle".
+
+The irregular worth memorising is bon, which becomes meilleur rather than "plus bon" — the same
+shape as good and better. Its adverb bien becomes mieux, and the two are frequently confused
+even by people who have been speaking a while.`,
+    examples: [
+      { text: 'il est plus grand que moi.', gloss: 'He is taller than me.' },
+      { text: 'ce livre est moins cher.', gloss: 'This book is cheaper.' },
+      { text: "c'est le meilleur restaurant.", gloss: 'It is the best restaurant — not «le plus bon».' },
+    ],
+  },
+  {
+    id: 'fr-futur-simple',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'The future tense',
+    summary: 'Built on the infinitive, with avoir endings',
+    explanation: `Beyond aller + infinitive there is a real future tense, and it is unusually
+easy to build: take the infinitive and add -ai, -as, -a, -ons, -ez, -ont. Those endings are the
+present tense of avoir, which is not a coincidence.
+
+parler → je parlerai · finir → je finirai · vendre → je vendrai (the final -e drops)
+
+The stem is irregular for a handful of very common verbs, and those are the ones you meet:
+être → ser-, avoir → aur-, aller → ir-, faire → fer-, pouvoir → pourr-, vouloir → voudr-.
+
+It leans more formal and more distant than aller + infinitive, and it is what writing uses. It
+is also required after quand and dès que where English uses a present: "quand il arrivera".`,
+    examples: [
+      { text: 'je parlerai avec lui demain.', gloss: 'I will speak with him tomorrow.' },
+      { text: 'nous serons là.', gloss: 'We will be there — être has an irregular stem.' },
+      { text: 'elle aura le temps.', gloss: 'She will have time.' },
+    ],
+  },
+  {
+    id: 'fr-relative',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'qui and que',
+    summary: 'Which one you need depends on what follows, not on what it means',
+    explanation: `Both join a description to a noun, and both can translate as "who", "which" or
+"that". The choice has nothing to do with people versus things.
+
+qui is the SUBJECT of the clause that follows — something comes after it doing the verb:
+"l'homme qui parle" — the man who is speaking.
+
+que is the OBJECT — a new subject follows it: "le livre que je lis" — the book that I am reading.
+
+So the test is mechanical: look at what comes next. A verb means qui; a subject means que.
+
+que elides to qu' before a vowel; qui never does, which is a useful extra signal while reading.`,
+    examples: [
+      { text: "l'homme qui parle est mon père.", gloss: 'The man who is speaking is my father.' },
+      { text: 'le livre que je lis est bon.', gloss: 'The book that I am reading is good.' },
+      { text: "c'est la ville où j'habite.", gloss: 'This is the town where I live — où for places.' },
+    ],
+  },
+  { id: 'fr-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+    title: 'At the table', summary: 'Plates, glasses, knives and forks' },
+  { id: 'fr-v-school',  unit: 'Beyond the basics', kind: 'vocab', theme: 'school',
+    title: 'School', summary: 'Classroom words, and the things on a desk' },
+  { id: 'fr-v-animals', unit: 'Beyond the basics', kind: 'vocab', theme: 'animals',
+    title: 'Animals', summary: 'Pets, farm animals, and the words for them' },
+  { id: 'fr-v-everyday', unit: 'Beyond the basics', kind: 'vocab', theme: 'everyday',
+    title: 'Everyday life', summary: 'Birthdays, hunger, parties and open doors' },
 ];

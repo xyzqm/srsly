@@ -372,4 +372,135 @@ As with 把, the verb needs something after it rather than standing bare.`,
     title: 'Months', summary: 'Numbered, like the weekdays' },
   { id: 'zh-v-everyday', unit: 'Doing things to things', kind: 'vocab', theme: 'everyday',
     title: 'Everyday life', summary: 'Birthdays, names, friends, time and money' },
+
+  // ── Unit 7 ─────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'zh-modals',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: '会, 能 and 可以',
+    summary: 'Three words for "can", and they are not interchangeable',
+    explanation: `English uses "can" for three different ideas. Chinese separates them, and using
+the wrong one is one of the most audible beginner mistakes.
+
+会 is a learned skill — something you know how to do. 我会说中文 — I can speak Chinese.
+
+能 is physical ability or circumstance — whether you are ABLE to right now. 我今天不能来 — I
+cannot come today.
+
+可以 is permission — whether you are allowed. 我可以进来吗 — may I come in?
+
+会 also does the future in the sense of "will, is likely to": 明天会下雨 — it will rain tomorrow.
+That is the same word doing a second job, and context separates them cleanly.
+
+All three negate with 不, never 没.`,
+    examples: [
+      { text: '我会说中文。', gloss: 'I can speak Chinese — a learned skill.' },
+      { text: '我今天不能来。', gloss: 'I cannot come today — circumstance.' },
+      { text: '我可以进来吗？', gloss: 'May I come in? — permission.' },
+      { text: '明天会下雨。', gloss: 'It will rain tomorrow — 会 for likelihood.' },
+    ],
+  },
+  {
+    id: 'zh-resultative',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Saying how it turned out',
+    summary: 'A second verb glued on says whether it worked',
+    explanation: `Chinese verbs often say only that an action was attempted. What happened as a
+result is carried by a second syllable stuck straight onto the verb.
+
+看 is to look; 看见 is to look AND see. 听 is to listen; 听懂 is to listen and understand. 找 is
+to look for; 找到 is to find.
+
+That distinction has no English equivalent, and it is why 我看了 can be "I looked" while 我看见了
+is "I saw". A sentence that feels oddly incomplete in translation is often missing this.
+
+The common results are worth learning as a small set: 见 for perceiving, 到 for reaching, 懂 for
+understanding, 完 for finishing, 好 for doing properly.
+
+To say it did NOT work, 不 goes between the two parts: 看不见 — cannot see.`,
+    examples: [
+      { text: '我看见他了。', gloss: 'I saw him — 见 says the looking succeeded.' },
+      { text: '我听懂了。', gloss: 'I understood — 懂 says the listening landed.' },
+      { text: '我看不见。', gloss: 'I cannot see — 不 goes inside.' },
+      { text: '我吃完了。', gloss: 'I have finished eating.' },
+    ],
+  },
+  {
+    id: 'zh-duration',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'How long, and how often',
+    summary: 'Duration goes AFTER the verb, unlike when',
+    explanation: `A time POINT — when something happened — goes before the verb: 我三点去.
+
+A DURATION — how long it lasted — goes after it: 我住了三年 — I lived there three years.
+
+That split is the whole rule, and it is the opposite of what English speakers expect, because
+English puts both at the end.
+
+When the verb has an object as well, the verb is repeated: 我学中文学了三年 — I studied Chinese
+for three years. Alternatively the duration slots between verb and object: 我学了三年中文.
+
+Both are correct and both are common; the second is shorter and easier to say.`,
+    examples: [
+      { text: '我三点去。', gloss: 'I am going at three — a time point, before the verb.' },
+      { text: '我住了三年。', gloss: 'I lived there for three years — duration, after the verb.' },
+      { text: '我学了三年中文。', gloss: 'I studied Chinese for three years.' },
+    ],
+  },
+  {
+    id: 'zh-jiu-cai',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: '就 and 才',
+    summary: 'Two tiny words carrying an opinion about timing',
+    explanation: `These two look like they mean "then" and "only", and what they actually carry
+is the speaker's judgement about whether something was early or late.
+
+就 says it happened sooner, more easily, or more readily than expected. 他八点就来了 — he came
+at eight already.
+
+才 says it happened later, or took more than expected. 他八点才来 — he did not come until eight.
+
+Same time, same sentence shape, opposite feeling. That is why a sentence can read as neutral in
+translation and carry a clear attitude in Chinese, and it is worth noticing while reading rather
+than producing at first.
+
+就 also links a condition to its result: 你来我就走 — if you come, I will go.`,
+    examples: [
+      { text: '他八点就来了。', gloss: 'He came at eight already — sooner than expected.' },
+      { text: '他八点才来。', gloss: 'He did not come until eight — later than expected.' },
+      { text: '我很快就回来。', gloss: 'I will be back very soon.' },
+    ],
+  },
+  {
+    id: 'zh-directional',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: '来 and 去 on the end of a verb',
+    summary: 'Which way the action moves, relative to the speaker',
+    explanation: `来 and 去 attach to a movement verb to say which way it went relative to whoever
+is speaking. 来 is toward the speaker; 去 is away.
+
+进来 — come in (I am inside). 进去 — go in (I am outside). The verb is the same; only the
+viewpoint changes.
+
+This pairs with 上, 下, 出, 回, 过 to give the everyday set: 出来, 回去, 上来, 过来.
+
+An object usually sits between the two parts: 拿出来 becomes 拿出书来 when a book is involved,
+which is worth recognising because the two halves end up far apart on the page.
+
+It is one of the clearest cases where Chinese encodes something English leaves to context.`,
+    examples: [
+      { text: '请进来。', gloss: 'Please come in — toward the speaker.' },
+      { text: '他进去了。', gloss: 'He went in — away from the speaker.' },
+      { text: '我明天回去。', gloss: 'I am going back tomorrow.' },
+    ],
+  },
+  { id: 'zh-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+    title: 'At the table', summary: 'Bowls, cups, chopsticks and spoons' },
+  { id: 'zh-v-seasons',   unit: 'Beyond the basics', kind: 'vocab', theme: 'seasons',
+    title: 'Seasons', summary: 'Four words that turn up constantly' },
 ];

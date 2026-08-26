@@ -444,4 +444,142 @@ sleep", dormirse is "to fall asleep".`,
     title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
   { id: 'es-v-seasons',  unit: 'Past and future', kind: 'vocab', theme: 'seasons',
     title: 'Seasons', summary: 'Four words that turn up constantly' },
+
+  // ── Unit 7 ─────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'es-object-pronouns',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Object pronouns go before the verb',
+    summary: 'lo, la, le — and where they attach instead',
+    explanation: `Spanish puts the object pronoun in front of the conjugated verb, where English
+puts it after: "lo veo" is "I see him".
+
+Direct objects are me, te, lo, la, nos, os, los, las. Indirect objects are me, te, le, nos, os,
+les — and the pair worth separating is lo/la against le. "lo veo" is I see him; "le hablo" is I
+speak TO him.
+
+When both appear, the indirect comes first: "me lo da" — he gives it to me. And when both are
+third person, le turns into se, which is the one rule that looks arbitrary and simply has to be
+learned: "se lo doy", never "le lo doy".
+
+With an infinitive or a command the pronoun attaches to the END instead: "voy a verlo",
+"dímelo".`,
+    examples: [
+      { text: 'lo veo todos los días.', gloss: 'I see him every day.' },
+      { text: 'le hablo por teléfono.', gloss: 'I speak to him on the phone.' },
+      { text: 'me lo da.', gloss: 'He gives it to me — indirect first.' },
+      { text: 'voy a verlo mañana.', gloss: 'I am going to see him tomorrow — attached to the infinitive.' },
+    ],
+  },
+  {
+    id: 'es-saber-conocer',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'saber and conocer',
+    summary: 'Two verbs for "to know", split by what you know',
+    explanation: `Spanish splits "to know" the way it splits "to be", and the line is clean.
+
+saber is knowing a FACT, or knowing HOW to do something. sé, sabes, sabe, sabemos, sabéis, saben.
+
+conocer is being ACQUAINTED with a person, a place, or a work. conozco, conoces, conoce,
+conocemos, conocéis, conocen.
+
+"sé la respuesta" — I know the answer. "conozco a María" — I know María. You cannot swap them:
+saying "sé a María" is not a shade of meaning, it is simply wrong.
+
+saber plus an infinitive is "know how to": "sé nadar" is "I can swim" in the sense of having
+learned, which is different from poder.
+
+Note the a before a person — Spanish marks a personal object that way, and it is easy to drop.`,
+    examples: [
+      { text: 'sé la respuesta.', gloss: 'I know the answer — a fact.' },
+      { text: 'conozco a María.', gloss: 'I know María — acquaintance, and note the personal a.' },
+      { text: 'sé nadar.', gloss: 'I know how to swim.' },
+    ],
+  },
+  {
+    id: 'es-perfecto',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'The present perfect',
+    summary: 'he hablado — and how it differs from the preterite',
+    explanation: `haber in the present plus a past participle: he, has, ha, hemos, habéis, han,
+followed by -ado for -ar verbs and -ido for -er and -ir.
+
+he hablado · has comido · ha vivido
+
+It describes something finished but still connected to now — today, this week, ever in your
+life. The preterite is for something closed off: yesterday, last year, and done.
+
+"hoy he comido bien" against "ayer comí bien". The dividing line is roughly whether the time
+period is still going on.
+
+Worth knowing as a reader: much of Latin America prefers the preterite where Spain uses this
+tense, so the same sentence can be said either way depending on where the writer is from.
+
+The participle never changes here, whatever the subject — that only happens when it is used as
+an adjective.`,
+    examples: [
+      { text: 'hoy he comido bien.', gloss: 'I have eaten well today — today is still going.' },
+      { text: 'ayer comí bien.', gloss: 'I ate well yesterday — closed off, so the preterite.' },
+      { text: 'nunca he visto el mar.', gloss: 'I have never seen the sea.' },
+    ],
+  },
+  {
+    id: 'es-comparatives',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Comparing things',
+    summary: 'más, menos, tan — and four irregulars',
+    explanation: `más … que for more, menos … que for less, tan … como for as … as.
+
+es más alto que yo — he is taller than me.
+no es tan caro como pensaba — it is not as expensive as I thought.
+
+The superlative just adds the article: el más alto, la más grande.
+
+Four comparatives are irregular and are the ones you meet constantly: bueno → mejor, malo →
+peor, grande → mayor, pequeño → menor. You do not say "más bueno" for quality.
+
+There is also a separate superlative ending, -ísimo, which is not a comparison at all but an
+intensifier: "buenísimo" is "really good", not "the best".`,
+    examples: [
+      { text: 'es más alto que yo.', gloss: 'He is taller than me.' },
+      { text: 'este libro es mejor.', gloss: 'This book is better — not «más bueno».' },
+      { text: 'no es tan caro como pensaba.', gloss: 'It is not as expensive as I thought.' },
+    ],
+  },
+  {
+    id: 'es-imperative',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Telling someone to do something',
+    summary: 'And the negative that changes the ending',
+    explanation: `For an informal tú command, use the third-person present: habla, come, vive.
+That is the same form as "he speaks", and context separates them.
+
+Eight very common verbs are irregular here and simply have to be known: di, haz, ve, pon, sal,
+sé, ten, ven.
+
+The negative is NOT that form. It switches to the subjunctive endings, which flips the vowel:
+no hables, no comas, no vivas. So "habla" and "no hables" use different stems, which is the
+single most surprising thing about Spanish commands.
+
+Pronouns attach to the end of a positive command and go in front of a negative one: "dímelo",
+but "no me lo digas".`,
+    examples: [
+      { text: 'habla más despacio.', gloss: 'Speak more slowly.' },
+      { text: 'no hables tan rápido.', gloss: 'Do not speak so fast — the negative changes the ending.' },
+      { text: 'ven aquí.', gloss: 'Come here — an irregular command.' },
+    ],
+  },
+  { id: 'es-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+    title: 'At the table', summary: 'Plates, glasses, knives and forks' },
+  { id: 'es-v-school',    unit: 'Beyond the basics', kind: 'vocab', theme: 'school',
+    title: 'School', summary: 'Classroom words, and the things on a desk' },
+  { id: 'es-v-animals',   unit: 'Beyond the basics', kind: 'vocab', theme: 'animals',
+    title: 'Animals', summary: 'Pets, farm animals, and the words for them' },
+  { id: 'es-v-everyday',  unit: 'Beyond the basics', kind: 'vocab', theme: 'everyday',
+    title: 'Everyday life', summary: 'Birthdays, hunger, parties and the sky' },
 ];

@@ -20,6 +20,24 @@ const nextConfig: NextConfig = {
    */
   distDir: process.env.NEXT_DIST_DIR || '.next',
 
+  /**
+   * Ship kuromoji's dictionary with the routes that segment Japanese.
+   *
+   * kuromoji reads its dictionary from `node_modules/kuromoji/dict/*.dat.gz` at RUNTIME, by
+   * path — nothing imports those files, so Next's tracer cannot see them and leaves them out
+   * of the serverless bundle. Locally that is invisible, because node_modules is right there.
+   * Deployed, every Japanese request dies with
+   *
+   *   ENOENT: no such file or directory, open '/var/task/node_modules/kuromoji/dict/base.dat.gz'
+   *
+   * and Japanese reading is simply broken while Chinese, Spanish and French all work — which
+   * is what makes it easy to miss. Found by deploying and tapping a Japanese starter text.
+   */
+  outputFileTracingIncludes: {
+    '/api/segment-text': ['./node_modules/kuromoji/dict/**'],
+    '/api/daily-content': ['./node_modules/kuromoji/dict/**'],
+  },
+
   webpack(config) {
     /**
      * `@data/*` resolves to lib/data/*, but ONLY for the bundler — it is deliberately

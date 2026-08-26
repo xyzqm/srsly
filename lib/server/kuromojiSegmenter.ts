@@ -218,6 +218,44 @@ const PARTICLE_GLOSS: Record<string, string> = {
   させる: 'causative ending — make/let someone do',
 };
 
+/**
+ * The POTENTIAL form of a godan verb is its own lexeme to kuromoji, and not a word to JMdict.
+ *
+ * 話せます comes back with `basic_form: 話せる`, which JMdict does not carry — the potential is
+ * productive, formed from any verb, so no dictionary lists them all. The result was that every
+ * "can do" verb in Japanese resolved to NOTHING: tapping 話せます, 読めません or 行けます gave a
+ * blank definition, and those are everywhere.
+ *
+ * The derivation is regular and reversible. A godan potential ends in -eru, and mapping that
+ * -e kana back to its -u row recovers the dictionary form: 話せる → 話す, 読める → 読む,
+ * 書ける → 書く, 泳げる → 泳ぐ, 待てる → 待つ, 遊べる → 遊ぶ, 帰れる → 帰る.
+ *
+ * Only accepted when the recovered form IS in the dictionary, so an ichidan verb that merely
+ * ends in -eru (食べる, 見せる) is never mangled — 食べる is a headword and resolves before this
+ * is reached.
+ */
+const POTENTIAL_ROW: Record<string, string> = {
+  え: 'う', け: 'く', げ: 'ぐ', せ: 'す', て: 'つ', ね: 'ぬ', べ: 'ぶ', め: 'む', れ: 'る',
+};
+
+/** 話せる → 話す, or undefined when this is not a recoverable godan potential. */
+function plainFromPotential(baseForm: string): string | undefined {
+  if (!baseForm.endsWith('る') || baseForm.length < 3) return undefined;
+  const stem = baseForm.slice(0, -1);
+  const last = stem[stem.length - 1];
+  const row = POTENTIAL_ROW[last];
+  if (!row) return undefined;
+  const plain = stem.slice(0, -1) + row;
+  return jmdict[plain] || JLPT_VOCAB[plain] ? plain : undefined;
+}
+
+/**
+ * The marker pushed onto the auxiliary chain when a potential was unwound, so the reader is
+ * told what the ending is doing. Deliberately a real auxiliary spelling rather than a private
+ * sentinel, because lib/japaneseGrammar.ts reads the chain as dictionary forms.
+ */
+export const POTENTIAL_MARK = 'える';
+
 /** kuromoji POS tags for words whose meaning is grammatical rather than lexical. */
 const GRAMMATICAL_POS = new Set(['助詞', '助動詞']);
 
@@ -229,7 +267,12 @@ function resolveMeaning(baseForm: string | undefined, surface: string, pos?: str
     return PARTICLE_GLOSS[baseForm ?? surface] ?? PARTICLE_GLOSS[surface] ?? '';
   }
   const key = baseForm ?? surface;
-  return jmdict[key]?.m ?? jmdict[surface]?.m ?? JLPT_VOCAB[key]?.meaning ?? JLPT_VOCAB[surface]?.meaning ?? '';
+  const direct = jmdict[key]?.m ?? jmdict[surface]?.m
+    ?? JLPT_VOCAB[key]?.meaning ?? JLPT_VOCAB[surface]?.meaning ?? '';
+  if (direct) return direct;
+  // Nothing found: this may be a godan potential, which no dictionary lists. See above.
+  const plain = baseForm ? plainFromPotential(baseForm) : undefined;
+  return plain ? (jmdict[plain]?.m ?? JLPT_VOCAB[plain]?.meaning ?? '') : '';
 }
 
 /**
@@ -248,11 +291,21 @@ export async function segmentJa(text: string, overrides: Map<string, DictOverrid
     const override = overrides.get(t.baseForm ?? t.surface) ?? overrides.get(t.surface);
     const reading = override?.p ?? t.reading;
     const meaning = override?.m ?? resolveMeaning(t.baseForm, t.surface, t.pos);
+
+    /**
+     * A recovered potential links to the PLAIN verb, not to the potential lexeme.
+     * 話せます should bank a 話す card and headline 話す, with the ability carried by the
+     * grammar line instead — the same split every other ending already uses.
+     */
+    const plain = t.baseForm ? plainFromPotential(t.baseForm) : undefined;
+    const baseForm = plain ?? t.baseForm;
+    const chain = plain ? [POTENTIAL_MARK, ...(t.chain ?? [])] : t.chain;
+
     // The chain only ever travels alongside a base form — an uninflected word has no chain,
     // and the 5th slot cannot be filled without the 4th.
-    if (t.baseForm && t.chain?.length) {
-      return [t.surface, reading, meaning, t.baseForm, encodeChain(t.chain)];
+    if (baseForm && chain?.length) {
+      return [t.surface, reading, meaning, baseForm, encodeChain(chain)];
     }
-    return t.baseForm ? [t.surface, reading, meaning, t.baseForm] : [t.surface, reading, meaning];
+    return baseForm ? [t.surface, reading, meaning, baseForm] : [t.surface, reading, meaning];
   });
 }

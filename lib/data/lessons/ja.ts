@@ -372,4 +372,142 @@ common counter as fixed words, and let the rest follow the regular pattern.`,
     title: 'School', summary: 'Classroom words, and the things on a desk' },
   { id: 'ja-v-everyday', unit: 'Counting and describing', kind: 'vocab', theme: 'everyday',
     title: 'Everyday life', summary: 'Birthdays, names, friends, time and money' },
+
+  // ── Unit 6 ─────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'ja-potential',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Saying you can do something',
+    summary: 'The potential form, and the particle that changes with it',
+    explanation: `The potential form says you are able to do something. る-verbs swap る for
+られる; う-verbs shift the final sound to the -e row and add る: 読む becomes 読める, 話す becomes
+話せる.
+
+する and 来る are irregular and become できる and 来られる.
+
+The part that catches people is not the ending but the PARTICLE. What you can do stops being a
+direct object, so を usually becomes が: 日本語を話します, but 日本語が話せます.
+
+Once formed, the potential behaves as an ordinary る-verb: 読めます, 読めない, 読めました.
+
+This overlaps with ことができる, which is longer and slightly more formal but means the same
+thing.`,
+    examples: [
+      { text: '日本語が話せます。', gloss: 'I can speak Japanese — が, not を.' },
+      { text: '漢字が読めません。', gloss: 'I cannot read kanji.' },
+      { text: '明日来られますか。', gloss: 'Can you come tomorrow?' },
+    ],
+  },
+  {
+    id: 'ja-conditionals',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Four ways to say "if"',
+    summary: 'と, ば, たら, なら — and what separates them',
+    explanation: `Japanese has four conditionals and they are not interchangeable, which is why
+"if" is one of the last things to settle.
+
+と is for something that ALWAYS follows: press this and it opens. No wishes, no requests — a
+natural consequence.
+
+ば is a general hypothetical, and leans toward the condition being the important part.
+
+たら is the everyday one and the safest default. It also covers "when": 家に帰ったら電話します —
+when I get home, I will call.
+
+なら picks up something the other person just said: "if that is the case…". It is the only one
+that comfortably follows a noun on its own.
+
+If you learn one first, learn たら — it fits the most situations and is rarely wrong.`,
+    examples: [
+      { text: '春になると、暖かくなります。', gloss: 'When spring comes, it gets warm — an automatic result.' },
+      { text: '時間があったら、行きます。', gloss: 'If I have time, I will go.' },
+      { text: '家に帰ったら電話します。', gloss: 'When I get home, I will call.' },
+    ],
+  },
+  {
+    id: 'ja-giving-receiving',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Giving and receiving',
+    summary: 'あげる, くれる, もらう — the direction matters',
+    explanation: `Japanese has two verbs for "give", and which one you use depends on who
+benefits.
+
+あげる is giving AWAY from you — you to someone else, or one third party to another.
+くれる is giving TOWARD you — someone gives to you, or to someone in your circle.
+もらう is receiving, told from the receiver's side.
+
+友達に本をあげました — I gave my friend a book.
+友達が本をくれました — my friend gave me a book.
+友達に本をもらいました — I received a book from my friend.
+
+The middle one has no English equivalent and is the one to spend time on: English uses "give"
+for both directions, so くれる has to become a habit rather than a translation.
+
+Attached to a て-form, these say who a favour was done for: 手伝ってくれました — they helped me.`,
+    examples: [
+      { text: '友達に本をあげました。', gloss: 'I gave my friend a book.' },
+      { text: '友達が本をくれました。', gloss: 'My friend gave me a book — toward me, so くれる.' },
+      { text: '友達に本をもらいました。', gloss: 'I received a book from my friend.' },
+    ],
+  },
+  {
+    id: 'ja-transitive-pairs',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Verb pairs: doing it, and it happening',
+    summary: '開ける and 開く are different verbs, not one verb changed',
+    explanation: `Japanese has pairs of verbs where English reuses one word. One says somebody
+DOES it; the other says it HAPPENS.
+
+開ける is to open something; 開く is for something opening. 閉める and 閉まる, 始める and 始まる,
+出す and 出る work the same way.
+
+The transitive one takes を; the intransitive one takes が. That is the reliable signal while
+reading: ドアを開けました is "I opened the door", ドアが開きました is "the door opened".
+
+Japanese reaches for the intransitive far more readily than English does, which is part of why
+translated Japanese can sound oddly passive. Often nothing is being hidden — the language simply
+prefers to say that something happened.
+
+There is no rule that predicts which ending is which, so they are learned in pairs.`,
+    examples: [
+      { text: 'ドアを開けました。', gloss: 'I opened the door — transitive, so を.' },
+      { text: 'ドアが開きました。', gloss: 'The door opened — intransitive, so が.' },
+      { text: '授業が始まります。', gloss: 'The class begins.' },
+    ],
+  },
+  {
+    id: 'ja-relative-clauses',
+    unit: 'Beyond the basics',
+    kind: 'grammar',
+    title: 'Describing a noun with a whole sentence',
+    summary: 'The description comes FIRST, with no joining word',
+    explanation: `English hangs a description behind the noun with "who" or "that": the book that
+I bought. Japanese puts the whole thing in FRONT, and uses no joining word at all.
+
+私が買った本 — literally "I bought book", meaning the book I bought.
+
+Two things follow, and both matter for reading. The verb inside goes in PLAIN form whatever the
+politeness of the sentence, and が often replaces は inside the clause.
+
+This is the single biggest reading skill in Japanese, because a long description can run for a
+whole line before the noun it belongs to finally arrives. Meeting a verb in plain form partway
+through a sentence is usually the signal that this is happening.
+
+Practise by reading to the end of the run first, finding the noun, then going back.`,
+    examples: [
+      { text: '私が買った本です。', gloss: 'It is the book I bought — the description comes first.' },
+      { text: '母が作った料理を食べました。', gloss: 'I ate the food my mother made.' },
+      { text: '昨日読んだ本は面白かったです。', gloss: 'The book I read yesterday was interesting.' },
+    ],
+  },
+  { id: 'ja-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+    title: 'At the table', summary: 'Plates, bowls, chopsticks and spoons' },
+  { id: 'ja-v-months',    unit: 'Beyond the basics', kind: 'vocab', theme: 'months',
+    title: 'Months', summary: 'Numbered, which makes them easy' },
+  { id: 'ja-v-seasons',   unit: 'Beyond the basics', kind: 'vocab', theme: 'seasons',
+    title: 'Seasons', summary: 'Four words that turn up constantly' },
 ];

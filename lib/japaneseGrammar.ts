@@ -45,6 +45,12 @@ const AUXILIARIES: Record<string, string> = {
   まい: 'will not',
   べし: 'should',
   ごとし: 'like, as if',
+  /**
+   * The godan potential, unwound by the segmenter. 話せます arrives as 話す plus this marker,
+   * so the card links to the plain verb and the ability is reported here — unlike られる this
+   * one is unambiguous, since only the potential produces an -eru godan stem.
+   */
+  える: 'can, potential',
 };
 
 /**

@@ -89,6 +89,35 @@ describe('the segmenter emits a chain the decoder can read', () => {
     expect(toks.find(t => t[0] === '飲みました')?.[4]).toBe('ます|た');
   }, 60_000);
 
+  /**
+   * THE POTENTIAL IS NOT A DICTIONARY WORD. kuromoji hands back `話せる` as the base form, and
+   * JMdict does not carry it — the potential is productive, so no dictionary lists them all.
+   * Every "can do" verb therefore resolved to a blank definition until the segmenter unwound
+   * the -eru stem back to the plain verb.
+   */
+  it.each([
+    ['日本語が話せます。', '話せます', '話す'],
+    ['漢字が読めません。', '読めません', '読む'],
+    ['早く行けます。', '行けます', '行く'],
+  ])('%s links %s to the plain verb %s', async (sentence, surface, plain) => {
+    const t = (await segmentJa(sentence, new Map())).find(x => x[0] === surface);
+    expect(t?.[3], `${surface} did not link to ${plain}`).toBe(plain);
+    expect(t?.[2], `${surface} has no definition`).toBeTruthy();
+    expect(describeChain(t![4]!)).toContain('can, potential');
+  }, 60_000);
+
+  /**
+   * The guard that stops it mangling ordinary verbs: an ichidan verb ending in -eru is a real
+   * headword and resolves before the potential rule is reached. Without it 食べる would be
+   * "recovered" to 食ぶ and 見せる to 見す.
+   */
+  it.each([['食べます。', '食べます', '食べる'], ['見せます。', '見せます', '見せる']])(
+    '%s leaves %s alone', async (sentence, surface, base) => {
+      const t = (await segmentJa(sentence, new Map())).find(x => x[0] === surface);
+      expect(t?.[3]).toBe(base);
+      expect(describeChain(t![4]!)).not.toContain('potential');
+    }, 60_000);
+
   /** An uninflected word has no chain, and the 5th slot never appears without the 4th. */
   it('attaches nothing to a plain noun', async () => {
     for (const t of await segmentJa('本を読みました。', new Map())) {
