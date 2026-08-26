@@ -34,8 +34,12 @@ const nextConfig: NextConfig = {
    * is what makes it easy to miss. Found by deploying and tapping a Japanese starter text.
    */
   outputFileTracingIncludes: {
+    // Keyed both ways: app-router handlers are named `/api/x` by some versions and
+    // `/api/x/route` by others, and a key that does not match fails silently.
     '/api/segment-text': ['./node_modules/kuromoji/dict/**'],
+    '/api/segment-text/route': ['./node_modules/kuromoji/dict/**'],
     '/api/daily-content': ['./node_modules/kuromoji/dict/**'],
+    '/api/daily-content/route': ['./node_modules/kuromoji/dict/**'],
   },
 
   webpack(config) {

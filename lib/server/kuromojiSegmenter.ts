@@ -24,11 +24,27 @@ interface DictOverride { p: string; m: string; }
 
 let tokenizerPromise: Promise<kuromoji.Tokenizer<kuromoji.IpadicFeatures>> | null = null;
 
+/**
+ * Where kuromoji's dictionary lives.
+ *
+ * `process.cwd()` and NOT `require.resolve('kuromoji')`. Resolving through the module reads as
+ * the more robust of the two and is wrong here: webpack rewrites `require.resolve` inside the
+ * server bundle and hands back a bundled module id — `(rsc)/node_modules/kuromoji/...` — which
+ * is not a path any filesystem has. It broke Japanese segmentation outright.
+ *
+ * The 17 MB of `.dat.gz` files are read by PATH at runtime and imported by nothing, so Next's
+ * tracer cannot see them on its own; `outputFileTracingIncludes` in next.config.ts names them
+ * explicitly so a deployment ships them too.
+ */
+function kuromojiDictPath(): string {
+  return path.join(process.cwd(), 'node_modules/kuromoji/dict');
+}
+
 function getTokenizer(): Promise<kuromoji.Tokenizer<kuromoji.IpadicFeatures>> {
   if (!tokenizerPromise) {
     tokenizerPromise = new Promise((resolve, reject) => {
       kuromoji
-        .builder({ dicPath: path.join(process.cwd(), 'node_modules/kuromoji/dict') })
+        .builder({ dicPath: kuromojiDictPath() })
         .build((err, tokenizer) => (err ? reject(err) : resolve(tokenizer)));
     });
   }

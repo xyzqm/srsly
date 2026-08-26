@@ -4,14 +4,42 @@
     {
       "name": "srsly",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
+      "name": "srsly-stub",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:stub"
+      ],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "srsly-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start:stub"
+      ],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
       "name": "svelte-poc",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "svelte-poc", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "svelte-poc",
+        "run",
+        "dev"
+      ],
       "port": 5173,
       "autoPort": true
     }

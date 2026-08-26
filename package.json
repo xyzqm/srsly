@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:stub": "SRSLY_STUB_AI=1 next dev",
+    "start:stub": "SRSLY_STUB_AI=1 next start",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 next build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
