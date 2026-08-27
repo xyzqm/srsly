@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useAchievements } from '@/hooks/useAchievements';
-import type { EarnedAchievement } from '@/lib/achievements';
+import { collapse, toppedLadder, type EarnedAchievement } from '@/lib/achievements';
+import BadgeSeal from './BadgeSeal';
 
 /**
  * Announce a milestone the moment it is crossed — once.
@@ -40,25 +41,43 @@ export default function AchievementToast() {
 
   if (shown.length === 0) return null;
 
+  /**
+   * Announce the RUNG, not every rung crossed. Importing a level can clear three thresholds of
+   * one family at once, and three near-identical cards saying Vocabulary 10, 50 and 100 reads
+   * as a bug. `acknowledge` still marks all of them seen, so nothing is re-announced later.
+   */
+  const badges = collapse(shown, 'last');
+
   return (
     <div className="flex flex-col gap-2 mb-5">
-      {shown.map(a => (
-        <div
-          key={a.id}
-          role="status"
-          className="rounded-[12px] px-4 py-3 flex items-baseline gap-3"
-          style={{ background: 'var(--paper-2)', border: '1px solid var(--accent)' }}
-        >
-          <span style={{ fontSize: 16, lineHeight: 1 }}>🏅</span>
-          <div className="flex flex-col gap-0.5">
-            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--accent)' }}>
-              Milestone
+      {badges.map(b => {
+        const maxed = toppedLadder(b.tier, b.tierCount);
+        return (
+          <div
+            key={b.family.key}
+            role="status"
+            className="rounded-[12px] px-4 py-3.5 flex items-center gap-3.5 animate-badge"
+            style={{
+              background: maxed ? 'var(--gold-soft)' : 'var(--accent-soft)',
+              border: `1px solid ${maxed ? 'var(--gold)' : 'var(--accent)'}`,
+            }}
+          >
+            <BadgeSeal
+              mark={b.family.mark} tier={b.tier} tierCount={b.tierCount} earned size={52}
+            />
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <div style={{
+                fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em',
+                textTransform: 'uppercase', color: maxed ? 'var(--gold)' : 'var(--accent)',
+              }}>
+                {maxed ? 'Milestone · maxed' : 'Milestone'}
+              </div>
+              <div style={{ fontSize: 15, color: 'var(--ink)', fontWeight: 500 }}>{b.a.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>{b.a.description}</div>
             </div>
-            <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500 }}>{a.name}</div>
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.45 }}>{a.description}</div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

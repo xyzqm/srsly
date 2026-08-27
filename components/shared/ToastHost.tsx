@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useAchievements } from '@/hooks/useAchievements';
+import { collapse, type Badge } from '@/lib/achievements';
+import BadgeSeal from '@/components/stats/BadgeSeal';
 
 /**
  * The two things worth interrupting a reader for, and nothing else.
@@ -26,6 +28,9 @@ interface Toast {
   kind: 'save' | 'milestone';
   title: string;
   detail: string;
+  /** Milestones only — the same seal the Stats panel and the completion screen draw, so one
+   *  event does not have two different looks depending on where you happened to be. */
+  badge?: Badge;
 }
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
@@ -56,8 +61,11 @@ export default function ToastHost({ deckSize }: { deckSize: number }) {
 
   useEffect(() => {
     if (fresh.length === 0) return;
-    for (const a of fresh) {
-      push({ id: `ms-${a.id}`, kind: 'milestone', title: a.name, detail: a.description }, MILESTONE_MS);
+    // One toast per ladder, not per rung — crossing three thresholds at once should not
+    // stack three near-identical cards in the corner. See `collapse`.
+    for (const b of collapse(fresh, 'last')) {
+      push({ id: `ms-${b.a.id}`, kind: 'milestone', title: b.a.name, detail: b.a.description, badge: b },
+        MILESTONE_MS);
     }
     acknowledge();
   }, [fresh, acknowledge]);
@@ -73,14 +81,16 @@ export default function ToastHost({ deckSize }: { deckSize: number }) {
         <div
           key={t.id}
           role="status"
-          className="rounded-[11px] px-4 py-3 flex items-baseline gap-2.5"
+          className="rounded-[11px] px-4 py-3 flex items-center gap-3"
           style={{
             background: 'var(--card)',
             border: `1px solid ${t.kind === 'milestone' ? 'var(--accent)' : 'var(--line)'}`,
             boxShadow: '0 6px 20px color-mix(in srgb, var(--ink) 12%, transparent)',
           }}
         >
-          <span style={{ fontSize: 15, lineHeight: 1 }}>{t.kind === 'milestone' ? '🏅' : '✓'}</span>
+          {t.badge
+            ? <BadgeSeal mark={t.badge.family.mark} tier={t.badge.tier} tierCount={t.badge.tierCount} earned size={38} />
+            : <span style={{ fontSize: 15, lineHeight: 1 }}>✓</span>}
           <div className="flex flex-col gap-0.5">
             {t.kind === 'milestone' && (
               <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--accent)' }}>

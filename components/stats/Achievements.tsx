@@ -1,6 +1,7 @@
 'use client';
 import { useAchievements } from '@/hooks/useAchievements';
-import type { EarnedAchievement } from '@/lib/achievements';
+import { collapse, toppedLadder, type Badge } from '@/lib/achievements';
+import BadgeSeal from './BadgeSeal';
 
 /**
  * Milestones earned, and the ones you are closest to.
@@ -10,8 +11,15 @@ import type { EarnedAchievement } from '@/lib/achievements';
  * pleasant and changes nothing, while "3 more words to 50" is a reason to open the app on a
  * day the streak is already safe.
  *
- * Deliberately shows only a few of each. The full list is 20-odd rows, which turns a reward
- * into a chore to scroll, and the ones far away are not motivating anyway.
+ * ── ONE BADGE PER FAMILY ──
+ * Every threshold used to earn its own pill, so passing 100 words printed `Vocabulary 10`,
+ * `Vocabulary 50` and `Vocabulary 100` at once — twenty-odd identical grey tags in which the
+ * hardest milestone was indistinguishable from the easiest. `collapse` keeps only the rung you
+ * are standing on and the seal's ring carries the rest, which is both fewer things to read and
+ * more information in each one.
+ *
+ * Still only a few of `next`: the ones far away are not motivating, and a wall of unfinished
+ * progress is a list of things you have not done.
  */
 
 const NEXT_SHOWN = 3;
@@ -22,26 +30,49 @@ const label = {
   textTransform: 'uppercase' as const, color: 'var(--ink-faint)',
 };
 
-function Bar({ have, need }: { have: number; need: number }) {
-  const pct = Math.max(0, Math.min(100, (have / need) * 100));
+/** A milestone already reached: the mark at full strength, its ladder drawn around it. */
+function EarnedBadge({ b }: { b: Badge }) {
+  const maxed = toppedLadder(b.tier, b.tierCount);
   return (
-    <div className="rounded-full overflow-hidden" style={{ height: 5, background: 'var(--line)' }}>
-      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: 999 }} />
+    <div
+      className="flex flex-col items-center text-center gap-1.5 rounded-[11px] px-1.5 py-3"
+      title={b.a.description}
+      style={{ background: 'var(--paper-2)', border: '1px solid var(--line-soft)' }}
+    >
+      <BadgeSeal mark={b.family.mark} tier={b.tier} tierCount={b.tierCount} earned size={48} />
+      <div style={{ fontSize: 11.5, color: 'var(--ink)', lineHeight: 1.3 }}>{b.a.name}</div>
+      {b.tierCount > 1 && (
+        <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.1em', color: maxed ? 'var(--gold)' : 'var(--ink-faint)' }}>
+          {maxed ? 'MAX' : `${b.tier}/${b.tierCount}`}
+        </div>
+      )}
     </div>
   );
 }
 
-function NextRow({ a }: { a: EarnedAchievement }) {
+/**
+ * A milestone ahead: the same seal with its ring showing how close it is.
+ *
+ * The flat progress bar this replaces said the same thing in a second visual language, one
+ * row below the badge it described. The ring IS the bar, bent around the mark it belongs to.
+ */
+function NextRow({ b }: { b: Badge }) {
+  const { have, need } = b.a;
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>{a.name}</span>
-        <span style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>
-          {a.have}/{a.need}
-        </span>
+    <div className="flex items-center gap-3.5">
+      <BadgeSeal
+        mark={b.family.mark} tier={b.tier} tierCount={b.tierCount}
+        earned={false} progress={need > 0 ? have / need : 0} size={44}
+      />
+      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>{b.a.name}</span>
+          <span style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>
+            {have}/{need}
+          </span>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.45 }}>{b.a.description}</div>
       </div>
-      <Bar have={a.have} need={a.need} />
-      <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', lineHeight: 1.45 }}>{a.description}</div>
     </div>
   );
 }
@@ -55,33 +86,30 @@ export default function Achievements() {
   // bars is a list of things you have failed to do — say nothing until there is something.
   if (earned.length === 0 && next.every(a => a.have === 0)) return null;
 
+  // Best first, so a maxed-out ladder leads rather than being buried in declaration order.
+  const earnedBadges = collapse(earned, 'last')
+    .sort((x, y) => y.tier / y.tierCount - x.tier / x.tierCount || y.tier - x.tier);
+  // `next` arrives sorted by how close it is, so the first of each family is the nearest.
+  const nextBadges = collapse(next, 'first').slice(0, NEXT_SHOWN);
+
   return (
     <div className="rounded-[14px] px-5 py-5 mb-5" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
       <div style={label}>Milestones</div>
 
-      {next.length > 0 && (
+      {nextBadges.length > 0 && (
         <div className="flex flex-col gap-4 mt-4">
-          {next.slice(0, NEXT_SHOWN).map(a => <NextRow key={a.id} a={a} />)}
+          {nextBadges.map(b => <NextRow key={b.family.key} b={b} />)}
         </div>
       )}
 
-      {earned.length > 0 && (
-        <div className={next.length > 0 ? 'mt-5 pt-4' : 'mt-4'}
-             style={next.length > 0 ? { borderTop: '1px solid var(--line-soft)' } : undefined}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
+      {earnedBadges.length > 0 && (
+        <div className={nextBadges.length > 0 ? 'mt-5 pt-4' : 'mt-4'}
+             style={nextBadges.length > 0 ? { borderTop: '1px solid var(--line-soft)' } : undefined}>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
             Earned · {earned.length}
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {earned.map(a => (
-              <span
-                key={a.id}
-                title={a.description}
-                className="rounded-full px-2.5 py-1"
-                style={{ ...mono, fontSize: 11, background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-soft)' }}
-              >
-                {a.name}
-              </span>
-            ))}
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))' }}>
+            {earnedBadges.map(b => <EarnedBadge key={b.family.key} b={b} />)}
           </div>
         </div>
       )}

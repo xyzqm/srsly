@@ -190,3 +190,107 @@ export function evaluate(stats: AchievementStats): {
     next: all.filter(a => !a.earned).sort((x, y) => y.have / y.need - x.have / x.need),
   };
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   FAMILIES — the same milestone at several sizes, gathered under one badge.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Which drawn seal a family wears. Deliberately ABSTRACT rather than a letter or a glyph.
+ *
+ * A CJK character inside a shared badge is the exact bug CLAUDE.md names about `uiStrings`:
+ * "a hardcoded 空 in a shared component is a Chinese character sitting in the middle of a
+ * French session." A milestone panel is shared by all four languages and is not about any of
+ * them, so the marks are geometry — no script, nothing to mistranslate.
+ */
+export type BadgeMark =
+  | 'deck' | 'held' | 'streak' | 'sessions' | 'book' | 'polyglot' | 'devoted' | 'unstuck';
+
+export interface Family {
+  key: string;
+  mark: BadgeMark;
+  /**
+   * Members, EASIEST FIRST.
+   *
+   * **These strings are a persistence key and must never change.** `srsly-achievements-seen`
+   * stores earned ids, so renaming one re-announces a milestone the learner already saw.
+   * Grouping is expressed here rather than by parsing an id prefix precisely so that
+   * `first-word` can join `deck` and `book-1` can join `books` without either being renamed.
+   */
+  ids: string[];
+}
+
+export const FAMILIES: Family[] = [
+  { key: 'deck', mark: 'deck',
+    ids: ['first-word', 'first-steps', 'deck-25', 'deck-50', 'deck-250', 'deck-1000'] },
+  { key: 'mastered', mark: 'held',
+    ids: ['mastered-10', 'mastered-50', 'mastered-100', 'mastered-500', 'mastered-1000'] },
+  { key: 'streak', mark: 'streak',
+    ids: ['streak-2', 'streak-3', 'streak-7', 'streak-30', 'streak-100', 'streak-365'] },
+  { key: 'sessions', mark: 'sessions',
+    ids: ['sessions-1', 'sessions-10', 'sessions-50', 'sessions-250'] },
+  { key: 'books', mark: 'book',
+    ids: ['book-1', 'books-3', 'books-10'] },
+  { key: 'devoted', mark: 'devoted',
+    ids: ['lang-streak-30'] },
+  { key: 'polyglot', mark: 'polyglot',
+    ids: ['polyglot-2'] },
+  { key: 'unstuck', mark: 'unstuck',
+    ids: ['leech-1', 'leech-10'] },
+];
+
+/** One badge: the family, the rung of it being shown, and where that sits in the ladder. */
+export interface Badge {
+  family: Family;
+  /** The milestone this badge is currently standing for — highest earned, or nearest unearned. */
+  a: EarnedAchievement;
+  /** 1-based rung within the family, so the ring can draw "3 of 5". */
+  tier: number;
+  tierCount: number;
+}
+
+const FAMILY_OF = new Map<string, Family>(
+  FAMILIES.flatMap(f => f.ids.map(id => [id, f] as const)),
+);
+
+/** A milestone not listed in FAMILIES stands alone rather than vanishing from the UI. */
+function familyOf(id: string): Family {
+  return FAMILY_OF.get(id) ?? { key: id, mark: 'held', ids: [id] };
+}
+
+function toBadge(a: EarnedAchievement): Badge {
+  const family = familyOf(a.id);
+  return { family, a, tier: family.ids.indexOf(a.id) + 1, tierCount: family.ids.length };
+}
+
+/**
+ * One badge per family instead of one per threshold.
+ *
+ * Earning 100 words used to print `Vocabulary 10`, `Vocabulary 50` and `Vocabulary 100` side
+ * by side — three rows saying the same thing, and a cabinet in which the hardest milestone
+ * looked exactly like the easiest. Keeping only the rung you are actually on turns ~20 pills
+ * into 8 badges and lets the tier carry the difference.
+ *
+ * `pick` is 'last' for things already done (show your best) and 'first' for things ahead of
+ * you (show the nearest). Input order is preserved for whichever member survives, so the
+ * caller's sort still decides the result's order.
+ */
+export function collapse(list: EarnedAchievement[], pick: 'first' | 'last'): Badge[] {
+  const chosen = new Map<string, EarnedAchievement>();
+  for (const a of list) {
+    const key = familyOf(a.id).key;
+    if (pick === 'last' || !chosen.has(key)) chosen.set(key, a);
+  }
+  return [...chosen.values()].map(toBadge);
+}
+
+/**
+ * Has this ladder been topped? The rule the gold treatment hangs off, in one place because it
+ * is asked by the seal, the badge caption and the toast, and three copies would drift.
+ *
+ * A one-rung family is trivially at its own top, and counting that made three of seven badges
+ * gold on a test deck — gold then reads as decoration rather than as the end of a climb.
+ */
+export function toppedLadder(tier: number, tierCount: number): boolean {
+  return tierCount > 1 && tier >= tierCount;
+}

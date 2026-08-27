@@ -927,6 +927,45 @@ holds what it is showing in its OWN state rather than rendering from `fresh`. Th
 the same list and are not — acknowledging empties `fresh`, so rendering from it made the
 milestone vanish a second after it appeared.
 
+#### A milestone is a seal, and one badge per ladder
+
+`components/stats/BadgeSeal.tsx` draws a milestone as a mark inside a ring. It replaced a row
+of text pills in which `Vocabulary 1000` looked exactly like `Vocabulary 10` — twenty-odd
+identical grey tags, which is a tag cloud rather than a cabinet.
+
+**`FAMILIES` groups the thresholds and `collapse` shows only the rung you are standing on** —
+the highest earned, or the nearest ahead. Passing 100 words used to print `Vocabulary 10`, 50
+and 100 side by side. Grouping is declared explicitly rather than parsed off an id prefix,
+because **the ids are the `srsly-achievements-seen` key and renaming one re-announces a
+milestone the learner already saw** — that is what lets `first-word` join the `deck` ladder and
+`book-1` join `books` without either being renamed. `tests/achievements.test.ts` asserts every
+milestone is in exactly one family and that each family is listed easiest first, both of which
+fail silently in the UI otherwise: an unlisted milestone renders as a lone badge, and a family
+out of order draws "1/5" on its hardest rung.
+
+**The marks carry no script, deliberately.** The obvious seal has a character in it, and it
+must not: the panel is shared by all four languages and is about none of them, so a 語 would be
+the hardcoded-空 bug in a new place. Every mark is geometry.
+
+**Earned and unearned use different rings, and that is the point.** Earned draws one arc per
+rung, filled to the rung reached, so "3 of 5" is legible without a caption; unearned draws a
+single continuous arc for progress toward the next one. They answer different questions — what
+you have climbed versus how close the next step is — and the flat progress bar this replaced
+said the second thing in a second visual language one row below the badge it described.
+
+**Gold is the top of a ladder, and only a real one** (`toppedLadder`). A one-rung family is
+trivially at its own top, and counting that made three of seven badges gold — gold then reads
+as decoration rather than as the end of a climb.
+
+**Marks are judged at 46px, not blown up.** `unstuck` first carried a chain link with a
+diagonal across it, which at badge size read as the universal *prohibited* slash: a milestone
+for repairing a card looked like one for banning it. Pulling the halves apart to drop the slash
+left two floating hooks that read as nothing. It is now the shape of the thing itself — a card
+that dipped and came back up.
+
+`ToastHost` draws the same seal as the Stats panel and the completion screen, so one event does
+not have two looks depending on where the learner happened to be standing.
+
 ### Reading and SRS are separate tabs
 
 One line down the middle, and it is the app's main organising idea:
