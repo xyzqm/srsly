@@ -19,10 +19,8 @@ import type { Lesson } from '@/lib/lessons';
  * not teaching a word the app cannot define when the learner meets it in the wild.
  */
 export const ES_LESSONS: Lesson[] = [
-  // ── Unit 1 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-gender',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'Every noun has a gender',
     summary: 'el or la — and the -o/-a rule that mostly works',
@@ -40,15 +38,18 @@ mano. And many nouns end in neither letter, so el and la are simply learned with
 You have been seeing this while reading: tap an inflected word and the note under the definition
 says things like "feminine plural". That is this, doing visible work.`,
     examples: [
-      { text: 'el libro está en la mesa.', gloss: 'The book is on the table.' },
-      { text: 'la casa es grande.', gloss: 'The house is big.' },
-      { text: 'el día es largo.', gloss: 'The day is long — día ends in -a but is masculine.' },
-      { text: 'la mano es pequeña.', gloss: 'The hand is small — mano ends in -o but is feminine.' },
+      { text: 'el libro está en la mesa.', gloss: 'The book is on the table.',
+        tiles: ['el', 'libro', 'está', 'en', 'la', 'mesa.'] },
+      { text: 'la casa es grande.', gloss: 'The house is big.',
+        tiles: ['la', 'casa', 'es', 'grande.'] },
+      { text: 'el día es largo.', gloss: 'The day is long — día ends in -a but is masculine.',
+        tiles: ['el', 'día', 'es', 'largo.'] },
+      { text: 'la mano es pequeña.', gloss: 'The hand is small — mano ends in -o but is feminine.',
+        tiles: ['la', 'mano', 'es', 'pequeña.'] },
     ],
   },
   {
     id: 'es-plural',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'Making things plural',
     summary: 'Add -s, or -es after a consonant',
@@ -61,14 +62,16 @@ Two spelling adjustments follow from how Spanish is written rather than from gra
 becomes -c before the ending (lápiz becomes lápices), and a written accent on the last syllable
 usually disappears in the plural, because the stress no longer needs marking.`,
     examples: [
-      { text: 'los libros están en la mesa.', gloss: 'The books are on the table.' },
-      { text: 'las casas son grandes.', gloss: 'The houses are big.' },
-      { text: 'los papeles están aquí.', gloss: 'The papers are here — consonant, so -es.' },
+      { text: 'los libros están en la mesa.', gloss: 'The books are on the table.',
+        tiles: ['los', 'libros', 'están', 'en', 'la', 'mesa.'] },
+      { text: 'las casas son grandes.', gloss: 'The houses are big.',
+        tiles: ['las', 'casas', 'son', 'grandes.'] },
+      { text: 'los papeles están aquí.', gloss: 'The papers are here — consonant, so -es.',
+        tiles: ['los', 'papeles', 'están', 'aquí.'] },
     ],
   },
   {
     id: 'es-articles',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'un and una, el and la',
     summary: 'A thing versus the thing — and why Spanish says "the" more',
@@ -82,22 +85,16 @@ coffee" — not "the coffee". It is also used with days and with most titles.
 Two contractions are obligatory and worth learning as single words: a + el becomes al, and
 de + el becomes del. Nobody writes "a el" or "de el".`,
     examples: [
-      { text: 'veo un perro en la calle.', gloss: 'I see a dog in the street.' },
-      { text: 'voy al mercado.', gloss: 'I am going to the market — a + el becomes al.' },
-      { text: 'la puerta del coche está abierta.', gloss: 'The car door is open — de + el becomes del.' },
+      { text: 'veo un perro en la calle.', gloss: 'I see a dog in the street.',
+        tiles: ['veo', 'un', 'perro', 'en', 'la', 'calle.'] },
+      { text: 'voy al mercado.', gloss: 'I am going to the market — a + el becomes al.',
+        tiles: ['voy', 'al', 'mercado.'] },
+      { text: 'la puerta del coche está abierta.', gloss: 'The car door is open — de + el becomes del.',
+        tiles: ['la', 'puerta', 'del', 'coche', 'está', 'abierta.'] },
     ],
   },
-  { id: 'es-v-basics',  unit: 'Nouns and articles', kind: 'vocab', theme: 'basics',
-    title: 'Everyday words', summary: 'The small words that hold sentences together' },
-  { id: 'es-v-numbers', unit: 'Nouns and articles', kind: 'vocab', theme: 'numbers',
-    title: 'Numbers', summary: 'Counting, prices, times, ages' },
-  { id: 'es-v-colours', unit: 'Nouns and articles', kind: 'vocab', theme: 'colours',
-    title: 'Colours', summary: 'And a first look at adjectives agreeing' },
-
-  // ── Unit 2 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-ser-estar',
-    unit: 'Being and having',
     kind: 'grammar',
     title: 'ser and estar — two verbs for "to be"',
     summary: 'The single biggest thing that makes Spanish feel foreign',
@@ -117,15 +114,18 @@ is wrong; they say different things, and that pair is the clearest way to feel t
 Location is always estar, even for something that has not moved in eight hundred years: "la
 catedral está en la plaza".`,
     examples: [
-      { text: 'soy profesor.', gloss: 'I am a teacher — an identity, so ser.' },
-      { text: 'estoy cansado.', gloss: 'I am tired — a state right now, so estar.' },
-      { text: 'la casa es blanca.', gloss: 'The house is white — a lasting quality.' },
-      { text: 'la casa está lejos.', gloss: 'The house is far away — location, always estar.' },
+      { text: 'soy profesor.', gloss: 'I am a teacher — an identity, so ser.',
+        tiles: ['soy', 'profesor.'] },
+      { text: 'estoy cansado.', gloss: 'I am tired — a state right now, so estar.',
+        tiles: ['estoy', 'cansado.'] },
+      { text: 'la casa es blanca.', gloss: 'The house is white — a lasting quality.',
+        tiles: ['la', 'casa', 'es', 'blanca.'] },
+      { text: 'la casa está lejos.', gloss: 'The house is far away — location, always estar.',
+        tiles: ['la', 'casa', 'está', 'lejos.'] },
     ],
   },
   {
     id: 'es-tener',
-    unit: 'Being and having',
     kind: 'grammar',
     title: 'tener — to have, and to be',
     summary: 'tengo veinte años, not «soy veinte»',
@@ -139,20 +139,16 @@ hambre" stops a sentence dead, so these are worth learning as fixed phrases.
 
 tener que plus an infinitive is how you say you have to do something: "tengo que trabajar".`,
     examples: [
-      { text: 'tengo un hermano y una hermana.', gloss: 'I have a brother and a sister.' },
-      { text: 'tengo hambre.', gloss: 'I am hungry — literally, I have hunger.' },
-      { text: 'tenemos que salir ahora.', gloss: 'We have to leave now.' },
+      { text: 'tengo un hermano y una hermana.', gloss: 'I have a brother and a sister.',
+        tiles: ['tengo', 'un', 'hermano', 'y', 'una', 'hermana.'] },
+      { text: 'tengo hambre.', gloss: 'I am hungry — literally, I have hunger.',
+        tiles: ['tengo', 'hambre.'] },
+      { text: 'tenemos que salir ahora.', gloss: 'We have to leave now.',
+        tiles: ['tenemos', 'que', 'salir', 'ahora.'] },
     ],
   },
-  { id: 'es-v-family', unit: 'Being and having', kind: 'vocab', theme: 'family',
-    title: 'Family', summary: 'The people you describe first' },
-  { id: 'es-v-body',   unit: 'Being and having', kind: 'vocab', theme: 'body',
-    title: 'The body', summary: 'For the doctor, and for everything that hurts' },
-
-  // ── Unit 3 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-present',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'The present tense',
     summary: 'Three endings sets: -ar, -er, -ir',
@@ -170,15 +166,18 @@ Because each ending is distinct and fully pronounced, Spanish does not need the 
 the way English does. "hablo" already means "I speak", and adding "yo" is for emphasis or
 contrast. Leaving it out is normal, not casual.`,
     examples: [
-      { text: 'hablo español con mi madre.', gloss: 'I speak Spanish with my mother.' },
-      { text: 'comemos juntos por la noche.', gloss: 'We eat together in the evening.' },
-      { text: 'viven en una ciudad pequeña.', gloss: 'They live in a small city.' },
-      { text: 'trabajas mucho.', gloss: 'You work a lot.' },
+      { text: 'hablo español con mi madre.', gloss: 'I speak Spanish with my mother.',
+        tiles: ['hablo', 'español', 'con', 'mi', 'madre.'] },
+      { text: 'comemos juntos por la noche.', gloss: 'We eat together in the evening.',
+        tiles: ['comemos', 'juntos', 'por', 'la', 'noche.'] },
+      { text: 'viven en una ciudad pequeña.', gloss: 'They live in a small city.',
+        tiles: ['viven', 'en', 'una', 'ciudad', 'pequeña.'] },
+      { text: 'trabajas mucho.', gloss: 'You work a lot.',
+        tiles: ['trabajas', 'mucho.'] },
     ],
   },
   {
     id: 'es-negation',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'Saying no',
     summary: 'One word, and it goes in front',
@@ -191,14 +190,16 @@ like nada, nadie or nunca comes after the verb, the no stays.
 Move the negative word in front of the verb and the no disappears: "nunca voy" and "no voy
 nunca" both mean "I never go".`,
     examples: [
-      { text: 'no entiendo.', gloss: 'I do not understand.' },
-      { text: 'no hay nadie en casa.', gloss: 'There is nobody at home.' },
-      { text: 'nunca comemos carne.', gloss: 'We never eat meat.' },
+      { text: 'no entiendo.', gloss: 'I do not understand.',
+        tiles: ['no', 'entiendo.'] },
+      { text: 'no hay nadie en casa.', gloss: 'There is nobody at home.',
+        tiles: ['no', 'hay', 'nadie', 'en', 'casa.'] },
+      { text: 'nunca comemos carne.', gloss: 'We never eat meat.',
+        tiles: ['nunca', 'comemos', 'carne.'] },
     ],
   },
   {
     id: 'es-gustar',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'gustar works backwards',
     summary: 'The thing does the liking, not you',
@@ -217,23 +218,18 @@ The person changes with the little word in front: me, te, le, nos, os, les. So "
 A handful of very common verbs work the same way — encantar, interesar, doler. Once the pattern
 clicks for gustar it comes free for all of them.`,
     examples: [
-      { text: 'me gusta el café.', gloss: 'I like coffee — literally, coffee pleases me.' },
-      { text: 'me gustan los libros.', gloss: 'I like books — plural thing, so gustan.' },
-      { text: 'no le gusta el frío.', gloss: 'He does not like the cold.' },
-      { text: 'me duele la cabeza.', gloss: 'My head hurts — the same backwards pattern.' },
+      { text: 'me gusta el café.', gloss: 'I like coffee — literally, coffee pleases me.',
+        tiles: ['me', 'gusta', 'el', 'café.'] },
+      { text: 'me gustan los libros.', gloss: 'I like books — plural thing, so gustan.',
+        tiles: ['me', 'gustan', 'los', 'libros.'] },
+      { text: 'no le gusta el frío.', gloss: 'He does not like the cold.',
+        tiles: ['no', 'le', 'gusta', 'el', 'frío.'] },
+      { text: 'me duele la cabeza.', gloss: 'My head hurts — the same backwards pattern.',
+        tiles: ['me', 'duele', 'la', 'cabeza.'] },
     ],
   },
-  { id: 'es-v-routine', unit: 'Doing things', kind: 'vocab', theme: 'routine',
-    title: 'Daily routine', summary: 'The verbs of an ordinary day' },
-  { id: 'es-v-food',    unit: 'Doing things', kind: 'vocab', theme: 'food',
-    title: 'Food and drink', summary: 'Enough to order, shop and cook' },
-  { id: 'es-v-verbs',   unit: 'Doing things', kind: 'vocab', theme: 'verbs',
-    title: 'Common verbs', summary: 'The ones that turn up in every other sentence' },
-
-  // ── Unit 4 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-adjectives',
-    unit: 'Describing',
     kind: 'grammar',
     title: 'Adjectives agree with their noun',
     summary: 'In gender and in number, both audible',
@@ -246,15 +242,18 @@ gender: grande and grandes, azul and azules.
 Unlike French, every one of these endings is pronounced, so agreement is something you hear
 constantly and cannot treat as a spelling detail.`,
     examples: [
-      { text: 'un perro pequeño.', gloss: 'A small dog.' },
-      { text: 'una casa pequeña.', gloss: 'A small house.' },
-      { text: 'los coches rojos.', gloss: 'The red cars.' },
-      { text: 'las flores son grandes.', gloss: 'The flowers are big — grande has no gender form.' },
+      { text: 'un perro pequeño.', gloss: 'A small dog.',
+        tiles: ['un', 'perro', 'pequeño.'] },
+      { text: 'una casa pequeña.', gloss: 'A small house.',
+        tiles: ['una', 'casa', 'pequeña.'] },
+      { text: 'los coches rojos.', gloss: 'The red cars.',
+        tiles: ['los', 'coches', 'rojos.'] },
+      { text: 'las flores son grandes.', gloss: 'The flowers are big — grande has no gender form.',
+        tiles: ['las', 'flores', 'son', 'grandes.'] },
     ],
   },
   {
     id: 'es-adj-position',
-    unit: 'Describing',
     kind: 'grammar',
     title: 'Where the adjective goes',
     summary: 'After the noun — and what moving it does',
@@ -271,25 +270,18 @@ A few adjectives change meaning outright with position. "un hombre grande" is a 
 gran hombre" is a great one. Note that grande shortens to gran directly before any singular
 noun.`,
     examples: [
-      { text: 'un coche rojo.', gloss: 'A red car — the normal order.' },
-      { text: 'tengo dos hermanos.', gloss: 'I have two brothers — numbers go before.' },
-      { text: 'un hombre grande.', gloss: 'A big man.' },
-      { text: 'un gran hombre.', gloss: 'A great man — same word, moved.' },
+      { text: 'un coche rojo.', gloss: 'A red car — the normal order.',
+        tiles: ['un', 'coche', 'rojo.'] },
+      { text: 'tengo dos hermanos.', gloss: 'I have two brothers — numbers go before.',
+        tiles: ['tengo', 'dos', 'hermanos.'] },
+      { text: 'un hombre grande.', gloss: 'A big man.',
+        tiles: ['un', 'hombre', 'grande.'] },
+      { text: 'un gran hombre.', gloss: 'A great man — same word, moved.',
+        tiles: ['un', 'gran', 'hombre.'] },
     ],
   },
-  { id: 'es-v-adjectives', unit: 'Describing', kind: 'vocab', theme: 'adjectives',
-    title: 'Describing words', summary: 'Big, small, new, old, easy, difficult' },
-  { id: 'es-v-house',     unit: 'Describing', kind: 'vocab', theme: 'house',
-    title: 'The house', summary: 'Rooms, furniture, the things in them' },
-  { id: 'es-v-clothing',  unit: 'Describing', kind: 'vocab', theme: 'clothing',
-    title: 'Clothes', summary: 'What you are wearing and what you are buying' },
-  { id: 'es-v-weather',   unit: 'Describing', kind: 'vocab', theme: 'weather',
-    title: 'Weather', summary: 'The most reliable small talk there is' },
-
-  // ── Unit 5 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-questions',
-    unit: 'Asking',
     kind: 'grammar',
     title: 'Asking a question',
     summary: 'Mostly just your voice — plus the upside-down mark',
@@ -305,15 +297,18 @@ The question words carry a written accent: qué, quién, dónde, cuándo, cómo,
 The accent is what distinguishes the question word from the ordinary one, which is why "porque"
 (because) and "por qué" (why) are not the same thing.`,
     examples: [
-      { text: '¿hablas español?', gloss: 'Do you speak Spanish?' },
-      { text: '¿dónde está la estación?', gloss: 'Where is the station?' },
-      { text: '¿cuánto cuesta este libro?', gloss: 'How much is this book?' },
-      { text: 'no voy porque estoy cansado.', gloss: 'I am not going because I am tired.' },
+      { text: '¿hablas español?', gloss: 'Do you speak Spanish?',
+        tiles: ['¿hablas', 'español?'] },
+      { text: '¿dónde está la estación?', gloss: 'Where is the station?',
+        tiles: ['¿dónde', 'está', 'la', 'estación?'] },
+      { text: '¿cuánto cuesta este libro?', gloss: 'How much is this book?',
+        tiles: ['¿cuánto', 'cuesta', 'este', 'libro?'] },
+      { text: 'no voy porque estoy cansado.', gloss: 'I am not going because I am tired.',
+        tiles: ['no', 'voy', 'porque', 'estoy', 'cansado.'] },
     ],
   },
   {
     id: 'es-por-para',
-    unit: 'Asking',
     kind: 'grammar',
     title: 'por and para',
     summary: 'Both are "for", and they are not interchangeable',
@@ -328,21 +323,18 @@ through a place. "gracias por el regalo", "lo compré por diez euros", "caminamo
 A pair worth holding on to: "lo hago por ti" means I do it because of you, on your behalf; "lo
 hago para ti" means I am making it to give to you.`,
     examples: [
-      { text: 'este regalo es para mi madre.', gloss: 'This present is for my mother — recipient.' },
-      { text: 'gracias por todo.', gloss: 'Thanks for everything — cause.' },
-      { text: 'caminamos por el parque.', gloss: 'We walk through the park — movement through.' },
-      { text: 'salgo para el trabajo.', gloss: 'I am leaving for work — destination.' },
+      { text: 'este regalo es para mi madre.', gloss: 'This present is for my mother — recipient.',
+        tiles: ['este', 'regalo', 'es', 'para', 'mi', 'madre.'] },
+      { text: 'gracias por todo.', gloss: 'Thanks for everything — cause.',
+        tiles: ['gracias', 'por', 'todo.'] },
+      { text: 'caminamos por el parque.', gloss: 'We walk through the park — movement through.',
+        tiles: ['caminamos', 'por', 'el', 'parque.'] },
+      { text: 'salgo para el trabajo.', gloss: 'I am leaving for work — destination.',
+        tiles: ['salgo', 'para', 'el', 'trabajo.'] },
     ],
   },
-  { id: 'es-v-places',    unit: 'Asking', kind: 'vocab', theme: 'places',
-    title: 'Places in town', summary: 'Where you are going and how to ask for it' },
-  { id: 'es-v-transport', unit: 'Asking', kind: 'vocab', theme: 'transport',
-    title: 'Getting around', summary: 'On foot, by bus, by train' },
-
-  // ── Unit 6 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-futuro-proximo',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'What is about to happen',
     summary: 'ir a plus an infinitive',
@@ -358,14 +350,16 @@ own endings, and it is used, but it leans formal — and it is often used for so
 entirely: guessing. "¿dónde está Juan? — estará en casa" means "he is probably at home", not a
 statement about the future.`,
     examples: [
-      { text: 'voy a comer.', gloss: 'I am going to eat.' },
-      { text: 'vamos a salir pronto.', gloss: 'We are going to leave soon.' },
-      { text: 'va a llover.', gloss: 'It is going to rain.' },
+      { text: 'voy a comer.', gloss: 'I am going to eat.',
+        tiles: ['voy', 'a', 'comer.'] },
+      { text: 'vamos a salir pronto.', gloss: 'We are going to leave soon.',
+        tiles: ['vamos', 'a', 'salir', 'pronto.'] },
+      { text: 'va a llover.', gloss: 'It is going to rain.',
+        tiles: ['va', 'a', 'llover.'] },
     ],
   },
   {
     id: 'es-preterito',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'The preterite',
     summary: 'What happened, finished and done',
@@ -382,15 +376,18 @@ A handful of very common verbs are irregular here and simply have to be learned:
 share the same preterite (fui, fuiste, fue), which sounds like a problem and never is, because
 context settles it instantly.`,
     examples: [
-      { text: 'comí una manzana.', gloss: 'I ate an apple.' },
-      { text: 'habló con su madre.', gloss: 'He spoke with his mother.' },
-      { text: 'terminamos el trabajo ayer.', gloss: 'We finished the work yesterday.' },
-      { text: 'fui al mercado.', gloss: 'I went to the market — fui is both ser and ir.' },
+      { text: 'comí una manzana.', gloss: 'I ate an apple.',
+        tiles: ['comí', 'una', 'manzana.'] },
+      { text: 'habló con su madre.', gloss: 'He spoke with his mother.',
+        tiles: ['habló', 'con', 'su', 'madre.'] },
+      { text: 'terminamos el trabajo ayer.', gloss: 'We finished the work yesterday.',
+        tiles: ['terminamos', 'el', 'trabajo', 'ayer.'] },
+      { text: 'fui al mercado.', gloss: 'I went to the market — fui is both ser and ir.',
+        tiles: ['fui', 'al', 'mercado.'] },
     ],
   },
   {
     id: 'es-imperfecto',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'The imperfect, and choosing between the two pasts',
     summary: 'How things used to be, versus what happened once',
@@ -408,14 +405,16 @@ something was. The preterite is a finished event; the imperfect is a background,
 state. One sentence often needs both: "comía cuando llegó" — I was eating (background) when he
 arrived (event).`,
     examples: [
-      { text: 'cuando era pequeño, jugaba en el parque.', gloss: 'When I was small, I used to play in the park.' },
-      { text: 'hacía frío.', gloss: 'It was cold.' },
-      { text: 'vivíamos cerca del mar.', gloss: 'We lived near the sea.' },
+      { text: 'cuando era pequeño, jugaba en el parque.', gloss: 'When I was small, I used to play in the park.',
+        tiles: ['cuando', 'era', 'pequeño,', 'jugaba', 'en', 'el', 'parque.'] },
+      { text: 'hacía frío.', gloss: 'It was cold.',
+        tiles: ['hacía', 'frío.'] },
+      { text: 'vivíamos cerca del mar.', gloss: 'We lived near the sea.',
+        tiles: ['vivíamos', 'cerca', 'del', 'mar.'] },
     ],
   },
   {
     id: 'es-reflexive',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'Reflexive verbs',
     summary: 'levantarse, lavarse — doing something to yourself',
@@ -433,22 +432,16 @@ command: "voy a levantarme", "levántate".
 Some verbs change meaning with the pronoun: ir is "to go", irse is "to leave"; dormir is "to
 sleep", dormirse is "to fall asleep".`,
     examples: [
-      { text: 'me levanto a las siete.', gloss: 'I get up at seven.' },
-      { text: 'se lava las manos.', gloss: 'She washes her hands.' },
-      { text: 'nos levantamos temprano.', gloss: 'We get up early.' },
+      { text: 'me levanto a las siete.', gloss: 'I get up at seven.',
+        tiles: ['me', 'levanto', 'a', 'las', 'siete.'] },
+      { text: 'se lava las manos.', gloss: 'She washes her hands.',
+        tiles: ['se', 'lava', 'las', 'manos.'] },
+      { text: 'nos levantamos temprano.', gloss: 'We get up early.',
+        tiles: ['nos', 'levantamos', 'temprano.'] },
     ],
   },
-  { id: 'es-v-weekdays', unit: 'Past and future', kind: 'vocab', theme: 'weekdays',
-    title: 'Days of the week', summary: 'lunes through domingo' },
-  { id: 'es-v-months',   unit: 'Past and future', kind: 'vocab', theme: 'months',
-    title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
-  { id: 'es-v-seasons',  unit: 'Past and future', kind: 'vocab', theme: 'seasons',
-    title: 'Seasons', summary: 'Four words that turn up constantly' },
-
-  // ── Unit 7 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'es-object-pronouns',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'Object pronouns go before the verb',
     summary: 'lo, la, le — and where they attach instead',
@@ -466,15 +459,18 @@ learned: "se lo doy", never "le lo doy".
 With an infinitive or a command the pronoun attaches to the END instead: "voy a verlo",
 "dímelo".`,
     examples: [
-      { text: 'lo veo todos los días.', gloss: 'I see him every day.' },
-      { text: 'le hablo por teléfono.', gloss: 'I speak to him on the phone.' },
-      { text: 'me lo da.', gloss: 'He gives it to me — indirect first.' },
-      { text: 'voy a verlo mañana.', gloss: 'I am going to see him tomorrow — attached to the infinitive.' },
+      { text: 'lo veo todos los días.', gloss: 'I see him every day.',
+        tiles: ['lo', 'veo', 'todos', 'los', 'días.'] },
+      { text: 'le hablo por teléfono.', gloss: 'I speak to him on the phone.',
+        tiles: ['le', 'hablo', 'por', 'teléfono.'] },
+      { text: 'me lo da.', gloss: 'He gives it to me — indirect first.',
+        tiles: ['me', 'lo', 'da.'] },
+      { text: 'voy a verlo mañana.', gloss: 'I am going to see him tomorrow — attached to the infinitive.',
+        tiles: ['voy', 'a', 'verlo', 'mañana.'] },
     ],
   },
   {
     id: 'es-saber-conocer',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'saber and conocer',
     summary: 'Two verbs for "to know", split by what you know',
@@ -493,14 +489,16 @@ learned, which is different from poder.
 
 Note the a before a person — Spanish marks a personal object that way, and it is easy to drop.`,
     examples: [
-      { text: 'sé la respuesta.', gloss: 'I know the answer — a fact.' },
-      { text: 'conozco a María.', gloss: 'I know María — acquaintance, and note the personal a.' },
-      { text: 'sé nadar.', gloss: 'I know how to swim.' },
+      { text: 'sé la respuesta.', gloss: 'I know the answer — a fact.',
+        tiles: ['sé', 'la', 'respuesta.'] },
+      { text: 'conozco a María.', gloss: 'I know María — acquaintance, and note the personal a.',
+        tiles: ['conozco', 'a', 'María.'] },
+      { text: 'sé nadar.', gloss: 'I know how to swim.',
+        tiles: ['sé', 'nadar.'] },
     ],
   },
   {
     id: 'es-perfecto',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'The present perfect',
     summary: 'he hablado — and how it differs from the preterite',
@@ -521,14 +519,16 @@ tense, so the same sentence can be said either way depending on where the writer
 The participle never changes here, whatever the subject — that only happens when it is used as
 an adjective.`,
     examples: [
-      { text: 'hoy he comido bien.', gloss: 'I have eaten well today — today is still going.' },
-      { text: 'ayer comí bien.', gloss: 'I ate well yesterday — closed off, so the preterite.' },
-      { text: 'nunca he visto el mar.', gloss: 'I have never seen the sea.' },
+      { text: 'hoy he comido bien.', gloss: 'I have eaten well today — today is still going.',
+        tiles: ['hoy', 'he', 'comido', 'bien.'] },
+      { text: 'ayer comí bien.', gloss: 'I ate well yesterday — closed off, so the preterite.',
+        tiles: ['ayer', 'comí', 'bien.'] },
+      { text: 'nunca he visto el mar.', gloss: 'I have never seen the sea.',
+        tiles: ['nunca', 'he', 'visto', 'el', 'mar.'] },
     ],
   },
   {
     id: 'es-comparatives',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'Comparing things',
     summary: 'más, menos, tan — and four irregulars',
@@ -545,14 +545,16 @@ peor, grande → mayor, pequeño → menor. You do not say "más bueno" for qual
 There is also a separate superlative ending, -ísimo, which is not a comparison at all but an
 intensifier: "buenísimo" is "really good", not "the best".`,
     examples: [
-      { text: 'es más alto que yo.', gloss: 'He is taller than me.' },
-      { text: 'este libro es mejor.', gloss: 'This book is better — not «más bueno».' },
-      { text: 'no es tan caro como pensaba.', gloss: 'It is not as expensive as I thought.' },
+      { text: 'es más alto que yo.', gloss: 'He is taller than me.',
+        tiles: ['es', 'más', 'alto', 'que', 'yo.'] },
+      { text: 'este libro es mejor.', gloss: 'This book is better — not «más bueno».',
+        tiles: ['este', 'libro', 'es', 'mejor.'] },
+      { text: 'no es tan caro como pensaba.', gloss: 'It is not as expensive as I thought.',
+        tiles: ['no', 'es', 'tan', 'caro', 'como', 'pensaba.'] },
     ],
   },
   {
     id: 'es-imperative',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'Telling someone to do something',
     summary: 'And the negative that changes the ending',
@@ -569,17 +571,243 @@ single most surprising thing about Spanish commands.
 Pronouns attach to the end of a positive command and go in front of a negative one: "dímelo",
 but "no me lo digas".`,
     examples: [
-      { text: 'habla más despacio.', gloss: 'Speak more slowly.' },
-      { text: 'no hables tan rápido.', gloss: 'Do not speak so fast — the negative changes the ending.' },
-      { text: 'ven aquí.', gloss: 'Come here — an irregular command.' },
+      { text: 'habla más despacio.', gloss: 'Speak more slowly.',
+        tiles: ['habla', 'más', 'despacio.'] },
+      { text: 'no hables tan rápido.', gloss: 'Do not speak so fast — the negative changes the ending.',
+        tiles: ['no', 'hables', 'tan', 'rápido.'] },
+      { text: 'ven aquí.', gloss: 'Come here — an irregular command.',
+        tiles: ['ven', 'aquí.'] },
     ],
   },
-  { id: 'es-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+  {
+    id: 'es-subjunctive',
+    kind: 'grammar',
+    title: 'A first look at the subjunctive',
+    summary: 'Triggered by the sentence around it',
+    explanation: `Spanish uses the subjunctive far more than French or English, and the way in is
+to learn the triggers rather than to reason about doubt.
+
+The endings swap the vowel: -ar verbs take -e endings, -er and -ir verbs take -a. hablar gives
+hable, comer gives coma, vivir gives viva.
+
+The common triggers are worth memorising as phrases: quiero que, espero que, es importante que,
+ojalá, antes de que, para que, cuando (about the future).
+
+quiero que vengas — I want you to come. Note that Spanish cannot say "I want you to come" with
+an infinitive the way English does; when the two halves have different subjects, que plus the
+subjunctive is the only route.
+
+cuando is the one that catches people: "cuando llegue" for something that has not happened yet,
+but "cuando llegó" for something that did.`,
+    examples: [
+      { text: 'quiero que vengas.', gloss: 'I want you to come.',
+        tiles: ['quiero', 'que', 'vengas.'] },
+      { text: 'espero que estés bien.', gloss: 'I hope you are well.',
+        tiles: ['espero', 'que', 'estés', 'bien.'] },
+      { text: 'cuando llegue, te llamo.', gloss: 'When I arrive, I will call you.',
+        tiles: ['cuando', 'llegue,', 'te', 'llamo.'] },
+    ],
+  },
+  {
+    id: 'es-future-conditional',
+    kind: 'grammar',
+    title: 'The future and the conditional',
+    summary: 'Both built on the whole infinitive',
+    explanation: `Unusually, both tenses attach their endings to the FULL infinitive rather than
+to a stem.
+
+Future: -é, -ás, -á, -emos, -éis, -án. hablaré, comerás, vivirá.
+Conditional: -ía, -ías, -ía, -íamos, -íais, -ían. hablaría, comerías, viviría.
+
+A dozen verbs have an irregular stem, and it is the SAME stem for both: tener gives tendr-,
+poder gives podr-, hacer gives har-, decir gives dir-, salir gives saldr-, venir gives vendr-.
+Learn it once and you have both tenses.
+
+The conditional is the polite one: "querría un café" or, more commonly, "quisiera".
+
+And both do a second job that has nothing to do with time — guessing. "¿Qué hora será?" is "what
+time do you suppose it is?", and "serían las tres" is "it must have been about three".`,
+    examples: [
+      { text: 'hablaré con ella mañana.', gloss: 'I will speak with her tomorrow.',
+        tiles: ['hablaré', 'con', 'ella', 'mañana.'] },
+      { text: 'tendremos tiempo.', gloss: 'We will have time — tener has an irregular stem.',
+        tiles: ['tendremos', 'tiempo.'] },
+      { text: 'me gustaría ir contigo.', gloss: 'I would like to go with you.',
+        tiles: ['me', 'gustaría', 'ir', 'contigo.'] },
+    ],
+  },
+  {
+    id: 'es-demonstratives',
+    kind: 'grammar',
+    title: 'este, ese, aquel',
+    summary: 'Three distances, where English has two',
+    explanation: `Spanish splits "this and that" three ways, by distance from the speaker.
+
+este is here, next to me. ese is there, near you. aquel is over there, away from both of us.
+
+Each agrees in gender and number: este, esta, estos, estas; ese, esa, esos, esas; aquel,
+aquella, aquellos, aquellas.
+
+The middle one is the one English speakers under-use, because "that" covers both ese and aquel.
+If the thing is near the person you are talking to, ese is the natural choice.
+
+There are also neuter forms — esto, eso, aquello — for an idea rather than a thing: "eso es
+verdad" is "that is true", where "that" is the whole situation and has no gender.`,
+    examples: [
+      { text: 'este libro es mío.', gloss: 'This book is mine — here, next to me.',
+        tiles: ['este', 'libro', 'es', 'mío.'] },
+      { text: 'esa casa es grande.', gloss: 'That house is big — near you.',
+        tiles: ['esa', 'casa', 'es', 'grande.'] },
+      { text: 'eso es verdad.', gloss: 'That is true — a whole idea, so the neuter form.',
+        tiles: ['eso', 'es', 'verdad.'] },
+    ],
+  },
+  {
+    id: 'es-possessives',
+    kind: 'grammar',
+    title: 'Saying whose it is',
+    summary: 'And why su is ambiguous on purpose',
+    explanation: `mi, tu, su, nuestro, vuestro, su — placed before the noun, and agreeing with the
+THING rather than with the owner.
+
+Only nuestro and vuestro change for gender: nuestra casa, nuestros libros. The rest just add -s
+for plural: mis libros, sus casas.
+
+su is the one to watch. It means his, her, its, their AND your (for usted) — five readings in
+one word — so Spanish leans on context far more than English does here. When it genuinely is not
+clear, speakers say "de él" or "de ella" instead: "el libro de ella".
+
+There is a second set that goes AFTER the noun for emphasis, and stands alone: mío, tuyo, suyo.
+"un amigo mío" is "a friend of mine", and "es mío" is "it is mine".`,
+    examples: [
+      { text: 'mi casa es pequeña.', gloss: 'My house is small.',
+        tiles: ['mi', 'casa', 'es', 'pequeña.'] },
+      { text: 'nuestros libros están aquí.', gloss: 'Our books are here — nuestro agrees.',
+        tiles: ['nuestros', 'libros', 'están', 'aquí.'] },
+      { text: 'un amigo mío.', gloss: 'A friend of mine — the emphatic form, after the noun.',
+        tiles: ['un', 'amigo', 'mío.'] },
+    ],
+  },
+  {
+    id: 'es-se',
+    kind: 'grammar',
+    title: 'The many jobs of se',
+    summary: 'One tiny word doing four different things',
+    explanation: `se turns up constantly and means something different each time. Recognising
+which is which is one of the bigger reading skills in Spanish.
+
+REFLEXIVE — the subject acts on itself: "se lava" — he washes himself.
+
+RECIPROCAL — two people act on each other: "se miran" — they look at each other.
+
+IMPERSONAL — no particular subject, like English "one" or a passive: "se habla español aquí" —
+Spanish is spoken here. This one is everywhere on signs and in instructions.
+
+AND THE SUBSTITUTE — le becomes se before lo or la, purely to avoid "le lo": "se lo doy".
+
+The impersonal is the one worth spotting first, because it is common in writing and has no
+obvious English shape.`,
+    examples: [
+      { text: 'se habla español aquí.', gloss: 'Spanish is spoken here — impersonal.',
+        tiles: ['se', 'habla', 'español', 'aquí.'] },
+      { text: 'se lava las manos.', gloss: 'She washes her hands — reflexive.',
+        tiles: ['se', 'lava', 'las', 'manos.'] },
+      { text: '¿cómo se dice esto?', gloss: 'How do you say this?',
+        tiles: ['¿cómo', 'se', 'dice', 'esto?'] },
+    ],
+  },
+  {
+    id: 'es-progressive',
+    kind: 'grammar',
+    title: 'estar plus -ando',
+    summary: 'Happening right now — and used far less than English',
+    explanation: `estar plus a gerund says something is going on at this moment. The gerund is
+-ando for -ar verbs and -iendo for -er and -ir: hablando, comiendo, viviendo.
+
+estoy comiendo — I am eating.
+
+The important half is when NOT to use it. English uses the -ing form for the near future ("I am
+going tomorrow") and for ongoing states ("I am living in Madrid"); Spanish uses the plain
+present for both. "voy mañana", "vivo en Madrid".
+
+So this form is narrower than it looks: it is for what is happening literally now, as you speak.
+
+A few gerunds are irregular and common: leer gives leyendo, dormir gives durmiendo, decir gives
+diciendo.`,
+    examples: [
+      { text: 'estoy comiendo.', gloss: 'I am eating — right now.',
+        tiles: ['estoy', 'comiendo.'] },
+      { text: 'vivo en Madrid.', gloss: 'I am living in Madrid — a state, so the plain present.',
+        tiles: ['vivo', 'en', 'Madrid.'] },
+      { text: 'está leyendo un libro.', gloss: 'He is reading a book.',
+        tiles: ['está', 'leyendo', 'un', 'libro.'] },
+    ],
+  },
+  {
+    id: 'es-hay',
+    kind: 'grammar',
+    title: 'hay',
+    summary: 'There is, there are — and it never changes',
+    explanation: `hay means "there is" and "there are", and unlike English it has ONE form for
+both. "hay un libro" and "hay muchos libros" use the same word.
+
+It comes from haber and is used only impersonally, so it never conjugates for a subject. Its
+past is había, which likewise covers both "there was" and "there were".
+
+The thing that follows hay is never definite. You can say "hay un problema" but not "hay el
+problema" — for something already identified, Spanish uses estar: "el problema está aquí".
+
+That split is the same one behind ser and estar: hay introduces something new, estar locates
+something already known.`,
+    examples: [
+      { text: 'hay un problema.', gloss: 'There is a problem.',
+        tiles: ['hay', 'un', 'problema.'] },
+      { text: 'hay muchos libros aquí.', gloss: 'There are many books here — hay never changes.',
+        tiles: ['hay', 'muchos', 'libros', 'aquí.'] },
+      { text: 'el libro está en la mesa.', gloss: 'The book is on the table — already known, so estar.',
+        tiles: ['el', 'libro', 'está', 'en', 'la', 'mesa.'] },
+    ],
+  },
+  { id: 'es-v-basics',  kind: 'vocab', theme: 'basics',
+    title: 'Everyday words', summary: 'The small words that hold sentences together' },
+  { id: 'es-v-numbers', kind: 'vocab', theme: 'numbers',
+    title: 'Numbers', summary: 'Counting, prices, times, ages' },
+  { id: 'es-v-colours', kind: 'vocab', theme: 'colours',
+    title: 'Colours', summary: 'And a first look at adjectives agreeing' },
+  { id: 'es-v-family', kind: 'vocab', theme: 'family',
+    title: 'Family', summary: 'The people you describe first' },
+  { id: 'es-v-body',   kind: 'vocab', theme: 'body',
+    title: 'The body', summary: 'For the doctor, and for everything that hurts' },
+  { id: 'es-v-routine', kind: 'vocab', theme: 'routine',
+    title: 'Daily routine', summary: 'The verbs of an ordinary day' },
+  { id: 'es-v-food',    kind: 'vocab', theme: 'food',
+    title: 'Food and drink', summary: 'Enough to order, shop and cook' },
+  { id: 'es-v-verbs',   kind: 'vocab', theme: 'verbs',
+    title: 'Common verbs', summary: 'The ones that turn up in every other sentence' },
+  { id: 'es-v-adjectives', kind: 'vocab', theme: 'adjectives',
+    title: 'Describing words', summary: 'Big, small, new, old, easy, difficult' },
+  { id: 'es-v-house',     kind: 'vocab', theme: 'house',
+    title: 'The house', summary: 'Rooms, furniture, the things in them' },
+  { id: 'es-v-clothing',  kind: 'vocab', theme: 'clothing',
+    title: 'Clothes', summary: 'What you are wearing and what you are buying' },
+  { id: 'es-v-weather',   kind: 'vocab', theme: 'weather',
+    title: 'Weather', summary: 'The most reliable small talk there is' },
+  { id: 'es-v-places',    kind: 'vocab', theme: 'places',
+    title: 'Places in town', summary: 'Where you are going and how to ask for it' },
+  { id: 'es-v-transport', kind: 'vocab', theme: 'transport',
+    title: 'Getting around', summary: 'On foot, by bus, by train' },
+  { id: 'es-v-weekdays', kind: 'vocab', theme: 'weekdays',
+    title: 'Days of the week', summary: 'lunes through domingo' },
+  { id: 'es-v-months',   kind: 'vocab', theme: 'months',
+    title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
+  { id: 'es-v-seasons',  kind: 'vocab', theme: 'seasons',
+    title: 'Seasons', summary: 'Four words that turn up constantly' },
+  { id: 'es-v-tableware', kind: 'vocab', theme: 'tableware',
     title: 'At the table', summary: 'Plates, glasses, knives and forks' },
-  { id: 'es-v-school',    unit: 'Beyond the basics', kind: 'vocab', theme: 'school',
+  { id: 'es-v-school',    kind: 'vocab', theme: 'school',
     title: 'School', summary: 'Classroom words, and the things on a desk' },
-  { id: 'es-v-animals',   unit: 'Beyond the basics', kind: 'vocab', theme: 'animals',
+  { id: 'es-v-animals',   kind: 'vocab', theme: 'animals',
     title: 'Animals', summary: 'Pets, farm animals, and the words for them' },
-  { id: 'es-v-everyday',  unit: 'Beyond the basics', kind: 'vocab', theme: 'everyday',
+  { id: 'es-v-everyday',  kind: 'vocab', theme: 'everyday',
     title: 'Everyday life', summary: 'Birthdays, hunger, parties and the sky' },
 ];

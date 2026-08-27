@@ -558,8 +558,22 @@ part of the primary school", `yaourt` with "a song where the singer makes up the
 ### The lesson tree
 
 `components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: 33 lessons in 6
-units per language, grammar and vocabulary interleaved — one tree per language, all four.
-`TabNav` still filters on `hasLessons`, because an empty tab reads as a broken one.
+lessons per language across two sections — one tree per language, all four. `TabNav` still
+filters on `hasLessons`, because an empty tab reads as a broken one.
+
+**GRAMMAR IS THE COURSE; WORDS ARE A SHELF.** The two are split rather than interleaved because
+they are not the same kind of thing. Grammar builds on itself — the passé composé cannot be
+explained to someone who has not met a participle — so it is ONE numbered track in array order,
+and the number is the whole navigation. Vocabulary sets have no such dependency; nobody needs
+colours before food, so numbering them would invent a prerequisite and make opening the one you
+wanted feel like skipping ahead. `grammarLessons`/`vocabLessons` split them and
+`nextGrammarLesson` marks where you left off.
+
+**The array order IS the course order**, so all grammar must precede all word sets. A weaker
+"everything before the first vocab is grammar" test passes on an interleaved array, which is
+how the subjunctive briefly came out numbered 7, ahead of `être`; the test now asserts the last
+grammar lesson precedes the first word set. Advanced material was appended at the END of the
+grammar run for the same reason.
 
 **A language gets its GRAMMAR TABLE before its lesson tree** where it can have one, and that
 order is deliberate: a tree that explains the imperfect beside a reader that cannot point one
@@ -616,6 +630,21 @@ falling behind on reviews leaves the tree exactly as it was. The single point of
 vocabulary lesson's "add these words" button, which is the learner acting — the same
 relationship the Read tab already has, where Read is separate from SRS and tapping a word still
 adds it.
+
+**Practice is build-the-sentence, and it grades NOTHING.** Each grammar lesson ends with one or
+two shuffled-tile puzzles (`components/learn/SentenceBuilder.tsx`): the words of an example,
+out of order, tapped back into place. It checks ORDER, not spelling — which is exactly what a
+grammar lesson teaches, and a skill you can have before you can spell. Getting one wrong costs
+nothing, records nothing and schedules nothing, because the curriculum is separate from FSRS and
+a lesson you can fail is a lesson you avoid.
+
+**The tiles are AUTHORED, not derived,** because deriving them would need a segmenter and every
+segmenter here is server-side. They were generated once by running each example through the real
+segmenter — so Chinese and Japanese tiles fall on the same word boundaries the reader uses — and
+then checked in. `tests/lessons.test.ts` asserts the tiles rebuild their own sentence, compared
+with whitespace removed: French writes a space before `?` that the segmenter drops, and Spanish
+opens with `¿`, neither of which changes which tiles exist. A one-tile example (待ってください。is
+a single fused token) stays an example and is not offered as a puzzle.
 
 **Completion is the one thing stored**, in `srsly-lessons-done`, device-local for the same
 reason as `srsly-achievements-seen` and `srsly-curriculum-pruned`. Whether a vocabulary

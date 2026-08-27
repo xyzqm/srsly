@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { unitsFor, hasLessons, LESSON_LANGUAGES } from '@/lib/lessons';
+import { grammarLessons, vocabLessons, nextGrammarLesson, hasLessons, LESSON_LANGUAGES } from '@/lib/lessons';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
@@ -55,7 +55,18 @@ async function unresolvedWords(lang: LanguageCode, text: string): Promise<string
   return toks
     .filter(t => t.length > 1)                    // punctuation is a 1-tuple
     .filter(t => !(t.length >= 3 && t[2]))        // no gloss resolved
-    .map(t => t[0]);
+    .map(t => t[0])
+    /**
+     * PROPER NOUNS ARE EXEMPT, and by design rather than by concession.
+     * `scripts/lib/nameFilter.mjs` strips names from every dictionary at build time, so Canada
+     * and Madrid resolve to nothing on purpose — the same reason tests/starterTexts.test.ts
+     * allows 90% and lib/readability.ts refuses to grade them. A lesson on which preposition
+     * each country takes cannot avoid naming a country.
+     *
+     * Detected as capitalised-but-not-sentence-initial, which is available in Spanish and
+     * French and unnecessary in Chinese and Japanese, where nothing is capitalised.
+     */
+    .filter(w => !/^\p{Lu}/u.test(w) || text.trim().startsWith(w));
 }
 
 const SEGMENTERS: Record<string, Segmenter> = {
@@ -94,17 +105,30 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
       }
     });
 
-    it('groups into units without splitting one in two', () => {
-      const units = unitsFor(lessons);
-      const names = units.map(u => u.unit);
-      expect(new Set(names).size, `a unit is interrupted: ${names.join(' | ')}`).toBe(names.length);
-      expect(units.length).toBeGreaterThan(3);
-      for (const u of units) expect(u.lessons.length, u.unit).toBeGreaterThan(0);
+    it('teaches grammar as well as vocabulary', () => {
+      expect(grammarLessons(lessons).length).toBeGreaterThanOrEqual(12);
+      expect(vocabLessons(lessons).length).toBeGreaterThanOrEqual(8);
     });
 
-    it('teaches grammar as well as vocabulary', () => {
-      expect(lessons.filter(l => l.kind === 'grammar').length).toBeGreaterThanOrEqual(12);
-      expect(lessons.filter(l => l.kind === 'vocab').length).toBeGreaterThanOrEqual(8);
+    /**
+     * GRAMMAR IS ONE ORDERED TRACK. The array order IS the course order — it is what the
+     * numbers in the UI count — so the two kinds must not interleave, or the numbering would
+     * jump around a word list nobody needs to do first.
+     */
+    it('puts the whole grammar track before the word sets', () => {
+      const kinds = lessons.map(l => l.kind);
+      const lastGrammar = kinds.lastIndexOf('grammar');
+      const firstVocab = kinds.indexOf('vocab');
+      // A weaker "everything before the first vocab is grammar" check passes on an INTERLEAVED
+      // array, which is how the subjunctive briefly ended up numbered 7 — ahead of être.
+      expect(firstVocab, 'grammar and words are interleaved').toBeGreaterThan(lastGrammar);
+    });
+
+    it('points at the first unfinished grammar lesson', () => {
+      const track = grammarLessons(lessons);
+      expect(nextGrammarLesson(lessons, new Set())).toBe(track[0]);
+      expect(nextGrammarLesson(lessons, new Set([track[0].id]))).toBe(track[1]);
+      expect(nextGrammarLesson(lessons, new Set(track.map(l => l.id)))).toBeUndefined();
     });
   });
 
@@ -116,6 +140,46 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
         expect((l.explanation ?? '').trim().length, `${l.id} explanation`).toBeGreaterThan(200);
         expect(l.examples?.length ?? 0, `${l.id} examples`).toBeGreaterThanOrEqual(3);
         expect(l.theme, `${l.id} should not name a vocab theme`).toBeUndefined();
+      }
+    });
+
+    /**
+     * The build-the-sentence exercise is only solvable if the tiles actually reassemble into
+     * the sentence. Compared with whitespace removed, because French writes a space before `?`
+     * that the segmenter drops and Spanish opens with `¿` — neither changes which tiles there
+     * are, and both would otherwise fail a strict comparison for no reason.
+     */
+    it('has tiles that rebuild their own sentence', () => {
+      const strip = (s: string) => s.replace(/\s+/g, '');
+      for (const l of grammar) {
+        for (const ex of l.examples ?? []) {
+          expect(ex.tiles?.length, `${l.id}: "${ex.text}" has no tiles`).toBeGreaterThan(0);
+          expect(strip(ex.tiles!.join('')), `${l.id}: tiles do not rebuild "${ex.text}"`)
+            .toBe(strip(ex.text));
+        }
+      }
+    });
+
+    /**
+     * A one-tile example cannot be reassembled — 待ってください。is a single fused token — so it
+     * is fine as an example and useless as an exercise. Every lesson still needs at least one
+     * example that CAN be built, or its practice section would be empty.
+     */
+    it('gives every lesson at least one buildable sentence', () => {
+      for (const l of grammar) {
+        const buildable = (l.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+        expect(buildable.length, `${l.id} has no exercise the learner could do`).toBeGreaterThan(0);
+      }
+    });
+
+    it('never ships a tile that is only punctuation or blank', () => {
+      for (const l of grammar) {
+        for (const ex of l.examples ?? []) {
+          for (const t of ex.tiles ?? []) {
+            expect(t.trim(), `${l.id}: empty tile in "${ex.text}"`).not.toBe('');
+            expect(/[\p{L}\p{N}]/u.test(t), `${l.id}: "${t}" is punctuation only`).toBe(true);
+          }
+        }
       }
     });
 

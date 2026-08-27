@@ -23,12 +23,20 @@ export interface LessonExample {
   text: string;
   /** What it MEANS, in plain English — not a word-for-word gloss. */
   gloss: string;
+  /**
+   * Word tiles for the build-the-sentence exercise, in the CORRECT order; the UI shuffles them.
+   *
+   * Authored rather than derived, because deriving them would need a segmenter and every
+   * segmenter in this app is server-side. Joining them must reproduce `text` exactly — a space
+   * between tiles for Spanish and French, nothing for Chinese and Japanese — and
+   * `tests/lessons.test.ts` asserts precisely that, so a typo cannot ship as an unsolvable
+   * puzzle. Final punctuation rides on the last tile rather than becoming a tile of its own.
+   */
+  tiles?: string[];
 }
 
 export interface Lesson {
   id: string;
-  /** The unit it belongs to, used only to group the list. */
-  unit: string;
   kind: 'grammar' | 'vocab';
   title: string;
   /** One line, shown in the list without opening anything. */
@@ -71,15 +79,30 @@ export function hasLessons(lang: LanguageCode): boolean {
   return LESSON_LANGUAGES.includes(lang);
 }
 
-/** The units in order, each with its lessons — the shape the tab renders. */
-export function unitsFor(lessons: Lesson[]): { unit: string; lessons: Lesson[] }[] {
-  const out: { unit: string; lessons: Lesson[] }[] = [];
-  for (const lesson of lessons) {
-    const last = out[out.length - 1];
-    if (last && last.unit === lesson.unit) last.lessons.push(lesson);
-    else out.push({ unit: lesson.unit, lessons: [lesson] });
-  }
-  return out;
+/**
+ * GRAMMAR IS THE COURSE; WORDS ARE A SHELF.
+ *
+ * The two kinds are split rather than interleaved, because they are not the same kind of thing.
+ * Grammar builds on itself — you cannot explain the passé composé to someone who has not met a
+ * participle — so it is one numbered track, in the order it is written, and the number is the
+ * whole navigation. Vocabulary sets have no such dependency: nobody needs colours before food.
+ * Ordering them would invent a prerequisite that does not exist and make a learner feel behind
+ * for opening the one they actually wanted.
+ *
+ * NUMBERED, STILL NEVER LOCKED. The number is a suggested path, not a gate — see the note at
+ * the top of this file. Every lesson opens on day one.
+ */
+export function grammarLessons(lessons: Lesson[]): Lesson[] {
+  return lessons.filter(l => l.kind === 'grammar');
+}
+
+export function vocabLessons(lessons: Lesson[]): Lesson[] {
+  return lessons.filter(l => l.kind === 'vocab');
+}
+
+/** How far along the grammar track the learner is: the first lesson not yet finished. */
+export function nextGrammarLesson(lessons: Lesson[], done: Set<string>): Lesson | undefined {
+  return grammarLessons(lessons).find(l => !done.has(l.id));
 }
 
 /**

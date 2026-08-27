@@ -2,7 +2,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
-import { unitsFor, loadDone, saveDone, type Lesson } from '@/lib/lessons';
+import {
+  grammarLessons, vocabLessons, nextGrammarLesson, loadDone, saveDone, type Lesson,
+} from '@/lib/lessons';
+import { getLanguageConfig } from '@/lib/languageConfig';
+import SentenceBuilder from './SentenceBuilder';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
@@ -33,7 +37,7 @@ const MONO: React.CSSProperties = { fontFamily: 'var(--f-mono)', letterSpacing: 
 export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   const language = useLanguage();
   const { deck, addWords } = useVocabDeck(language);
-  const units = useMemo(() => unitsFor(lessonsFor(language)), [language]);
+  const all = useMemo(() => lessonsFor(language), [language]);
 
   const [done, setDone] = useState<Set<string>>(() => new Set());
   const [openId, setOpenId] = useState<string | null>(null);
@@ -55,9 +59,10 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
     });
   }, []);
 
-  const all = units.flatMap(u => u.lessons);
   const open = all.find(l => l.id === openId) ?? null;
-  const finished = all.filter(l => done.has(l.id)).length;
+  const grammar = grammarLessons(all);
+  const words = vocabLessons(all);
+  const next = nextGrammarLesson(all, done);
 
   if (!all.length) return null;
 
@@ -77,83 +82,112 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
             onNavigateSrs={onNavigateSrs}
             active={active}
           />
-        : <LessonList units={units} done={done} finished={finished} total={all.length} onOpen={setOpenId} />}
+        : <LessonList grammar={grammar} words={words} done={done} next={next} onOpen={setOpenId} />}
     </div>
   );
 }
 
-function LessonList({ units, done, finished, total, onOpen }: {
-  units: { unit: string; lessons: Lesson[] }[];
+/**
+ * TWO SECTIONS, and only one of them is a course.
+ *
+ * Grammar builds on itself, so it is a single numbered track and the number is the whole
+ * navigation: a learner who wants to be told what to do next reads down. Vocabulary sets have
+ * no such dependency — nobody needs colours before food — so numbering them would invent a
+ * prerequisite and make opening the one you wanted feel like skipping ahead.
+ *
+ * NUMBERED, STILL NEVER LOCKED. Nothing is disabled and there is no 🔒 anywhere; the arrow
+ * marks where you left off rather than where you are allowed. See lib/lessons.ts.
+ */
+function LessonList({ grammar, words, done, next, onOpen }: {
+  grammar: Lesson[];
+  words: Lesson[];
   done: Set<string>;
-  finished: number;
-  total: number;
+  next?: Lesson;
   onOpen: (id: string) => void;
 }) {
+  const row = (l: Lesson, n?: number) => {
+    const isDone = done.has(l.id);
+    const isNext = next?.id === l.id;
+    return (
+      <button
+        key={l.id}
+        onClick={() => onOpen(l.id)}
+        className="w-full text-left rounded-lg cursor-pointer transition-all duration-150 flex items-baseline gap-3"
+        style={{
+          background: 'none',
+          border: `1px solid ${isNext ? 'var(--accent)' : 'var(--line)'}`,
+          padding: '11px 14px',
+          color: 'var(--ink)',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = isNext ? 'var(--accent)' : 'var(--line)')}
+      >
+        <span
+          aria-hidden
+          style={{
+            ...MONO, fontSize: n === undefined ? 11 : 10.5, letterSpacing: 0, flexShrink: 0,
+            minWidth: 20, textAlign: 'right',
+            color: isDone ? 'var(--jade)' : 'var(--ink-faint)',
+            opacity: isDone ? 1 : .55,
+          }}
+        >
+          {isDone ? '✓' : n === undefined ? '·' : n}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span style={{ fontSize: 14.5, display: 'block' }}>{l.title}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 1 }}>
+            {l.summary}
+          </span>
+        </span>
+        {isNext && (
+          <span style={{ ...MONO, fontSize: 9, textTransform: 'uppercase', color: 'var(--accent)', flexShrink: 0 }}>
+            start here
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const grammarDone = grammar.filter(l => done.has(l.id)).length;
+  const wordsDone = words.filter(l => done.has(l.id)).length;
+
   return (
     <>
       <div className="flex items-baseline justify-between mb-1">
         <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          Lessons
+          Grammar
         </div>
         <div style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)' }}>
-          {finished} / {total} done
+          {grammarDone} / {grammar.length}
         </div>
       </div>
 
-      {/* Said plainly, because a numbered list of lessons looks like a ladder and this one is
-          not. The app's whole argument is that you read what you want to read. */}
-      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 26px', maxWidth: 560 }}>
-        Take these in any order, or skip them entirely — nothing here is locked, and none of it
-        is required to start reading.
+      {/* Said plainly, because a numbered list looks like a ladder and this one is not. */}
+      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 20px', maxWidth: 560 }}>
+        The course, in order — each one builds on the last. Nothing is locked, so jump wherever
+        you like; the numbers are only a suggestion of where to go next.
       </p>
 
-      {units.map(u => (
-        <div key={u.unit} className="mb-7">
-          <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--ink-faint)', opacity: .8, marginBottom: 9 }}>
-            {u.unit}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            {u.lessons.map(l => {
-              const isDone = done.has(l.id);
-              return (
-                <button
-                  key={l.id}
-                  onClick={() => onOpen(l.id)}
-                  className="w-full text-left rounded-lg cursor-pointer transition-all duration-150 flex items-baseline gap-3"
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--line)',
-                    padding: '11px 14px',
-                    color: 'var(--ink)',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line)')}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      ...MONO, fontSize: 11, letterSpacing: 0, flexShrink: 0, width: 14,
-                      color: isDone ? 'var(--jade)' : 'var(--ink-faint)',
-                      opacity: isDone ? 1 : .4,
-                    }}
-                  >
-                    {isDone ? '✓' : '·'}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span style={{ fontSize: 14.5, display: 'block' }}>{l.title}</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 1 }}>
-                      {l.summary}
-                    </span>
-                  </span>
-                  <span style={{ ...MONO, fontSize: 9, textTransform: 'uppercase', color: 'var(--ink-faint)', opacity: .55, flexShrink: 0 }}>
-                    {l.kind === 'vocab' ? 'words' : 'grammar'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+      <div className="flex flex-col gap-1.5 mb-9">
+        {grammar.map((l, i) => row(l, i + 1))}
+      </div>
+
+      <div className="flex items-baseline justify-between mb-1">
+        <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          Words
         </div>
-      ))}
+        <div style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)' }}>
+          {wordsDone} / {words.length}
+        </div>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 20px', maxWidth: 560 }}>
+        Sets of words by theme, in no particular order. Take whichever you want — adding a set
+        puts its words in your deck.
+      </p>
+
+      <div className="flex flex-col gap-1.5">
+        {words.map(l => row(l))}
+      </div>
     </>
   );
 }
@@ -191,8 +225,13 @@ function LessonView({ lesson, done, deck, addWords, onMark, onBack, onNavigateSr
 }
 
 function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean; onMark: () => void }) {
+  const language = useLanguage();
+  const unspaced = getLanguageConfig(language).scriptIsUnspaced;
   // Blank lines are paragraph breaks; single newlines are just the source file wrapping.
   const paras = (lesson.explanation ?? '').trim().split(/\n\s*\n/);
+  // A single fused token cannot be reassembled — 待ってください。is one word — so it stays an
+  // example and is not offered as a puzzle.
+  const practice = (lesson.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1).slice(0, 2);
 
   return (
     <>
@@ -217,6 +256,24 @@ function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* PRACTICE, and it grades nothing. Getting one wrong costs nothing and schedules
+          nothing — the curriculum is separate from FSRS, and a lesson you can fail is a lesson
+          you avoid. See components/learn/SentenceBuilder.tsx. */}
+      {practice.length > 0 && (
+        <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--line)', maxWidth: 620 }}>
+          <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            Practice
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: '4px 0 0', lineHeight: 1.5 }}>
+            Put the words in order. Nothing is graded and nothing is scheduled — try as often as
+            you like.
+          </p>
+          {practice.map((ex, i) => (
+            <SentenceBuilder key={`${lesson.id}-${i}`} example={ex} unspaced={unspaced} />
+          ))}
         </div>
       )}
 

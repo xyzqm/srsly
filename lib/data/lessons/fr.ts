@@ -21,10 +21,8 @@ import type { Lesson } from '@/lib/lessons';
  * halves of the feature refer to each other rather than sitting side by side.
  */
 export const FR_LESSONS: Lesson[] = [
-  // ── Unit 1 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-gender',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'Every noun has a gender',
     summary: 'le or la — and why you learn it with the word',
@@ -41,15 +39,18 @@ like to see it, which is another reason to learn the two together from the start
 You have already been seeing this: when you tap an inflected word while reading, the note under
 the definition says things like "feminine plural". That is this, doing visible work.`,
     examples: [
-      { text: 'le livre est sur la table.', gloss: 'The book is on the table.' },
-      { text: 'la maison est grande.', gloss: 'The house is big.' },
-      { text: "l'eau est froide.", gloss: 'The water is cold. (feminine, but hidden)' },
-      { text: 'le chat dort dans le jardin.', gloss: 'The cat is sleeping in the garden.' },
+      { text: 'le livre est sur la table.', gloss: 'The book is on the table.',
+        tiles: ['le', 'livre', 'est', 'sur', 'la', 'table.'] },
+      { text: 'la maison est grande.', gloss: 'The house is big.',
+        tiles: ['la', 'maison', 'est', 'grande.'] },
+      { text: "l'eau est froide.", gloss: 'The water is cold. (feminine, but hidden)',
+        tiles: ["l'eau", 'est', 'froide.'] },
+      { text: 'le chat dort dans le jardin.', gloss: 'The cat is sleeping in the garden.',
+        tiles: ['le', 'chat', 'dort', 'dans', 'le', 'jardin.'] },
     ],
   },
   {
     id: 'fr-plural',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'Making things plural',
     summary: 'The -s you write but do not say',
@@ -62,14 +63,16 @@ not the back.
 
 Nouns already ending in -s, -x or -z do not change at all.`,
     examples: [
-      { text: 'les chats dorment.', gloss: 'The cats are sleeping.' },
-      { text: 'les maisons sont grandes.', gloss: 'The houses are big.' },
-      { text: 'le fils et les fils.', gloss: 'The son and the sons — no change to the noun.' },
+      { text: 'les chats dorment.', gloss: 'The cats are sleeping.',
+        tiles: ['les', 'chats', 'dorment.'] },
+      { text: 'les maisons sont grandes.', gloss: 'The houses are big.',
+        tiles: ['les', 'maisons', 'sont', 'grandes.'] },
+      { text: 'le fils et les fils.', gloss: 'The son and the sons — no change to the noun.',
+        tiles: ['le', 'fils', 'et', 'les', 'fils.'] },
     ],
   },
   {
     id: 'fr-articles',
-    unit: 'Nouns and articles',
     kind: 'grammar',
     title: 'un and une, le and la',
     summary: 'A thing, versus the thing — and why French says "the" more',
@@ -83,22 +86,16 @@ coffee" — not "the coffee". Leaving it out is one of the most audible beginner
 The plural of un/une is des, and English usually drops that one too: "des enfants jouent" is
 "children are playing".`,
     examples: [
-      { text: 'je vois un chien dans la rue.', gloss: 'I see a dog in the street.' },
-      { text: "j'aime le café.", gloss: 'I like coffee — coffee in general.' },
-      { text: 'des enfants jouent devant la maison.', gloss: 'Children are playing in front of the house.' },
+      { text: 'je vois un chien dans la rue.', gloss: 'I see a dog in the street.',
+        tiles: ['je', 'vois', 'un', 'chien', 'dans', 'la', 'rue.'] },
+      { text: "j'aime le café.", gloss: 'I like coffee — coffee in general.',
+        tiles: ["j'aime", 'le', 'café.'] },
+      { text: 'des enfants jouent devant la maison.', gloss: 'Children are playing in front of the house.',
+        tiles: ['des', 'enfants', 'jouent', 'devant', 'la', 'maison.'] },
     ],
   },
-  { id: 'fr-v-basics',  unit: 'Nouns and articles', kind: 'vocab', theme: 'basics',
-    title: 'Everyday words', summary: 'The small words that hold sentences together' },
-  { id: 'fr-v-numbers', unit: 'Nouns and articles', kind: 'vocab', theme: 'numbers',
-    title: 'Numbers', summary: 'Counting, prices, times, ages' },
-  { id: 'fr-v-colours', unit: 'Nouns and articles', kind: 'vocab', theme: 'colours',
-    title: 'Colours', summary: 'And a first look at adjectives agreeing' },
-
-  // ── Unit 2 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-etre',
-    unit: 'Being and having',
     kind: 'grammar',
     title: 'être — the verb you will use most',
     summary: 'je suis, tu es, il est…',
@@ -111,15 +108,18 @@ what you use with someone you have just met, or anyone you would not use a first
 tu is for friends, family, children and animals. Choosing wrongly is the most socially visible
 mistake in the language, so when in doubt, use vous.`,
     examples: [
-      { text: 'je suis fatigué.', gloss: 'I am tired.' },
-      { text: 'nous sommes en retard.', gloss: 'We are late.' },
-      { text: 'vous êtes très gentil.', gloss: 'You are very kind. (polite, to one person)' },
-      { text: 'elles sont à la maison.', gloss: 'They are at home.' },
+      { text: 'je suis fatigué.', gloss: 'I am tired.',
+        tiles: ['je', 'suis', 'fatigué.'] },
+      { text: 'nous sommes en retard.', gloss: 'We are late.',
+        tiles: ['nous', 'sommes', 'en', 'retard.'] },
+      { text: 'vous êtes très gentil.', gloss: 'You are very kind. (polite, to one person)',
+        tiles: ['vous', 'êtes', 'très', 'gentil.'] },
+      { text: 'elles sont à la maison.', gloss: 'They are at home.',
+        tiles: ['elles', 'sont', 'à', 'la', 'maison.'] },
     ],
   },
   {
     id: 'fr-avoir',
-    unit: 'Being and having',
     kind: 'grammar',
     title: 'avoir — to have, and to be',
     summary: "j'ai vingt ans, not «je suis vingt»",
@@ -135,21 +135,18 @@ as fixed phrases rather than translating each time.
 avoir is also half of the ordinary past tense, which is a later lesson — so this one pays
 twice.`,
     examples: [
-      { text: "j'ai un frère et une sœur.", gloss: 'I have a brother and a sister.' },
-      { text: 'elle a faim.', gloss: 'She is hungry — literally, she has hunger.' },
-      { text: 'nous avons le temps.', gloss: 'We have time.' },
-      { text: 'ils ont une grande maison.', gloss: 'They have a big house.' },
+      { text: "j'ai un frère et une sœur.", gloss: 'I have a brother and a sister.',
+        tiles: ["j'ai", 'un', 'frère', 'et', 'une', 'sœur.'] },
+      { text: 'elle a faim.', gloss: 'She is hungry — literally, she has hunger.',
+        tiles: ['elle', 'a', 'faim.'] },
+      { text: 'nous avons le temps.', gloss: 'We have time.',
+        tiles: ['nous', 'avons', 'le', 'temps.'] },
+      { text: 'ils ont une grande maison.', gloss: 'They have a big house.',
+        tiles: ['ils', 'ont', 'une', 'grande', 'maison.'] },
     ],
   },
-  { id: 'fr-v-family', unit: 'Being and having', kind: 'vocab', theme: 'family',
-    title: 'Family', summary: 'The people you describe first' },
-  { id: 'fr-v-body',   unit: 'Being and having', kind: 'vocab', theme: 'body',
-    title: 'The body', summary: 'For the doctor, and for everything that hurts' },
-
-  // ── Unit 3 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-er-verbs',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'Regular -er verbs',
     summary: 'The biggest group, and four endings that sound identical',
@@ -166,15 +163,18 @@ That is also why the note under a tapped word often says just "present" rather t
 person: several readings of the form are spelled the same, and the app will not guess between
 them.`,
     examples: [
-      { text: 'je parle français avec ma mère.', gloss: 'I speak French with my mother.' },
-      { text: 'nous mangeons ensemble le soir.', gloss: 'We eat together in the evening.' },
-      { text: 'ils travaillent beaucoup.', gloss: 'They work a lot.' },
-      { text: 'vous chantez bien.', gloss: 'You sing well.' },
+      { text: 'je parle français avec ma mère.', gloss: 'I speak French with my mother.',
+        tiles: ['je', 'parle', 'français', 'avec', 'ma', 'mère.'] },
+      { text: 'nous mangeons ensemble le soir.', gloss: 'We eat together in the evening.',
+        tiles: ['nous', 'mangeons', 'ensemble', 'le', 'soir.'] },
+      { text: 'ils travaillent beaucoup.', gloss: 'They work a lot.',
+        tiles: ['ils', 'travaillent', 'beaucoup.'] },
+      { text: 'vous chantez bien.', gloss: 'You sing well.',
+        tiles: ['vous', 'chantez', 'bien.'] },
     ],
   },
   {
     id: 'fr-negation',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'Saying no: ne … pas',
     summary: 'Negation comes in two pieces, and wraps the verb',
@@ -190,14 +190,16 @@ in writing reads as careless.
 Second, after a negative, un, une, du, de la and des all collapse to plain de. "je mange du
 pain" becomes "je ne mange pas de pain".`,
     examples: [
-      { text: 'je ne comprends pas.', gloss: 'I do not understand.' },
-      { text: "elle n'est pas là.", gloss: 'She is not there.' },
-      { text: 'nous ne mangeons pas de viande.', gloss: 'We do not eat meat — du becomes de.' },
+      { text: 'je ne comprends pas.', gloss: 'I do not understand.',
+        tiles: ['je', 'ne', 'comprends', 'pas.'] },
+      { text: "elle n'est pas là.", gloss: 'She is not there.',
+        tiles: ['elle', "n'est", 'pas', 'là.'] },
+      { text: 'nous ne mangeons pas de viande.', gloss: 'We do not eat meat — du becomes de.',
+        tiles: ['nous', 'ne', 'mangeons', 'pas', 'de', 'viande.'] },
     ],
   },
   {
     id: 'fr-partitif',
-    unit: 'Doing things',
     kind: 'grammar',
     title: 'du, de la — some of something',
     summary: 'French says it where English says nothing',
@@ -211,22 +213,16 @@ is nothing in the English sentence to remind you.
 Compare the three: "je bois de l'eau" (some water), "je bois l'eau" (the specific water),
 "j'aime l'eau" (water in general).`,
     examples: [
-      { text: "je bois de l'eau.", gloss: 'I drink water.' },
-      { text: 'elle mange du pain avec du beurre.', gloss: 'She eats bread with butter.' },
-      { text: "il n'y a pas de lait.", gloss: 'There is no milk.' },
+      { text: "je bois de l'eau.", gloss: 'I drink water.',
+        tiles: ['je', 'bois', 'de', "l'eau."] },
+      { text: 'elle mange du pain avec du beurre.', gloss: 'She eats bread with butter.',
+        tiles: ['elle', 'mange', 'du', 'pain', 'avec', 'du', 'beurre.'] },
+      { text: "il n'y a pas de lait.", gloss: 'There is no milk.',
+        tiles: ['il', "n'y", 'a', 'pas', 'de', 'lait.'] },
     ],
   },
-  { id: 'fr-v-routine', unit: 'Doing things', kind: 'vocab', theme: 'routine',
-    title: 'Daily routine', summary: 'The verbs of an ordinary day' },
-  { id: 'fr-v-food',    unit: 'Doing things', kind: 'vocab', theme: 'food',
-    title: 'Food and drink', summary: 'Enough to order, shop and cook' },
-  { id: 'fr-v-verbs',   unit: 'Doing things', kind: 'vocab', theme: 'verbs',
-    title: 'Common verbs', summary: 'The ones that turn up in every other sentence' },
-
-  // ── Unit 4 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-adjectives',
-    unit: 'Describing',
     kind: 'grammar',
     title: 'Adjectives agree with their noun',
     summary: 'Feminine adds -e, plural adds -s',
@@ -243,15 +239,18 @@ makes it worth getting right out loud and not only on paper.
 This is the same agreement the reader reports when you tap a word and the note says "feminine
 singular".`,
     examples: [
-      { text: 'un petit chien.', gloss: 'A small dog.' },
-      { text: 'une petite maison.', gloss: 'A small house.' },
-      { text: 'les petits enfants.', gloss: 'The small children.' },
-      { text: 'des fleurs blanches.', gloss: 'White flowers.' },
+      { text: 'un petit chien.', gloss: 'A small dog.',
+        tiles: ['un', 'petit', 'chien.'] },
+      { text: 'une petite maison.', gloss: 'A small house.',
+        tiles: ['une', 'petite', 'maison.'] },
+      { text: 'les petits enfants.', gloss: 'The small children.',
+        tiles: ['les', 'petits', 'enfants.'] },
+      { text: 'des fleurs blanches.', gloss: 'White flowers.',
+        tiles: ['des', 'fleurs', 'blanches.'] },
     ],
   },
   {
     id: 'fr-adj-position',
-    unit: 'Describing',
     kind: 'grammar',
     title: 'Where the adjective goes',
     summary: 'After the noun — except when it is before it',
@@ -265,25 +264,18 @@ noticing rather than a rule worth deriving.
 A few change MEANING depending on where they sit. "un homme grand" is a tall man; "un grand
 homme" is a great one. Same two words, different sentence.`,
     examples: [
-      { text: 'une voiture rouge.', gloss: 'A red car — the normal order.' },
-      { text: 'un bon livre.', gloss: 'A good book — bon goes before.' },
-      { text: 'une vieille ville.', gloss: 'An old town.' },
-      { text: 'un homme grand.', gloss: 'A tall man — but «un grand homme» is a great man.' },
+      { text: 'une voiture rouge.', gloss: 'A red car — the normal order.',
+        tiles: ['une', 'voiture', 'rouge.'] },
+      { text: 'un bon livre.', gloss: 'A good book — bon goes before.',
+        tiles: ['un', 'bon', 'livre.'] },
+      { text: 'une vieille ville.', gloss: 'An old town.',
+        tiles: ['une', 'vieille', 'ville.'] },
+      { text: 'un homme grand.', gloss: 'A tall man — but «un grand homme» is a great man.',
+        tiles: ['un', 'homme', 'grand.'] },
     ],
   },
-  { id: 'fr-v-adjectives', unit: 'Describing', kind: 'vocab', theme: 'adjectives',
-    title: 'Describing words', summary: 'Big, small, new, old, easy, difficult' },
-  { id: 'fr-v-house',     unit: 'Describing', kind: 'vocab', theme: 'house',
-    title: 'The house', summary: 'Rooms, furniture, the things in them' },
-  { id: 'fr-v-clothing',  unit: 'Describing', kind: 'vocab', theme: 'clothing',
-    title: 'Clothes', summary: 'What you are wearing and what you are buying' },
-  { id: 'fr-v-weather',   unit: 'Describing', kind: 'vocab', theme: 'weather',
-    title: 'Weather', summary: 'The most reliable small talk there is' },
-
-  // ── Unit 5 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-questions',
-    unit: 'Asking',
     kind: 'grammar',
     title: 'Three ways to ask a question',
     summary: 'Pick one and use it — they all work',
@@ -301,21 +293,18 @@ speech.
 The question words go in front of any of them: qui, que, où, quand, comment, pourquoi,
 combien.`,
     examples: [
-      { text: 'tu viens avec nous ?', gloss: 'Are you coming with us? (intonation only)' },
-      { text: 'est-ce que tu parles français ?', gloss: 'Do you speak French?' },
-      { text: 'où est la gare ?', gloss: 'Where is the station?' },
-      { text: 'combien coûte ce livre ?', gloss: 'How much is this book?' },
+      { text: 'tu viens avec nous ?', gloss: 'Are you coming with us? (intonation only)',
+        tiles: ['tu', 'viens', 'avec', 'nous?'] },
+      { text: 'est-ce que tu parles français ?', gloss: 'Do you speak French?',
+        tiles: ['est-ce', 'que', 'tu', 'parles', 'français?'] },
+      { text: 'où est la gare ?', gloss: 'Where is the station?',
+        tiles: ['où', 'est', 'la', 'gare?'] },
+      { text: 'combien coûte ce livre ?', gloss: 'How much is this book?',
+        tiles: ['combien', 'coûte', 'ce', 'livre?'] },
     ],
   },
-  { id: 'fr-v-places',    unit: 'Asking', kind: 'vocab', theme: 'places',
-    title: 'Places in town', summary: 'Where you are going and how to ask for it' },
-  { id: 'fr-v-transport', unit: 'Asking', kind: 'vocab', theme: 'transport',
-    title: 'Getting around', summary: 'On foot, by bus, by train' },
-
-  // ── Unit 6 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-futur-proche',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'What is about to happen',
     summary: 'aller + an infinitive, exactly like "going to"',
@@ -328,14 +317,16 @@ This is how French speakers talk about the future most of the time. There is a s
 tense with its own endings, and it exists and is used, but it is more formal and more distant.
 For anything happening today, this is the one.`,
     examples: [
-      { text: 'je vais manger.', gloss: 'I am going to eat.' },
-      { text: 'nous allons partir bientôt.', gloss: 'We are going to leave soon.' },
-      { text: 'il va pleuvoir.', gloss: 'It is going to rain.' },
+      { text: 'je vais manger.', gloss: 'I am going to eat.',
+        tiles: ['je', 'vais', 'manger.'] },
+      { text: 'nous allons partir bientôt.', gloss: 'We are going to leave soon.',
+        tiles: ['nous', 'allons', 'partir', 'bientôt.'] },
+      { text: 'il va pleuvoir.', gloss: 'It is going to rain.',
+        tiles: ['il', 'va', 'pleuvoir.'] },
     ],
   },
   {
     id: 'fr-passe-compose',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'The passé composé',
     summary: 'The everyday past: avoir plus a past participle',
@@ -350,15 +341,18 @@ faire → fait, prendre → pris, voir → vu, dire → dit.
 
 This is the form the reader labels "past participle" when you tap it.`,
     examples: [
-      { text: "j'ai mangé une pomme.", gloss: 'I ate an apple.' },
-      { text: 'elle a parlé avec sa mère.', gloss: 'She spoke with her mother.' },
-      { text: 'nous avons fini le travail.', gloss: 'We finished the work.' },
-      { text: 'ils ont vu le film.', gloss: 'They saw the film.' },
+      { text: "j'ai mangé une pomme.", gloss: 'I ate an apple.',
+        tiles: ["j'ai", 'mangé', 'une', 'pomme.'] },
+      { text: 'elle a parlé avec sa mère.', gloss: 'She spoke with her mother.',
+        tiles: ['elle', 'a', 'parlé', 'avec', 'sa', 'mère.'] },
+      { text: 'nous avons fini le travail.', gloss: 'We finished the work.',
+        tiles: ['nous', 'avons', 'fini', 'le', 'travail.'] },
+      { text: 'ils ont vu le film.', gloss: 'They saw the film.',
+        tiles: ['ils', 'ont', 'vu', 'le', 'film.'] },
     ],
   },
   {
     id: 'fr-passe-etre',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'The verbs that take être',
     summary: 'And then the participle agrees, like an adjective',
@@ -376,14 +370,16 @@ reader can tell you about it: tap one and the note says "past participle · femi
 
 Every reflexive verb takes être too.`,
     examples: [
-      { text: 'il est allé au marché.', gloss: 'He went to the market.' },
-      { text: 'elle est allée au marché.', gloss: 'She went to the market — note the extra -e.' },
-      { text: 'nous sommes arrivés hier.', gloss: 'We arrived yesterday.' },
+      { text: 'il est allé au marché.', gloss: 'He went to the market.',
+        tiles: ['il', 'est', 'allé', 'au', 'marché.'] },
+      { text: 'elle est allée au marché.', gloss: 'She went to the market — note the extra -e.',
+        tiles: ['elle', 'est', 'allée', 'au', 'marché.'] },
+      { text: 'nous sommes arrivés hier.', gloss: 'We arrived yesterday.',
+        tiles: ['nous', 'sommes', 'arrivés', 'hier.'] },
     ],
   },
   {
     id: 'fr-imparfait',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'The imperfect',
     summary: 'How things used to be, versus what happened once',
@@ -397,14 +393,16 @@ how long ago something was. The passé composé is a single finished event; the 
 background, a habit or a state. In one sentence you often get both: "je mangeais quand il est
 arrivé" — I was eating (background) when he arrived (event).`,
     examples: [
-      { text: "quand j'étais petit, je jouais dans le jardin.", gloss: 'When I was small, I used to play in the garden.' },
-      { text: 'il faisait froid.', gloss: 'It was cold.' },
-      { text: 'nous habitions près de la mer.', gloss: 'We lived near the sea.' },
+      { text: "quand j'étais petit, je jouais dans le jardin.", gloss: 'When I was small, I used to play in the garden.',
+        tiles: ['quand', "j'étais", 'petit,', 'je', 'jouais', 'dans', 'le', 'jardin.'] },
+      { text: 'il faisait froid.', gloss: 'It was cold.',
+        tiles: ['il', 'faisait', 'froid.'] },
+      { text: 'nous habitions près de la mer.', gloss: 'We lived near the sea.',
+        tiles: ['nous', 'habitions', 'près', 'de', 'la', 'mer.'] },
     ],
   },
   {
     id: 'fr-reflexive',
-    unit: 'Past and future',
     kind: 'grammar',
     title: 'Reflexive verbs',
     summary: 'se lever, se laver — doing something to yourself',
@@ -420,22 +418,16 @@ worth having.
 
 All of them form the past with être.`,
     examples: [
-      { text: 'je me lève à sept heures.', gloss: 'I get up at seven.' },
-      { text: 'elle se lave les mains.', gloss: 'She washes her hands.' },
-      { text: 'nous nous levons tôt.', gloss: 'We get up early.' },
+      { text: 'je me lève à sept heures.', gloss: 'I get up at seven.',
+        tiles: ['je', 'me', 'lève', 'à', 'sept', 'heures.'] },
+      { text: 'elle se lave les mains.', gloss: 'She washes her hands.',
+        tiles: ['elle', 'se', 'lave', 'les', 'mains.'] },
+      { text: 'nous nous levons tôt.', gloss: 'We get up early.',
+        tiles: ['nous', 'nous', 'levons', 'tôt.'] },
     ],
   },
-  { id: 'fr-v-weekdays', unit: 'Past and future', kind: 'vocab', theme: 'weekdays',
-    title: 'Days of the week', summary: 'lundi through dimanche' },
-  { id: 'fr-v-months',   unit: 'Past and future', kind: 'vocab', theme: 'months',
-    title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
-  { id: 'fr-v-seasons',  unit: 'Past and future', kind: 'vocab', theme: 'seasons',
-    title: 'Seasons', summary: 'Four words that turn up constantly' },
-
-  // ── Unit 7 ─────────────────────────────────────────────────────────────────────────────
   {
     id: 'fr-object-pronouns',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'Object pronouns go BEFORE the verb',
     summary: 'le, la, les, lui, leur — and the order they queue in',
@@ -452,15 +444,18 @@ uses à: parler à quelqu'un takes lui.
 In a negative, the pronoun stays glued to the verb and ne goes outside the whole group: "je ne
 le vois pas".`,
     examples: [
-      { text: 'je le vois.', gloss: 'I see him — the pronoun comes before the verb.' },
-      { text: 'je lui parle.', gloss: 'I speak to him — parler à takes the indirect pronoun.' },
-      { text: 'elle nous attend.', gloss: 'She is waiting for us.' },
-      { text: 'je ne le vois pas.', gloss: 'I do not see him — ne … pas wraps the whole group.' },
+      { text: 'je le vois.', gloss: 'I see him — the pronoun comes before the verb.',
+        tiles: ['je', 'le', 'vois.'] },
+      { text: 'je lui parle.', gloss: 'I speak to him — parler à takes the indirect pronoun.',
+        tiles: ['je', 'lui', 'parle.'] },
+      { text: 'elle nous attend.', gloss: 'She is waiting for us.',
+        tiles: ['elle', 'nous', 'attend.'] },
+      { text: 'je ne le vois pas.', gloss: 'I do not see him — ne … pas wraps the whole group.',
+        tiles: ['je', 'ne', 'le', 'vois', 'pas.'] },
     ],
   },
   {
     id: 'fr-y-en',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'y and en',
     summary: 'Two tiny words that replace a whole phrase',
@@ -476,14 +471,16 @@ reading because they are so short — which is exactly why they are worth learni
 en is obligatory with a quantity even when English drops it entirely: "combien en veux-tu ?"
 is "how many do you want?", and the en cannot be left out.`,
     examples: [
-      { text: "j'y vais demain.", gloss: 'I am going there tomorrow.' },
-      { text: "j'en ai trois.", gloss: 'I have three of them — en is required.' },
-      { text: 'elle en parle souvent.', gloss: 'She talks about it often.' },
+      { text: "j'y vais demain.", gloss: 'I am going there tomorrow.',
+        tiles: ["j'y", 'vais', 'demain.'] },
+      { text: "j'en ai trois.", gloss: 'I have three of them — en is required.',
+        tiles: ["j'en", 'ai', 'trois.'] },
+      { text: 'elle en parle souvent.', gloss: 'She talks about it often.',
+        tiles: ['elle', 'en', 'parle', 'souvent.'] },
     ],
   },
   {
     id: 'fr-comparatives',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'Comparing things',
     summary: 'plus, moins, aussi — and the one irregular that matters',
@@ -500,14 +497,16 @@ The irregular worth memorising is bon, which becomes meilleur rather than "plus 
 shape as good and better. Its adverb bien becomes mieux, and the two are frequently confused
 even by people who have been speaking a while.`,
     examples: [
-      { text: 'il est plus grand que moi.', gloss: 'He is taller than me.' },
-      { text: 'ce livre est moins cher.', gloss: 'This book is cheaper.' },
-      { text: "c'est le meilleur restaurant.", gloss: 'It is the best restaurant — not «le plus bon».' },
+      { text: 'il est plus grand que moi.', gloss: 'He is taller than me.',
+        tiles: ['il', 'est', 'plus', 'grand', 'que', 'moi.'] },
+      { text: 'ce livre est moins cher.', gloss: 'This book is cheaper.',
+        tiles: ['ce', 'livre', 'est', 'moins', 'cher.'] },
+      { text: "c'est le meilleur restaurant.", gloss: 'It is the best restaurant — not «le plus bon».',
+        tiles: ["c'est", 'le', 'meilleur', 'restaurant.'] },
     ],
   },
   {
     id: 'fr-futur-simple',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'The future tense',
     summary: 'Built on the infinitive, with avoir endings',
@@ -523,14 +522,16 @@ The stem is irregular for a handful of very common verbs, and those are the ones
 It leans more formal and more distant than aller + infinitive, and it is what writing uses. It
 is also required after quand and dès que where English uses a present: "quand il arrivera".`,
     examples: [
-      { text: 'je parlerai avec lui demain.', gloss: 'I will speak with him tomorrow.' },
-      { text: 'nous serons là.', gloss: 'We will be there — être has an irregular stem.' },
-      { text: 'elle aura le temps.', gloss: 'She will have time.' },
+      { text: 'je parlerai avec lui demain.', gloss: 'I will speak with him tomorrow.',
+        tiles: ['je', 'parlerai', 'avec', 'lui', 'demain.'] },
+      { text: 'nous serons là.', gloss: 'We will be there — être has an irregular stem.',
+        tiles: ['nous', 'serons', 'là.'] },
+      { text: 'elle aura le temps.', gloss: 'She will have time.',
+        tiles: ['elle', 'aura', 'le', 'temps.'] },
     ],
   },
   {
     id: 'fr-relative',
-    unit: 'Beyond the basics',
     kind: 'grammar',
     title: 'qui and que',
     summary: 'Which one you need depends on what follows, not on what it means',
@@ -546,17 +547,242 @@ So the test is mechanical: look at what comes next. A verb means qui; a subject 
 
 que elides to qu' before a vowel; qui never does, which is a useful extra signal while reading.`,
     examples: [
-      { text: "l'homme qui parle est mon père.", gloss: 'The man who is speaking is my father.' },
-      { text: 'le livre que je lis est bon.', gloss: 'The book that I am reading is good.' },
-      { text: "c'est la ville où j'habite.", gloss: 'This is the town where I live — où for places.' },
+      { text: "l'homme qui parle est mon père.", gloss: 'The man who is speaking is my father.',
+        tiles: ["l'homme", 'qui', 'parle', 'est', 'mon', 'père.'] },
+      { text: 'le livre que je lis est bon.', gloss: 'The book that I am reading is good.',
+        tiles: ['le', 'livre', 'que', 'je', 'lis', 'est', 'bon.'] },
+      { text: "c'est la ville où j'habite.", gloss: 'This is the town where I live — où for places.',
+        tiles: ["c'est", 'la', 'ville', 'où', "j'habite."] },
     ],
   },
-  { id: 'fr-v-tableware', unit: 'Beyond the basics', kind: 'vocab', theme: 'tableware',
+  {
+    id: 'fr-imperative',
+    kind: 'grammar',
+    title: 'Telling someone to do something',
+    summary: 'Drop the pronoun — and one -s with it',
+    explanation: `A command is the present tense with the pronoun removed. "tu parles" becomes
+"parle", "nous allons" becomes "allons", "vous venez" becomes "venez".
+
+The one irregularity is worth knowing because it is invisible when spoken: -er verbs lose their
+final -s in the tu form. "tu parles" gives "parle", not "parles". The two sound identical, so
+this is purely a writing rule.
+
+Four verbs are irregular outright: être gives sois, avoir gives aie, savoir gives sache, and
+vouloir gives veuille.
+
+With a reflexive verb the pronoun moves to the end and te becomes toi: "lève-toi".`,
+    examples: [
+      { text: 'parle plus lentement.', gloss: 'Speak more slowly — no pronoun, and no final -s.',
+        tiles: ['parle', 'plus', 'lentement.'] },
+      { text: 'allons au marché.', gloss: "Let's go to the market.",
+        tiles: ['allons', 'au', 'marché.'] },
+      { text: 'ne parle pas si vite.', gloss: 'Do not speak so fast.',
+        tiles: ['ne', 'parle', 'pas', 'si', 'vite.'] },
+    ],
+  },
+  {
+    id: 'fr-depuis',
+    kind: 'grammar',
+    title: 'depuis, pendant, il y a',
+    summary: 'Three ways to say how long, and they are not swappable',
+    explanation: `English uses "for" and "ago" loosely. French splits the job three ways, and the
+tense changes with the word.
+
+depuis is something still going on, and it takes the PRESENT where English uses a perfect.
+"j'habite ici depuis trois ans" is "I have lived here for three years" — the living continues,
+so French keeps it present.
+
+pendant is a finished stretch of time: "j'ai travaillé pendant deux heures".
+
+il y a is "ago", and always takes a past: "je suis arrivé il y a deux jours".
+
+The first is the one to spend time on, because the tense mismatch with English is what makes it
+feel wrong at first.`,
+    examples: [
+      { text: "j'habite ici depuis trois ans.", gloss: 'I have lived here for three years — still true, so present.',
+        tiles: ["j'habite", 'ici', 'depuis', 'trois', 'ans.'] },
+      { text: "j'ai travaillé pendant deux heures.", gloss: 'I worked for two hours — finished.',
+        tiles: ["j'ai", 'travaillé', 'pendant', 'deux', 'heures.'] },
+      { text: 'je suis arrivé il y a deux jours.', gloss: 'I arrived two days ago.',
+        tiles: ['je', 'suis', 'arrivé', 'il', 'y', 'a', 'deux', 'jours.'] },
+    ],
+  },
+  {
+    id: 'fr-conditionnel',
+    kind: 'grammar',
+    title: 'The conditional',
+    summary: 'Would — and the polite form of asking',
+    explanation: `The conditional is built like the future — on the infinitive — but takes the
+imperfect endings: -ais, -ais, -ait, -ions, -iez, -aient.
+
+je parlerais · tu parlerais · il parlerait
+
+It has the same irregular stems as the future, so learning one gives you the other: ser-, aur-,
+ir-, fer-, pourr-, voudr-.
+
+Two everyday uses. It softens a request, which is the first one you will need: "je voudrais un
+café" is what you say in a shop, and "je veux" sounds blunt. And it carries the "would" half of
+an if-sentence: "si j'avais le temps, je viendrais".
+
+Note the pattern there: si takes the IMPERFECT and the other half takes the conditional. Putting
+the conditional after si is the classic mistake.`,
+    examples: [
+      { text: 'je voudrais un café.', gloss: 'I would like a coffee — the polite way to ask.',
+        tiles: ['je', 'voudrais', 'un', 'café.'] },
+      { text: "si j'avais le temps, je viendrais.", gloss: 'If I had time, I would come.',
+        tiles: ['si', "j'avais", 'le', 'temps,', 'je', 'viendrais.'] },
+      { text: 'nous pourrions partir demain.', gloss: 'We could leave tomorrow.',
+        tiles: ['nous', 'pourrions', 'partir', 'demain.'] },
+    ],
+  },
+  {
+    id: 'fr-subjonctif',
+    kind: 'grammar',
+    title: 'A first look at the subjunctive',
+    summary: 'Triggered by the sentence around it, not by doubt',
+    explanation: `The subjunctive is not a tense and mostly not a choice. Certain expressions
+simply require it in the clause that follows, and the reliable way in is to learn those
+expressions rather than to reason about mood.
+
+il faut que · je veux que · je suis content que · bien que · avant que · pour que
+
+The forms come from the ils stem of the present: ils parlent gives que je parle, ils finissent
+gives que je finisse. Only a handful are irregular, and they are the usual suspects: être gives
+sois, avoir gives aie, aller gives aille, faire gives fasse, pouvoir gives puisse.
+
+Most of what you meet is "il faut que" plus a verb, so that one phrase carries much of the load.
+
+Note that "j'espère que" does NOT take it, which surprises people, since hoping feels uncertain.`,
+    examples: [
+      { text: 'il faut que je parte.', gloss: 'I have to leave.',
+        tiles: ['il', 'faut', 'que', 'je', 'parte.'] },
+      { text: 'je veux que tu viennes.', gloss: 'I want you to come.',
+        tiles: ['je', 'veux', 'que', 'tu', 'viennes.'] },
+      { text: 'bien que ce soit difficile.', gloss: 'Although it is difficult.',
+        tiles: ['bien', 'que', 'ce', 'soit', 'difficile.'] },
+    ],
+  },
+  {
+    id: 'fr-prepositions-places',
+    kind: 'grammar',
+    title: 'Going to places',
+    summary: 'à, en or au — decided by the gender of the country',
+    explanation: `For a town it is always à: "je vais à Paris".
+
+For a country it depends on gender. Feminine countries — which is most of the ones ending in -e
+— take en: "en France", "en Espagne". Masculine ones take au: "au Canada", "au Japon". Plurals
+take aux: "aux États-Unis".
+
+Coming FROM somewhere follows the same split: de for feminine, du for masculine.
+
+There is one exception worth knowing early because it is a common country: le Mexique is
+masculine despite the -e, so it is "au Mexique".
+
+The same à/en/au choice applies to means of transport, but on a different logic: en for things
+you get inside, à for things you sit on. "en voiture", but "à vélo".`,
+    examples: [
+      { text: 'je vais à Paris.', gloss: 'I am going to Paris — a town, so à.',
+        tiles: ['je', 'vais', 'à', 'Paris.'] },
+      { text: 'nous allons en France.', gloss: 'We are going to France — feminine, so en.',
+        tiles: ['nous', 'allons', 'en', 'France.'] },
+      { text: 'elle va au Canada.', gloss: 'She is going to Canada — masculine, so au.',
+        tiles: ['elle', 'va', 'au', 'Canada.'] },
+      { text: 'je pars à vélo.', gloss: 'I am leaving by bike.',
+        tiles: ['je', 'pars', 'à', 'vélo.'] },
+    ],
+  },
+  {
+    id: 'fr-demonstratives',
+    kind: 'grammar',
+    title: 'ce, cet, cette, ces',
+    summary: 'This and that, and the extra form that exists for the ear',
+    explanation: `French has one word for "this" and "that" — the distinction English makes is
+simply absent, and context carries it.
+
+ce for a masculine noun, cette for a feminine one, ces for any plural.
+
+The fourth form exists purely for pronunciation: cet is used before a masculine noun starting
+with a vowel or a silent h, because "ce homme" is awkward to say. "cet homme", "cet arbre".
+
+When you really must separate this from that, -ci and -là attach to the noun: "ce livre-ci"
+against "ce livre-là". In speech that is much rarer than English "this/that", so do not reach
+for it by default.`,
+    examples: [
+      { text: 'ce livre est bon.', gloss: 'This book is good.',
+        tiles: ['ce', 'livre', 'est', 'bon.'] },
+      { text: 'cette maison est grande.', gloss: 'This house is big.',
+        tiles: ['cette', 'maison', 'est', 'grande.'] },
+      { text: 'cet homme est mon père.', gloss: 'This man is my father — cet before a vowel.',
+        tiles: ['cet', 'homme', 'est', 'mon', 'père.'] },
+      { text: 'ces enfants jouent.', gloss: 'These children are playing.',
+        tiles: ['ces', 'enfants', 'jouent.'] },
+    ],
+  },
+  {
+    id: 'fr-possessives',
+    kind: 'grammar',
+    title: 'Saying whose it is',
+    summary: 'The word agrees with the THING, not with the owner',
+    explanation: `mon, ma, mes · ton, ta, tes · son, sa, ses · notre, nos · votre, vos · leur, leurs
+
+The trap for English speakers is son and sa. They do NOT mean his against her — they agree with
+the noun that follows. "son livre" is his book OR her book; "sa maison" is his house OR her
+house. The owner's gender is invisible, and context supplies it.
+
+There is a pronunciation rule like cet: a feminine noun starting with a vowel takes the
+masculine form, because "ma amie" is hard to say. "mon amie" is a female friend.
+
+For the plural owners, notre and votre and leur have only one singular form each — no gender —
+which makes them the easy half.`,
+    examples: [
+      { text: 'son livre est sur la table.', gloss: 'His or her book is on the table — sonic agrees with livre.',
+        tiles: ['son', 'livre', 'est', 'sur', 'la', 'table.'] },
+      { text: 'sa maison est grande.', gloss: 'His or her house is big.',
+        tiles: ['sa', 'maison', 'est', 'grande.'] },
+      { text: "mon amie s'appelle Marie.", gloss: 'My friend is called Marie — mon before a vowel, though amie is feminine.',
+        tiles: ['mon', 'amie', "s'appelle", 'Marie.'] },
+    ],
+  },
+  { id: 'fr-v-basics',  kind: 'vocab', theme: 'basics',
+    title: 'Everyday words', summary: 'The small words that hold sentences together' },
+  { id: 'fr-v-numbers', kind: 'vocab', theme: 'numbers',
+    title: 'Numbers', summary: 'Counting, prices, times, ages' },
+  { id: 'fr-v-colours', kind: 'vocab', theme: 'colours',
+    title: 'Colours', summary: 'And a first look at adjectives agreeing' },
+  { id: 'fr-v-family', kind: 'vocab', theme: 'family',
+    title: 'Family', summary: 'The people you describe first' },
+  { id: 'fr-v-body',   kind: 'vocab', theme: 'body',
+    title: 'The body', summary: 'For the doctor, and for everything that hurts' },
+  { id: 'fr-v-routine', kind: 'vocab', theme: 'routine',
+    title: 'Daily routine', summary: 'The verbs of an ordinary day' },
+  { id: 'fr-v-food',    kind: 'vocab', theme: 'food',
+    title: 'Food and drink', summary: 'Enough to order, shop and cook' },
+  { id: 'fr-v-verbs',   kind: 'vocab', theme: 'verbs',
+    title: 'Common verbs', summary: 'The ones that turn up in every other sentence' },
+  { id: 'fr-v-adjectives', kind: 'vocab', theme: 'adjectives',
+    title: 'Describing words', summary: 'Big, small, new, old, easy, difficult' },
+  { id: 'fr-v-house',     kind: 'vocab', theme: 'house',
+    title: 'The house', summary: 'Rooms, furniture, the things in them' },
+  { id: 'fr-v-clothing',  kind: 'vocab', theme: 'clothing',
+    title: 'Clothes', summary: 'What you are wearing and what you are buying' },
+  { id: 'fr-v-weather',   kind: 'vocab', theme: 'weather',
+    title: 'Weather', summary: 'The most reliable small talk there is' },
+  { id: 'fr-v-places',    kind: 'vocab', theme: 'places',
+    title: 'Places in town', summary: 'Where you are going and how to ask for it' },
+  { id: 'fr-v-transport', kind: 'vocab', theme: 'transport',
+    title: 'Getting around', summary: 'On foot, by bus, by train' },
+  { id: 'fr-v-weekdays', kind: 'vocab', theme: 'weekdays',
+    title: 'Days of the week', summary: 'lundi through dimanche' },
+  { id: 'fr-v-months',   kind: 'vocab', theme: 'months',
+    title: 'Months', summary: 'Dates, birthdays, seasons of the year' },
+  { id: 'fr-v-seasons',  kind: 'vocab', theme: 'seasons',
+    title: 'Seasons', summary: 'Four words that turn up constantly' },
+  { id: 'fr-v-tableware', kind: 'vocab', theme: 'tableware',
     title: 'At the table', summary: 'Plates, glasses, knives and forks' },
-  { id: 'fr-v-school',  unit: 'Beyond the basics', kind: 'vocab', theme: 'school',
+  { id: 'fr-v-school',  kind: 'vocab', theme: 'school',
     title: 'School', summary: 'Classroom words, and the things on a desk' },
-  { id: 'fr-v-animals', unit: 'Beyond the basics', kind: 'vocab', theme: 'animals',
+  { id: 'fr-v-animals', kind: 'vocab', theme: 'animals',
     title: 'Animals', summary: 'Pets, farm animals, and the words for them' },
-  { id: 'fr-v-everyday', unit: 'Beyond the basics', kind: 'vocab', theme: 'everyday',
+  { id: 'fr-v-everyday', kind: 'vocab', theme: 'everyday',
     title: 'Everyday life', summary: 'Birthdays, hunger, parties and open doors' },
 ];
