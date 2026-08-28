@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:dev": "node scripts/dev-seed.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
