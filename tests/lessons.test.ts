@@ -23,7 +23,6 @@ import type { LanguageCode } from '@/lib/types';
  * Everything here is parameterised over LESSON_LANGUAGES, so adding a third tree gets the whole
  * suite for free and cannot ship without passing it.
  */
-type Segmenter = (s: string, o: Map<string, { p: string; m: string }>) => Array<string[]>;
 
 /**
  * THREE VALIDATION STRATEGIES, because the pipelines genuinely differ.
@@ -68,11 +67,6 @@ async function unresolvedWords(lang: LanguageCode, text: string): Promise<string
      */
     .filter(w => !/^\p{Lu}/u.test(w) || text.trim().startsWith(w));
 }
-
-const SEGMENTERS: Record<string, Segmenter> = {
-  fr: segmentFr as unknown as Segmenter,
-  es: segmentEs as unknown as Segmenter,
-};
 
 const allThemes = BEGINNER_THEMES as Record<string, Record<string, string[]>>;
 

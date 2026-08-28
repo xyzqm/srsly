@@ -6,7 +6,6 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
-import { checkCompounds } from '@/lib/compounds';
 import { POLYPHONES } from '@/lib/polyphones';
 import { todayStr, dateInDays, isDueToday, isActive } from '@/lib/deck';
 import { matchesSearch, searchRank } from '@/lib/deckSearch';

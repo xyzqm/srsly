@@ -4,7 +4,7 @@
  * Run with: node scripts/build-cedict.mjs
  */
 import { createGunzip } from 'zlib';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile } from 'fs/promises';
 import https from 'https';
 import path from 'path';
 import { fileURLToPath } from 'url';

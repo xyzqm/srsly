@@ -36,6 +36,25 @@ const eslintConfig = [
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+
+  /**
+   * A LEADING UNDERSCORE MEANS "DELIBERATELY UNUSED", and the code already says so.
+   *
+   * `lib/storage/firebase.ts` is a stub adapter that must satisfy `implements DataService`,
+   * so every method carries the interface's full parameter list and uses none of it —
+   * `_lang`, `_deck`, `_prefs`. That is the convention, not an oversight, and 17 of the
+   * project's warnings were the linter objecting to code doing the right thing. Deleting the
+   * parameters to silence it would break the interface the file exists to implement.
+   */
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      }],
+    },
+  },
 ];
 
 export default eslintConfig;

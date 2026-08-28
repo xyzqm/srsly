@@ -13,6 +13,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* `no-page-custom-font` is a PAGES-ROUTER rule: it warns that a font linked from a
+            page loads for that page only, and tells you to move it to `pages/_document.js`.
+            This is the app router, and this IS the document — the link lives in the single
+            root layout, which is exactly what the rule is asking for. There is nowhere
+            "better" to move it to, so the warning has no fix. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Lora:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&display=swap"
           rel="stylesheet"
