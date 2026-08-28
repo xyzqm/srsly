@@ -17,7 +17,28 @@ npm run dev        # start dev server at localhost:3000
 npm run build      # production build (raises the Node heap — see below)
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
+npm run seed:dev   # print a console snippet that seeds a deck lighting up the milestone seals
 ```
+
+**Never run `npm run build` while a dev server is live.** They share `.next`, and doing it
+has corrupted the directory three times — each looking like an unrelated compile error.
+
+**`npm run seed:dev` exists because the Stats panel hides itself on a new account.** That is
+deliberate (a wall of empty progress bars is a list of things you have failed to do) and it
+makes the badges impossible to look at without a deck. The script prints a snippet rather than
+writing anything, because decks live in `localStorage` and only the browser can write there.
+It copies every existing `srsly-*` key into `srsly-dev-seed-backup` before overwriting, and
+`--restore` puts them back; that is not politeness, it is because a dev deck was once
+overwritten with fixtures and could not be recovered.
+
+**`eslint.config.mjs` carries an ignore list, and flat config is why.** ESLint 9 does not read
+`.eslintignore` — the file is silently inert — so build output has to be excluded in the config
+itself. Without it `npm run lint` walked `.vercel/output` and reported 248 errors from minified
+one-line bundles, which is not a lint result, it is noise that makes the command useless as a
+gate. The `no-unused-vars` override for a leading `_` is there for the same reason:
+`lib/storage/firebase.ts` implements `DataService` with stub methods that must take the full
+parameter list and use none of it, and deleting those parameters to satisfy the linter would
+break the interface the file exists to implement.
 
 **`npm run build` raises the Node heap to 4 GB, and needs to.** The default on a 16 GB Mac is
 ~2.2 GB, and webpack has to parse and minify every generated table that a chunk imports — the
@@ -68,6 +89,26 @@ a `DeckWord` without `lastReview` looks to FSRS like it was reviewed one second 
 retrievability is 1 and no passing grade grows stability; and a punctuation token without
 `type: 'punct'` is spaced like a word, because the spacing rules read the type and not the
 character.
+
+### When something here looks flaky
+
+Five failure modes that each recurred, or nearly did. They are recorded because every one of
+them cost more time to re-diagnose than to read about:
+
+- **Assuming instead of measuring.** A stored lemma looked redundant next to `baseForm`; 33% of
+  the commonest forms turn out to carry no `baseForm` at all. The measurement took a minute.
+- **Calling a reproducible failure transient.** The heap-limit build failure above was written
+  off as flaky and reproduced twice before the flag went in. Nothing in this repo is flaky yet.
+- **Debugging against a stale artefact.** Several rounds of deployment work went into a
+  deployment that had never rebuilt. Confirm the thing under test is the thing you built.
+- **A test too weak to catch the bug it was written for.** The lesson-ordering test asserted
+  "everything before the first word set is grammar", which is trivially true of an interleaved
+  array — so the subjunctive shipped numbered ahead of `être` and was caught by eye, not by CI.
+- **Disk filling up.** ENOSPC has surfaced as five unrelated test failures. `.next` and the
+  scratchpad are what to clear.
+
+The pattern behind all five: **the real bugs were found by running the app, not by reading the
+code.** Open the browser before saying something works.
 
 ## Environment
 
@@ -965,6 +1006,36 @@ that dipped and came back up.
 
 `ToastHost` draws the same seal as the Stats panel and the completion screen, so one event does
 not have two looks depending on where the learner happened to be standing.
+
+#### Only one surface announces a milestone
+
+Two things can announce: `AchievementToast` on the completion screens, and `ToastHost` in the
+corner. Both read `fresh` from `useAchievements` and both call `acknowledge()`, and they are
+separate hook instances — so whichever effect ran first consumed the announcement and the other
+showed nothing.
+
+**A completion screen wins whenever one is mounted; the floating toast speaks only when there
+is none.** `lib/completionSurface.ts` holds the claim. Both halves are load-bearing: the
+floating toast exists because the earliest milestones are deliberately reachable in a first
+session, and a learner who saves five words while reading and never finishes a passage would
+otherwise meet none of them — so silencing it outright would delete a deliberate behaviour.
+
+**The claim is made during RENDER, not in an effect**, because React runs every render in a
+commit before any effect in it — which is what makes the outcome independent of where the two
+components sit in the tree. It is a `Set` keyed by instance rather than a counter so that
+StrictMode's double render is a no-op instead of a permanent +1, and so there is no state
+update during render to warn about. `ToastHost` reads it in its effect and returns **without
+acknowledging** — acknowledging and merely skipping the toast would mark the milestone seen and
+lose it for good.
+
+**`ToastHost` mounts once, at the app root, and that is not tidiness.** It used to live inside
+`ReadTab`, which mounts twice (variant `'read'` and variant `'srs'`), so there were two of them
+racing over the same milestone — and `TabPanel` hides an inactive tab with `display: none`, so
+the winner could be the instance nobody could see and the milestone simply never appeared.
+
+`AchievementToast` renders on **both** completion screens. It was missing from the reading
+results for a while, despite this file and the component's own docstring describing two, so a
+milestone crossed on the last blank of a passage had nowhere to be announced.
 
 ### Reading and SRS are separate tabs
 
