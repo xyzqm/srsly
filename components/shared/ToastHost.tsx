@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAchievements } from '@/hooks/useAchievements';
 import { collapse, type Badge } from '@/lib/achievements';
+import { completionSurfaceMounted } from '@/lib/completionSurface';
 import BadgeSeal from '@/components/stats/BadgeSeal';
 
 /**
@@ -61,6 +62,14 @@ export default function ToastHost({ deckSize }: { deckSize: number }) {
 
   useEffect(() => {
     if (fresh.length === 0) return;
+    /**
+     * A completion screen outranks this one, and takes the acknowledgement with it.
+     *
+     * Returning WITHOUT calling `acknowledge` is the whole point: the milestone stays
+     * unannounced so the completion screen can claim it. Acknowledging here and merely
+     * skipping the toast would mark it seen and lose it for good.
+     */
+    if (completionSurfaceMounted()) return;
     // One toast per ladder, not per rung — crossing three thresholds at once should not
     // stack three near-identical cards in the corner. See `collapse`.
     for (const b of collapse(fresh, 'last')) {

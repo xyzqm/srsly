@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeStats, evaluate, isMastered, isRescuedLeech, MASTERY_STABILITY_DAYS,
   ACHIEVEMENTS, FAMILIES, collapse, toppedLadder, type EarnedAchievement,
 } from '@/lib/achievements';
 import { unannounced } from '@/lib/achievementsSeen';
+import {
+  claimCompletionSurface, releaseCompletionSurface, completionSurfaceMounted,
+  resetCompletionSurfaces,
+} from '@/lib/completionSurface';
 import type { DeckWord, SRSState } from '@/lib/types';
 
 const LEECH = 8;
@@ -201,5 +205,54 @@ describe('gold is the top of a real ladder', () => {
   it('gilds the last rung of a real one, and nothing below it', () => {
     expect(toppedLadder(5, 5)).toBe(true);
     expect(toppedLadder(4, 5)).toBe(false);
+  });
+});
+
+/**
+ * Which surface announces a milestone. The rule is that a completion screen always wins while
+ * one is mounted, and the floating toast speaks only when there is none — see
+ * lib/completionSurface.ts for why that is not simply "completion screens only".
+ */
+describe('the completion screen outranks the floating toast', () => {
+  beforeEach(() => resetCompletionSurfaces());
+
+  it('reports nothing mounted by default, so the floating toast may speak', () => {
+    expect(completionSurfaceMounted()).toBe(false);
+  });
+
+  it('defers to a mounted completion screen', () => {
+    const screen = {};
+    claimCompletionSurface(screen);
+    expect(completionSurfaceMounted()).toBe(true);
+  });
+
+  /**
+   * The claim happens during RENDER, and React StrictMode renders twice in development. A
+   * counter would reach 2 and never come back down, silencing the floating toast for the rest
+   * of the session; keying by instance makes the repeat a no-op.
+   */
+  it('survives being claimed twice by the same screen', () => {
+    const screen = {};
+    claimCompletionSurface(screen);
+    claimCompletionSurface(screen);
+    releaseCompletionSurface(screen);
+    expect(completionSurfaceMounted()).toBe(false);
+  });
+
+  it('keeps deferring while any screen is still up', () => {
+    const flashcards = {};
+    const reading = {};
+    claimCompletionSurface(flashcards);
+    claimCompletionSurface(reading);
+    releaseCompletionSurface(flashcards);
+    expect(completionSurfaceMounted()).toBe(true);   // the reading results are still open
+    releaseCompletionSurface(reading);
+    expect(completionSurfaceMounted()).toBe(false);
+  });
+
+  it('ignores a release for a screen that never claimed', () => {
+    claimCompletionSurface({});
+    releaseCompletionSurface({});
+    expect(completionSurfaceMounted()).toBe(true);
   });
 });

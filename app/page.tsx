@@ -30,6 +30,7 @@ import VocabTab from '@/components/vocab/VocabTab';
 import SettingsTab from '@/components/settings/SettingsTab';
 import { useSRS } from '@/hooks/useSRS';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import ToastHost from '@/components/shared/ToastHost';
 import { runDailyPoolActivation } from '@/lib/poolAutoActivate';
 import { AuthProvider, useAuth } from '@/lib/auth/AuthProvider';
 import SignInModal from '@/components/auth/SignInModal';
@@ -216,7 +217,7 @@ function AppShell() {
    * Keyed on `language` so switching to a language you have not opened today activates its
    * pool too. Each language keeps its own date, because each has its own deck.
    */
-  const { releaseFromPool, deckLoaded } = useVocabDeck(language);
+  const { releaseFromPool, deckLoaded, deck } = useVocabDeck(language);
   useEffect(() => {
     // The deck has to be in memory first: releasing from a pool that has not loaded yet
     // would find nothing pooled, and then record the day as done.
@@ -261,6 +262,12 @@ function AppShell() {
           onAddLanguage={() => setAddingLanguage(true)}
         />
         <TabNav active={tab} onChange={changeTab} />
+        {/* MOUNTED ONCE, AND ABOVE THE TAB PANELS. It used to live inside ReadTab, which
+            mounts twice (variant 'read' and variant 'srs') — so there were two of these,
+            each with its own `useAchievements`, racing to acknowledge the same milestone.
+            Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
+            be the one nobody could see and the milestone simply never appeared. */}
+        <ToastHost deckSize={deck.length} />
         <main className="max-w-[1200px] mx-auto px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its

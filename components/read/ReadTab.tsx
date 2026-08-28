@@ -26,13 +26,13 @@ import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
 import ReadingSources from './ReadingSources';
 import DailyProverb from './DailyProverb';
+import AchievementToast from '@/components/stats/AchievementToast';
 import { decodeClip, type WebClip } from '@/lib/webClip';
 import NextSection from './NextSection';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
 import MissedWordReview from './MissedWordReview';
-import ToastHost from '@/components/shared/ToastHost';
 
 interface Props {
   onScore: (score: number) => void;
@@ -1473,7 +1473,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
           {showResults && <VocabResults results={vocabResults} />}
           {/* The reward, and only on a screen that says you finished. Shown for a GENERATED
-              passage — the SRS drill — because `showResults` only exists where blanks do. */}
+              passage — the SRS drill — because `showResults` only exists where blanks do.
+              `AchievementToast` belongs here for the same reason and was simply missing: this
+              is the second of the two "you finished" screens its own docstring describes, so a
+              milestone crossed on the last blank of a passage had nowhere to be announced. */}
+          {showResults && <AchievementToast />}
           {showResults && <DailyProverb />}
           {showResults && (() => {
             const missedSet = new Set(missedWords.map(w => w.h));
@@ -1512,7 +1516,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         onAddVocab={titlePopup.handleAddVocab}
         onReleaseFromPool={titlePopup.onReleaseFromPool}
       />
-      <ToastHost deckSize={deck.length} />
     </div>
   );
 }

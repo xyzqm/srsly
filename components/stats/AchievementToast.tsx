@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAchievements } from '@/hooks/useAchievements';
 import { collapse, toppedLadder, type EarnedAchievement } from '@/lib/achievements';
 import BadgeSeal from './BadgeSeal';
+import { claimCompletionSurface, releaseCompletionSurface } from '@/lib/completionSurface';
 
 /**
  * Announce a milestone the moment it is crossed — once.
@@ -17,6 +18,20 @@ import BadgeSeal from './BadgeSeal';
  */
 export default function AchievementToast() {
   const { fresh, acknowledge } = useAchievements();
+
+  /**
+   * Claim the announcement for this screen, DURING RENDER rather than in an effect.
+   *
+   * `ToastHost` decides whether to announce inside its own effect, and React runs every
+   * render in a commit before any effect in it — so claiming here is what makes the outcome
+   * independent of which component happens to sit first in the tree. The claim is made
+   * unconditionally, before the early return below: the point is to hold the announcement
+   * for this screen even in the moment before `fresh` has resolved, or the floating toast
+   * would win the gap. See lib/completionSurface.ts.
+   */
+  const key = useRef({}).current;
+  claimCompletionSurface(key);
+  useEffect(() => () => releaseCompletionSurface(key), [key]);
 
   /**
    * What to DISPLAY, held separately from what is still unannounced.
