@@ -39,7 +39,6 @@
     ".next-verify/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "svelte-poc"
+    "node_modules"
   ]
 }

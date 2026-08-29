@@ -20,8 +20,7 @@ const eslintConfig = [
    * and they drowned the real result — the command was useless as a pass/fail gate, which is
    * the only thing a lint script is for.
    *
-   * These are exactly the build outputs `.gitignore` already lists. `svelte-poc` is a separate
-   * package with its own toolchain and is linted from there, not from here.
+   * These are exactly the build outputs `.gitignore` already lists.
    */
   {
     ignores: [
@@ -31,7 +30,6 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "coverage/**",
-      "svelte-poc/**",
       "next-env.d.ts",
     ],
   },
@@ -40,11 +38,11 @@ const eslintConfig = [
   /**
    * A LEADING UNDERSCORE MEANS "DELIBERATELY UNUSED", and the code already says so.
    *
-   * `lib/storage/firebase.ts` is a stub adapter that must satisfy `implements DataService`,
-   * so every method carries the interface's full parameter list and uses none of it —
-   * `_lang`, `_deck`, `_prefs`. That is the convention, not an oversight, and 17 of the
-   * project's warnings were the linter objecting to code doing the right thing. Deleting the
-   * parameters to silence it would break the interface the file exists to implement.
+   * The convention across the codebase: a parameter kept to satisfy a signature it does not
+   * use is prefixed with `_`. It earned its place against `lib/storage/firebase.ts`, a stub
+   * adapter whose methods had to take `DataService`'s full parameter list and use none of it
+   * — 17 warnings about code doing the right thing. That file is gone now, but the rule
+   * stays: the convention is the point, not the one file that first needed it.
    */
   {
     rules: {

@@ -4,7 +4,11 @@ import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
 export const metadata: Metadata = {
   title: 'srsly?',
-  description: 'Spaced repetition Chinese learning',
+  // Four languages, not one. This read "Spaced repetition Chinese learning" long after
+  // Japanese, Spanish and French shipped — and it is the line a first-time visitor and every
+  // search engine sees, so it was the app's own description of itself being wrong in public.
+  description: 'Read what you actually want to read, in Chinese, Japanese, Spanish or French. '
+    + 'Spaced repetition built around your own reading.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

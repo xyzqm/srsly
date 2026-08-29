@@ -65,7 +65,6 @@ const MODE_LABELS: Record<ImportMode, string> = {
 };
 
 // Diagnostic: copies full report to clipboard — Chinese chars in data, DOM nodes, fiber, API calls.
-const DEBUG_SRC = `(function(){var info=['URL: '+location.pathname];var nd=window.__NEXT_DATA__;if(nd){var ndStr=JSON.stringify(nd);var ndCN=ndStr.match(/[\\u4e00-\\u9fa5]{2,}/g);info.push('Chinese in __NEXT_DATA__: '+(ndCN?ndCN.slice(0,10).join(' | '):'NONE'));var pp=nd.props&&nd.props.pageProps;var drsk=pp&&pp.dehydratedReduxStateKey;if(drsk){info.push('dehydratedReduxStateKey: type='+typeof drsk+', len='+(typeof drsk==='string'?drsk.length:JSON.stringify(drsk).length));if(typeof drsk==='string'){try{var px=JSON.parse(drsk);var pxCN=JSON.stringify(px).match(/[\\u4e00-\\u9fa5]{2,}/g);info.push('  parsed ok, Chinese: '+(pxCN?pxCN.slice(0,5).join(','):'none'))}catch(e){info.push('  not JSON: '+drsk.slice(0,100))}}}if(pp){var ppArr=[];Object.keys(pp).forEach(function(k){if(k==='dehydratedState'||k==='_nextI18Next')return;var v=pp[k];if(Array.isArray(v)&&v.length)ppArr.push(k+'['+v.length+']~'+JSON.stringify(v[0]).slice(0,60));else if(v&&typeof v==='object'){var ia=Object.keys(v).filter(function(ik){return Array.isArray(v[ik])&&v[ik].length});if(ia.length)ppArr.push(k+'.{'+ia.map(function(ik){return ik+'['+v[ik].length+']'}).join(',')+'}');}});info.push('pageProps arrays: '+(ppArr.length?ppArr.join('; '):'none'))}}var walker=document.createTreeWalker(document.body,0x4);var chNodes=[];var seenP=new WeakSet();while(walker.nextNode()){var tx=walker.currentNode.textContent.trim();if(tx.match(/[\\u4e00-\\u9fa5]/)&&tx.length<200){var par=walker.currentNode.parentElement;if(par&&!seenP.has(par)){seenP.add(par);chNodes.push(par.tagName+'['+par.className.slice(0,25)+']: '+tx.slice(0,50))}}}info.push('Chinese DOM nodes ('+chNodes.length+'): '+chNodes.slice(0,12).join(' || '));var targets=[document.querySelector('#__next > *'),document.querySelector('#__next'),document.querySelector('main'),document.querySelector('[data-testid]')].filter(Boolean);var fEl=null,fKey=null;for(var ti=0;ti<targets.length&&!fKey;ti++){var tel=targets[ti];var tnames=Object.getOwnPropertyNames(tel);var tfk=tnames.find(function(k){return k.startsWith('__reactFiber')||k.startsWith('__reactInternalInstance')});if(tfk){fEl=tel;fKey=tfk;info.push('Fiber on '+tel.tagName+(tel.id?'#'+tel.id:''))}else info.push('No fiber on '+tel.tagName+(tel.id?'#'+tel.id:'')+' ('+tnames.length+' own props)')}if(fEl&&fKey){var f=fEl[fKey];var rfound=false;while(f){if(f.memoizedProps&&f.memoizedProps.client&&typeof f.memoizedProps.client.getQueryCache==='function'){rfound=true;var rqQs=f.memoizedProps.client.getQueryCache().getAll();info.push('ReactQuery: '+rqQs.length+' queries');for(var ri=0;ri<rqQs.length;ri++){var rqd=rqQs[ri].state&&rqQs[ri].state.data;info.push('RQ['+ri+']: key='+JSON.stringify(rqQs[ri].queryKey).slice(0,40)+' => '+(rqd?Object.keys(rqd).slice(0,6).join(','):'null'));if(rqd&&rqd.studiableItems)info.push('  studiableItems: '+rqd.studiableItems.length);if(rqd&&rqd.terms)info.push('  terms: '+rqd.terms.length)}break}f=f.return}if(!rfound)info.push('No RQ client going up from fiber')}try{var perf=performance.getEntriesByType('resource');var apiCalls=perf.filter(function(e){return e.name.indexOf('quizlet.com')>-1&&!e.name.match(/\\.(js|css|png|jpg|gif|woff|ico|svg|webp)/)});info.push('API calls ('+apiCalls.length+'):');apiCalls.forEach(function(e){info.push('  '+e.name.replace('https://quizlet.com',''))})}catch(pe){info.push('perf err: '+pe)}var out=info.join('\\n');navigator.clipboard.writeText(out).then(function(){alert('Copied to clipboard ('+info.length+' lines).\\nPaste it and share — preview:\\n\\n'+out.slice(0,600))}).catch(function(){alert(out.slice(0,2000))})})()`;
 
 // Bookmarklet: runs on a Quizlet page, extracts cards, copies as TSV.
 // Cards live in pageProps.dehydratedReduxStateKey — a JSON *string*, so find() parses strings too.
@@ -274,7 +273,6 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
   }, [language]);
 
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
-  const [debugCopied, setDebugCopied] = useState(false);
   const [dupCount, setDupCount] = useState(0);     // duplicate hanzi merged out of the paste
   const [droppedCount, setDroppedCount] = useState(0); // pasted lines that couldn't be parsed
 
@@ -297,12 +295,6 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
     });
   }
 
-  function copyDebugUrl() {
-    void copyText('javascript:' + DEBUG_SRC).then(ok => {
-      setDebugCopied(ok);
-      if (ok) setTimeout(() => setDebugCopied(false), 2000);
-    });
-  }
 
   // "Already in deck" is measured against the whole collection — there is one deck.
   const deckSet = new Set(deck.map(d => d.h));                 // hanzi-level — HSK mode
@@ -541,16 +533,6 @@ export default function ImportPanel({ deck, onImport, onCancel }: Props) {
                 </button>
                 <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
                   → right-click bookmarks bar → <em>Add bookmark</em> → paste into the <strong>URL field</strong> (not the address bar)
-                </span>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span style={{ fontSize: 12, color: 'var(--ink-faint)', minWidth: 90 }}>Still failing?</span>
-                <button onClick={copyDebugUrl} className="cursor-pointer transition-all duration-150"
-                  style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', background: debugCopied ? 'var(--jade-soft)' : 'var(--card)', color: debugCopied ? 'var(--jade)' : 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 6, padding: '5px 12px' }}>
-                  {debugCopied ? '✓ Copied' : 'Copy Debug'}
-                </button>
-                <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
-                  → save as a bookmark the same way → run it on your Quizlet page → share the popup text with me
                 </span>
               </div>
             </div>
