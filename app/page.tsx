@@ -217,7 +217,7 @@ function AppShell() {
    * Keyed on `language` so switching to a language you have not opened today activates its
    * pool too. Each language keeps its own date, because each has its own deck.
    */
-  const { releaseFromPool, deckLoaded, deck } = useVocabDeck(language);
+  const { releaseFromPool, deckLoaded, deck, reload: reloadDeck } = useVocabDeck(language);
   useEffect(() => {
     // The deck has to be in memory first: releasing from a pool that has not loaded yet
     // would find nothing pooled, and then record the day as done.
@@ -225,6 +225,33 @@ function AppShell() {
     void storage.getPrefs().then(p =>
       runDailyPoolActivation(language, p, releaseFromPool, next => storage.savePrefs(next)));
   }, [language, deckLoaded, releaseFromPool]);
+
+  /**
+   * Re-read from the cloud when this tab comes back to the front.
+   *
+   * Nothing else re-reads after the initial load — there is no realtime subscription — so
+   * without this a second device's changes appeared only on a manual refresh, which reads as
+   * sync being broken even when it is working. `visibilitychange` covers switching tabs and
+   * unlocking a phone; `focus` covers switching windows on a desktop. Both just drop the
+   * cache; the reload below is what actually pulls the new data through the hooks.
+   */
+  useEffect(() => {
+    let last = Date.now();
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      // A short guard so a flurry of focus events is one refresh, not several.
+      if (Date.now() - last < 2000) return;
+      last = Date.now();
+      storage.invalidate();
+      void reloadDeck();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [reloadDeck]);
 
   const handleAddLanguage = useCallback(async (lang: LanguageCode, placedLevel: number) => {
     const next = await addLanguage(lang, placedLevel);
@@ -268,7 +295,7 @@ function AppShell() {
             each with its own `useAchievements`, racing to acknowledge the same milestone.
             Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
             be the one nobody could see and the milestone simply never appeared. */}
-        <ToastHost deckSize={deck.length} />
+        <ToastHost deck={deck} />
         <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its
@@ -338,6 +365,7 @@ function AppShell() {
       {languages !== null && (addingLanguage || languages.length === 0) && (
         <AddLanguage
           added={languages}
+          onSignIn={() => setSignIn({ open: true })}
           onDone={handleAddLanguage}
           // No cancel with nothing added: there is no app to go back to yet.
           onCancel={languages.length > 0 ? () => setAddingLanguage(false) : undefined}

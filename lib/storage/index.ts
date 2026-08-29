@@ -15,6 +15,15 @@ class StorageFacade implements DataService {
   setBackend(impl: DataService) { this.impl = impl; }
   resetToLocal() { this.impl = new LocalStorage(); }
 
+  /**
+   * Drop any cached remote state so the next read goes to the network.
+   *
+   * Called when a tab regains focus, which is the moment another device's changes are most
+   * likely to be waiting — you put the phone down and pick up the laptop. LocalStorage has
+   * nothing to invalidate, so this is a no-op there; only SupabaseStorage implements it.
+   */
+  invalidate() { (this.impl as { invalidate?: () => void }).invalidate?.(); }
+
   getVocabDeck(lang: LanguageCode) { return this.impl.getVocabDeck(lang); }
   saveVocabDeck(lang: LanguageCode, deck: DeckWord[]) { return this.impl.saveVocabDeck(lang, deck); }
   getSRSState() { return this.impl.getSRSState(); }

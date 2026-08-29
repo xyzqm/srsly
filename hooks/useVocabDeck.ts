@@ -111,6 +111,25 @@ function dedupeDeck(deck: DeckWord[]): DeckWord[] {
  */
 const deckCache = new Map<LanguageCode, DeckWord[]>();
 
+/**
+ * Every mounted copy of this hook, so a change in one reaches the others.
+ *
+ * The cache alone was not enough. Several instances are alive at once — the app root, both
+ * ReadTab variants, VocabTab — and each held its own React state, so a word added in the
+ * Vocab tab updated the Map and VocabTab's own state and NOTHING ELSE. The root's deck never
+ * changed, which is why the "Added to your deck" toast (which reads it) never fired for a
+ * word added there, and why two mounted tabs could disagree about the deck until a reload.
+ *
+ * A Set of setters rather than a store library: the cache is already the single source, this
+ * only tells everyone it moved.
+ */
+const deckSubs = new Set<(lang: LanguageCode) => void>();
+
+function publishDeck(lang: LanguageCode, next: DeckWord[]): void {
+  deckCache.set(lang, next);
+  for (const notify of deckSubs) notify(lang);
+}
+
 export function useVocabDeck(language: LanguageCode = 'zh') {
   const [deck, setDeck] = useState<DeckWord[]>(() => deckCache.get(language) ?? []);
   /**
@@ -128,6 +147,9 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   );
   const deckLoaded = loadedLang === language;
 
+  /** Bumped by `reload` to re-run the load effect without changing language. */
+  const [reloadKey, setReloadKey] = useState(0);
+
   // Mirror of deck that's always current — lets mutators compute from the latest
   // state even when several fire in one synchronous pass (e.g. ReadTab grading
   // multiple target words, or a bulk import) without losing updates to stale closures.
@@ -135,9 +157,35 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
 
   const commit = useCallback((next: DeckWord[]) => {
     deckRef.current = next;
-    deckCache.set(language, next);
     setDeck(next);
+    publishDeck(language, next);   // tell every other mounted copy
     return storage.saveVocabDeck(language, next);
+  }, [language]);
+
+  // Adopt a change published by another instance of this hook.
+  useEffect(() => {
+    const notify = (lang: LanguageCode) => {
+      if (lang !== language) return;
+      const next = deckCache.get(language);
+      if (!next || next === deckRef.current) return;   // our own publish, or nothing new
+      deckRef.current = next;
+      setDeck(next);
+    };
+    deckSubs.add(notify);
+    return () => { deckSubs.delete(notify); };
+  }, [language]);
+
+  /**
+   * Pull the deck again from whatever backend is current.
+   *
+   * Exposed so the app root can re-read when a tab regains focus: nothing else re-reads
+   * after the first load, so another device's changes sat unseen until a manual refresh.
+   * `reload` deliberately skips the local cache seed below — the caller already has a deck
+   * on screen, and the point of the call is to replace it with the cloud's version.
+   */
+  const reload = useCallback(() => {
+    deckCache.delete(language);
+    setReloadKey(k => k + 1);
   }, [language]);
 
   useEffect(() => {
@@ -184,13 +232,16 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       // A switch away mid-load must not publish the language we just left.
       if (!live) return;
       deckRef.current = resynced;
-      deckCache.set(language, resynced);
       setDeck(resynced);
+      publishDeck(language, resynced);
       setLoadedLang(language);
       if (changed) storage.saveVocabDeck(language, resynced);
     });
     return () => { live = false; };
-  }, [language]);
+    // `reloadKey` re-runs this against the cloud when a tab regains focus. It is not read
+    // inside — bumping it IS the signal, and `reload` clears the cache first so the seed
+    // above cannot serve the version being replaced.
+  }, [language, reloadKey]);
 
   /** Add one word. A card with the same (character + meaning) already in the deck is left
    *  alone rather than duplicated. */
@@ -453,7 +504,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   }, [commit]);
 
   return {
-    deck, deckLoaded, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
+    deck, deckLoaded, reload, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord, unstickCard, patchCard,
   };

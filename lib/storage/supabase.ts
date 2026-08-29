@@ -73,22 +73,42 @@ export class SupabaseStorage implements DataService {
    * row is cached as `EMPTY_ROW` so the two cases stay distinguishable.
    */
   private cached: UserDataRow | null = null;
-  private fetched = false;
+  private fetchedAt = 0;
 
-  private async row(): Promise<UserDataRow | null> {
-    if (this.fetched) return this.cached;
+  /**
+   * How long a cached row may serve a WRITE's merge base. Reads never use it.
+   *
+   * The cache was originally a latch — fetch once, serve that snapshot forever — and that
+   * silently broke the very feature it shipped with: a second device read the row on load
+   * and then could never see anything the first device did, for the whole session, with no
+   * error anywhere. Two seconds is long enough to cover a burst of graded cards (the case
+   * the cache exists for) and short enough that it cannot stand in for a stale read.
+   */
+  private static readonly ROW_TTL_MS = 2000;
+
+  /**
+   * `fresh` is the default for a REASON. Every read path must see the cloud's current state,
+   * because that is what cross-device sync IS; only the pre-write merge base may be reused.
+   */
+  private async row(opts?: { cached?: boolean }): Promise<UserDataRow | null> {
+    const withinTtl = Date.now() - this.fetchedAt < SupabaseStorage.ROW_TTL_MS;
+    if (opts?.cached && this.fetchedAt > 0 && withinTtl) return this.cached;
     // select('*') so a not-yet-migrated column doesn't error the query.
     const { data, error } = await this.sb
       .from('user_data').select('*').eq('user_id', this.userId).maybeSingle();
     if (error) { console.error('[SupabaseStorage] read', error.message); return null; }
     this.cached = (data as UserDataRow | null) ?? null;
-    this.fetched = true;
+    this.fetchedAt = Date.now();
     return this.cached;
   }
 
+  /** Drop the cached row so the next read goes to the network. Called when a tab regains
+   *  focus — the moment another device's changes are most likely to be waiting. */
+  invalidate(): void { this.fetchedAt = 0; }
+
   /** Fold a landed write into the cache, so the next read does not need the network. */
   private remember(patch: Partial<UserDataRow>): void {
-    if (!this.fetched) return;   // nothing to merge into; the next row() will fetch the truth
+    if (this.fetchedAt === 0) return;   // nothing to merge into; the next row() fetches truth
     this.cached = { ...(this.cached ?? ({} as UserDataRow)), ...patch };
   }
 
@@ -138,7 +158,7 @@ export class SupabaseStorage implements DataService {
   }
   async saveVocabDeck(lang: LanguageCode, deck: DeckWord[]): Promise<void> {
     await this.local.saveVocabDeck(lang, deck);
-    const r = await this.row();
+    const r = await this.row({ cached: true });
     const decks = { ...(r?.decks ?? {}), [lang]: deck };
     /**
      * The activity log rides along, rather than getting a write of its own.
@@ -186,7 +206,7 @@ export class SupabaseStorage implements DataService {
   }
   async saveShelf(lang: LanguageCode, entries: ShelfEntry[]): Promise<void> {
     await this.local.saveShelf(lang, entries);
-    const r = await this.row();
+    const r = await this.row({ cached: true });
     await this.patch({ shelf: { ...(r?.shelf ?? {}), [lang]: entries } });
   }
 
@@ -204,7 +224,7 @@ export class SupabaseStorage implements DataService {
 
   async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
     await this.local.savePassageState(contentKey, passageIdx, state);
-    const r = await this.row();
+    const r = await this.row({ cached: true });
     const today = todayStr();
     // Prune stale entries (different dates) and write the updated state.
     // Key format: "${date}|{level}|{deck}|{passageIdx}" — date is the first segment.
@@ -272,20 +292,27 @@ export async function migrateLocalToCloud(sb: SupabaseClient, userId: string): P
   const { data } = await sb.from('user_data').select('*').eq('user_id', userId).maybeSingle();
   const cloud = (data as UserDataRow | null) ?? null;
 
+  /**
+   * THE CLOUD IS TRUTH ONCE IT HAS ANYTHING, and the union runs only on a true first sync.
+   *
+   * This used to merge local ∪ cloud on EVERY sign-in, cloud winning on conflicts. That
+   * reads as safe and quietly makes deletion impossible: a word deleted on device A still
+   * exists in device B's local copy, so B's merge adds it back and pushes it up, and the
+   * card returns from the dead on both. Removals could never propagate — which is exactly
+   * what the two-device test found.
+   *
+   * A merge cannot distinguish "deleted on the other device" from "not yet synced to this
+   * one" without tombstones, so the ambiguity is resolved by declaring an authority: the
+   * union carries a guest's local deck up the first time they sign in, and after that the
+   * cloud row decides. The cost is that an edit made offline on a second device can be
+   * overwritten, which is the same whole-blob last-writer-wins posture `prefs` and
+   * `srs_state` already have.
+   */
+  const anyCloudDeck = SUPPORTED_LANGS.some(l => (deckFromRow(cloud, l)?.length ?? 0) > 0);
   const decks: Partial<Record<LanguageCode, DeckWord[]>> = {};
-  let anyCloudDeck = false;
   SUPPORTED_LANGS.forEach((lang, i) => {
-    const localDeck = localDecks[i];
     const cloudDeck = deckFromRow(cloud, lang);
-    if (cloudDeck && cloudDeck.length) {
-      anyCloudDeck = true;
-      const byKey = new Map<string, DeckWord>();
-      for (const w of localDeck) byKey.set(semanticKey(w), w);
-      for (const w of cloudDeck) byKey.set(semanticKey(w), w); // cloud wins
-      decks[lang] = [...byKey.values()];
-    } else {
-      decks[lang] = localDeck;
-    }
+    decks[lang] = anyCloudDeck ? deduplicateDeck(cloudDeck ?? []) : localDecks[i];
   });
 
   /**

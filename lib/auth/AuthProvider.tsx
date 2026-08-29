@@ -74,19 +74,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAnonymous = !user || (user.is_anonymous === true && !user.email);
   const signedIn = !!user && !isAnonymous;
 
+  /**
+   * ALWAYS A SIGN-IN, never an upgrade of the anonymous user.
+   *
+   * This used to call `updateUser({ email })` whenever an anonymous session existed — which
+   * is always, because the effect above creates one for every visitor. For a NEW user that
+   * upgrade is equivalent; for a RETURNING one it is the wrong operation entirely. It tries
+   * to attach an already-registered address to this browser's brand-new anonymous user
+   * instead of signing into the account that address belongs to, so each device ends up on
+   * its own `user.id`, reading and writing its own `user_data` row. Two rows, no shared
+   * state, and nothing logs an error — sync appears to work and silently syncs nothing.
+   *
+   * The upgrade path preserved nothing anyway: `applyBackend` gives an anonymous user
+   * `resetToLocal()`, so it has no cloud data to keep, and `migrateLocalToCloud` carries the
+   * guest's LOCAL deck up on whichever account they land on. So OTP is correct in both
+   * cases — it signs a returning user in, and creates the account for a new one.
+   */
   const signInWithEmail = useCallback(async (email: string) => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
     const e = email.trim();
     if (!e) return { error: 'Enter an email address.' };
-    
-    // Check session before updating
-    const { data: { session } } = await sb.auth.getSession();
-    const { error } = (isAnonymous && session)
-      ? await sb.auth.updateUser({ email: e })
-      : await sb.auth.signInWithOtp({ email: e });
-      
+    const { error } = await sb.auth.signInWithOtp({ email: e });
     return error ? { error: error.message } : {};
-  }, [sb, isAnonymous]);
+  }, [sb]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
