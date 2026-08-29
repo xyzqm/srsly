@@ -931,7 +931,54 @@ Statically importing them put every language's vocabulary in the initial page bu
 
 ### Storage abstraction
 
-`lib/storage/types.ts` defines the `DataService` interface. `lib/storage/index.ts` exports a singleton `storage` pointing at `LocalStorage` (all data lives in `localStorage`). A commented-out Firebase implementation exists in `lib/storage/firebase.ts` — swap the import in `index.ts` to enable it.
+`lib/storage/types.ts` defines the `DataService` interface. `lib/storage/index.ts` exports a
+singleton `storage` that starts on `LocalStorage`; after sign-in `AuthProvider` swaps in
+`SupabaseStorage`, which composes a LocalStorage as an offline read cache and write-through.
+`lib/storage/firebase.ts` is a throwing skeleton for a backend that lost to Supabase — it is
+not wired to anything and `firebase` is not a dependency.
+
+**Every column `SupabaseStorage` names must exist in `supabase/schema.sql` AND in a file under
+`supabase/migrations/`.** Three of them once lived only as `alter table` statements written in
+a comment at the top of `lib/storage/supabase.ts` — so the live project had them applied by
+hand, the schema file never learned about them, and any database built from the repo silently
+stored **nothing at all**: `saveVocabDeck` writes `decks` and never the legacy `deck`, so the
+upsert failed, the `missingColumns` guard latched, and every deck write was dropped for all
+four languages. `tests/sync.test.ts` now reads both SQL files and fails if a column named in
+`UserDataRow` is missing from either. A migration that lives in a comment is a migration
+nobody has run.
+
+**What syncs and what deliberately does not.** Decks, prefs, SRS state, the shelf, today's
+cloze progress, the activity log and finished lessons all sync. Staying device-local, each for
+its own reason: `srsly-achievements-seen` (a duplicate toast is cheaper than the sync
+surface), `srsly-curriculum-pruned` (records what was done to this copy, and re-pruning is a
+pure no-op), `srsly-claimed-words` (ephemeral and derivable), `srsly-daily-*` (a 24-hour cache
+that should regenerate at the second device's level), and `srsly-anthropic-key` — which lives
+outside `srsly-prefs` *precisely so the synced blob cannot carry it*. **EPUB files never
+sync**: a book is megabytes of someone else's copyrighted file, and uploading it would break
+the promise the paste and clip panels make in as many words. The shelf says so out loud, since
+a silently missing book reads as a bug.
+
+**`srsly-lessons-done` DOES sync, which contradicts the "device-local like achievements-seen"
+note in the lesson-tree section above.** The justification there — "'I have read this
+explanation' is not recoverable from anything" — is a fact about the learner, not the device,
+and the grammar track is numbered, so an unsynced list actively sends someone back to a lesson
+they finished. It merges **last-writer-wins, not as a union**: `LearnTab`'s `mark` TOGGLES, so
+a union would make un-ticking impossible across devices. The union survives only in
+`migrateLocalToCloud`, where there is no cloud list to conflict with.
+
+**The activity log merges per-day MAX, never a sum.** A device writes its merged log back, so
+summing double-counts on every round trip — a+b, then a+b+b. MAX is idempotent, and the cost
+is that a day studied on two devices reads as the busier of the two rather than the total,
+which is the same undercount posture `lib/activityLog.ts` already takes.
+
+**`prefs` and `srs_state` are still whole-blob last-writer-wins.** Change the theme on a phone
+and a laptop's streak can be clobbered. Not fixed — but named here, because "sync works" would
+otherwise be read as "conflicts are handled".
+
+**`poolAutoDate` lives in prefs, not in `srsly-pool-auto-{lang}`.** Device-local was harmless
+while decks were; the moment they sync, two devices hold two dates against one shared pool and
+both activate a batch on the same day — exactly the avalanche `lib/poolAutoActivate.ts` exists
+to prevent, reintroduced by syncing.
 
 LocalStorage keys:
 - `srsly-vocab-deck-{lang}` — user's `DeckWord[]`, namespaced per language. **One deck per language, full stop.** The multi-deck feature (a `decks: string[]` tag array on each word, a deck selector, per-deck study scoping) was removed; `useVocabDeck` strips the retired `deck`/`decks` fields from stored words on load. The `decks` jsonb column in `lib/storage/supabase.ts` is unrelated — it is keyed by `LanguageCode` and is how per-language decks are stored
@@ -940,6 +987,8 @@ LocalStorage keys:
 - `srsly-claimed-words` — words added to deck or previewed
 - `srsly-curriculum-pruned` — per-language marker of the last `CURRICULUM_VERSION` the deck was pruned at (`lib/curriculum.ts`). Device-local on purpose: it records what has been done to this copy of the deck, not a preference worth syncing
 - `srsly-pool-auto-{lang}` — the date the daily pool auto-activation last ran (`lib/poolAutoActivate.ts`). Read on load, not on a timer, and **never used to compute elapsed days**: the catch-up cap is precisely the absence of that arithmetic, so a week away costs one batch rather than seven
+- `srsly-activity-log` — per-day count of cards graded; the review heatmap's record. **Synced**, merged per-day MAX
+- `srsly-lessons-done` — finished lesson ids. **Synced**, last-writer-wins (the tick toggles)
 - `srsly-daily-{lang}-{level}-{YYYY-MM-DD}` — cached daily content
 
 ### Theming

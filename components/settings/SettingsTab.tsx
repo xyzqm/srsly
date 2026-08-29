@@ -317,7 +317,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
 
   return (
     <div
-      className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
+      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>

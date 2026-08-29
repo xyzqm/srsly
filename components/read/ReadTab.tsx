@@ -919,7 +919,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   return (
     <div
-      className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
+      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       {showGuestLimit && (

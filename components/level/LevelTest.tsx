@@ -150,7 +150,7 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
 
   const mono = { fontFamily: 'var(--f-mono)' as const };
   const panel = (children: React.ReactNode) => (
-    <div className="rounded-[13px] px-7 py-7 mt-4"
+    <div className="rounded-[13px] px-4 py-5 sm:px-7 sm:py-7 mt-4"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 4px 20px rgba(0,0,0,.05)' }}>
       {children}
     </div>

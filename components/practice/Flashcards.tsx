@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { isDueToday, isActive, todayStr } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
@@ -426,7 +427,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
 
       {/* Card face */}
       <div
-        className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[330px] px-10 py-14"
+        className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[240px] sm:min-h-[330px] px-5 py-10 sm:px-10 sm:py-14"
         style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)', cursor: 'default' }}
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
@@ -453,7 +454,26 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
             {sdm(card.m)}
           </div>
         ) : (
-          <div style={{ fontFamily: 'var(--f-han)', fontSize: 88, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>
+          /* SIZED BY HOW LONG THE WORD IS, not just by the viewport.
+           *
+           * 88px is a Chinese size: one or two Han glyphs carry at it. This card serves four
+           * languages, and `aujourd'hui` at 88px overflowed a phone entirely. A plain
+           * `clamp(44px, 13vw, 88px)` was the first fix and was still wrong — it came down to
+           * 48px, which an eleven-character word in a wide display serif still cannot fit, so
+           * it wrapped and broke MID-WORD. The measurement said one line; the screenshot said
+           * two, and the screenshot was right.
+           *
+           * So divide the available width by the width of the string. Han glyphs are square
+           * and full-width (~1em each); Latin letters in this face run about 0.68em. 80vw is
+           * the card's inner width once the page gutters and card padding are taken off. The
+           * 88px cap keeps the desktop appearance exactly as it was. */
+          <div style={{
+            fontFamily: 'var(--f-han)',
+            fontSize: `min(88px, calc(80vw / ${
+              ([...card.h].length * (getLanguageConfig(language).scriptIsUnspaced ? 1 : 0.68)).toFixed(2)
+            }))`,
+            fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1.05, letterSpacing: '.02em',
+          }}>
             {card.h}
           </div>
         )}

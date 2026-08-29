@@ -100,7 +100,12 @@ export default function WordPopup({ data, onClose, onAddVocab, onReleaseFromPool
     const topAbove = r.top - ph - 12;
     const topBelow = r.bottom + 10;
     const isBelow = topAbove < 8;
-    pop.style.top = (isBelow ? topBelow : topAbove) + 'px';
+    // Clamped vertically as well as horizontally. On a short screen a tap near the bottom of
+    // the passage placed the popup below the fold, so the definition was simply not there —
+    // the horizontal clamp above has always been here, and this is the same rule for the
+    // other axis.
+    const top = Math.max(8, Math.min(isBelow ? topBelow : topAbove, window.innerHeight - ph - 8));
+    pop.style.top = top + 'px';
 
     // Arrow x-offset — points at the word's centre, clamped to popup edges
     const wordCx = r.left + r.width / 2;

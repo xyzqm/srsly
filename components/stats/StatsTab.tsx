@@ -22,7 +22,7 @@ export default function StatsTab({ onNavigateRead }: Props) {
 
   return (
     <div
-      className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
+      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
@@ -58,7 +58,7 @@ export default function StatsTab({ onNavigateRead }: Props) {
 
       <div
         className="grid mt-8 overflow-hidden rounded-[11px]"
-        style={{ gridTemplateColumns: '1.6fr 1fr 1fr', gap: 1, background: 'var(--line-soft)', border: '1px solid var(--line)' }}
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 1, background: 'var(--line-soft)', border: '1px solid var(--line)' }}
       >
         <div className="px-5 py-5" style={{ background: 'var(--paper-2)' }}>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>Words in deck</div>

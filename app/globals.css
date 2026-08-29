@@ -229,3 +229,37 @@
 }
 .animate-badge { animation: badge-in .34s cubic-bezier(.2,.7,.3,1); }
 @media (prefers-reduced-motion: reduce) { .animate-badge { animation: none; } }
+
+/* ── Touch ────────────────────────────────────────────────────────────────────
+   Rules that apply only where the pointer is a finger. `(pointer: coarse)` rather than a
+   width query on purpose: the question is what is doing the pointing, not how wide the
+   screen is, and a touch laptop wants these too. */
+
+/* iOS ZOOMS THE PAGE when a focused input is under 16px, and never zooms back out — so one
+   tap on the Vocab search box (13px) or a Settings number field (14px) leaves the whole app
+   magnified with no way back but a pinch. One rule fixes the entire class; `max()` means an
+   input that is already larger keeps its size. */
+@media (pointer: coarse) {
+  /* `!important` because these sizes are set INLINE — the Vocab search at 12.5px and the
+     Settings number fields at 14px are `style={{ fontSize }}` props, and an inline
+     declaration beats a stylesheet rule no matter what media query wraps it. Verified by
+     measuring: without it the computed size stayed 12.5px under touch emulation. */
+  input, select, textarea { font-size: max(16px, 1em) !important; }
+}
+
+/* The tab row scrolls when six tabs will not fit. Fade the right edge while there is more
+   to reach, so a clipped "Settings" reads as "keep going" rather than as missing. */
+.tab-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%);
+}
+/* No fade once everything fits — a permanent gradient over the last tab is just dimming it. */
+@media (min-width: 640px) { .tab-scroll { mask-image: none; } }
+
+/* 44px is the usual floor for a finger. The tabs were 36px, which is a miss on a small
+   target next to five others. Padding rather than a fixed height, so the label stays
+   vertically centred and the active tab's border still meets the card below it. */
+@media (pointer: coarse) {
+  .tab-btn { padding-top: 13px !important; padding-bottom: 13px !important; }
+}
