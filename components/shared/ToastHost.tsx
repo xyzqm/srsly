@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAchievements } from '@/hooks/useAchievements';
 import { collapse, type Badge } from '@/lib/achievements';
+import type { DeckWord } from '@/lib/types';
 import { completionSurfaceMounted } from '@/lib/completionSurface';
 import BadgeSeal from '@/components/stats/BadgeSeal';
 
@@ -11,7 +12,9 @@ import BadgeSeal from '@/components/stats/BadgeSeal';
  * 1. **A word entered your deck.** The popup's own "+ Added to your deck" vanishes with the
  *    popup, so the confirmation disappeared at the exact moment it was earned. Saying what
  *    HAPPENS NEXT — a review tomorrow — is the point: it is the first evidence that this is a
- *    scheduler and not a bookmark list.
+ *    scheduler and not a bookmark list. It NAMES the word, because "Added to your deck" on a
+ *    page full of words does not tell you which one landed — and tapping the wrong word is
+ *    exactly the mistake the confirmation should let you catch.
  * 2. **A milestone was crossed.** `AchievementToast` already covers the two "you finished"
  *    screens, but the earliest milestones are deliberately reachable in the first session
  *    (see lib/achievements.ts), and a learner who saves five words and never finishes a
@@ -36,29 +39,41 @@ interface Toast {
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ToastHost({ deckSize }: { deckSize: number }) {
+export default function ToastHost({ deck }: { deck: DeckWord[] }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const seenSize = useRef<number | null>(null);
-  const { fresh, acknowledge } = useAchievements(deckSize);
+  /** Ids present at the last check. `null` until the first deck has loaded. */
+  const seenIds = useRef<Set<string> | null>(null);
+  const { fresh, acknowledge } = useAchievements(deck.length);
 
   function push(t: Toast, ms: number) {
     setToasts(prev => (prev.some(x => x.id === t.id) ? prev : [...prev, t]));
     setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), ms);
   }
 
-  // A word was saved. Seeded on first render rather than compared against zero, so arriving
-  // with an existing deck does not announce words saved in some previous session.
+  /**
+   * A word was saved. Seeded on the first pass rather than compared against zero, so arriving
+   * with an existing deck does not announce words saved in some previous session.
+   */
   useEffect(() => {
-    if (seenSize.current === null) { seenSize.current = deckSize; return; }
-    if (deckSize <= seenSize.current) { seenSize.current = deckSize; return; }
-    seenSize.current = deckSize;
+    const ids = new Set(deck.map(w => w.id ?? w.h));
+    const prev = seenIds.current;
+    seenIds.current = ids;
+    if (prev === null) return;                       // first load: seed, announce nothing
+    const added = deck.filter(w => !prev.has(w.id ?? w.h));
+    if (added.length === 0) return;                  // a removal, or an in-place edit
+
+    // One word gets named; a bulk import gets counted. Naming eleven words in a corner toast
+    // is a wall of text nobody reads, and the count is the useful fact there anyway.
+    const title = added.length === 1
+      ? `Added ${added[0].h} to your deck`
+      : `Added ${added.length} words to your deck`;
     push({
-      id: `save-${deckSize}-${Date.now()}`,
+      id: `save-${deck.length}-${Date.now()}`,
       kind: 'save',
-      title: 'Added to your deck',
-      detail: 'Scheduled for review tomorrow',
+      title,
+      detail: added.length === 1 ? 'Scheduled for review tomorrow' : 'Scheduled for review',
     }, SAVE_MS);
-  }, [deckSize]);
+  }, [deck]);
 
   useEffect(() => {
     if (fresh.length === 0) return;

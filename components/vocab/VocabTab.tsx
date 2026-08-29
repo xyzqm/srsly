@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import type { DeckWord } from '@/lib/types';
+import type { DeckWord, LanguageCode } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
@@ -188,10 +188,32 @@ interface UndoBarProps {
   progress: number;
 }
 
+/**
+ * The Japanese equivalent of `checkPinyin`, and deliberately much weaker.
+ *
+ * A Japanese reading is kana — furigana for a kanji word. There is no tone system to
+ * validate and no single canonical answer to compare against (a kanji compound can have
+ * several legitimate readings), so the only thing worth warning about is a reading that is
+ * not kana at all: romaji, or the kanji pasted back into its own reading field. Warns
+ * rather than blocks, exactly like the Chinese check.
+ */
+const KANA_ONLY = /^[\u3040-\u309f\u30a0-\u30ff\u30fc\u3005\s・ー]+$/;
+
+function checkJapaneseReading(reading: string): string | null {
+  const r = reading.trim();
+  if (!r) return null;
+  if (!KANA_ONLY.test(r)) {
+    return `"${reading}" isn't kana. A reading is usually written in hiragana or katakana. Save it anyway?`;
+  }
+  return null;
+}
+
 interface ReadingRowProps {
   word: DeckWord;
   /** "Pinyin" for Chinese, "Reading" for Japanese — from the language config. */
   label: string;
+  /** Which language's rules to check the reading against. */
+  language: LanguageCode;
   onSave: (update: Partial<DeckWord>) => void;
   onCancel: () => void;
 }
@@ -209,21 +231,29 @@ interface ReadingRowProps {
  *
  * Rendered only where `hasReadings` is true. Spanish and French keep `p` empty by design,
  * so the field would be an input for a value the language does not have.
+ *
+ * THE CHECK IS PER LANGUAGE, and was not. `checkPinyin` ran on every save regardless, so
+ * editing a Japanese card's reading asked whether あ　あ "doesn't look like valid pinyin" —
+ * the label above the field already said "Reading", and only the validation had been left
+ * behind. `lookupWord` and `POLYPHONES` are Chinese tables too, so they were being consulted
+ * for a word that could never be in them.
  */
-function ReadingRow({ word, label, onSave, onCancel }: ReadingRowProps) {
+function ReadingRow({ word, label, language, onSave, onCancel }: ReadingRowProps) {
   const [reading, setReading] = useState(word.p);
 
-  // "hao3" → "hǎo". Typing tone numbers is how most people enter pinyin on a plain keyboard.
+  // "hao3" → "hǎo". Typing tone numbers is how most people enter pinyin on a plain keyboard,
+  // and is meaningless outside Chinese — a Japanese reading may legitimately contain digits.
   function handleBlur(val: string) {
-    if (/[1-5]/.test(val)) setReading(toneNumToMark(val));
+    if (language === 'zh' && /[1-5]/.test(val)) setReading(toneNumToMark(val));
   }
 
   function handleSave() {
     const p = reading.trim();
     // Warn, don't block: a polyphone's correct reading may well not be the dictionary's
     // first, and the learner is the one who knows which card this is.
-    const known = [lookupWord(word.h).pinyin, ...(POLYPHONES[word.h]?.map(r => r.p) ?? [])].filter(Boolean);
-    const warn = checkPinyin(p, word.h, known);
+    const warn = language === 'zh'
+      ? checkPinyin(p, word.h, [lookupWord(word.h).pinyin, ...(POLYPHONES[word.h]?.map(r => r.p) ?? [])].filter(Boolean))
+      : checkJapaneseReading(p);
     if (warn && !window.confirm(warn)) return;
     onSave({ p });
   }
@@ -875,6 +905,7 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
                   <ReadingRow
                     word={w}
                     label={langConfig.readingLabel}
+                    language={language}
                     onSave={update => { updateWord(realIdx, update); setReadingIdx(null); }}
                     onCancel={() => setReadingIdx(null)}
                   />

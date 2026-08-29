@@ -18,13 +18,17 @@ import LevelTest from './LevelTest';
 interface Props {
   /** Already-added languages, hidden from the picker. */
   added: LanguageCode[];
+  /**
+   * Open the sign-in modal. Present only on FIRST RUN — see the button below.
+   */
+  onSignIn?: () => void;
   /** Fires with the chosen language and the level the test placed them in (0 = skipped). */
   onDone: (lang: LanguageCode, placedLevel: number) => void;
   /** Absent when the learner has no languages at all — there is then nothing to go back to. */
   onCancel?: () => void;
 }
 
-export default function AddLanguage({ added, onDone, onCancel }: Props) {
+export default function AddLanguage({ added, onDone, onCancel, onSignIn }: Props) {
   const [chosen, setChosen] = useState<LanguageCode | null>(null);
   // LevelTest reports its verdict via onFinish and is dismissed separately via onClose, so
   // the result has to be held here — completing on onClose alone would discard the placement
@@ -80,6 +84,34 @@ export default function AddLanguage({ added, onDone, onCancel }: Props) {
                 </p>
               )}
             </div>
+
+            {/* THE WAY OUT FOR SOMEONE WHO ALREADY HAS AN ACCOUNT.
+                This screen is forced when no language has been added, and choosing one leads
+                straight into a placement test — which is right for a new learner and a trap
+                for a returning one, whose languages and level are already in the cloud. They
+                were being asked to set up an account they already have, with no visible
+                alternative, because the header's Sign in sits behind this overlay.
+                Only on first run: with a language already added the modal is dismissable and
+                the header is reachable. */}
+            {added.length === 0 && onSignIn && (
+              <div className="mt-6 pt-5" style={{ borderTop: '1px solid var(--line-soft)' }}>
+                <span style={{ color: 'var(--ink-soft)', fontSize: 13.5 }}>
+                  Already have an account?{' '}
+                </span>
+                <button
+                  onClick={onSignIn}
+                  className="cursor-pointer"
+                  style={{ ...mono, fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase',
+                    background: 'none', border: 'none', padding: 0, color: 'var(--accent)',
+                    textDecoration: 'underline', textUnderlineOffset: 3 }}
+                >
+                  Sign in
+                </button>
+                <p style={{ color: 'var(--ink-faint)', fontSize: 12.5, lineHeight: 1.55, marginTop: 6 }}>
+                  Your languages, level and deck come back with you — no placement test needed.
+                </p>
+              </div>
+            )}
 
             {onCancel && (
               <button onClick={onCancel} className="cursor-pointer mt-6"
