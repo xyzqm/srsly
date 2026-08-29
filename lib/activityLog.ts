@@ -61,6 +61,34 @@ export function logGraded(count = 1): void {
   } catch { /* quota or private mode — the review itself already landed */ }
 }
 
+/** Replace the whole log — used by the storage layer after a cloud merge. Never throws. */
+export function setActivityLog(log: DayActivity[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KEY, JSON.stringify([...log].sort((a, b) => a.d.localeCompare(b.d))));
+  } catch { /* quota or private mode */ }
+}
+
+/**
+ * Combine two devices' logs, taking the LARGER count for each day.
+ *
+ * NOT a sum, and that is the whole design. Summing double-counts on every round trip: device
+ * A writes its merged log back, the cloud then holds A+B, and the next merge gives A+B+B.
+ * MAX is idempotent — `merge(merge(a,b),b)` equals `merge(a,b)` — so a log can be pushed and
+ * pulled any number of times without inflating.
+ *
+ * The cost is that a day genuinely studied on two devices reads as the busier of the two
+ * rather than the total. That is an undercount, and an undercount is the posture this module
+ * already takes: it counts only what was logged and refuses to reconstruct the rest.
+ */
+export function mergeActivity(a: DayActivity[], b: DayActivity[]): DayActivity[] {
+  const byDay = new Map<string, number>();
+  for (const { d, n } of [...a, ...b]) byDay.set(d, Math.max(byDay.get(d) ?? 0, n));
+  return [...byDay.entries()]
+    .map(([d, n]) => ({ d, n }))
+    .sort((x, y) => x.d.localeCompare(y.d));
+}
+
 /**
  * Recorded study, as a date → count map. `firstRecorded` is the first day covered.
  *
@@ -75,9 +103,13 @@ export function logGraded(count = 1): void {
  * A heatmap whose bars are in the wrong places is worse than a short one, so the graph now
  * starts where the log does and says so.
  */
-export function mergedActivity(deck: DeckWord[]): { counts: Map<string, number>; firstRecorded: string | null } {
+export function mergedActivity(
+  deck: DeckWord[],
+  /** Pass the log explicitly when it came from the storage layer (cloud merged in). Omitted,
+   *  it is read from localStorage, which is what an offline or guest caller wants. */
+  log: DayActivity[] = getActivityLog(),
+): { counts: Map<string, number>; firstRecorded: string | null } {
   void deck;   // kept in the signature so callers need not change; nothing is derived from it
-  const log = getActivityLog();
   const counts = new Map<string, number>();
   for (const { d, n } of log) counts.set(d, n);
   return { counts, firstRecorded: log.length ? log[0].d : null };

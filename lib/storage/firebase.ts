@@ -12,6 +12,7 @@
 // import { initializeApp } from 'firebase/app';
 // import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import type { DataService } from './types';
+import type { DayActivity } from '@/lib/activityLog';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 
 // const firebaseConfig = {
@@ -66,6 +67,18 @@ export class FirebaseStorage implements DataService {
     throw new Error('FirebaseStorage not yet configured');
   }
   async savePassageState(_contentKey: string, _passageIdx: number, _state: ClozeOccurrenceMap): Promise<void> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async getActivityLog(): Promise<DayActivity[]> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async saveActivityLog(_log: DayActivity[]): Promise<void> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async getLessonsDone(): Promise<string[]> {
+    throw new Error('FirebaseStorage not yet configured');
+  }
+  async saveLessonsDone(_ids: string[]): Promise<void> {
     throw new Error('FirebaseStorage not yet configured');
   }
 }

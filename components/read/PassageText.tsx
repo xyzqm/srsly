@@ -308,10 +308,41 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
         ref={inputRef}
         type="text"
         value={value}
+        /**
+         * AUTOCORRECT MUST BE OFF, or the phone answers for you.
+         *
+         * iOS rewrites a typed word on blur or space — `casa` becomes `case`, `pero` becomes
+         * `Pero` — and `submit()` then grades what the keyboard decided rather than what the
+         * learner typed. Grading ignores case but NOT accents (see the comparison in
+         * `submit`), so autocapitalisation is survivable and autocorrect is not: it produces
+         * a wrong answer the learner never gave and cannot appeal.
+         */
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        autoComplete="off"
+        enterKeyHint="done"
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit({ force: true }); }}
         onFocus={() => setFocused(true)}
-        onBlur={() => { setFocused(false); submit(); }}
+        /**
+         * ON A TOUCH SCREEN, BLUR DOES NOT MEAN "I'M DONE".
+         *
+         * With a mouse, clicking away is a deliberate act, so grading on blur is a
+         * convenience. With a finger it is ambient: the iOS keyboard's Done key, tapping the
+         * next blank, backgrounding the app, rotating the phone and the address bar
+         * collapsing all blur the field. Each one would commit a half-typed word as a real
+         * FSRS grade, permanently — `gradedRef` makes it unrepeatable.
+         *
+         * So on a coarse pointer, leaving the field leaves it alone; Enter (or the keyboard's
+         * Done, via enterKeyHint) is the commit. That matches the contract the finish button
+         * already has: an unfilled blank simply forgoes its grade.
+         */
+        onBlur={() => {
+          setFocused(false);
+          const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+          if (!touch) submit();
+        }}
         style={{
           width: `${Math.max(token.text.length * 1.3, 2.5)}em`,
           fontFamily: 'var(--f-han)',
@@ -509,7 +540,21 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                  * you had ever filled it in. The recorded grade is the durable fact here,
                  * so an occurrence that has one is a blank regardless of the schedule.
                  */
-                const isReviewWord = (clozeWords.has(reviewKey) || restoredClozeGrades?.has(occurrenceId))
+                /**
+                 * A RESTORED GRADE MUST NAME THE SAME WORD, because the occurrence id does not.
+                 *
+                 * `occurrenceId` is positional ("sentence 3, token 7"), and passage state is
+                 * keyed only by date, language, level and passage INDEX. Two devices on the
+                 * same day at the same level therefore produce the same key for two different
+                 * passages — the topic is seeded deterministically but the model's prose is
+                 * not — so the grade recorded against `playa` on one device would render as a
+                 * ✓ on whatever word happened to sit at that index on the other. Comparing
+                 * the stored word costs nothing: `ClozeGradeEntry` already carries it, which
+                 * is what `resultsCloze` reads.
+                 */
+                const restored = restoredClozeGrades?.get(occurrenceId);
+                const restoredMatches = restored !== undefined && restored.word === reviewKey;
+                const isReviewWord = (clozeWords.has(reviewKey) || restoredMatches)
                   && token.type === 'vocab';
                 // Spaced scripts need the spaces put back: the segmenter drops whitespace,
                 // and rendering tokens flush together (correct for CJK) would otherwise
@@ -517,7 +562,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
                 const space = needsSpaceBefore(sent.tokens, ti, langConfig.scriptIsUnspaced);
                 // Due vocab words become cloze blanks — rendered separately.
                 if (isReviewWord) {
-                  const storedEntry = restoredClozeGrades?.get(occurrenceId);
+                  const storedEntry = restoredMatches ? restored : undefined;
                   return (
                     <Fragment key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}>
                     {space}

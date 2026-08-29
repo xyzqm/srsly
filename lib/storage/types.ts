@@ -1,4 +1,5 @@
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
+import type { DayActivity } from '@/lib/activityLog';
 
 export interface DataService {
   // Vocab decks are per-language (a Chinese deck and a Japanese deck are independent).
@@ -26,4 +27,21 @@ export interface DataService {
   // Per-passage cloze blank progress. contentKey = "${date}|${language}|${level}".
   getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null>;
   savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void>;
+
+  /**
+   * The review heatmap's per-day record. Synced because it is the one history the app keeps
+   * that nothing else can reconstruct — see lib/activityLog.ts on why `lastReview` cannot
+   * stand in for it. Split across two devices it is wrong on both.
+   */
+  getActivityLog(): Promise<DayActivity[]>;
+  saveActivityLog(log: DayActivity[]): Promise<void>;
+
+  /**
+   * Finished lesson ids. Synced, unlike `srsly-achievements-seen` and
+   * `srsly-curriculum-pruned` which stay device-local: the grammar track is NUMBERED and
+   * `nextGrammarLesson` marks where you left off, so an unsynced list actively sends a
+   * learner back to a lesson they finished.
+   */
+  getLessonsDone(): Promise<string[]>;
+  saveLessonsDone(ids: string[]): Promise<void>;
 }

@@ -3,6 +3,9 @@
 -- SETUP (one time):
 --   1. Create a Supabase project.
 --   2. Run this whole file in the SQL editor.
+--   2b. EXISTING projects: also run everything in supabase/migrations/ in filename order.
+--       This file only creates the table when it is absent, so a project made before a
+--       column was added will not gain it from here.
 --   3. Authentication → Providers: enable "Anonymous sign-ins", "Email", and "Google".
 --   4. Put the project URL + anon key in .env.local as:
 --        NEXT_PUBLIC_SUPABASE_URL=...
@@ -11,13 +14,26 @@
 -- NOTE: the guest limit (5) is enforced in consume_ai_credit() below — the server is the
 -- source of truth. Keep it in sync with GUEST_AI_LIMIT in lib/aiBudget.ts (UI mirror only).
 
--- ── Per-user data (deck / prefs / SRS state as JSONB blobs) ───────────────────
+-- ── Per-user data (everything synced, as JSONB blobs) ─────────────────────────
+--
+-- EVERY COLUMN lib/storage/supabase.ts NAMES MUST APPEAR HERE. This table had drifted:
+-- `decks`, `shelf` and `passage_state` existed only as `alter table` statements written in a
+-- comment at the top of that file, so a database built from this file was missing them. And
+-- because saveVocabDeck writes `decks` and never the legacy `deck`, the upsert failed, the
+-- missingColumns guard latched, and every deck write was silently dropped — for all four
+-- languages, not just the three the comment was about. tests/sync.test.ts now reads this file
+-- and asserts it covers UserDataRow, so the two cannot drift apart again.
 create table if not exists public.user_data (
-  user_id    uuid primary key references auth.users(id) on delete cascade,
-  deck       jsonb,
-  prefs      jsonb,
-  srs_state  jsonb,
-  updated_at timestamptz not null default now()
+  user_id       uuid primary key references auth.users(id) on delete cascade,
+  deck          jsonb,   -- legacy single deck (= Chinese); read-only fallback, never written
+  decks         jsonb,   -- { zh: DeckWord[], ja: [], es: [], fr: [] }
+  prefs         jsonb,
+  srs_state     jsonb,
+  shelf         jsonb,   -- { zh: ShelfEntry[], ... } — finished passages, per language
+  passage_state jsonb,   -- { "${contentKey}|${idx}": ClozeOccurrenceMap } — today's only
+  activity_log  jsonb,   -- [{ d, n }] — the review heatmap's record; merged per-day MAX
+  lessons_done  jsonb,   -- string[] of finished lesson ids; merged as a union
+  updated_at    timestamptz not null default now()
 );
 
 alter table public.user_data enable row level security;

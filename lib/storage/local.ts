@@ -2,6 +2,8 @@ import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import { contentKeyOf, entriesFrom, mergeShelf } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
+import { getActivityLog, setActivityLog, type DayActivity } from '@/lib/activityLog';
+import { loadDone, saveDone } from '@/lib/lessons';
 
 const KEYS = {
   vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
@@ -179,4 +181,13 @@ export class LocalStorage implements DataService {
   async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
     set(clozeStateKey(contentKey, passageIdx), state);
   }
+
+  // Both of these already have synchronous owners with their own keys and their own pruning
+  // rules, so this delegates rather than reimplementing them over `get`/`set` — two writers
+  // to one key is how the two copies start disagreeing.
+  async getActivityLog(): Promise<DayActivity[]> { return getActivityLog(); }
+  async saveActivityLog(log: DayActivity[]): Promise<void> { setActivityLog(log); }
+
+  async getLessonsDone(): Promise<string[]> { return [...loadDone()]; }
+  async saveLessonsDone(ids: string[]): Promise<void> { saveDone(new Set(ids)); }
 }

@@ -1,9 +1,10 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
+import { storage } from '@/lib/storage';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import {
-  grammarLessons, vocabLessons, nextGrammarLesson, loadDone, saveDone, type Lesson,
+  grammarLessons, vocabLessons, nextGrammarLesson, type Lesson,
 } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import SentenceBuilder from './SentenceBuilder';
@@ -42,9 +43,15 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   const [done, setDone] = useState<Set<string>>(() => new Set());
   const [openId, setOpenId] = useState<string | null>(null);
 
-  // localStorage is read in an effect, not in useState's initialiser, so the server render
-  // and the first client render agree — otherwise React hydration mismatches on the ticks.
-  useEffect(() => { setDone(loadDone()); }, []);
+  // Read in an effect, not in useState's initialiser, so the server render and the first
+  // client render agree — otherwise React hydration mismatches on the ticks. Through
+  // `storage` rather than localStorage directly, so a signed-in learner picks up lessons
+  // they finished on another device instead of being sent back through the tree.
+  useEffect(() => {
+    let live = true;
+    storage.getLessonsDone().then(ids => { if (live) setDone(new Set(ids)); });
+    return () => { live = false; };
+  }, []);
 
   // Opening a lesson while a different language is selected would show French lessons under
   // a Chinese deck; switching closes whatever was open, as EpubPanel does with its book.
@@ -54,7 +61,7 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
     setDone(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      saveDone(next);
+      void storage.saveLessonsDone([...next]);
       return next;
     });
   }, []);
@@ -68,7 +75,7 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
 
   return (
     <div
-      className="rounded-tr-xl rounded-b-xl px-9 py-8 animate-rise"
+      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
       {open

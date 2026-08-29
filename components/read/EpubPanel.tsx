@@ -263,6 +263,15 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
           <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 7 }}>
             Your books
           </div>
+          {/* SAID OUT LOUD, because everything else on this account syncs and this does not.
+              A book is megabytes of someone else's copyrighted file, and uploading it would
+              break the promise the paste and clip panels make in as many words — so it stays
+              here by choice. Silently absent on a second device reads as a bug; a sentence
+              costs nothing and is the honest half of the decision. */}
+          <div style={{ fontSize: 11, color: 'var(--ink-faint)', lineHeight: 1.45, marginBottom: 8 }}>
+            Books stay on this device — they are not uploaded. Add the file again elsewhere to
+            read it there.
+          </div>
           <div className="flex flex-col gap-1.5">
             {books.map(b => (
               <div key={b.id} className="flex items-center gap-2 flex-wrap rounded-lg px-3 py-2"

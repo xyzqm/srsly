@@ -222,7 +222,8 @@ function AppShell() {
     // The deck has to be in memory first: releasing from a pool that has not loaded yet
     // would find nothing pooled, and then record the day as done.
     if (!deckLoaded) return;
-    void storage.getPrefs().then(p => runDailyPoolActivation(language, p, releaseFromPool));
+    void storage.getPrefs().then(p =>
+      runDailyPoolActivation(language, p, releaseFromPool, next => storage.savePrefs(next)));
   }, [language, deckLoaded, releaseFromPool]);
 
   const handleAddLanguage = useCallback(async (lang: LanguageCode, placedLevel: number) => {
@@ -268,7 +269,7 @@ function AppShell() {
             Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
             be the one nobody could see and the milestone simply never appeared. */}
         <ToastHost deckSize={deck.length} />
-        <main className="max-w-[1200px] mx-auto px-7 pb-16">
+        <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its
               loading state and Stats blinked the milestone ring in late. The other three

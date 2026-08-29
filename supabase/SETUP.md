@@ -13,6 +13,13 @@ ungated, no sign-in UI.** The whole auth + budget layer is gated on the
    (the guest budget counter), and the `consume_ai_credit()` function that enforces the
    limit server-side.
 
+   **Existing projects: also run every file in [`supabase/migrations/`](./migrations) in
+   filename order.** `schema.sql` only creates the table when it is absent, so a project
+   made before a column existed will not gain it from here. This is not hypothetical — the
+   `decks`, `shelf` and `passage_state` columns lived only as `alter table` statements in a
+   code comment for a while, so any database built from the repo silently stored nothing.
+   `tests/sync.test.ts` now fails if a column is added in TypeScript without a migration.
+
 3. **Enable auth providers** (Authentication → Providers / Sign In):
    - **Anonymous sign-ins** — required (every visitor gets a silent anonymous session
      so the budget is server-enforced).

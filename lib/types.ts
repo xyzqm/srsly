@@ -176,6 +176,16 @@ export interface UserPrefs {
    */
   autoActivatePool?: boolean;
   /**
+   * Per language, the date the daily pool activation last ran — `{ zh: '2026-08-28' }`.
+   *
+   * IN PREFS BECAUSE PREFS SYNC. It lived in `srsly-pool-auto-{lang}`, device-local, which
+   * was harmless while the deck was device-local too. The moment decks sync, two devices
+   * hold two dates against one shared pool and BOTH activate a batch on the same day — which
+   * is precisely the avalanche lib/poolAutoActivate.ts exists to prevent, reintroduced by
+   * syncing. One shared date is the fix, and prefs is where shared settings already live.
+   */
+  poolAutoDate?: Partial<Record<LanguageCode, string>>;
+  /**
    * How the Read tab answers comprehension questions — typed ('fr') or multiple choice
    * ('mc'). A preference, not passage state: someone who works in multiple choice wants it
    * on the next passage too, and it used to reset to 'fr' every time the tab remounted.

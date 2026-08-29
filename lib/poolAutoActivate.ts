@@ -22,8 +22,11 @@ import { RECOMMENDED_POOL_ACTIVATE } from './fsrs';
  * it makes them eligible, and the budget still decides how many are actually shown.
  */
 
-/** Per language, because each has its own deck and its own pool. */
-const key = (lang: LanguageCode) => `srsly-pool-auto-${lang}`;
+/**
+ * The legacy device-local key, read once so an existing install does not activate a second
+ * batch on the day it upgrades. Never written again — the date now lives in prefs.
+ */
+const legacyKey = (lang: LanguageCode) => `srsly-pool-auto-${lang}`;
 
 /**
  * Guards against two callers racing on the same tick.
@@ -41,10 +44,12 @@ export function autoActivateEnabled(prefs: UserPrefs): boolean {
   return prefs.autoActivatePool === true;
 }
 
-/** The date recorded for `lang`, or '' if it has never run. */
-export function lastAutoActivation(lang: LanguageCode): string {
+/** The date recorded for `lang`, or '' if it has never run. Prefs first, legacy key second. */
+export function lastAutoActivation(lang: LanguageCode, prefs?: UserPrefs): string {
+  const fromPrefs = prefs?.poolAutoDate?.[lang];
+  if (fromPrefs) return fromPrefs;
   if (typeof localStorage === 'undefined') return '';
-  try { return localStorage.getItem(key(lang)) ?? ''; } catch { return ''; }
+  try { return localStorage.getItem(legacyKey(lang)) ?? ''; } catch { return ''; }
 }
 
 /**
@@ -62,12 +67,14 @@ export async function runDailyPoolActivation(
   lang: LanguageCode,
   prefs: UserPrefs,
   release: (count: number) => Promise<string[]>,
+  /** Persists the new date. Passed in so this module never imports the storage facade. */
+  savePrefs: (p: UserPrefs) => Promise<void>,
 ): Promise<number> {
   if (!autoActivateEnabled(prefs)) return 0;
   if (typeof localStorage === 'undefined') return 0;
 
   const today = todayStr();
-  if (lastAutoActivation(lang) === today) return 0;
+  if (lastAutoActivation(lang, prefs) === today) return 0;
   if (inFlight.has(lang)) return 0;
 
   inFlight.add(lang);
@@ -78,7 +85,7 @@ export async function runDailyPoolActivation(
     // today", not "words moved today" — otherwise an empty pool would re-run the whole thing
     // on every load, and the first word added would be activated the instant it arrived
     // rather than tomorrow.
-    try { localStorage.setItem(key(lang), today); } catch { /* private mode */ }
+    await savePrefs({ ...prefs, poolAutoDate: { ...(prefs.poolAutoDate ?? {}), [lang]: today } });
     return released.length;
   } finally {
     inFlight.delete(lang);

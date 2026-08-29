@@ -2,21 +2,24 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import { LocalStorage } from './local';
+import { mergeShelf } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
+import { getActivityLog, setActivityLog, mergeActivity, type DayActivity } from '@/lib/activityLog';
 
-// Multi-language support stores per-language decks in a `decks jsonb` column:
-//   alter table user_data add column if not exists decks jsonb;
-// `decks` is shaped { zh: DeckWord[], ja: DeckWord[] }. The legacy single `deck` column
-// is treated as the Chinese deck and folded into `decks.zh` on read/migration.
-//
-// The passage shelf requires:
-//   alter table user_data add column if not exists shelf jsonb;
-// `shelf` is shaped { es: ShelfEntry[], fr: ShelfEntry[] } — per language, like `decks`.
-//
-// Cloze blank progress requires:
-//   alter table user_data add column if not exists passage_state jsonb;
-// `passage_state` is shaped { "${contentKey}|${passageIdx}": ClozeOccurrenceMap }.
-// Only today's entries are kept; stale ones are pruned on each write.
+/**
+ * COLUMNS THIS FILE NAMES ARE CREATED BY `supabase/schema.sql` AND `supabase/migrations/`.
+ *
+ * They used to be documented here as `alter table` statements in a comment, and that is
+ * exactly how sync came to be broken: the live project had them applied by hand, schema.sql
+ * never learned about them, and any database built from the repo was missing them. Because
+ * `saveVocabDeck` writes `decks` and never the legacy `deck`, the upsert failed, the
+ * `missingColumns` guard latched, and every deck write was dropped in silence — for all four
+ * languages. A migration that lives in a comment is a migration nobody has run.
+ *
+ * `tests/sync.test.ts` reads schema.sql and asserts it names every column in `UserDataRow`,
+ * so adding one here without adding it there is now a test failure rather than silent
+ * data loss. Add new columns in THREE places: this interface, schema.sql, and a migration.
+ */
 interface UserDataRow {
   deck: DeckWord[] | null;                              // legacy single deck (= Chinese)
   decks: Partial<Record<LanguageCode, DeckWord[]>> | null;
@@ -24,6 +27,8 @@ interface UserDataRow {
   srs_state: SRSState | null;
   passage_state: Record<string, ClozeOccurrenceMap> | null;
   shelf: Partial<Record<LanguageCode, ShelfEntry[]>> | null;
+  activity_log: DayActivity[] | null;
+  lessons_done: string[] | null;
 }
 
 const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja', 'es', 'fr'];
@@ -58,12 +63,33 @@ export class SupabaseStorage implements DataService {
   private local = new LocalStorage();
   constructor(private sb: SupabaseClient, private userId: string) {}
 
+  /**
+   * The last row we read, kept so a write does not have to fetch one first.
+   *
+   * Every save used to `select('*')` before its upsert, so grading N cards was 2N round trips
+   * carrying the whole user row both ways. That is invisible on a desktop and material on a
+   * phone — and it got worse the moment sync started working, because the row grew a shelf,
+   * cloze progress and an activity log. `null` means "not fetched yet"; a fetched-but-absent
+   * row is cached as `EMPTY_ROW` so the two cases stay distinguishable.
+   */
+  private cached: UserDataRow | null = null;
+  private fetched = false;
+
   private async row(): Promise<UserDataRow | null> {
-    // select('*') so a not-yet-migrated `decks` column doesn't error the query.
+    if (this.fetched) return this.cached;
+    // select('*') so a not-yet-migrated column doesn't error the query.
     const { data, error } = await this.sb
       .from('user_data').select('*').eq('user_id', this.userId).maybeSingle();
     if (error) { console.error('[SupabaseStorage] read', error.message); return null; }
-    return (data as UserDataRow | null) ?? null;
+    this.cached = (data as UserDataRow | null) ?? null;
+    this.fetched = true;
+    return this.cached;
+  }
+
+  /** Fold a landed write into the cache, so the next read does not need the network. */
+  private remember(patch: Partial<UserDataRow>): void {
+    if (!this.fetched) return;   // nothing to merge into; the next row() will fetch the truth
+    this.cached = { ...(this.cached ?? ({} as UserDataRow)), ...patch };
   }
 
   /**
@@ -82,7 +108,7 @@ export class SupabaseStorage implements DataService {
 
     const { error } = await this.sb.from('user_data')
       .upsert({ user_id: this.userId, ...send, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-    if (!error) return;
+    if (!error) { this.remember(send as Partial<UserDataRow>); return; }
 
     // "Could not find the 'shelf' column of 'user_data' in the schema cache"
     const missing = /Could not find the '(\w+)' column/.exec(error.message)?.[1];
@@ -90,7 +116,7 @@ export class SupabaseStorage implements DataService {
       this.missingColumns.add(missing);
       console.warn(
         `[SupabaseStorage] no '${missing}' column — that feature stays on this device. ` +
-        'See the migrations at the top of lib/storage/supabase.ts to enable syncing it.',
+        'Run supabase/migrations/ against this project to enable syncing it.',
       );
       // Land everything else rather than dropping the whole write on the floor.
       const rest = Object.fromEntries(Object.entries(send).filter(([k]) => k !== missing));
@@ -114,7 +140,15 @@ export class SupabaseStorage implements DataService {
     await this.local.saveVocabDeck(lang, deck);
     const r = await this.row();
     const decks = { ...(r?.decks ?? {}), [lang]: deck };
-    await this.patch({ decks });
+    /**
+     * The activity log rides along, rather than getting a write of its own.
+     *
+     * `logGraded(1)` runs on the line immediately before `commit()` in useVocabDeck.gradeCard,
+     * so every graded card already causes this exact upsert. Adding the column here costs
+     * nothing; giving the log its own save would double the writes on the one path where
+     * round trips are already the thing to watch.
+     */
+    await this.patch({ decks, activity_log: getActivityLog() });
   }
 
   async getSRSState(): Promise<SRSState> {
@@ -182,6 +216,41 @@ export class SupabaseStorage implements DataService {
     pruned[`${contentKey}|${passageIdx}`] = state;
     await this.patch({ passage_state: pruned });
   }
+
+  /** Cloud and device merged per-day MAX — see mergeActivity on why not a sum. */
+  async getActivityLog(): Promise<DayActivity[]> {
+    const r = await this.row();
+    const merged = mergeActivity(getActivityLog(), r?.activity_log ?? []);
+    setActivityLog(merged);
+    return merged;
+  }
+  async saveActivityLog(log: DayActivity[]): Promise<void> {
+    const merged = mergeActivity(log, (await this.row())?.activity_log ?? []);
+    setActivityLog(merged);
+    await this.patch({ activity_log: merged });
+  }
+
+  /**
+   * CLOUD WINS, rather than a union — because the tick can be taken off again.
+   *
+   * A union is the obvious merge for a set of "things I finished", and it is wrong here:
+   * `LearnTab`'s `mark` TOGGLES, so un-ticking a lesson on one device would be undone the
+   * moment the other device's copy was merged back in, and the learner could never un-finish
+   * anything. Last-writer-wins is what the rest of this file already does for `prefs` and
+   * `srs_state`, and it makes the toggle behave.
+   *
+   * The union survives in exactly one place — `migrateLocalToCloud` — where it is right: a
+   * guest signing in has no cloud list to conflict with, only history to carry over.
+   */
+  async getLessonsDone(): Promise<string[]> {
+    const r = await this.row();
+    if (r?.lessons_done) { await this.local.saveLessonsDone(r.lessons_done); return r.lessons_done; }
+    return this.local.getLessonsDone();
+  }
+  async saveLessonsDone(ids: string[]): Promise<void> {
+    await this.local.saveLessonsDone(ids);
+    await this.patch({ lessons_done: ids });
+  }
 }
 
 /**
@@ -192,10 +261,12 @@ export class SupabaseStorage implements DataService {
  */
 export async function migrateLocalToCloud(sb: SupabaseClient, userId: string): Promise<void> {
   const local = new LocalStorage();
-  const [localDecks, localPrefs, localSrs] = await Promise.all([
+  const [localDecks, localPrefs, localSrs, localShelves, localLessons] = await Promise.all([
     Promise.all(SUPPORTED_LANGS.map(l => local.getVocabDeck(l))),
     local.getPrefs(),
     local.getSRSState(),
+    Promise.all(SUPPORTED_LANGS.map(l => local.getShelf(l))),
+    local.getLessonsDone(),
   ]);
 
   const { data } = await sb.from('user_data').select('*').eq('user_id', userId).maybeSingle();
@@ -217,16 +288,62 @@ export async function migrateLocalToCloud(sb: SupabaseClient, userId: string): P
     }
   });
 
+  /**
+   * The shelf is carried too, and was not before.
+   *
+   * Without it a new device got `shelf: null` and fell back to a local empty array, so the
+   * old device's reading history reached the cloud only when a passage next happened to be
+   * finished there. `mergeShelf` already exists, is keyed by stable id and already caps at
+   * MAX_ENTRIES — it simply was not reached from here.
+   */
+  const shelf: Partial<Record<LanguageCode, ShelfEntry[]>> = {};
+  SUPPORTED_LANGS.forEach((lang, i) => {
+    shelf[lang] = mergeShelf(cloud?.shelf?.[lang] ?? [], localShelves[i]);
+  });
+
   const prefs = anyCloudDeck ? (cloud?.prefs ?? localPrefs) : localPrefs;
   const srs = anyCloudDeck ? (cloud?.srs_state ?? localSrs) : localSrs;
+  const activity = mergeActivity(getActivityLog(), cloud?.activity_log ?? []);
+  const lessonsDone = [...new Set([...localLessons, ...(cloud?.lessons_done ?? [])])];
 
-  await sb.from('user_data').upsert(
-    { user_id: userId, decks, prefs, srs_state: srs, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id' },
-  );
+  /**
+   * COLUMN BY COLUMN, because one missing column must not discard the rest.
+   *
+   * This used to be a single upsert whose result was thrown away entirely — so on a database
+   * without the `decks` column the whole first-sign-in migration failed in silence, and the
+   * learner was told they had signed in while their deck stayed on one device. Reusing the
+   * same column-learning retry the instance path uses means a project that has run only some
+   * migrations still gets everything it can hold, and says what it could not.
+   */
+  const columns: Record<string, unknown> = {
+    decks, prefs, srs_state: srs, shelf, activity_log: activity, lessons_done: lessonsDone,
+  };
+  let send = { ...columns };
+  for (let attempt = 0; attempt < Object.keys(columns).length; attempt++) {
+    const { error } = await sb.from('user_data').upsert(
+      { user_id: userId, ...send, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    );
+    if (!error) break;
+    const missing = /Could not find the '(\w+)' column/.exec(error.message)?.[1];
+    if (!missing || !(missing in send)) {
+      console.error('[migrateLocalToCloud] sign-in migration failed', error.message);
+      break;
+    }
+    console.warn(
+      `[migrateLocalToCloud] no '${missing}' column — it stays on this device. ` +
+      'Run supabase/migrations/ against this project.',
+    );
+    send = Object.fromEntries(Object.entries(send).filter(([k]) => k !== missing));
+    if (Object.keys(send).length === 0) break;
+  }
+
   await Promise.all([
     ...SUPPORTED_LANGS.map(l => local.saveVocabDeck(l, decks[l] ?? [])),
+    ...SUPPORTED_LANGS.map(l => local.saveShelf(l, shelf[l] ?? [])),
     local.savePrefs(prefs),
     local.saveSRSState(srs),
+    local.saveLessonsDone(lessonsDone),
   ]);
+  setActivityLog(activity);
 }

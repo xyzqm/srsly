@@ -1,7 +1,8 @@
 'use client';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { DeckWord } from '@/lib/types';
-import { mergedActivity } from '@/lib/activityLog';
+import { mergedActivity, type DayActivity } from '@/lib/activityLog';
+import { storage } from '@/lib/storage';
 
 /**
  * Three months of study, one square per day.
@@ -44,8 +45,24 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const GUTTER = 26;
 
 export default function ReviewHeatmap({ deck }: Props) {
+  /**
+   * Pull the cloud's copy down once, then re-read.
+   *
+   * `mergedActivity` reads localStorage synchronously, which is right for the render path and
+   * means a signed-in learner would otherwise see only the days they studied on THIS device —
+   * a heatmap with real gaps in it. `storage.getActivityLog()` merges the two (per-day MAX)
+   * and writes the result back locally, so bumping `synced` re-runs the memo over the merged
+   * log. On LocalStorage this resolves to the same data and the second pass is a no-op.
+   */
+  const [log, setLog] = useState<DayActivity[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    storage.getActivityLog().then(l => { if (live) setLog(l); });
+    return () => { live = false; };
+  }, []);
+
   const { grid, max, total, activeDays, firstRecorded, monthLabels } = useMemo(() => {
-    const { counts, firstRecorded } = mergedActivity(deck);
+    const { counts, firstRecorded } = mergedActivity(deck, log ?? undefined);
 
     // End on the LAST day of the current week so today is never clipped mid-column, then
     // walk back a whole number of weeks — that is what keeps the rows aligned to weekdays.
@@ -91,7 +108,7 @@ export default function ReviewHeatmap({ deck }: Props) {
     }
 
     return { grid, max, total, activeDays, firstRecorded, monthLabels };
-  }, [deck]);
+  }, [deck, log]);
 
   const swatch = (level: number) => level === 0
     ? 'var(--line-soft)'
