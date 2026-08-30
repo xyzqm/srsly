@@ -672,12 +672,46 @@ vocabulary lesson's "add these words" button, which is the learner acting — th
 relationship the Read tab already has, where Read is separate from SRS and tapping a word still
 adds it.
 
-**Practice is build-the-sentence, and it grades NOTHING.** Each grammar lesson ends with one or
-two shuffled-tile puzzles (`components/learn/SentenceBuilder.tsx`): the words of an example,
-out of order, tapped back into place. It checks ORDER, not spelling — which is exactly what a
-grammar lesson teaches, and a skill you can have before you can spell. Getting one wrong costs
-nothing, records nothing and schedules nothing, because the curriculum is separate from FSRS and
-a lesson you can fail is a lesson you avoid.
+**Practice is a RUN of questions, and it grades NOTHING.** "Start practice" opens a session
+(`components/learn/LessonPractice.tsx`): one question at a time, a progress bar, and the ones
+you miss coming back at the end. Getting one wrong re-queues it inside that session and does
+nothing else — no FSRS write, no streak, no record that survives closing the lesson — because
+the curriculum is separate from FSRS and a lesson you can fail is a lesson you avoid.
+
+It replaced a page of independently-checkable exercises, which is a worksheet: no progress, no
+finish, and a wrong answer so cheap there was no reason to think first.
+
+**Two question shapes, because one was too easy.** With punctuation pinned to the last tile, a
+two-tile ordering question has one sensible arrangement and asks nothing — `我 / 吃饭。` solves
+itself. Examples shorter than `MIN_ORDER_TILES` become a CHOICE instead: one word removed,
+picked from four drawn from the same lesson. Which shape an example gets is derived in
+`lib/lessonPractice.ts`, so no lesson data changed.
+
+**The prompt is the gloss with its teaching aside removed.** 139 of the 333 authored glosses
+carry an explanation after an em dash, and it usually names the word being tested — the prompt
+for the 张 question read "This sheet of paper is big — 张 for flat things". `promptFor` cuts at
+the dash; the explanation panel prints the gloss in full once the answer is in, which is where
+the teaching belongs. A test asserts no prompt names its own answer, script-aware because a
+naive substring check fires on the Spanish answer `no` inside the English word "not".
+
+**The explanation shows whether you were right or wrong.** Being right does not mean you knew
+why.
+
+**Tiles: tap to place, drag to position, hold to inspect.** Three gestures on one element,
+separated by what the pointer does after it goes down (`components/learn/PracticeTiles.tsx`) —
+a press starts a timer, moving past `DRAG_SLOP` cancels it and begins a drag, releasing before
+either is a tap. Long-press (or right-click) opens the full `WordPopup`: definition, audio and
+Add to vocab. Pointer events rather than HTML5 drag-and-drop, which does not fire on touch at
+all. Two traps, both found by driving it: `setPointerCapture`/`releasePointerCapture` THROW for
+a pointer the browser does not consider active, and an unguarded throw in the pointerup handler
+ate the entire drop; and the drop index must be recomputed from the event, because reading it
+from React state gives whatever the last committed render carried, which landed every drag at
+the end of the row.
+
+**Example sentences are tappable too.** A lesson could print 个 and 张 and never say how either
+is pronounced — the examples were the one place in the app showing Chinese you could not tap to
+look up. `tiles` already holds the sentence cut on real segmenter boundaries, so the words are
+there to make tappable; an example without them renders as plain text rather than guessing.
 
 **The tiles are AUTHORED, not derived,** because deriving them would need a segmenter and every
 segmenter here is server-side. They were generated once by running each example through the real

@@ -7,7 +7,9 @@ import {
   grammarLessons, vocabLessons, nextGrammarLesson, type Lesson,
 } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
-import SentenceBuilder from './SentenceBuilder';
+import LessonPractice from './LessonPractice';
+import WordPopup, { type PopupData } from '@/components/read/WordPopup';
+import { bareWord } from '@/lib/lessonPractice';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
@@ -37,7 +39,7 @@ const MONO: React.CSSProperties = { fontFamily: 'var(--f-mono)', letterSpacing: 
 
 export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   const language = useLanguage();
-  const { deck, addWords } = useVocabDeck(language);
+  const { deck, addWords, addWord } = useVocabDeck(language);
   const all = useMemo(() => lessonsFor(language), [language]);
 
   const [done, setDone] = useState<Set<string>>(() => new Set());
@@ -84,6 +86,7 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
             done={done.has(open.id)}
             deck={deck}
             addWords={addWords}
+            addWord={addWord}
             onMark={() => mark(open.id)}
             onBack={() => setOpenId(null)}
             onNavigateSrs={onNavigateSrs}
@@ -199,11 +202,12 @@ function LessonList({ grammar, words, done, next, onOpen }: {
   );
 }
 
-function LessonView({ lesson, done, deck, addWords, onMark, onBack, onNavigateSrs, active }: {
+function LessonView({ lesson, done, deck, addWords, addWord, onMark, onBack, onNavigateSrs, active }: {
   lesson: Lesson;
   done: boolean;
   deck: { h: string }[];
   addWords: (w: { h: string; p: string; m: string }[]) => Promise<number>;
+  addWord: (w: { h: string; p: string; m: string }) => Promise<void>;
   onMark: () => void;
   onBack: () => void;
   onNavigateSrs?: () => void;
@@ -226,19 +230,50 @@ function LessonView({ lesson, done, deck, addWords, onMark, onBack, onNavigateSr
 
       {lesson.kind === 'vocab'
         ? <VocabLesson lesson={lesson} done={done} deck={deck} addWords={addWords} onMark={onMark} onNavigateSrs={onNavigateSrs} active={active} />
-        : <GrammarLesson lesson={lesson} done={done} onMark={onMark} />}
+        : <GrammarLesson lesson={lesson} done={done} onMark={onMark} addWord={addWord} />}
     </>
   );
 }
 
-function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean; onMark: () => void }) {
+function GrammarLesson({ lesson, done, onMark, addWord }: {
+  lesson: Lesson; done: boolean; onMark: () => void;
+  addWord: (w: { h: string; p: string; m: string }) => Promise<void>;
+}) {
   const language = useLanguage();
   const unspaced = getLanguageConfig(language).scriptIsUnspaced;
+  const [practicing, setPracticing] = useState(false);
+  const [popup, setPopup] = useState<PopupData | null>(null);
+
+  // The examples are tappable, so the dictionary has to be here before the first tap —
+  // the vocab lessons already preload it for their word lists, grammar lessons did not.
+  useEffect(() => { void preloadDict(language); }, [language]);
+
+  /** Same construction as LessonPractice — see there for why not `useWordPopup`. */
+  const inspect = useCallback((tile: string, el: HTMLElement) => {
+    const word = bareWord(tile);
+    const { reading, meaning } = lookupReading(language, word);
+    if (!reading && !meaning) return;
+    setPopup({ word, pinyin: reading, meaning, type: 'free', anchorRect: el.getBoundingClientRect() });
+  }, [language]);
   // Blank lines are paragraph breaks; single newlines are just the source file wrapping.
   const paras = (lesson.explanation ?? '').trim().split(/\n\s*\n/);
   // A single fused token cannot be reassembled — 待ってください。is one word — so it stays an
   // example and is not offered as a puzzle.
-  const practice = (lesson.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1).slice(0, 2);
+  const practice = (lesson.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+
+  // The session takes over the lesson view rather than sitting under it: a progress bar with
+  // the explanation still scrolling above it is two things competing for the same attention.
+  if (practicing) {
+    return (
+      <LessonPractice
+        lesson={lesson}
+        language={language}
+        unspaced={unspaced}
+        onAddVocab={(h, p, m) => { void addWord({ h, p, m }); }}
+        onExit={() => setPracticing(false)}
+      />
+    );
+  }
 
   return (
     <>
@@ -258,7 +293,27 @@ function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean
           <div className="flex flex-col gap-3" style={{ maxWidth: 620 }}>
             {lesson.examples.map((ex, i) => (
               <div key={i} style={{ borderLeft: '2px solid var(--line)', paddingLeft: 13 }}>
-                <div style={{ fontSize: 15.5, color: 'var(--ink)', lineHeight: 1.5 }}>{ex.text}</div>
+                {/* TAPPABLE, for the same reason every word in the Read tab is. A lesson can
+                    print 个 and 张 and never say how either is pronounced — the examples were
+                    the one place in the app showing Chinese you could not tap to look up.
+                    `tiles` already holds this sentence cut on real segmenter boundaries, so
+                    the words are there to be made tappable; an example without them falls
+                    back to plain text rather than guessing at where words start. */}
+                <div style={{ fontSize: 15.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+                  {ex.tiles?.length
+                    ? ex.tiles.map((t, ti) => (
+                        <button
+                          key={ti}
+                          onClick={e => inspect(t, e.currentTarget)}
+                          className="cursor-pointer"
+                          style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                            color: 'inherit', borderBottom: '1px dotted var(--line)' }}
+                        >
+                          {unspaced ? t : `${t} `}
+                        </button>
+                      ))
+                    : ex.text}
+                </div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginTop: 2, lineHeight: 1.5 }}>{ex.gloss}</div>
               </div>
             ))}
@@ -268,19 +323,25 @@ function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean
 
       {/* PRACTICE, and it grades nothing. Getting one wrong costs nothing and schedules
           nothing — the curriculum is separate from FSRS, and a lesson you can fail is a lesson
-          you avoid. See components/learn/SentenceBuilder.tsx. */}
+          you avoid. It is a RUN now rather than a page of exercises: see
+          components/learn/LessonPractice.tsx for why one-at-a-time earns the change. */}
       {practice.length > 0 && (
         <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--line)', maxWidth: 620 }}>
           <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
             Practice
           </div>
-          <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: '4px 0 0', lineHeight: 1.5 }}>
-            Put the words in order. Nothing is graded and nothing is scheduled — try as often as
-            you like.
+          <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: '4px 0 12px', lineHeight: 1.5 }}>
+            A short run of questions on this lesson. Nothing is graded and nothing is
+            scheduled — the ones you miss simply come back at the end.
           </p>
-          {practice.map((ex, i) => (
-            <SentenceBuilder key={`${lesson.id}-${i}`} example={ex} unspaced={unspaced} />
-          ))}
+          <button
+            onClick={() => setPracticing(true)}
+            className="cursor-pointer rounded-lg transition-all duration-150"
+            style={{ ...MONO, fontSize: 11, padding: '12px 20px', fontWeight: 600,
+              background: 'var(--accent)', border: 'none', color: '#fff' }}
+          >
+            Start practice
+          </button>
         </div>
       )}
 
@@ -298,6 +359,9 @@ function GrammarLesson({ lesson, done, onMark }: { lesson: Lesson; done: boolean
           {done ? '✓ Done — mark unread' : 'Mark as done'}
         </button>
       </div>
+
+      <WordPopup data={popup} onClose={() => setPopup(null)}
+        onAddVocab={(h, p, m) => { void addWord({ h, p, m }); setPopup(null); }} />
     </>
   );
 }
