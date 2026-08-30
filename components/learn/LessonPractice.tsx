@@ -1,11 +1,12 @@
 'use client';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { LanguageCode } from '@/lib/types';
 import type { Lesson } from '@/lib/lessons';
-import { buildQuestions, isCorrect, bareWord, promptFor, type PracticeQuestion } from '@/lib/lessonPractice';
-import { lookupReading } from '@/lib/data/lookup';
-import WordPopup, { type PopupData } from '@/components/read/WordPopup';
+import { buildQuestions, isCorrect, promptFor, type PracticeQuestion } from '@/lib/lessonPractice';
+import { hasInspectModifier } from '@/lib/inspectGesture';
+import WordPopup from '@/components/read/WordPopup';
 import PracticeTiles from './PracticeTiles';
+import { useLessonInspect } from './useLessonInspect';
 
 /**
  * A run of practice questions for one lesson.
@@ -29,23 +30,6 @@ import PracticeTiles from './PracticeTiles';
 
 const MONO = { fontFamily: 'var(--f-mono)' } as const;
 
-/**
- * Tiles not yet placed — a MULTISET difference, not a set one.
- *
- * A sentence can legitimately use the same word twice (`我有两本书。` has no repeat, but
- * plenty do), so removing "every tile equal to this one" would empty the pool after the
- * first placement and make the question unanswerable. Each placed tile cancels exactly one
- * copy.
- */
-function remainingTiles(all: string[], placed: string[]): string[] {
-  const left = [...all];
-  for (const p of placed) {
-    const i = left.indexOf(p);
-    if (i >= 0) left.splice(i, 1);
-  }
-  return left;
-}
-
 interface Props {
   lesson: Lesson;
   language: LanguageCode;
@@ -63,33 +47,36 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
 
   const [queue, setQueue] = useState<PracticeQuestion[]>(initial);
   const [at, setAt] = useState(0);
-  const [placed, setPlaced] = useState<string[]>([]);
+  /**
+   * Which POOL SLOTS have been placed, in answer order — indexes, never words.
+   *
+   * A sentence may legitimately use the same word twice, and a list of words cannot say which
+   * copy is which. An index can, and it is also what lets the pool keep a used tile in its own
+   * slot instead of closing the gap — see components/learn/PracticeTiles.tsx for why that
+   * matters to the double-click.
+   */
+  const [placed, setPlaced] = useState<number[]>([]);
+  /** The option chosen on a choice question — a different shape of answer, so its own state. */
+  const [pick, setPick] = useState<string | null>(null);
   const [checked, setChecked] = useState<null | boolean>(null);
   /** Missed questions, replayed once the first pass is done. */
   const [retry, setRetry] = useState<PracticeQuestion[]>([]);
   const [done, setDone] = useState(0);
-  const [popup, setPopup] = useState<PopupData | null>(null);
+  const { popup, setPopup, inspect } = useLessonInspect(language);
+  /**
+   * What was selected before the most recent FIRST click, so a double-click can put it back.
+   *
+   * Recorded on `e.detail <= 1` — the browser's own click counter — because the second click
+   * of a double fires its own `onClick` first, and without the guard it would overwrite the
+   * very value the double-click is about to restore.
+   */
+  const beforePick = useRef<string | null>(null);
 
   const q = queue[at];
   // The bar measures answered-correctly against everything that must still be answered, so
   // a wrong answer visibly holds it back rather than advancing it.
   const total = initial.length + retry.length;
   const progress = total > 0 ? done / total : 0;
-
-  /**
-   * Show what a tile means. Built here rather than through `useWordPopup`, because that hook
-   * is driven by a React mouse event and a long-press has none — the same reason
-   * PassageText constructs its own PopupData.
-   */
-  const inspect = useCallback((tile: string, el: HTMLElement) => {
-    const word = bareWord(tile);
-    const { reading, meaning } = lookupReading(language, word);
-    if (!reading && !meaning) return;      // nothing to say; don't open an empty card
-    setPopup({
-      word, pinyin: reading, meaning, type: 'free',
-      anchorRect: el.getBoundingClientRect(),
-    });
-  }, [language]);
 
   if (!q) {
     return (
@@ -110,8 +97,8 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
     );
   }
 
-  const answer = q.kind === 'order' ? placed : placed.slice(0, 1);
-  const complete = q.kind === 'order' ? placed.length === q.tiles.length : placed.length === 1;
+  const answer = q.kind === 'order' ? placed.map(i => q.shuffled[i]) : (pick === null ? [] : [pick]);
+  const complete = q.kind === 'order' ? placed.length === q.tiles.length : pick !== null;
   const tone = checked === null ? undefined : checked ? 'var(--right)' : 'var(--wrong)';
 
   function check() {
@@ -127,6 +114,7 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
   function next() {
     setChecked(null);
     setPlaced([]);
+    setPick(null);
     if (at + 1 < queue.length) { setAt(at + 1); return; }
     if (retry.length > 0) { setQueue(retry); setRetry([]); setAt(0); return; }
     setAt(queue.length);          // falls through to the complete screen
@@ -162,13 +150,15 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
             {promptFor(q)}
           </div>
           <PracticeTiles
+            slots={q.shuffled}
             placed={placed}
-            pool={remainingTiles(q.tiles, placed)}
-            onPlace={(t, i) => setPlaced(p => [...p.slice(0, i), t, ...p.slice(i)])}
+            /* `into` and `from`, never `at` — the question index is also called `at`, and a
+               parameter shadowing it here reads as if the drop position were the question. */
+            onPlace={(slot, into) => setPlaced(p => [...p.slice(0, into), slot, ...p.slice(into)])}
             onMove={(from, to) => setPlaced(p => {
               const cut = [...p]; const [m] = cut.splice(from, 1); cut.splice(to, 0, m); return cut;
             })}
-            onRemove={i => setPlaced(p => p.filter((_, j) => j !== i))}
+            onRemove={from => setPlaced(p => p.filter((_, j) => j !== from))}
             onInspect={inspect}
             tone={tone}
             disabled={checked !== null}
@@ -185,7 +175,7 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
               i === q.blankIndex ? (
                 <span key={i} style={{ minWidth: 76, borderBottom: `2px solid ${tone ?? 'var(--accent)'}`,
                   display: 'inline-block', textAlign: 'center', color: tone ?? 'var(--ink)' }}>
-                  {placed[0] ?? ' '}
+                  {pick ?? ' '}
                 </span>
               ) : (
                 <span key={i}>{unspaced ? t : `${t} `}</span>
@@ -194,11 +184,25 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
           </div>
           <div className="flex flex-wrap gap-2">
             {q.options.map(o => {
-              const picked = placed[0] === o;
+              const picked = pick === o;
               return (
                 <button
                   key={o}
-                  onClick={() => checked === null && setPlaced([o])}
+                  /* The same four ways in as a tile has — see lib/inspectGesture.ts. A choice
+                     button does not move when you click it, so the browser's own dblclick
+                     fires on the button itself and there is no need for the tile row's manual
+                     pairing; the only thing to undo is which option was highlighted. */
+                  onClick={e => {
+                    if (checked !== null) return;
+                    if (hasInspectModifier(e)) { inspect(o, e.currentTarget); return; }
+                    if (e.detail <= 1) beforePick.current = pick;
+                    setPick(o);
+                  }}
+                  onDoubleClick={e => {
+                    if (checked !== null) return;
+                    setPick(beforePick.current);
+                    inspect(o, e.currentTarget);
+                  }}
                   onContextMenu={e => { e.preventDefault(); inspect(o, e.currentTarget as HTMLElement); }}
                   className="cursor-pointer rounded-lg"
                   style={{ fontSize: 16, padding: '10px 14px', minHeight: 44,
@@ -246,8 +250,8 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 14, lineHeight: 1.5 }}>
-        Hold a word (or right-click) to see what it means, hear it, and add it to your deck.
-        Nothing here is graded or scheduled.
+        Hold a word — or right-click, double-click, or ⌘/ctrl-click it — to see what it means,
+        hear it, and add it to your deck. Nothing here is graded or scheduled.
       </p>
 
       <WordPopup

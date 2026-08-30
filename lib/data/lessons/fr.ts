@@ -38,6 +38,7 @@ like to see it, which is another reason to learn the two together from the start
 
 You have already been seeing this: when you tap an inflected word while reading, the note under
 the definition says things like "feminine plural". That is this, doing visible work.`,
+    pitfall: "Gender belongs to the WORD, not to the thing, so there is nothing about the object to work out. And l' hides it exactly when you would most like to see it.",
     examples: [
       { text: 'le livre est sur la table.', gloss: 'The book is on the table.',
         tiles: ['le', 'livre', 'est', 'sur', 'la', 'table.'] },
@@ -62,6 +63,7 @@ This is why a French speaker listening for a plural is listening to the front of
 not the back.
 
 Nouns already ending in -s, -x or -z do not change at all.`,
+    pitfall: 'The -s is silent, so the article does all the audible work. Drop les and a listener has no way whatever of hearing that you meant more than one.',
     examples: [
       { text: 'les chats dorment.', gloss: 'The cats are sleeping.',
         tiles: ['les', 'chats', 'dorment.'] },
@@ -85,6 +87,7 @@ coffee" — not "the coffee". Leaving it out is one of the most audible beginner
 
 The plural of un/une is des, and English usually drops that one too: "des enfants jouent" is
 "children are playing".`,
+    pitfall: "French uses the definite article for general statements where English uses nothing: j'aime le café, not «j'aime café».",
     examples: [
       { text: 'je vois un chien dans la rue.', gloss: 'I see a dog in the street.',
         tiles: ['je', 'vois', 'un', 'chien', 'dans', 'la', 'rue.'] },
@@ -107,6 +110,19 @@ vous is doing two jobs. It is the plural "you", and it is also the polite singul
 what you use with someone you have just met, or anyone you would not use a first name with.
 tu is for friends, family, children and animals. Choosing wrongly is the most socially visible
 mistake in the language, so when in doubt, use vous.`,
+    pitfall: 'être is irregular from the very first form and there is no pattern to lean on. It also builds the passé composé of a small group of verbs, so learning it early pays twice.',
+    table: {
+      caption: 'être in the present',
+      columns: ['Form', 'Means', 'Example'],
+      rows: [
+        ['je suis', 'I am', 'je suis fatigué'],
+        ['tu es', 'you are', 'tu es en retard'],
+        ['il est', 'he is', 'il est médecin'],
+        ['nous sommes', 'we are', 'nous sommes contents'],
+        ['vous êtes', 'you are — plural or polite', 'vous êtes très gentil'],
+        ['ils sont', 'they are', 'ils sont à la maison'],
+      ],
+    },
     examples: [
       { text: 'je suis fatigué.', gloss: 'I am tired.',
         tiles: ['je', 'suis', 'fatigué.'] },
@@ -134,6 +150,19 @@ as fixed phrases rather than translating each time.
 
 avoir is also half of the ordinary past tense, which is a later lesson — so this one pays
 twice.`,
+    pitfall: "Age, hunger, cold and fear are things you HAVE. «je suis vingt ans» is the word-for-word English and it is wrong: j'ai vingt ans.",
+    table: {
+      caption: 'avoir in the present',
+      columns: ['Form', 'Means', 'Example'],
+      rows: [
+        ["j'ai", 'I have', "j'ai froid"],
+        ['tu as', 'you have', 'tu as raison'],
+        ['il a', 'he has', 'il a faim'],
+        ['nous avons', 'we have', 'nous avons le temps'],
+        ['vous avez', 'you have — plural or polite', 'vous avez le temps'],
+        ['ils ont', 'they have', 'ils ont deux enfants'],
+      ],
+    },
     examples: [
       { text: "j'ai un frère et une sœur.", gloss: 'I have a brother and a sister.',
         tiles: ["j'ai", 'un', 'frère', 'et', 'une', 'sœur.'] },
@@ -162,6 +191,19 @@ what tells a listener who is doing the talking is the pronoun, not the verb.
 That is also why the note under a tapped word often says just "present" rather than naming a
 person: several readings of the form are spelled the same, and the app will not guess between
 them.`,
+    pitfall: 'Four of the six endings sound identical — parle, parles and parlent are one word aloud. The spelling still has to be right, and the pronoun is what a listener actually hears.',
+    table: {
+      caption: 'The -er endings, on parler',
+      columns: ['Form', 'Means', 'Sounds like'],
+      rows: [
+        ['je parle', 'I speak', 'parl'],
+        ['tu parles', 'you speak', 'parl'],
+        ['il parle', 'he speaks', 'parl'],
+        ['nous parlons', 'we speak', 'parlon'],
+        ['vous parlez', 'you speak', 'parlay'],
+        ['ils parlent', 'they speak', 'parl'],
+      ],
+    },
     examples: [
       { text: 'je parle français avec ma mère.', gloss: 'I speak French with my mother.',
         tiles: ['je', 'parle', 'français', 'avec', 'ma', 'mère.'] },
@@ -189,6 +231,7 @@ in writing reads as careless.
 
 Second, after a negative, un, une, du, de la and des all collapse to plain de. "je mange du
 pain" becomes "je ne mange pas de pain".`,
+    pitfall: 'Negation is two pieces wrapping the verb. Dropping ne is normal in speech and never in writing; dropping pas is not an option in either.',
     examples: [
       { text: 'je ne comprends pas.', gloss: 'I do not understand.',
         tiles: ['je', 'ne', 'comprends', 'pas.'] },
@@ -212,6 +255,7 @@ is nothing in the English sentence to remind you.
 
 Compare the three: "je bois de l'eau" (some water), "je bois l'eau" (the specific water),
 "j'aime l'eau" (water in general).`,
+    pitfall: 'After a negative, du, de la and des all collapse to plain de. «je ne mange pas du pain» is wrong — it is je ne mange pas de pain.',
     examples: [
       { text: "je bois de l'eau.", gloss: 'I drink water.',
         tiles: ['je', 'bois', 'de', "l'eau."] },
@@ -238,6 +282,7 @@ makes it worth getting right out loud and not only on paper.
 
 This is the same agreement the reader reports when you tap a word and the note says "feminine
 singular".`,
+    pitfall: 'The feminine -e is often audible even though the plural -s never is: petit and petite are two different words to the ear. Agreement is not only a spelling rule.',
     examples: [
       { text: 'un petit chien.', gloss: 'A small dog.',
         tiles: ['un', 'petit', 'chien.'] },
@@ -263,6 +308,7 @@ noticing rather than a rule worth deriving.
 
 A few change MEANING depending on where they sit. "un homme grand" is a tall man; "un grand
 homme" is a great one. Same two words, different sentence.`,
+    pitfall: 'Most adjectives follow the noun and the short common ones precede it. A few change meaning by moving: un homme grand is a tall man, un grand homme a great one.',
     examples: [
       { text: 'une voiture rouge.', gloss: 'A red car — the normal order.',
         tiles: ['une', 'voiture', 'rouge.'] },
@@ -292,6 +338,20 @@ speech.
 
 The question words go in front of any of them: qui, que, où, quand, comment, pourquoi,
 combien.`,
+    pitfall: 'All three forms are correct, and est-ce que is the one that always works. Inversion is the formal one, and it takes a hyphen — which is why est-ce is written as one word.',
+    table: {
+      caption: 'The question words',
+      columns: ['Word', 'Asks', 'Example'],
+      rows: [
+        ['qui', 'who', 'qui est là ?'],
+        ['que', 'what', 'que fais-tu ?'],
+        ['où', 'where', 'où est la gare ?'],
+        ['quand', 'when', 'quand pars-tu ?'],
+        ['comment', 'how', 'comment ça va ?'],
+        ['combien', 'how much, how many', 'combien coûte ce livre ?'],
+        ['pourquoi', 'why', 'pourquoi tu ne viens pas ?'],
+      ],
+    },
     examples: [
       { text: 'tu viens avec nous ?', gloss: 'Are you coming with us? (intonation only)',
         tiles: ['tu', 'viens', 'avec', 'nous?'] },
@@ -316,6 +376,7 @@ je vais · tu vas · il/elle va · nous allons · vous allez · ils/elles vont
 This is how French speakers talk about the future most of the time. There is a separate future
 tense with its own endings, and it exists and is used, but it is more formal and more distant.
 For anything happening today, this is the one.`,
+    pitfall: 'The second verb stays in the infinitive and agrees with nothing. «je vais mange» is wrong — it is je vais manger.',
     examples: [
       { text: 'je vais manger.', gloss: 'I am going to eat.',
         tiles: ['je', 'vais', 'manger.'] },
@@ -340,6 +401,7 @@ The irregular ones are frequent enough to be worth knowing outright: avoir → e
 faire → fait, prendre → pris, voir → vu, dire → dit.
 
 This is the form the reader labels "past participle" when you tap it.`,
+    pitfall: "It is two words, and the auxiliary is the half that conjugates. j'ai mangé, never «je mangé» — a participle on its own is not a tense.",
     examples: [
       { text: "j'ai mangé une pomme.", gloss: 'I ate an apple.',
         tiles: ["j'ai", 'mangé', 'une', 'pomme.'] },
@@ -369,6 +431,7 @@ All four sound the same. The agreement is visible only in writing — which is p
 reader can tell you about it: tap one and the note says "past participle · feminine singular".
 
 Every reflexive verb takes être too.`,
+    pitfall: 'A small group of verbs takes être, and then the participle agrees like an adjective. elle est allée, with the -e; «elle a allé» is wrong twice over.',
     examples: [
       { text: 'il est allé au marché.', gloss: 'He went to the market.',
         tiles: ['il', 'est', 'allé', 'au', 'marché.'] },
@@ -392,6 +455,7 @@ The real skill is choosing between this and the passé composé, and the distinc
 how long ago something was. The passé composé is a single finished event; the imperfect is a
 background, a habit or a state. In one sentence you often get both: "je mangeais quand il est
 arrivé" — I was eating (background) when he arrived (event).`,
+    pitfall: 'The imperfect is about how you frame it, not how long it went on. Something that happened once takes the passé composé even if it took ten years.',
     examples: [
       { text: "quand j'étais petit, je jouais dans le jardin.", gloss: 'When I was small, I used to play in the garden.',
         tiles: ['quand', "j'étais", 'petit,', 'je', 'jouais', 'dans', 'le', 'jardin.'] },
@@ -417,6 +481,7 @@ yourself. Because these describe the shape of a normal morning, they are among t
 worth having.
 
 All of them form the past with être.`,
+    pitfall: 'The pronoun changes with the person: je me lave, tu te laves, il se lave. se is only the dictionary form, and leaving it there is the giveaway.',
     examples: [
       { text: 'je me lève à sept heures.', gloss: 'I get up at seven.',
         tiles: ['je', 'me', 'lève', 'à', 'sept', 'heures.'] },
@@ -443,6 +508,20 @@ uses à: parler à quelqu'un takes lui.
 
 In a negative, the pronoun stays glued to the verb and ne goes outside the whole group: "je ne
 le vois pas".`,
+    pitfall: 'They go BEFORE the verb, which is the opposite of English. «je vois le» becomes je le vois, and in the negative the pronoun stays glued to the verb: je ne le vois pas.',
+    table: {
+      caption: 'The object pronouns, in the order they queue',
+      columns: ['Pronoun', 'Stands for', 'Example'],
+      rows: [
+        ['me', 'me', 'il me voit'],
+        ['te', 'you', 'il te voit'],
+        ['le', 'him, or it — masculine', 'je le vois'],
+        ['la', 'her, or it — feminine', 'je la connais'],
+        ['lui', 'to him, to her', 'je lui parle'],
+        ['nous', 'us', 'elle nous attend'],
+        ['leur', 'to them', 'il leur parle souvent'],
+      ],
+    },
     examples: [
       { text: 'je le vois.', gloss: 'I see him — the pronoun comes before the verb.',
         tiles: ['je', 'le', 'vois.'] },
@@ -470,6 +549,7 @@ reading because they are so short — which is exactly why they are worth learni
 
 en is obligatory with a quantity even when English drops it entirely: "combien en veux-tu ?"
 is "how many do you want?", and the en cannot be left out.`,
+    pitfall: 'y replaces a place or à + a thing; en replaces de + a thing, or a quantity. Both sit where an object pronoun sits, and neither is optional — the phrase cannot simply be dropped.',
     examples: [
       { text: "j'y vais demain.", gloss: 'I am going there tomorrow.',
         tiles: ["j'y", 'vais', 'demain.'] },
@@ -496,6 +576,18 @@ belle".
 The irregular worth memorising is bon, which becomes meilleur rather than "plus bon" — the same
 shape as good and better. Its adverb bien becomes mieux, and the two are frequently confused
 even by people who have been speaking a while.`,
+    pitfall: 'bon has an irregular comparative: meilleur, never «plus bon». The adverb bien does the same and becomes mieux — two words, for two different jobs.',
+    table: {
+      caption: 'Comparing, and the two irregulars',
+      columns: ['Word', 'Means', 'Example'],
+      rows: [
+        ['plus', 'more … than', 'il est plus grand que moi'],
+        ['moins', 'less … than', 'ce livre est moins cher'],
+        ['aussi', 'as … as', 'il court aussi vite que toi'],
+        ['meilleur', 'better — the irregular of bon', 'ce café est meilleur'],
+        ['mieux', 'better — the irregular of bien', 'elle chante mieux'],
+      ],
+    },
     examples: [
       { text: 'il est plus grand que moi.', gloss: 'He is taller than me.',
         tiles: ['il', 'est', 'plus', 'grand', 'que', 'moi.'] },
@@ -521,6 +613,7 @@ The stem is irregular for a handful of very common verbs, and those are the ones
 
 It leans more formal and more distant than aller + infinitive, and it is what writing uses. It
 is also required after quand and dès que where English uses a present: "quand il arrivera".`,
+    pitfall: 'The endings go on the whole infinitive, so the -r is always audible: je parlerai. For -re verbs the final e drops first — prendre gives je prendrai.',
     examples: [
       { text: 'je parlerai avec lui demain.', gloss: 'I will speak with him tomorrow.',
         tiles: ['je', 'parlerai', 'avec', 'lui', 'demain.'] },
@@ -546,6 +639,7 @@ que is the OBJECT — a new subject follows it: "le livre que je lis" — the bo
 So the test is mechanical: look at what comes next. A verb means qui; a subject means que.
 
 que elides to qu' before a vowel; qui never does, which is a useful extra signal while reading.`,
+    pitfall: 'Choose by what FOLLOWS, not by what it means. qui is followed by a verb and que by a subject; neither one is «who» or «which» as such.',
     examples: [
       { text: "l'homme qui parle est mon père.", gloss: 'The man who is speaking is my father.',
         tiles: ["l'homme", 'qui', 'parle', 'est', 'mon', 'père.'] },
@@ -571,6 +665,7 @@ Four verbs are irregular outright: être gives sois, avoir gives aie, savoir giv
 vouloir gives veuille.
 
 With a reflexive verb the pronoun moves to the end and te becomes toi: "lève-toi".`,
+    pitfall: 'Drop the pronoun, and for -er verbs drop the -s with it: tu parles becomes parle. In a positive command the pronoun comes back after the verb: donne-moi.',
     examples: [
       { text: 'parle plus lentement.', gloss: 'Speak more slowly — no pronoun, and no final -s.',
         tiles: ['parle', 'plus', 'lentement.'] },
@@ -598,6 +693,7 @@ il y a is "ago", and always takes a past: "je suis arrivé il y a deux jours".
 
 The first is the one to spend time on, because the tense mismatch with English is what makes it
 feel wrong at first.`,
+    pitfall: "depuis takes the PRESENT for something still going on: j'habite ici depuis trois ans, not «j'ai habité». The English perfect is exactly what leads people astray here.",
     examples: [
       { text: "j'habite ici depuis trois ans.", gloss: 'I have lived here for three years — still true, so present.',
         tiles: ["j'habite", 'ici', 'depuis', 'trois', 'ans.'] },
@@ -626,6 +722,7 @@ an if-sentence: "si j'avais le temps, je viendrais".
 
 Note the pattern there: si takes the IMPERFECT and the other half takes the conditional. Putting
 the conditional after si is the classic mistake.`,
+    pitfall: "The endings are the imperfect's, on the future stem. And si never takes a conditional — si j'avais, je viendrais, with the conditional in the other half.",
     examples: [
       { text: 'je voudrais un café.', gloss: 'I would like a coffee — the polite way to ask.',
         tiles: ['je', 'voudrais', 'un', 'café.'] },
@@ -653,6 +750,7 @@ sois, avoir gives aie, aller gives aille, faire gives fasse, pouvoir gives puiss
 Most of what you meet is "il faut que" plus a verb, so that one phrase carries much of the load.
 
 Note that "j'espère que" does NOT take it, which surprises people, since hoping feels uncertain.`,
+    pitfall: 'It is triggered by the words in front of it, not by doubt. il faut que and je veux que always take it, however certain the speaker happens to be.',
     examples: [
       { text: 'il faut que je parte.', gloss: 'I have to leave.',
         tiles: ['il', 'faut', 'que', 'je', 'parte.'] },
@@ -680,6 +778,17 @@ masculine despite the -e, so it is "au Mexique".
 
 The same à/en/au choice applies to means of transport, but on a different logic: en for things
 you get inside, à for things you sit on. "en voiture", but "à vélo".`,
+    pitfall: "The preposition is decided by the country's gender, not by anything about the place. en France, au Canada, aux États-Unis — and à is for cities.",
+    table: {
+      caption: 'Which preposition, and what decides it',
+      columns: ['Word', 'Used with', 'Example'],
+      rows: [
+        ['à', 'a city', 'je vais à Paris'],
+        ['en', 'a feminine country, or one starting with a vowel', 'nous allons en France'],
+        ['au', 'a masculine country', 'elle va au Canada'],
+        ['aux', 'a plural country', 'il va aux États-Unis'],
+      ],
+    },
     examples: [
       { text: 'je vais à Paris.', gloss: 'I am going to Paris — a town, so à.',
         tiles: ['je', 'vais', 'à', 'Paris.'] },
@@ -707,6 +816,17 @@ with a vowel or a silent h, because "ce homme" is awkward to say. "cet homme", "
 When you really must separate this from that, -ci and -là attach to the noun: "ce livre-ci"
 against "ce livre-là". In speech that is much rarer than English "this/that", so do not reach
 for it by default.`,
+    pitfall: 'cet exists for the ear, not for meaning — it is simply ce before a vowel. «ce homme» is not wrong in sense, it is merely unsayable.',
+    table: {
+      caption: 'Four forms, and only three distinctions',
+      columns: ['Word', 'Used before', 'Example'],
+      rows: [
+        ['ce', 'a masculine noun starting with a consonant', 'ce livre est bon'],
+        ['cet', 'a masculine noun starting with a vowel', 'cet homme est mon père'],
+        ['cette', 'any feminine noun', 'cette maison est grande'],
+        ['ces', 'any plural, either gender', 'ces enfants jouent'],
+      ],
+    },
     examples: [
       { text: 'ce livre est bon.', gloss: 'This book is good.',
         tiles: ['ce', 'livre', 'est', 'bon.'] },
@@ -734,6 +854,21 @@ masculine form, because "ma amie" is hard to say. "mon amie" is a female friend.
 
 For the plural owners, notre and votre and leur have only one singular form each — no gender —
 which makes them the easy half.`,
+    pitfall: 'The word agrees with the THING owned, never with the owner. son livre is his book or her book, and son is chosen because livre is masculine.',
+    table: {
+      caption: 'It agrees with what is owned',
+      columns: ['Word', 'Used before', 'Example'],
+      rows: [
+        ['mon', 'my — a masculine noun', 'mon livre'],
+        ['ma', 'my — a feminine noun', 'ma maison'],
+        ['mes', 'my — anything plural', 'mes clés'],
+        ['son', 'his or her — a masculine noun', 'son livre'],
+        ['sa', 'his or her — a feminine noun', 'sa maison'],
+        ['ses', 'his or her — anything plural', 'ses amis'],
+        ['notre', 'our — a singular noun', 'notre maison'],
+        ['nos', 'our — anything plural', 'nos amis'],
+      ],
+    },
     examples: [
       { text: 'son livre est sur la table.', gloss: 'His or her book is on the table — sonic agrees with livre.',
         tiles: ['son', 'livre', 'est', 'sur', 'la', 'table.'] },

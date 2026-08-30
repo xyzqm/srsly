@@ -38,6 +38,7 @@ is emphasis.
 
 And anything the listener can infer is simply left out. Japanese drops subjects constantly — a
 sentence with no "I" in it is normal, not terse.`,
+    pitfall: 'The verb has to come last. Everything before it can move, which is exactly why the particles matter — they carry the roles that word order carries in English.',
     examples: [
       { text: '私は本を読みます。', gloss: 'I read a book.',
         tiles: ['私', 'は', '本', 'を', '読みます。'] },
@@ -68,6 +69,7 @@ who". If you see が near a question word, that is why.
 
 は is written with the hiragana for "ha" but pronounced "wa" in this job — a spelling left over
 from older Japanese.`,
+    pitfall: 'は marks what the sentence is ABOUT; が marks who does it. A question word can never take は, which is why 誰は来ますか is wrong and 誰が来ますか is right.',
     examples: [
       { text: '私は学生です。', gloss: 'I am a student — は sets the topic.',
         tiles: ['私', 'は', '学生', 'です。'] },
@@ -98,6 +100,21 @@ something ENDS UP or exists; で is where something is DONE. 家にいます is 
 食べます is "I eat at home".
 
 を and へ are also spelling survivals: を is pronounced "o", and へ is pronounced "e".`,
+    pitfall: 'に and で both translate as «at». に is where something IS or is heading TO; で is where an action HAPPENS. 学校にいます, but 学校で勉強します.',
+    table: {
+      caption: 'What each particle says about the word before it',
+      columns: ['Particle', 'Marks', 'Example'],
+      rows: [
+        ['は', 'the topic — what the sentence is about', '私は学生です'],
+        ['が', 'the subject — who does it', '誰が来ますか'],
+        ['を', 'the direct object', '本を読みます'],
+        ['に', 'where something is or goes to; also a point in time', '七時に起きます'],
+        ['で', 'where an action happens; also by what means', '家で食べます'],
+        ['へ', 'direction — towards', '学校へ行きます'],
+        ['の', 'joins two nouns', '私の本'],
+        ['も', 'also, too — it replaces は and が', '私も行きます'],
+      ],
+    },
     examples: [
       { text: '本を読みます。', gloss: 'I read a book — を marks the object.',
         tiles: ['本', 'を', '読みます。'] },
@@ -127,6 +144,7 @@ a reader: a novel or an article will be in plain form throughout, and that is no
 is simply not speech.
 
 The negative of です is ではありません, and its everyday spoken form is じゃないです.`,
+    pitfall: 'です is politeness, not the verb «to be». It never attaches to a ます verb: 食べますです is wrong, because 食べます is already polite.',
     examples: [
       { text: '私は学生です。', gloss: 'I am a student — polite.',
         tiles: ['私', 'は', '学生', 'です。'] },
@@ -153,6 +171,7 @@ sentence, and their past and negative are formed on the です rather than on th
 The trap is a handful of な-adjectives that happen to end in い — 有名, きれい, 嫌い. きれい is
 the one everyone gets wrong: it looks like an い-adjective and is not, so "not pretty" is
 きれいではありません, never きれくない.`,
+    pitfall: 'い-adjectives conjugate and な-adjectives do not. The past of 高い is 高かった — 高いでした is the mistake this distinction exists to prevent.',
     examples: [
       { text: 'この本は高いです。', gloss: 'This book is expensive — an い-adjective.',
         tiles: ['この', '本', 'は', '高いです。'] },
@@ -179,6 +198,7 @@ In the polite form the endings are -ます and -ました, with negatives -ま�
 That gives you four sentence endings that between them cover most of what you need to say, and
 they attach the same way to every verb in the polite form. This is why the polite form is
 usually taught first: it is far more regular than the plain form.`,
+    pitfall: 'There is no future tense. 行きます is both «I go» and «I will go», and only the sentence around it says which.',
     examples: [
       { text: '本を読みます。', gloss: 'I read a book, or I will read a book.',
         tiles: ['本', 'を', '読みます。'] },
@@ -208,6 +228,7 @@ covers states English would not call progressive: 知っています is "I know"
 
 The form itself is where Japanese verbs are least regular, and it is learned by pattern rather
 than by rule: 食べる gives 食べて, 読む gives 読んで, 行く gives 行って.`,
+    pitfall: '〜ている is not always «right now». With verbs of change it names the resulting state: 結婚しています means «is married», not «is getting married».',
     examples: [
       { text: '今、食べています。', gloss: 'I am eating now.',
         tiles: ['今、', '食べています。'] },
@@ -236,6 +257,7 @@ The same pair also does "to have": 車があります is both "there is a car" a
 which one it means is context.
 
 ある is irregular in the negative. It is not あらない but ない, and politely ありません.`,
+    pitfall: 'いる is for living things and ある for everything else. A plant takes ある, and so does a taxi with a driver in it — what is being counted is the car.',
     examples: [
       { text: '猫がいます。', gloss: 'There is a cat — animate, so いる.',
         tiles: ['猫', 'が', 'います。'] },
@@ -266,6 +288,7 @@ open a book.
 
 The plain form is also required inside a sentence, whatever the politeness at the end. A clause
 before と, から, ので or a noun uses the plain form even in the most formal speech.`,
+    pitfall: 'The plain form is unmarked, not rude. Almost everything you read is in it, including clauses inside a perfectly polite sentence.',
     examples: [
       { text: '本を読んだ。', gloss: 'I read a book — plain past, what a novel would use.',
         tiles: ['本', 'を', '読んだ。'] },
@@ -292,6 +315,7 @@ reports rather than asserts.
 To suggest doing something together, use 〜ましょう: 行きましょう — let's go. To invite more
 softly, use the negative question 〜ませんか: 行きませんか — won't you go? That is gentler, and
 gentler is usually better.`,
+    pitfall: "〜たい describes YOUR wish. 田中さんは行きたいです states another person's inner feeling as fact, which Japanese does not do directly.",
     examples: [
       { text: '水が飲みたいです。', gloss: 'I want to drink water — note が, not を.',
         tiles: ['水', 'が', '飲みたいです。'] },
@@ -319,6 +343,7 @@ Because か already marks the question, written Japanese often does not use a qu
 all — a full stop is normal and correct.
 
 In casual speech か is frequently dropped and the voice rises instead.`,
+    pitfall: 'か at the end is the whole question — no word order change and no rising intonation needed. It follows です quite happily: ですか.',
     examples: [
       { text: 'あなたは学生ですか。', gloss: 'Are you a student?',
         tiles: ['あなた', 'は', '学生', 'です', 'か。'] },
@@ -345,6 +370,21 @@ in front of the counter, and the changes are not regular. One person is ひと�
 
 The practical approach is the same one native learners take: memorise the first few of each
 common counter as fixed words, and let the rest follow the regular pattern.`,
+    pitfall: 'The number and the counter fuse, and the sound changes: 一 + 匹 is いっぴき, not いちひき. Learning the number alone leaves you unable to say it aloud.',
+    table: {
+      caption: 'The counters worth knowing first',
+      columns: ['Counter', 'Counts', 'Example'],
+      rows: [
+        ['冊', 'books and bound volumes', '本を三冊'],
+        ['匹', 'small animals', '猫が二匹'],
+        ['枚', 'flat things — paper, plates, shirts', '紙を三枚'],
+        ['本', 'long thin things — bottles, pens, umbrellas', 'ビールを二本'],
+        ['杯', 'cupfuls and glassfuls', '水を一杯'],
+        ['人', 'people', '三人'],
+        ['個', 'small objects — the general one', 'りんごを二個'],
+        ['台', 'machines and vehicles', '車が一台'],
+      ],
+    },
     examples: [
       { text: '本を三冊買いました。', gloss: 'I bought three books.',
         tiles: ['本', 'を', '三', '冊', '買いました。'] },
@@ -372,6 +412,7 @@ Once formed, the potential behaves as an ordinary る-verb: 読めます, 読め
 
 This overlaps with ことができる, which is longer and slightly more formal but means the same
 thing.`,
+    pitfall: 'The object particle usually turns from を into が. 日本語を話せます is understood, but 日本語が話せます is what is actually said.',
     examples: [
       { text: '日本語が話せます。', gloss: 'I can speak Japanese — が, not を.',
         tiles: ['日本語', 'が', '話せます。'] },
@@ -401,6 +442,17 @@ when I get home, I will call.
 that comfortably follows a noun on its own.
 
 If you learn one first, learn たら — it fits the most situations and is rarely wrong.`,
+    pitfall: 'たら is the safe general one. と is for automatic consequences only, so it cannot carry a request or a plan — 春になると is fine, and と with ください is not.',
+    table: {
+      caption: 'Four ways to say «if», and what separates them',
+      columns: ['Ending', 'Used for', 'Example'],
+      rows: [
+        ['と', 'an automatic result — always true, no choice involved', '春になると、暖かくなります'],
+        ['ば', 'a general condition, often hypothetical', '安ければ買います'],
+        ['たら', 'the everyday one — «if» and «when» both', '時間があったら、行きます'],
+        ['なら', 'given what you have just told me', '行くなら、教えてください'],
+      ],
+    },
     examples: [
       { text: '春になると、暖かくなります。', gloss: 'When spring comes, it gets warm — an automatic result.',
         tiles: ['春', 'に', 'なる', 'と、', '暖かく', 'なります。'] },
@@ -430,6 +482,7 @@ The middle one has no English equivalent and is the one to spend time on: Englis
 for both directions, so くれる has to become a habit rather than a translation.
 
 Attached to a て-form, these say who a favour was done for: 手伝ってくれました — they helped me.`,
+    pitfall: 'あげる and くれる both mean «give», split by direction. Anything given TO you or your side is always くれる — 先生が本をあげました means the teacher gave it to somebody else.',
     examples: [
       { text: '友達に本をあげました。', gloss: 'I gave my friend a book.',
         tiles: ['友達', 'に', '本', 'を', 'あげました。'] },
@@ -458,6 +511,7 @@ translated Japanese can sound oddly passive. Often nothing is being hidden — t
 prefers to say that something happened.
 
 There is no rule that predicts which ending is which, so they are learned in pairs.`,
+    pitfall: 'These are two separate verbs, not one verb changed. 開ける takes を because you do it; 開く takes が because it happens. The wrong particle is the giveaway.',
     examples: [
       { text: 'ドアを開けました。', gloss: 'I opened the door — transitive, so を.',
         tiles: ['ドア', 'を', '開けました。'] },
@@ -485,6 +539,7 @@ whole line before the noun it belongs to finally arrives. Meeting a verb in plai
 through a sentence is usually the signal that this is happening.
 
 Practise by reading to the end of the run first, finding the noun, then going back.`,
+    pitfall: 'The description comes BEFORE the noun with no joining word at all — no «that», no «which» — and the verb inside it goes plain: 私が買った本, never 私が買いました本.',
     examples: [
       { text: '私が買った本です。', gloss: 'It is the book I bought — the description comes first.',
         tiles: ['私', 'が', '買った', '本', 'です。'] },
@@ -514,6 +569,7 @@ The grammar differs slightly: ので attaches to the plain form, and a な-adjec
 Because the reason comes first, a long Japanese sentence often makes no sense until you reach
 から or ので and realise everything before it was the explanation. Watching for those two words
 is a real reading technique.`,
+    pitfall: 'ので sounds like an explanation and から can sound like an excuse. When apologising or asking a favour, reach for ので.',
     examples: [
       { text: '寒いから、家にいます。', gloss: 'Because it is cold, I am staying home.',
         tiles: ['寒い', 'から、', '家', 'に', 'います。'] },
@@ -543,6 +599,7 @@ answer takes のほうが: 猫のほうが小さいです.
 
 Because the adjective never changes, comparison in Japanese is entirely about word order and
 particles — which makes it easier to produce than in French or Spanish.`,
+    pitfall: 'The adjective never changes. Japanese has no «-er» — 大きい is both «big» and «bigger», and より is what does the comparing.',
     examples: [
       { text: '猫は犬より小さいです。', gloss: 'A cat is smaller than a dog.',
         tiles: ['猫', 'は', '犬', 'より', '小さいです。'] },
@@ -571,6 +628,7 @@ hear: 行かなきゃ.
 
 Permission uses the same て-form as the prohibition: 〜てもいいです is "may I", so 行ってもいい
 ですか is "may I go?" — one form asks, its negative forbids.`,
+    pitfall: 'It is a double negative meaning «if you do not, it will not do». Translating it piece by piece is what makes it feel impossible; learn 〜なければなりません as one unit.',
     examples: [
       { text: '行かなければなりません。', gloss: 'I have to go.',
         tiles: ['行かなけれ', 'ば', 'なり', 'ません。'] },
@@ -599,6 +657,19 @@ Months, at least, are regular and numbered: 一月 through 十二月.
 
 The practical approach is to learn the awkward ones as words and let the rest follow the
 pattern.`,
+    pitfall: 'The clock readings are irregular and have to be learned one at a time: 四時 is よじ, not よんじ, and 九時 is くじ.',
+    table: {
+      caption: 'The hours that are not read the way you would guess',
+      columns: ['Time', 'Read as', 'Not'],
+      rows: [
+        ['四時', 'よじ', 'よんじ'],
+        ['七時', 'しちじ', 'ななじ'],
+        ['九時', 'くじ', 'きゅうじ'],
+        ['四月', 'しがつ', 'よんがつ'],
+        ['七月', 'しちがつ', 'ななつき'],
+        ['九月', 'くがつ', 'きゅうがつ'],
+      ],
+    },
     examples: [
       { text: '今、四時です。', gloss: 'It is four o\'clock now.',
         tiles: ['今、', '四', '時', 'です。'] },
@@ -627,6 +698,19 @@ DOWN — and both are polite, from opposite ends.
 
 The single most useful thing early is to recognise いらっしゃいませ as "welcome", because you
 will hear it every time you enter a shop.`,
+    pitfall: 'Recognise it long before you use it. Honorific forms describe what SOMEONE ELSE does and humble forms what YOU do; using an honorific about yourself is the memorable error.',
+    table: {
+      caption: 'The honorific and humble forms you will meet',
+      columns: ['Form', 'Plain verb', 'Said of'],
+      rows: [
+        ['いらっしゃる', 'いる・来る・行く', 'someone else — honorific'],
+        ['なさる', 'する', 'someone else — honorific'],
+        ['召し上がる', '食べる', 'someone else — honorific'],
+        ['おっしゃる', '言う', 'someone else — honorific'],
+        ['申す', '言う', 'yourself — humble'],
+        ['いたす', 'する', 'yourself — humble'],
+      ],
+    },
     examples: [
       { text: '先生がいらっしゃいます。', gloss: 'The teacher is here — honorific.',
         tiles: ['先生', 'が', 'いらっしゃいます。'] },
@@ -653,6 +737,7 @@ They also chain, and a chain reads right-to-left into English: 私の友達の�
 
 Reading a long noun chain means finding the LAST noun first and working backwards, which is the
 same habit Chinese 的 demands.`,
+    pitfall: "The order is the reverse of English: the describing noun comes first. 日本語の先生 is a teacher OF Japanese, not a Japanese teacher's language.",
     examples: [
       { text: '私の本です。', gloss: 'It is my book.',
         tiles: ['私', 'の', '本', 'です。'] },

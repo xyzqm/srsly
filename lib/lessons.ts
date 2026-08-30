@@ -35,6 +35,30 @@ export interface LessonExample {
   tiles?: string[];
 }
 
+/**
+ * The enumerable half of a rule, laid out rather than listed in prose.
+ *
+ * Some rules are a paragraph and some are a table pretending to be one. Measure words,
+ * counters, verb endings, which preposition each country takes — these are FINITE SETS, and
+ * a learner reading "本 for books, 张 for flat things, 只 for many animals" in running text is
+ * doing the work of building the table themselves, from memory, while trying to learn its
+ * contents. Prose is the wrong shape for a lookup and the right shape for a why.
+ *
+ * The FIRST column is target-language and rendered tappable, so every term in it reaches the
+ * same definition, audio and Add-to-vocab that a word in a passage does. That is the whole
+ * reason the table is data rather than markdown in `explanation`: a string cannot be tapped.
+ * `tests/lessons.test.ts` validates that column against the real dictionary exactly as it
+ * validates an example sentence.
+ */
+export interface LessonTable {
+  /** What the table answers. One line, above it. */
+  caption: string;
+  /** Headers. `columns[0]` labels the tappable target-language column. */
+  columns: string[];
+  /** Cells, in column order. Every row must be `columns.length` long. */
+  rows: string[][];
+}
+
 export interface Lesson {
   id: string;
   kind: 'grammar' | 'vocab';
@@ -45,6 +69,35 @@ export interface Lesson {
   explanation?: string;
   /** Grammar only. Validated against the real dictionary — see tests/lessons.test.ts. */
   examples?: LessonExample[];
+  /**
+   * Grammar only: the enumerable part of the rule, where there is one.
+   *
+   * Deliberately not on every lesson. "The verb goes last" has nothing to tabulate, and a
+   * two-row table added for consistency is furniture.
+   */
+  table?: LessonTable;
+  /**
+   * Grammar only: the mistake beginners actually make, in one or two sentences.
+   *
+   * A rule stated correctly and a rule stated correctly PLUS the wrong version you were about
+   * to produce are not the same lesson. This is the second one, and it is separated from
+   * `explanation` rather than buried in it because the error is what the reader needs to
+   * recognise later, at speed, in their own sentence — so it gets its own box and its own
+   * heading rather than being paragraph four.
+   */
+  pitfall?: string;
+  /**
+   * Grammar only: sentences written FOR the exercise, distinct from `examples`.
+   *
+   * Practice used to be built from the examples, which meant the answer was printed on the
+   * screen the learner had just scrolled past — the exercise tested scrollback, not the rule.
+   * These are new sentences about the same rule, using vocabulary from the same lessons, and
+   * `tests/lessons.test.ts` asserts none of them repeats an example.
+   *
+   * When absent, `lib/lessonPractice.ts` falls back to `examples`, so a lesson without them
+   * is degraded rather than broken.
+   */
+  practice?: LessonExample[];
   /** Vocabulary only: a theme key from `lib/data/beginner-themes`. */
   theme?: string;
 }

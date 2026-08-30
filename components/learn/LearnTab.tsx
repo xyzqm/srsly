@@ -8,8 +8,8 @@ import {
 } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import LessonPractice from './LessonPractice';
-import WordPopup, { type PopupData } from '@/components/read/WordPopup';
-import { bareWord } from '@/lib/lessonPractice';
+import WordPopup from '@/components/read/WordPopup';
+import { useLessonInspect } from './useLessonInspect';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
@@ -242,24 +242,19 @@ function GrammarLesson({ lesson, done, onMark, addWord }: {
   const language = useLanguage();
   const unspaced = getLanguageConfig(language).scriptIsUnspaced;
   const [practicing, setPracticing] = useState(false);
-  const [popup, setPopup] = useState<PopupData | null>(null);
+  const { popup, setPopup, inspect } = useLessonInspect(language);
 
   // The examples are tappable, so the dictionary has to be here before the first tap —
   // the vocab lessons already preload it for their word lists, grammar lessons did not.
   useEffect(() => { void preloadDict(language); }, [language]);
 
-  /** Same construction as LessonPractice — see there for why not `useWordPopup`. */
-  const inspect = useCallback((tile: string, el: HTMLElement) => {
-    const word = bareWord(tile);
-    const { reading, meaning } = lookupReading(language, word);
-    if (!reading && !meaning) return;
-    setPopup({ word, pinyin: reading, meaning, type: 'free', anchorRect: el.getBoundingClientRect() });
-  }, [language]);
   // Blank lines are paragraph breaks; single newlines are just the source file wrapping.
   const paras = (lesson.explanation ?? '').trim().split(/\n\s*\n/);
   // A single fused token cannot be reassembled — 待ってください。is one word — so it stays an
-  // example and is not offered as a puzzle.
-  const practice = (lesson.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+  // example and is not offered as a puzzle. Purpose-written practice sentences count too, and
+  // are what the run will actually use — see lib/lessonPractice.ts.
+  const buildable = (l?: { tiles?: string[] }[]) => (l ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+  const practice = buildable(lesson.practice).length ? buildable(lesson.practice) : buildable(lesson.examples);
 
   // The session takes over the lesson view rather than sitting under it: a progress bar with
   // the explanation still scrolling above it is two things competing for the same attention.
@@ -285,6 +280,21 @@ function GrammarLesson({ lesson, done, onMark, addWord }: {
         ))}
       </div>
 
+      {lesson.table && <ReferenceTable table={lesson.table} unspaced={unspaced} onInspect={inspect} />}
+
+      {lesson.pitfall && (
+        /* THE ERROR GETS ITS OWN BOX. A rule stated correctly and a rule stated correctly
+           beside the wrong version you were about to write are not the same lesson — the
+           second one is the one a reader recognises later, at speed, in their own sentence. */
+        <div className="mt-6 rounded-[12px] px-4 py-3.5" style={{ maxWidth: 620,
+          background: 'var(--gold-soft)', border: '1px solid var(--gold)' }}>
+          <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 5 }}>
+            Watch out
+          </div>
+          <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.65 }}>{lesson.pitfall}</div>
+        </div>
+      )}
+
       {!!lesson.examples?.length && (
         <div className="mt-7">
           <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 10 }}>
@@ -305,11 +315,23 @@ function GrammarLesson({ lesson, done, onMark, addWord }: {
                         <button
                           key={ti}
                           onClick={e => inspect(t, e.currentTarget)}
+                          /* An example word's ONLY job is to explain itself, so every gesture
+                             in lib/inspectGesture.ts already lands here. The context menu is
+                             suppressed so a right-click gets the definition rather than the
+                             browser's own menu, which is what it gets on a practice tile. */
+                          onContextMenu={e => { e.preventDefault(); inspect(t, e.currentTarget); }}
                           className="cursor-pointer"
+                          /* The gap between words is a MARGIN, not a space in the label. A
+                             button is inline-block and browsers trim trailing whitespace
+                             inside one, so `${t} ` collapsed to nothing and every French and
+                             Spanish example rendered as «jesuisfatigué.» — one unreadable run.
+                             Chinese and Japanese want no gap at all, which is the same rule
+                             with a width of zero. */
                           style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
-                            color: 'inherit', borderBottom: '1px dotted var(--line)' }}
+                            color: 'inherit', borderBottom: '1px dotted var(--line)',
+                            marginRight: unspaced ? 0 : '0.28em' }}
                         >
-                          {unspaced ? t : `${t} `}
+                          {t}
                         </button>
                       ))
                     : ex.text}
@@ -363,6 +385,83 @@ function GrammarLesson({ lesson, done, onMark, addWord }: {
       <WordPopup data={popup} onClose={() => setPopup(null)}
         onAddVocab={(h, p, m) => { void addWord({ h, p, m }); setPopup(null); }} />
     </>
+  );
+}
+
+/**
+ * The enumerable half of a rule, laid out.
+ *
+ * The first column is target-language and every cell in it is a BUTTON, for the same reason
+ * every word in a passage is: a lesson can print 个 and 张 and never say how either is
+ * pronounced. That is also why the table is structured data rather than markdown inside
+ * `explanation` — a string cannot be tapped.
+ *
+ * It scrolls inside its own box rather than widening the page. A three-column reference is
+ * comfortable at 620px and impossible at 375, and a lesson body that scrolls sideways is a
+ * worse bug than a table that does.
+ */
+function ReferenceTable({ table, unspaced, onInspect }: {
+  table: NonNullable<Lesson['table']>;
+  unspaced: boolean;
+  onInspect: (term: string, el: HTMLElement) => void;
+}) {
+  const cell: React.CSSProperties = {
+    padding: '7px 12px 7px 0', textAlign: 'left', verticalAlign: 'top',
+    borderBottom: '1px solid var(--line)', lineHeight: 1.5,
+  };
+  return (
+    <div className="mt-7" style={{ maxWidth: 620 }}>
+      <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 8 }}>
+        {table.caption}
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 320 }}>
+          <thead>
+            <tr>
+              {table.columns.map(c => (
+                <th key={c} style={{ ...cell, ...MONO, fontSize: 9.5, textTransform: 'uppercase',
+                  color: 'var(--ink-faint)', fontWeight: 500, borderBottomColor: 'var(--ink-faint)' }}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((r, i) => (
+              <tr key={i}>
+                {r.map((c, j) => (
+                  <td key={j} style={{ ...cell, fontSize: j === 0 ? 15 : 13,
+                    color: j === 0 ? 'var(--ink)' : 'var(--ink-soft)',
+                    whiteSpace: j === 0 ? 'nowrap' : undefined }}>
+                    {j === 0 && c
+                      /* Tapped WORD BY WORD, not cell by cell. A conjugation row reads
+                         "je suis", and neither the dictionary nor the deinflection route can
+                         resolve a two-word phrase — so a whole-cell button was dead on every
+                         row of every French and Spanish table. Splitting on spaces is a no-op
+                         for the single characters Chinese and Japanese put here. */
+                      ? c.split(' ').map((w, k) => (
+                          <button
+                            key={k}
+                            onClick={e => onInspect(w, e.currentTarget)}
+                            onContextMenu={e => { e.preventDefault(); onInspect(w, e.currentTarget); }}
+                            className="cursor-pointer"
+                            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                              color: 'inherit', borderBottom: '1px dotted var(--line)',
+                              marginRight: k < c.split(' ').length - 1 ? '0.28em' : 0,
+                              fontFamily: unspaced ? 'var(--f-han)' : undefined }}
+                          >
+                            {w}
+                          </button>
+                        ))
+                      : c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

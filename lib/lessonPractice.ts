@@ -15,6 +15,16 @@ import type { Lesson, LessonExample } from './lessons';
  * streak, no record that survives closing the lesson. The curriculum is deliberately separate
  * from scheduling (see lib/lessons.ts), and a lesson you can fail is a lesson you avoid.
  *
+ * ── THE SENTENCES ARE NOT THE EXAMPLES ──
+ * A lesson's `practice` array holds sentences written for the exercise; `examples` holds the
+ * ones printed above it, with their teaching glosses. Building questions from the examples
+ * meant the answer was on the page the learner had just read — the exercise tested scrollback
+ * rather than the rule. Practice sentences are preferred whenever a lesson has them, and the
+ * examples remain the fallback so a lesson without them still has an exercise.
+ *
+ * The DISTRACTOR pool is drawn from both, because a plausible wrong option is one the learner
+ * has just been taught, and everything in either list qualifies.
+ *
  * ── TWO SHAPES, BECAUSE ONE WAS TOO EASY ──
  * A two-tile ordering question is not a question: the tile carrying the full stop has to go
  * last, so `我 / 吃饭。` solves itself. Rather than drop the short examples, they get a second
@@ -39,7 +49,17 @@ export interface ChoiceQuestion {
 export interface OrderQuestion {
   kind: 'order';
   example: LessonExample;
+  /** The tiles in the CORRECT order — this is the answer. */
   tiles: string[];
+  /**
+   * The same tiles in the order the pool SHOWS them, which is not the answer's order.
+   *
+   * It has to be carried on the question rather than shuffled at render, and the reason is
+   * that the pool is now a fixed row of slots: a tile keeps its place when it is used, so its
+   * position is an identity the component relies on and a fresh shuffle every render would
+   * move the tiles under the learner's finger mid-question.
+   */
+  shuffled: string[];
 }
 
 export type PracticeQuestion = OrderQuestion | ChoiceQuestion;
@@ -52,6 +72,16 @@ export const MIN_ORDER_TILES = 3;
 
 /** Options shown for a choice question, including the right one. */
 export const CHOICE_OPTIONS = 4;
+
+/**
+ * How many times to re-draw a pool order that came out as the answer.
+ *
+ * A shuffle is allowed to land on the identity permutation, and for a four-tile sentence that
+ * is one time in 24 — so the exercise occasionally opened with the sentence already built and
+ * asked nothing at all. Re-drawing is the fix; the cap is there because a sentence whose
+ * tiles are all the SAME word has no other arrangement and would otherwise loop forever.
+ */
+const RESHUFFLE_TRIES = 12;
 
 /** Deterministic shuffle when a seed is supplied — tests need a fixed order. */
 function shuffle<T>(items: T[], rand: () => number): T[] {
@@ -80,21 +110,30 @@ export function bareWord(tile: string): string {
  * `rand` is injectable so tests can pin the shuffle; the UI passes `Math.random`.
  */
 export function buildQuestions(lesson: Lesson, rand: () => number = Math.random): PracticeQuestion[] {
-  const examples = (lesson.examples ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+  const buildable = (list?: LessonExample[]) => (list ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
+  // Purpose-written sentences when the lesson has them; the printed examples otherwise, so a
+  // lesson that has not been given practice sentences yet is degraded and not empty.
+  const examples = buildable(lesson.practice).length ? buildable(lesson.practice) : buildable(lesson.examples);
   if (!examples.length) return [];
 
   // Every distinct word in the lesson, as a pool of plausible distractors. Drawn from the
   // same lesson so a wrong option is always something the learner has just been taught —
-  // a distractor from nowhere is not a distractor, it is noise.
+  // a distractor from nowhere is not a distractor, it is noise. Both lists feed it: an
+  // example's words are as freshly taught as a practice sentence's.
   const vocabulary = [...new Set(
-    examples.flatMap(e => (e.tiles ?? []).map(bareWord)).filter(Boolean),
+    [...buildable(lesson.practice), ...buildable(lesson.examples)]
+      .flatMap(e => (e.tiles ?? []).map(bareWord)).filter(Boolean),
   )];
 
   const questions: PracticeQuestion[] = [];
   for (const example of examples) {
     const tiles = example.tiles!;
     if (tiles.length >= MIN_ORDER_TILES) {
-      questions.push({ kind: 'order', example, tiles });
+      let shuffled = shuffle(tiles, rand);
+      for (let i = 0; i < RESHUFFLE_TRIES && sameOrder(shuffled, tiles); i++) {
+        shuffled = shuffle(tiles, rand);
+      }
+      questions.push({ kind: 'order', example, tiles, shuffled });
       continue;
     }
 
@@ -119,10 +158,14 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
   return shuffle(questions, rand);
 }
 
+function sameOrder(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
 /** Did this answer match? Order questions compare position; choice compares the word. */
 export function isCorrect(q: PracticeQuestion, given: string[]): boolean {
   if (q.kind === 'order') {
-    return given.length === q.tiles.length && given.every((t, i) => t === q.tiles[i]);
+    return sameOrder(given, q.tiles);
   }
   return given.length === 1 && given[0] === q.answer;
 }

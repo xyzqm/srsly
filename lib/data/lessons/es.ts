@@ -37,6 +37,7 @@ mano. And many nouns end in neither letter, so el and la are simply learned with
 
 You have been seeing this while reading: tap an inflected word and the note under the definition
 says things like "feminine plural". That is this, doing visible work.`,
+    pitfall: 'The -o/-a rule is a strong hint, not a law. día, mapa and problema are masculine; mano and foto are feminine. Learn the article together with the noun.',
     examples: [
       { text: 'el libro está en la mesa.', gloss: 'The book is on the table.',
         tiles: ['el', 'libro', 'está', 'en', 'la', 'mesa.'] },
@@ -61,6 +62,7 @@ Unlike French, the plural is fully pronounced, so you hear it as well as read it
 Two spelling adjustments follow from how Spanish is written rather than from grammar: a final -z
 becomes -c before the ending (lápiz becomes lápices), and a written accent on the last syllable
 usually disappears in the plural, because the stress no longer needs marking.`,
+    pitfall: 'The article pluralises too, and you can hear it. Writing casas but leaving la is the mistake — it is las casas, marked in both places.',
     examples: [
       { text: 'los libros están en la mesa.', gloss: 'The books are on the table.',
         tiles: ['los', 'libros', 'están', 'en', 'la', 'mesa.'] },
@@ -84,6 +86,7 @@ coffee" — not "the coffee". It is also used with days and with most titles.
 
 Two contractions are obligatory and worth learning as single words: a + el becomes al, and
 de + el becomes del. Nobody writes "a el" or "de el".`,
+    pitfall: "Spanish uses the definite article where English uses nothing at all: me gusta el café, los lunes. Leaving it out is the commonest tell in a beginner's Spanish.",
     examples: [
       { text: 'veo un perro en la calle.', gloss: 'I see a dog in the street.',
         tiles: ['veo', 'un', 'perro', 'en', 'la', 'calle.'] },
@@ -113,6 +116,19 @@ is wrong; they say different things, and that pair is the clearest way to feel t
 
 Location is always estar, even for something that has not moved in eight hundred years: "la
 catedral está en la plaza".`,
+    pitfall: '«Temporary means estar» is a rough guide, not the rule. Location is always estar even for a mountain, and the time is always ser even though it changes every minute.',
+    table: {
+      caption: 'The two verbs side by side',
+      columns: ['Form', 'Which verb, and what it is doing', 'Example'],
+      rows: [
+        ['soy', 'ser — who or what you are', 'soy profesor'],
+        ['estoy', 'estar — how you are right now', 'estoy cansado'],
+        ['es', 'ser — what a thing is, and the time', 'la casa es blanca'],
+        ['está', 'estar — where a thing is, and its state', 'la casa está lejos'],
+        ['son', 'ser — plural identity', 'son mis hermanos'],
+        ['están', 'estar — plural state or place', 'están aquí'],
+      ],
+    },
     examples: [
       { text: 'soy profesor.', gloss: 'I am a teacher — an identity, so ser.',
         tiles: ['soy', 'profesor.'] },
@@ -138,6 +154,7 @@ thirst, cold, fear. "tengo hambre" is "I am hungry", literally "I have hunger". 
 hambre" stops a sentence dead, so these are worth learning as fixed phrases.
 
 tener que plus an infinitive is how you say you have to do something: "tengo que trabajar".`,
+    pitfall: 'Age, hunger, cold and fear are things you HAVE in Spanish. «soy veinte» and «estoy hambre» are the word-for-word translations, and both are wrong.',
     examples: [
       { text: 'tengo un hermano y una hermana.', gloss: 'I have a brother and a sister.',
         tiles: ['tengo', 'un', 'hermano', 'y', 'una', 'hermana.'] },
@@ -165,6 +182,16 @@ patterns and a small adjustment.
 Because each ending is distinct and fully pronounced, Spanish does not need the subject pronoun
 the way English does. "hablo" already means "I speak", and adding "yo" is for emphasis or
 contrast. Leaving it out is normal, not casual.`,
+    pitfall: 'The ending already carries the person, so the pronoun is normally dropped. Saying yo hablo every time is not an error but sounds insistent, as though contradicting somebody.',
+    table: {
+      caption: 'The three ending sets',
+      columns: ['Verb', 'Endings', 'Example'],
+      rows: [
+        ['hablar', '-o · -as · -a · -amos · -áis · -an', 'hablo español'],
+        ['comer', '-o · -es · -e · -emos · -éis · -en', 'comemos juntos'],
+        ['vivir', '-o · -es · -e · -imos · -ís · -en', 'viven aquí'],
+      ],
+    },
     examples: [
       { text: 'hablo español con mi madre.', gloss: 'I speak Spanish with my mother.',
         tiles: ['hablo', 'español', 'con', 'mi', 'madre.'] },
@@ -189,6 +216,7 @@ like nada, nadie or nunca comes after the verb, the no stays.
 
 Move the negative word in front of the verb and the no disappears: "nunca voy" and "no voy
 nunca" both mean "I never go".`,
+    pitfall: 'Spanish stacks negatives deliberately. «no veo nada» is correct and «no veo algo» is not — the double negative is the grammar, not a slip.',
     examples: [
       { text: 'no entiendo.', gloss: 'I do not understand.',
         tiles: ['no', 'entiendo.'] },
@@ -217,6 +245,7 @@ The person changes with the little word in front: me, te, le, nos, os, les. So "
 
 A handful of very common verbs work the same way — encantar, interesar, doler. Once the pattern
 clicks for gustar it comes free for all of them.`,
+    pitfall: 'The thing liked is the SUBJECT, so the verb agrees with it: me gustan los libros, never me gusta los libros. You are the indirect object throughout, never yo.',
     examples: [
       { text: 'me gusta el café.', gloss: 'I like coffee — literally, coffee pleases me.',
         tiles: ['me', 'gusta', 'el', 'café.'] },
@@ -241,6 +270,7 @@ gender: grande and grandes, azul and azules.
 
 Unlike French, every one of these endings is pronounced, so agreement is something you hear
 constantly and cannot treat as a spelling detail.`,
+    pitfall: 'The adjective agrees in gender and number, and unlike French you can hear every bit of it. «una casa blanco» is a mistake a listener catches instantly.',
     examples: [
       { text: 'un perro pequeño.', gloss: 'A small dog.',
         tiles: ['un', 'perro', 'pequeño.'] },
@@ -269,6 +299,7 @@ quality is presented as simply belonging to the thing, which is why it is common
 A few adjectives change meaning outright with position. "un hombre grande" is a big man; "un
 gran hombre" is a great one. Note that grande shortens to gran directly before any singular
 noun.`,
+    pitfall: 'Moving the adjective changes the meaning rather than just the register. un gran hombre is a great man; un hombre grande is a large one.',
     examples: [
       { text: 'un coche rojo.', gloss: 'A red car — the normal order.',
         tiles: ['un', 'coche', 'rojo.'] },
@@ -296,6 +327,20 @@ it tells a reader that a long sentence is a question before they reach the end.
 The question words carry a written accent: qué, quién, dónde, cuándo, cómo, por qué, cuánto.
 The accent is what distinguishes the question word from the ordinary one, which is why "porque"
 (because) and "por qué" (why) are not the same thing.`,
+    pitfall: 'Both marks are required in writing, and the opening ¿ goes exactly where the question starts — which is not always the start of the sentence.',
+    table: {
+      caption: 'The question words, all of them accented',
+      columns: ['Word', 'Asks', 'Example'],
+      rows: [
+        ['qué', 'what', '¿qué hora es?'],
+        ['quién', 'who', '¿quién es ese hombre?'],
+        ['dónde', 'where', '¿dónde está la estación?'],
+        ['cuándo', 'when', '¿cuándo vienes?'],
+        ['cómo', 'how', '¿cómo se dice esto?'],
+        ['cuánto', 'how much', '¿cuánto cuesta?'],
+        ['por qué', 'why', '¿por qué no vienes?'],
+      ],
+    },
     examples: [
       { text: '¿hablas español?', gloss: 'Do you speak Spanish?',
         tiles: ['¿hablas', 'español?'] },
@@ -322,6 +367,15 @@ through a place. "gracias por el regalo", "lo compré por diez euros", "caminamo
 
 A pair worth holding on to: "lo hago por ti" means I do it because of you, on your behalf; "lo
 hago para ti" means I am making it to give to you.`,
+    pitfall: 'trabajo para mi padre means he is your employer; trabajo por mi padre means you are standing in for him. One preposition apart, and a very different sentence.',
+    table: {
+      caption: 'Which way each one points',
+      columns: ['Word', 'Points at', 'Example'],
+      rows: [
+        ['para', 'forwards — a purpose, a destination, a deadline, a recipient', 'estudio para el examen'],
+        ['por', 'backwards or through — a cause, a route, an exchange, a duration', 'gracias por la comida'],
+      ],
+    },
     examples: [
       { text: 'este regalo es para mi madre.', gloss: 'This present is for my mother — recipient.',
         tiles: ['este', 'regalo', 'es', 'para', 'mi', 'madre.'] },
@@ -349,6 +403,7 @@ This is how most future time gets expressed in speech. There is a separate futur
 own endings, and it is used, but it leans formal — and it is often used for something else
 entirely: guessing. "¿dónde está Juan? — estará en casa" means "he is probably at home", not a
 statement about the future.`,
+    pitfall: 'The a is not optional. «voy comer» is wrong — it is voy a comer, the same a that turns up in voy a Madrid.',
     examples: [
       { text: 'voy a comer.', gloss: 'I am going to eat.',
         tiles: ['voy', 'a', 'comer.'] },
@@ -375,6 +430,7 @@ habló is "he spoke". Losing the accent changes the tense and the person at once
 A handful of very common verbs are irregular here and simply have to be learned: ser and ir
 share the same preterite (fui, fuiste, fue), which sounds like a problem and never is, because
 context settles it instantly.`,
+    pitfall: 'The accents are not decoration. hablo is «I speak» and habló is «he spoke»; dropping the mark changes the person and the tense at once.',
     examples: [
       { text: 'comí una manzana.', gloss: 'I ate an apple.',
         tiles: ['comí', 'una', 'manzana.'] },
@@ -404,6 +460,7 @@ The real skill is choosing between this and the preterite, and it is not about h
 something was. The preterite is a finished event; the imperfect is a background, a habit or a
 state. One sentence often needs both: "comía cuando llegó" — I was eating (background) when he
 arrived (event).`,
+    pitfall: 'The choice is about how you FRAME it, not how long it lasted. viví allí diez años is perfectly correct — the ten years are being treated as one finished block.',
     examples: [
       { text: 'cuando era pequeño, jugaba en el parque.', gloss: 'When I was small, I used to play in the park.',
         tiles: ['cuando', 'era', 'pequeño,', 'jugaba', 'en', 'el', 'parque.'] },
@@ -431,6 +488,7 @@ command: "voy a levantarme", "levántate".
 
 Some verbs change meaning with the pronoun: ir is "to go", irse is "to leave"; dormir is "to
 sleep", dormirse is "to fall asleep".`,
+    pitfall: 'The pronoun changes with the person: me levanto, te levantas, se levanta. Leaving se in place throughout is the giveaway — that is only the dictionary form.',
     examples: [
       { text: 'me levanto a las siete.', gloss: 'I get up at seven.',
         tiles: ['me', 'levanto', 'a', 'las', 'siete.'] },
@@ -458,6 +516,21 @@ learned: "se lo doy", never "le lo doy".
 
 With an infinitive or a command the pronoun attaches to the END instead: "voy a verlo",
 "dímelo".`,
+    pitfall: 'Before a conjugated verb, but attached to the end of an infinitive or gerund. Both quiero verlo and lo quiero ver are right; «verlo quiero» is not.',
+    table: {
+      caption: 'The pronouns, and which slot they fill',
+      columns: ['Pronoun', 'Stands for', 'Example'],
+      rows: [
+        ['me', 'me', 'me ayuda mucho'],
+        ['te', 'you', 'te lo digo ahora'],
+        ['lo', 'him, or it — masculine', 'lo veo todos los días'],
+        ['la', 'her, or it — feminine', 'la veo mañana'],
+        ['le', 'to him, to her', 'le hablo por teléfono'],
+        ['nos', 'us', 'nos ayuda'],
+        ['los', 'them — masculine', 'los veo'],
+        ['les', 'to them', 'les hablo'],
+      ],
+    },
     examples: [
       { text: 'lo veo todos los días.', gloss: 'I see him every day.',
         tiles: ['lo', 'veo', 'todos', 'los', 'días.'] },
@@ -488,6 +561,7 @@ saber plus an infinitive is "know how to": "sé nadar" is "I can swim" in the se
 learned, which is different from poder.
 
 Note the a before a person — Spanish marks a personal object that way, and it is easy to drop.`,
+    pitfall: 'saber is facts and skills; conocer is being acquainted with a person or place. «sé a María» would mean you have her memorised.',
     examples: [
       { text: 'sé la respuesta.', gloss: 'I know the answer — a fact.',
         tiles: ['sé', 'la', 'respuesta.'] },
@@ -518,6 +592,7 @@ tense, so the same sentence can be said either way depending on where the writer
 
 The participle never changes here, whatever the subject — that only happens when it is used as
 an adjective.`,
+    pitfall: 'Spain uses the present perfect for today; much of Latin America uses the preterite for both. Neither is a mistake — hoy he comido and hoy comí simply belong to different places.',
     examples: [
       { text: 'hoy he comido bien.', gloss: 'I have eaten well today — today is still going.',
         tiles: ['hoy', 'he', 'comido', 'bien.'] },
@@ -544,6 +619,17 @@ peor, grande → mayor, pequeño → menor. You do not say "más bueno" for qual
 
 There is also a separate superlative ending, -ísimo, which is not a comparison at all but an
 intensifier: "buenísimo" is "really good", not "the best".`,
+    pitfall: 'The four irregulars take no más at all. más bueno and más malo do exist, but they are about character rather than quality.',
+    table: {
+      caption: 'The four that do not take más',
+      columns: ['Word', 'Means', 'Not'],
+      rows: [
+        ['mejor', 'better — from bueno', 'más bueno'],
+        ['peor', 'worse — from malo', 'más malo'],
+        ['mayor', 'older, greater — from grande', 'más grande'],
+        ['menor', 'younger, lesser — from pequeño', 'más pequeño'],
+      ],
+    },
     examples: [
       { text: 'es más alto que yo.', gloss: 'He is taller than me.',
         tiles: ['es', 'más', 'alto', 'que', 'yo.'] },
@@ -570,6 +656,7 @@ single most surprising thing about Spanish commands.
 
 Pronouns attach to the end of a positive command and go in front of a negative one: "dímelo",
 but "no me lo digas".`,
+    pitfall: 'The negative uses a completely different ending. habla becomes no hables — «no habla» is not a command at all, it is a statement about somebody else.',
     examples: [
       { text: 'habla más despacio.', gloss: 'Speak more slowly.',
         tiles: ['habla', 'más', 'despacio.'] },
@@ -599,6 +686,7 @@ subjunctive is the only route.
 
 cuando is the one that catches people: "cuando llegue" for something that has not happened yet,
 but "cuando llegó" for something that did.`,
+    pitfall: 'It is triggered by the structure, not by how doubtful you feel. quiero que vengas takes it because of quiero que, and there is nothing uncertain about wanting something.',
     examples: [
       { text: 'quiero que vengas.', gloss: 'I want you to come.',
         tiles: ['quiero', 'que', 'vengas.'] },
@@ -627,6 +715,7 @@ The conditional is the polite one: "querría un café" or, more commonly, "quisi
 
 And both do a second job that has nothing to do with time — guessing. "¿Qué hora será?" is "what
 time do you suppose it is?", and "serían las tres" is "it must have been about three".`,
+    pitfall: 'The endings go on the WHOLE infinitive, not on a stem. hablaré, never hablé — that second one is the preterite, and one letter apart.',
     examples: [
       { text: 'hablaré con ella mañana.', gloss: 'I will speak with her tomorrow.',
         tiles: ['hablaré', 'con', 'ella', 'mañana.'] },
@@ -653,6 +742,16 @@ If the thing is near the person you are talking to, ese is the natural choice.
 
 There are also neuter forms — esto, eso, aquello — for an idea rather than a thing: "eso es
 verdad" is "that is true", where "that" is the whole situation and has no gender.`,
+    pitfall: 'Three distances, where English has two. ese is near the listener and aquel is far from you both; using ese for everything not in your hand loses the middle one.',
+    table: {
+      caption: 'Three distances',
+      columns: ['Word', 'Distance', 'Example'],
+      rows: [
+        ['este', 'near me', 'este libro es mío'],
+        ['ese', 'near you', 'esa casa es grande'],
+        ['aquel', 'far from us both', 'aquella montaña es alta'],
+      ],
+    },
     examples: [
       { text: 'este libro es mío.', gloss: 'This book is mine — here, next to me.',
         tiles: ['este', 'libro', 'es', 'mío.'] },
@@ -679,6 +778,7 @@ clear, speakers say "de él" or "de ella" instead: "el libro de ella".
 
 There is a second set that goes AFTER the noun for emphasis, and stands alone: mío, tuyo, suyo.
 "un amigo mío" is "a friend of mine", and "es mío" is "it is mine".`,
+    pitfall: 'su means his, her, their and your (formal) all at once. When it genuinely matters, Spanish says de él or de ella rather than leaving you to guess.',
     examples: [
       { text: 'mi casa es pequeña.', gloss: 'My house is small.',
         tiles: ['mi', 'casa', 'es', 'pequeña.'] },
@@ -707,6 +807,7 @@ AND THE SUBSTITUTE — le becomes se before lo or la, purely to avoid "le lo": "
 
 The impersonal is the one worth spotting first, because it is common in writing and has no
 obvious English shape.`,
+    pitfall: 'se does four unrelated jobs. Before deciding it is reflexive, check whether the sentence names anybody doing the action — se habla español names nobody, and that is the whole point.',
     examples: [
       { text: 'se habla español aquí.', gloss: 'Spanish is spoken here — impersonal.',
         tiles: ['se', 'habla', 'español', 'aquí.'] },
@@ -734,6 +835,7 @@ So this form is narrower than it looks: it is for what is happening literally no
 
 A few gerunds are irregular and common: leer gives leyendo, dormir gives durmiendo, decir gives
 diciendo.`,
+    pitfall: 'Spanish uses it far less than English does. For anything scheduled or generally true the plain present is correct: vivo en Madrid, not estoy viviendo.',
     examples: [
       { text: 'estoy comiendo.', gloss: 'I am eating — right now.',
         tiles: ['estoy', 'comiendo.'] },
@@ -759,6 +861,7 @@ problema" — for something already identified, Spanish uses estar: "el problema
 
 That split is the same one behind ser and estar: hay introduces something new, estar locates
 something already known.`,
+    pitfall: 'hay never changes for number. hay un libro and hay muchos libros both use hay — «han» and «hayn» do not exist in this construction.',
     examples: [
       { text: 'hay un problema.', gloss: 'There is a problem.',
         tiles: ['hay', 'un', 'problema.'] },

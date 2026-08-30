@@ -1,0 +1,1438 @@
+{
+  "zh": {
+    "zh-word-order": [
+      {
+        "text": "我明天看书。",
+        "gloss": "I am reading a book tomorrow."
+      },
+      {
+        "text": "她喜欢咖啡。",
+        "gloss": "She likes coffee."
+      },
+      {
+        "text": "我们晚上吃饭。",
+        "gloss": "We eat in the evening."
+      }
+    ],
+    "zh-measure-words": [
+      {
+        "text": "我要三杯咖啡。",
+        "gloss": "I want three cups of coffee."
+      },
+      {
+        "text": "他有一只猫。",
+        "gloss": "He has a cat."
+      },
+      {
+        "text": "他买了两张票。",
+        "gloss": "He bought two tickets — 张 for flat things."
+      }
+    ],
+    "zh-de": [
+      {
+        "text": "这本书是他的。",
+        "gloss": "This book is his."
+      },
+      {
+        "text": "我妈妈很忙。",
+        "gloss": "My mother is busy."
+      },
+      {
+        "text": "这是我买的东西。",
+        "gloss": "This is the thing I bought."
+      }
+    ],
+    "zh-shi-you": [
+      {
+        "text": "他是老师。",
+        "gloss": "He is a teacher."
+      },
+      {
+        "text": "我很忙。",
+        "gloss": "I am busy."
+      },
+      {
+        "text": "她没有时间。",
+        "gloss": "She has no time."
+      }
+    ],
+    "zh-negation": [
+      {
+        "text": "我不吃肉。",
+        "gloss": "I do not eat meat."
+      },
+      {
+        "text": "他没来。",
+        "gloss": "He did not come."
+      },
+      {
+        "text": "我们不去学校。",
+        "gloss": "We are not going to school."
+      }
+    ],
+    "zh-le": [
+      {
+        "text": "他走了。",
+        "gloss": "He has left."
+      },
+      {
+        "text": "我喝了三杯茶。",
+        "gloss": "I drank three cups of tea."
+      },
+      {
+        "text": "天气冷了。",
+        "gloss": "The weather has turned cold."
+      }
+    ],
+    "zh-guo": [
+      {
+        "text": "我看过这本书。",
+        "gloss": "I have read this book before."
+      },
+      {
+        "text": "你去过那个地方吗？",
+        "gloss": "Have you ever been to that place?"
+      },
+      {
+        "text": "他没吃过。",
+        "gloss": "He has never eaten it."
+      }
+    ],
+    "zh-zai": [
+      {
+        "text": "他在学校。",
+        "gloss": "He is at school."
+      },
+      {
+        "text": "我在看书。",
+        "gloss": "I am reading."
+      },
+      {
+        "text": "她在家学习。",
+        "gloss": "She studies at home."
+      }
+    ],
+    "zh-questions": [
+      {
+        "text": "你叫什么名字？",
+        "gloss": "What is your name?"
+      },
+      {
+        "text": "这是什么？",
+        "gloss": "What is this?"
+      },
+      {
+        "text": "你有几个孩子？",
+        "gloss": "How many children do you have?"
+      }
+    ],
+    "zh-adjectives": [
+      {
+        "text": "今天很热。",
+        "gloss": "It is hot today."
+      },
+      {
+        "text": "他比我忙。",
+        "gloss": "He is busier than I am."
+      },
+      {
+        "text": "这个房间很小。",
+        "gloss": "This room is small."
+      }
+    ],
+    "zh-ba": [
+      {
+        "text": "他把钱给我了。",
+        "gloss": "He gave me the money."
+      },
+      {
+        "text": "请把这个拿走。",
+        "gloss": "Please take this away."
+      },
+      {
+        "text": "她把窗户打开了。",
+        "gloss": "She opened the window."
+      }
+    ],
+    "zh-bei": [
+      {
+        "text": "钱被人拿走了。",
+        "gloss": "The money was taken by someone."
+      },
+      {
+        "text": "那本书被卖了。",
+        "gloss": "That book was sold."
+      },
+      {
+        "text": "窗户被风打开了。",
+        "gloss": "The window was blown open by the wind."
+      }
+    ],
+    "zh-modals": [
+      {
+        "text": "他会开车。",
+        "gloss": "He can drive."
+      },
+      {
+        "text": "我不能喝酒。",
+        "gloss": "I cannot drink alcohol."
+      },
+      {
+        "text": "你可以在这儿吃饭。",
+        "gloss": "You may eat here."
+      }
+    ],
+    "zh-resultative": [
+      {
+        "text": "我找到了。",
+        "gloss": "I found it."
+      },
+      {
+        "text": "他听见了。",
+        "gloss": "He heard it."
+      },
+      {
+        "text": "我没听懂。",
+        "gloss": "I did not catch that."
+      }
+    ],
+    "zh-duration": [
+      {
+        "text": "他等了两个小时。",
+        "gloss": "He waited for two hours."
+      },
+      {
+        "text": "他睡了八个小时。",
+        "gloss": "He slept for eight hours."
+      },
+      {
+        "text": "我们走了很久。",
+        "gloss": "We walked for a long time."
+      }
+    ],
+    "zh-jiu-cai": [
+      {
+        "text": "他九点才回家。",
+        "gloss": "He did not get home until nine."
+      },
+      {
+        "text": "我五点就起来了。",
+        "gloss": "I was up by five."
+      },
+      {
+        "text": "她十点才睡。",
+        "gloss": "She did not go to sleep until ten."
+      }
+    ],
+    "zh-directional": [
+      {
+        "text": "他出去了。",
+        "gloss": "He has gone out."
+      },
+      {
+        "text": "请你上来。",
+        "gloss": "Please come up."
+      },
+      {
+        "text": "我下去看看。",
+        "gloss": "I will go down and have a look."
+      }
+    ],
+    "zh-zhe": [
+      {
+        "text": "窗户开着。",
+        "gloss": "The window is open."
+      },
+      {
+        "text": "他坐着看书。",
+        "gloss": "He is sitting reading."
+      },
+      {
+        "text": "灯亮着。",
+        "gloss": "The light is on."
+      }
+    ],
+    "zh-yao-xiang": [
+      {
+        "text": "我想喝咖啡。",
+        "gloss": "I would like a coffee."
+      },
+      {
+        "text": "他要走了。",
+        "gloss": "He is about to leave."
+      },
+      {
+        "text": "我打算明天去。",
+        "gloss": "I plan to go tomorrow."
+      }
+    ],
+    "zh-time-words": [
+      {
+        "text": "现在三点半。",
+        "gloss": "It is half past three."
+      },
+      {
+        "text": "我星期一去学校。",
+        "gloss": "I go to school on Monday."
+      },
+      {
+        "text": "他九月十号来。",
+        "gloss": "He is coming on the tenth of September."
+      }
+    ],
+    "zh-yinwei": [
+      {
+        "text": "因为很忙，所以我没来。",
+        "gloss": "I did not come because I was busy."
+      },
+      {
+        "text": "虽然下雨，但是我们去了。",
+        "gloss": "Although it was raining, we went."
+      },
+      {
+        "text": "如果明天不下雨，我们就去。",
+        "gloss": "If it does not rain tomorrow, we will go."
+      }
+    ],
+    "zh-ne-ba": [
+      {
+        "text": "你去吗？",
+        "gloss": "Are you going?"
+      },
+      {
+        "text": "我们吃饭吧。",
+        "gloss": "Let's eat."
+      },
+      {
+        "text": "他是谁呢？",
+        "gloss": "So who is he, then?"
+      }
+    ],
+    "zh-dou-ye": [
+      {
+        "text": "他们都是学生。",
+        "gloss": "They are all students."
+      },
+      {
+        "text": "我也不知道。",
+        "gloss": "I do not know either."
+      },
+      {
+        "text": "这些书都很好。",
+        "gloss": "These books are all good."
+      }
+    ]
+  },
+  "ja": {
+    "ja-word-order": [
+      {
+        "text": "私は水を飲みます。",
+        "gloss": "I drink water."
+      },
+      {
+        "text": "母は料理を作ります。",
+        "gloss": "My mother makes the food."
+      },
+      {
+        "text": "私は今日映画を見ます。",
+        "gloss": "I am watching a film today."
+      }
+    ],
+    "ja-wa-ga": [
+      {
+        "text": "私は犬が好きです。",
+        "gloss": "I like dogs."
+      },
+      {
+        "text": "誰が食べましたか。",
+        "gloss": "Who ate it?"
+      },
+      {
+        "text": "天気がいいです。",
+        "gloss": "The weather is good."
+      }
+    ],
+    "ja-particles": [
+      {
+        "text": "公園で遊びます。",
+        "gloss": "I play in the park."
+      },
+      {
+        "text": "電車に乗ります。",
+        "gloss": "I get on the train."
+      },
+      {
+        "text": "手紙を書きます。",
+        "gloss": "I write a letter."
+      }
+    ],
+    "ja-desu": [
+      {
+        "text": "これは私の本です。",
+        "gloss": "This is my book."
+      },
+      {
+        "text": "先生ではありません。",
+        "gloss": "I am not a teacher."
+      },
+      {
+        "text": "明日は休みです。",
+        "gloss": "Tomorrow is a day off."
+      }
+    ],
+    "ja-adjectives": [
+      {
+        "text": "この部屋は広いです。",
+        "gloss": "This room is spacious."
+      },
+      {
+        "text": "有名な店です。",
+        "gloss": "It is a famous shop."
+      },
+      {
+        "text": "古い車を売りました。",
+        "gloss": "I sold the old car."
+      }
+    ],
+    "ja-verbs": [
+      {
+        "text": "毎朝コーヒーを飲みます。",
+        "gloss": "I drink coffee every morning."
+      },
+      {
+        "text": "昨日手紙を書きました。",
+        "gloss": "I wrote a letter yesterday."
+      },
+      {
+        "text": "魚を食べません。",
+        "gloss": "I do not eat fish."
+      }
+    ],
+    "ja-te-form": [
+      {
+        "text": "音楽を聞いています。",
+        "gloss": "I am listening to music."
+      },
+      {
+        "text": "会社で働いています。",
+        "gloss": "I work at a company."
+      },
+      {
+        "text": "ここに座ってください。",
+        "gloss": "Please sit here."
+      }
+    ],
+    "ja-aru-iru": [
+      {
+        "text": "犬がいます。",
+        "gloss": "There is a dog."
+      },
+      {
+        "text": "机の上に本があります。",
+        "gloss": "There is a book on the desk."
+      },
+      {
+        "text": "時間がありません。",
+        "gloss": "There is no time."
+      }
+    ],
+    "ja-plain-form": [
+      {
+        "text": "水を飲んだ。",
+        "gloss": "I drank the water."
+      },
+      {
+        "text": "映画を見なかった。",
+        "gloss": "I did not see the film."
+      },
+      {
+        "text": "今日は忙しい。",
+        "gloss": "I am busy today."
+      }
+    ],
+    "ja-tai": [
+      {
+        "text": "海に行きたいです。",
+        "gloss": "I want to go to the sea."
+      },
+      {
+        "text": "一緒に食べましょう。",
+        "gloss": "Let's eat together."
+      },
+      {
+        "text": "明日会いませんか。",
+        "gloss": "Shall we meet tomorrow?"
+      }
+    ],
+    "ja-questions": [
+      {
+        "text": "これは何ですか。",
+        "gloss": "What is this?"
+      },
+      {
+        "text": "いつ来ますか。",
+        "gloss": "When are you coming?"
+      },
+      {
+        "text": "誰と行きますか。",
+        "gloss": "Who are you going with?"
+      }
+    ],
+    "ja-counters": [
+      {
+        "text": "紙を三枚ください。",
+        "gloss": "Three sheets of paper, please."
+      },
+      {
+        "text": "犬が一匹います。",
+        "gloss": "There is one dog."
+      },
+      {
+        "text": "ビールを二杯飲みました。",
+        "gloss": "I drank two glasses of beer."
+      }
+    ],
+    "ja-potential": [
+      {
+        "text": "英語が話せます。",
+        "gloss": "I can speak English."
+      },
+      {
+        "text": "肉が食べられません。",
+        "gloss": "I cannot eat meat."
+      },
+      {
+        "text": "明日行けますか。",
+        "gloss": "Can you go tomorrow?"
+      }
+    ],
+    "ja-conditionals": [
+      {
+        "text": "雨が降ったら、行きません。",
+        "gloss": "If it rains, I will not go."
+      },
+      {
+        "text": "押すと、開きます。",
+        "gloss": "If you push it, it opens."
+      },
+      {
+        "text": "安ければ買います。",
+        "gloss": "If it is cheap, I will buy it."
+      }
+    ],
+    "ja-giving-receiving": [
+      {
+        "text": "母に花をあげました。",
+        "gloss": "I gave my mother flowers."
+      },
+      {
+        "text": "先生が本をくれました。",
+        "gloss": "My teacher gave me a book."
+      },
+      {
+        "text": "兄に時計をもらいました。",
+        "gloss": "I received a watch from my older brother."
+      }
+    ],
+    "ja-transitive-pairs": [
+      {
+        "text": "窓を閉めました。",
+        "gloss": "I closed the window."
+      },
+      {
+        "text": "窓が閉まりました。",
+        "gloss": "The window closed."
+      },
+      {
+        "text": "電気を消しました。",
+        "gloss": "I turned off the light."
+      }
+    ],
+    "ja-relative-clauses": [
+      {
+        "text": "私が作った料理です。",
+        "gloss": "It is food I made."
+      },
+      {
+        "text": "姉が書いた手紙を読みました。",
+        "gloss": "I read the letter my older sister wrote."
+      },
+      {
+        "text": "父が買った車は新しいです。",
+        "gloss": "The car my father bought is new."
+      }
+    ],
+    "ja-kara-node": [
+      {
+        "text": "暑いから、窓を開けます。",
+        "gloss": "I will open the window because it is hot."
+      },
+      {
+        "text": "雨なので、行きません。",
+        "gloss": "I am not going, as it is raining."
+      },
+      {
+        "text": "お金がないから、買いません。",
+        "gloss": "I will not buy it, because I have no money."
+      }
+    ],
+    "ja-comparatives": [
+      {
+        "text": "電車はバスより速いです。",
+        "gloss": "The train is faster than the bus."
+      },
+      {
+        "text": "夏より冬が好きです。",
+        "gloss": "I like winter more than summer."
+      },
+      {
+        "text": "この店が一番安いです。",
+        "gloss": "This shop is the cheapest."
+      }
+    ],
+    "ja-nakereba": [
+      {
+        "text": "勉強しなければなりません。",
+        "gloss": "I have to study."
+      },
+      {
+        "text": "早く起きなければなりません。",
+        "gloss": "I have to get up early."
+      },
+      {
+        "text": "写真を撮ってもいいですか。",
+        "gloss": "May I take a photo?"
+      }
+    ],
+    "ja-counters-time": [
+      {
+        "text": "今、九時半です。",
+        "gloss": "It is half past nine."
+      },
+      {
+        "text": "会議は三時からです。",
+        "gloss": "The meeting starts at three."
+      },
+      {
+        "text": "十月に生まれました。",
+        "gloss": "I was born in October."
+      }
+    ],
+    "ja-keigo": [
+      {
+        "text": "社長がいらっしゃいました。",
+        "gloss": "The company president has arrived."
+      },
+      {
+        "text": "私がいたします。",
+        "gloss": "I will do it."
+      },
+      {
+        "text": "どうぞ召し上がってください。",
+        "gloss": "Please help yourself."
+      }
+    ],
+    "ja-noun-modifiers": [
+      {
+        "text": "これは英語の本です。",
+        "gloss": "This is an English book."
+      },
+      {
+        "text": "これは母の車です。",
+        "gloss": "This is my mother's car."
+      },
+      {
+        "text": "友達の家に行きます。",
+        "gloss": "I am going to my friend's house."
+      }
+    ]
+  },
+  "es": {
+    "es-gender": [
+      {
+        "text": "el perro es grande.",
+        "gloss": "The dog is big."
+      },
+      {
+        "text": "la ciudad es bonita.",
+        "gloss": "The city is pretty."
+      },
+      {
+        "text": "el problema es difícil.",
+        "gloss": "The problem is difficult."
+      }
+    ],
+    "es-plural": [
+      {
+        "text": "las flores son bonitas.",
+        "gloss": "The flowers are pretty."
+      },
+      {
+        "text": "los profesores están aquí.",
+        "gloss": "The teachers are here."
+      },
+      {
+        "text": "las ciudades son grandes.",
+        "gloss": "The cities are big."
+      }
+    ],
+    "es-articles": [
+      {
+        "text": "tengo una pregunta.",
+        "gloss": "I have a question."
+      },
+      {
+        "text": "el agua está fría.",
+        "gloss": "The water is cold."
+      },
+      {
+        "text": "vamos a la playa.",
+        "gloss": "We are going to the beach."
+      }
+    ],
+    "es-ser-estar": [
+      {
+        "text": "mi hermana es alta.",
+        "gloss": "My sister is tall."
+      },
+      {
+        "text": "la comida está fría.",
+        "gloss": "The food is cold."
+      },
+      {
+        "text": "hoy es lunes.",
+        "gloss": "Today is Monday."
+      }
+    ],
+    "es-tener": [
+      {
+        "text": "tengo frío.",
+        "gloss": "I am cold."
+      },
+      {
+        "text": "tienes razón.",
+        "gloss": "You are right."
+      },
+      {
+        "text": "tenemos dos perros.",
+        "gloss": "We have two dogs."
+      }
+    ],
+    "es-present": [
+      {
+        "text": "bebo agua todos los días.",
+        "gloss": "I drink water every day."
+      },
+      {
+        "text": "escribimos cartas.",
+        "gloss": "We write letters."
+      },
+      {
+        "text": "abren la tienda a las nueve.",
+        "gloss": "They open the shop at nine."
+      }
+    ],
+    "es-negation": [
+      {
+        "text": "no tengo dinero.",
+        "gloss": "I have no money."
+      },
+      {
+        "text": "no conozco a nadie aquí.",
+        "gloss": "I do not know anyone here."
+      },
+      {
+        "text": "nunca voy al cine.",
+        "gloss": "I never go to the cinema."
+      }
+    ],
+    "es-gustar": [
+      {
+        "text": "nos gusta la música.",
+        "gloss": "We like music."
+      },
+      {
+        "text": "le gustan las flores.",
+        "gloss": "She likes flowers."
+      },
+      {
+        "text": "no me gusta esperar.",
+        "gloss": "I do not like waiting."
+      }
+    ],
+    "es-adjectives": [
+      {
+        "text": "una ciudad bonita.",
+        "gloss": "A pretty city."
+      },
+      {
+        "text": "unos libros nuevos.",
+        "gloss": "Some new books."
+      },
+      {
+        "text": "las casas blancas.",
+        "gloss": "The white houses."
+      }
+    ],
+    "es-adj-position": [
+      {
+        "text": "una mesa larga.",
+        "gloss": "A long table."
+      },
+      {
+        "text": "un viejo amigo.",
+        "gloss": "An old friend — one you have known a long time."
+      },
+      {
+        "text": "un amigo viejo.",
+        "gloss": "An elderly friend."
+      }
+    ],
+    "es-questions": [
+      {
+        "text": "¿qué hora es?",
+        "gloss": "What time is it?"
+      },
+      {
+        "text": "¿por qué no vienes?",
+        "gloss": "Why are you not coming?"
+      },
+      {
+        "text": "¿quién es ese hombre?",
+        "gloss": "Who is that man?"
+      }
+    ],
+    "es-por-para": [
+      {
+        "text": "estudio para el examen.",
+        "gloss": "I am studying for the exam."
+      },
+      {
+        "text": "gracias por la comida.",
+        "gloss": "Thank you for the food."
+      },
+      {
+        "text": "el tren pasa por la ciudad.",
+        "gloss": "The train goes through the city."
+      }
+    ],
+    "es-futuro-proximo": [
+      {
+        "text": "voy a estudiar esta noche.",
+        "gloss": "I am going to study tonight."
+      },
+      {
+        "text": "vas a llegar tarde.",
+        "gloss": "You are going to be late."
+      },
+      {
+        "text": "van a abrir la tienda.",
+        "gloss": "They are going to open the shop."
+      }
+    ],
+    "es-preterito": [
+      {
+        "text": "ayer llegué tarde.",
+        "gloss": "I arrived late yesterday."
+      },
+      {
+        "text": "vimos una película.",
+        "gloss": "We saw a film."
+      },
+      {
+        "text": "escribió una carta.",
+        "gloss": "She wrote a letter."
+      }
+    ],
+    "es-imperfecto": [
+      {
+        "text": "antes vivía en Madrid.",
+        "gloss": "I used to live in Madrid."
+      },
+      {
+        "text": "siempre leía por la noche.",
+        "gloss": "He always used to read at night."
+      },
+      {
+        "text": "éramos muy jóvenes.",
+        "gloss": "We were very young."
+      }
+    ],
+    "es-reflexive": [
+      {
+        "text": "me llamo Ana.",
+        "gloss": "My name is Ana."
+      },
+      {
+        "text": "nos lavamos las manos.",
+        "gloss": "We wash our hands."
+      },
+      {
+        "text": "se levanta a las seis.",
+        "gloss": "She gets up at six."
+      }
+    ],
+    "es-object-pronouns": [
+      {
+        "text": "la veo mañana.",
+        "gloss": "I am seeing her tomorrow."
+      },
+      {
+        "text": "nos ayuda mucho.",
+        "gloss": "He helps us a lot."
+      },
+      {
+        "text": "te lo digo ahora.",
+        "gloss": "I am telling you now."
+      }
+    ],
+    "es-saber-conocer": [
+      {
+        "text": "no sé dónde está.",
+        "gloss": "I do not know where it is."
+      },
+      {
+        "text": "conozco esta ciudad.",
+        "gloss": "I know this city."
+      },
+      {
+        "text": "¿sabes hablar español?",
+        "gloss": "Can you speak Spanish?"
+      }
+    ],
+    "es-perfecto": [
+      {
+        "text": "he perdido las llaves.",
+        "gloss": "I have lost the keys."
+      },
+      {
+        "text": "¿has visto mi libro?",
+        "gloss": "Have you seen my book?"
+      },
+      {
+        "text": "esta semana hemos trabajado mucho.",
+        "gloss": "We have worked a lot this week."
+      }
+    ],
+    "es-comparatives": [
+      {
+        "text": "mi hermano es menor que yo.",
+        "gloss": "My brother is younger than me."
+      },
+      {
+        "text": "este coche es peor.",
+        "gloss": "This car is worse."
+      },
+      {
+        "text": "ella corre tan rápido como yo.",
+        "gloss": "She runs as fast as I do."
+      }
+    ],
+    "es-imperative": [
+      {
+        "text": "abre la ventana.",
+        "gloss": "Open the window."
+      },
+      {
+        "text": "no comas tan rápido.",
+        "gloss": "Do not eat so fast."
+      },
+      {
+        "text": "escucha bien.",
+        "gloss": "Listen carefully."
+      }
+    ],
+    "es-subjunctive": [
+      {
+        "text": "dudo que sea verdad.",
+        "gloss": "I doubt it is true."
+      },
+      {
+        "text": "es importante que estudies.",
+        "gloss": "It is important that you study."
+      },
+      {
+        "text": "ojalá llueva.",
+        "gloss": "I hope it rains."
+      }
+    ],
+    "es-future-conditional": [
+      {
+        "text": "mañana iré al mercado.",
+        "gloss": "I will go to the market tomorrow."
+      },
+      {
+        "text": "¿podrías venir?",
+        "gloss": "Could you come?"
+      },
+      {
+        "text": "lo haremos juntos.",
+        "gloss": "We will do it together."
+      }
+    ],
+    "es-demonstratives": [
+      {
+        "text": "aquella montaña es alta.",
+        "gloss": "That mountain over there is high."
+      },
+      {
+        "text": "estas flores son para ti.",
+        "gloss": "These flowers are for you."
+      },
+      {
+        "text": "ese hombre es mi vecino.",
+        "gloss": "That man is my neighbour."
+      }
+    ],
+    "es-possessives": [
+      {
+        "text": "tu coche es nuevo.",
+        "gloss": "Your car is new."
+      },
+      {
+        "text": "sus hijos son pequeños.",
+        "gloss": "Their children are small."
+      },
+      {
+        "text": "esta casa es nuestra.",
+        "gloss": "This house is ours."
+      }
+    ],
+    "es-se": [
+      {
+        "text": "aquí se vende pan.",
+        "gloss": "Bread is sold here."
+      },
+      {
+        "text": "se levanta temprano.",
+        "gloss": "He gets up early."
+      },
+      {
+        "text": "se me olvidó el nombre.",
+        "gloss": "The name slipped my mind."
+      }
+    ],
+    "es-progressive": [
+      {
+        "text": "estamos esperando el tren.",
+        "gloss": "We are waiting for the train."
+      },
+      {
+        "text": "está lloviendo ahora.",
+        "gloss": "It is raining now."
+      },
+      {
+        "text": "¿qué estás haciendo?",
+        "gloss": "What are you doing?"
+      }
+    ],
+    "es-hay": [
+      {
+        "text": "hay mucha gente en la calle.",
+        "gloss": "There are a lot of people in the street."
+      },
+      {
+        "text": "no hay pan.",
+        "gloss": "There is no bread."
+      },
+      {
+        "text": "¿hay una farmacia cerca?",
+        "gloss": "Is there a chemist nearby?"
+      }
+    ]
+  },
+  "fr": {
+    "fr-gender": [
+      {
+        "text": "le chien est petit.",
+        "gloss": "The dog is small."
+      },
+      {
+        "text": "la porte est ouverte.",
+        "gloss": "The door is open."
+      },
+      {
+        "text": "l'école est fermée.",
+        "gloss": "The school is closed."
+      }
+    ],
+    "fr-plural": [
+      {
+        "text": "les livres sont sur la table.",
+        "gloss": "The books are on the table."
+      },
+      {
+        "text": "les voitures sont rouges.",
+        "gloss": "The cars are red."
+      },
+      {
+        "text": "les enfants jouent dehors.",
+        "gloss": "The children are playing outside."
+      }
+    ],
+    "fr-articles": [
+      {
+        "text": "je mange une pomme.",
+        "gloss": "I am eating an apple."
+      },
+      {
+        "text": "le train part à midi.",
+        "gloss": "The train leaves at midday."
+      },
+      {
+        "text": "des fleurs sont sur la table.",
+        "gloss": "There are flowers on the table."
+      }
+    ],
+    "fr-etre": [
+      {
+        "text": "tu es en retard.",
+        "gloss": "You are late."
+      },
+      {
+        "text": "il est médecin.",
+        "gloss": "He is a doctor."
+      },
+      {
+        "text": "nous sommes contents.",
+        "gloss": "We are pleased."
+      }
+    ],
+    "fr-avoir": [
+      {
+        "text": "j'ai froid.",
+        "gloss": "I am cold."
+      },
+      {
+        "text": "tu as raison.",
+        "gloss": "You are right."
+      },
+      {
+        "text": "ils ont deux enfants.",
+        "gloss": "They have two children."
+      }
+    ],
+    "fr-er-verbs": [
+      {
+        "text": "elle écoute la radio.",
+        "gloss": "She is listening to the radio."
+      },
+      {
+        "text": "nous regardons un film.",
+        "gloss": "We are watching a film."
+      },
+      {
+        "text": "je cherche mes clés.",
+        "gloss": "I am looking for my keys."
+      }
+    ],
+    "fr-negation": [
+      {
+        "text": "il ne vient pas.",
+        "gloss": "He is not coming."
+      },
+      {
+        "text": "je n'ai pas faim.",
+        "gloss": "I am not hungry."
+      },
+      {
+        "text": "nous ne parlons pas anglais.",
+        "gloss": "We do not speak English."
+      }
+    ],
+    "fr-partitif": [
+      {
+        "text": "je mange de la soupe.",
+        "gloss": "I am eating soup."
+      },
+      {
+        "text": "il boit du thé.",
+        "gloss": "He is drinking tea."
+      },
+      {
+        "text": "elle achète de la viande.",
+        "gloss": "She is buying meat."
+      }
+    ],
+    "fr-adjectives": [
+      {
+        "text": "une grande ville.",
+        "gloss": "A big city."
+      },
+      {
+        "text": "des livres verts.",
+        "gloss": "Green books."
+      },
+      {
+        "text": "une jolie fleur.",
+        "gloss": "A pretty flower."
+      }
+    ],
+    "fr-adj-position": [
+      {
+        "text": "une nouvelle voiture.",
+        "gloss": "A new car."
+      },
+      {
+        "text": "un livre intéressant.",
+        "gloss": "An interesting book."
+      },
+      {
+        "text": "une jeune femme.",
+        "gloss": "A young woman."
+      }
+    ],
+    "fr-questions": [
+      {
+        "text": "quelle heure est-il ?",
+        "gloss": "What time is it?"
+      },
+      {
+        "text": "est-ce que vous avez faim ?",
+        "gloss": "Are you hungry?"
+      },
+      {
+        "text": "pourquoi tu ne viens pas ?",
+        "gloss": "Why are you not coming?"
+      }
+    ],
+    "fr-futur-proche": [
+      {
+        "text": "elle va arriver bientôt.",
+        "gloss": "She is going to arrive soon."
+      },
+      {
+        "text": "nous allons voir un film.",
+        "gloss": "We are going to see a film."
+      },
+      {
+        "text": "tu vas être en retard.",
+        "gloss": "You are going to be late."
+      }
+    ],
+    "fr-passe-compose": [
+      {
+        "text": "j'ai acheté du pain.",
+        "gloss": "I bought some bread."
+      },
+      {
+        "text": "elle a perdu ses clés.",
+        "gloss": "She lost her keys."
+      },
+      {
+        "text": "nous avons regardé un film.",
+        "gloss": "We watched a film."
+      }
+    ],
+    "fr-passe-etre": [
+      {
+        "text": "je suis parti tôt.",
+        "gloss": "I left early."
+      },
+      {
+        "text": "elle est restée à la maison.",
+        "gloss": "She stayed at home."
+      },
+      {
+        "text": "il est venu hier.",
+        "gloss": "He came yesterday."
+      }
+    ],
+    "fr-imparfait": [
+      {
+        "text": "je lisais tous les soirs.",
+        "gloss": "I used to read every evening."
+      },
+      {
+        "text": "elle avait dix ans.",
+        "gloss": "She was ten years old."
+      },
+      {
+        "text": "nous mangions ensemble.",
+        "gloss": "We used to eat together."
+      }
+    ],
+    "fr-reflexive": [
+      {
+        "text": "il se couche tard.",
+        "gloss": "He goes to bed late."
+      },
+      {
+        "text": "je m'appelle Paul.",
+        "gloss": "My name is Paul."
+      },
+      {
+        "text": "tu te réveilles tôt.",
+        "gloss": "You wake up early."
+      }
+    ],
+    "fr-object-pronouns": [
+      {
+        "text": "je la connais.",
+        "gloss": "I know her."
+      },
+      {
+        "text": "il leur parle souvent.",
+        "gloss": "He often talks to them."
+      },
+      {
+        "text": "elle me comprend.",
+        "gloss": "She understands me."
+      }
+    ],
+    "fr-y-en": [
+      {
+        "text": "nous y allons ensemble.",
+        "gloss": "We are going there together."
+      },
+      {
+        "text": "il en veut encore.",
+        "gloss": "He wants more of it."
+      },
+      {
+        "text": "j'y pense souvent.",
+        "gloss": "I often think about it."
+      }
+    ],
+    "fr-comparatives": [
+      {
+        "text": "elle est moins grande que moi.",
+        "gloss": "She is less tall than me."
+      },
+      {
+        "text": "ce café est meilleur.",
+        "gloss": "This coffee is better."
+      },
+      {
+        "text": "il court aussi vite que toi.",
+        "gloss": "He runs as fast as you."
+      }
+    ],
+    "fr-futur-simple": [
+      {
+        "text": "je viendrai demain.",
+        "gloss": "I will come tomorrow."
+      },
+      {
+        "text": "nous mangerons plus tard.",
+        "gloss": "We will eat later."
+      },
+      {
+        "text": "elle finira le travail.",
+        "gloss": "She will finish the work."
+      }
+    ],
+    "fr-relative": [
+      {
+        "text": "la femme qui chante est ma sœur.",
+        "gloss": "The woman who is singing is my sister."
+      },
+      {
+        "text": "le film que nous avons vu était long.",
+        "gloss": "The film we saw was long."
+      },
+      {
+        "text": "voici la maison où je suis né.",
+        "gloss": "Here is the house where I was born."
+      }
+    ],
+    "fr-imperative": [
+      {
+        "text": "ferme la porte.",
+        "gloss": "Close the door."
+      },
+      {
+        "text": "mangeons ensemble.",
+        "gloss": "Let's eat together."
+      },
+      {
+        "text": "n'oublie pas tes clés.",
+        "gloss": "Do not forget your keys."
+      }
+    ],
+    "fr-depuis": [
+      {
+        "text": "elle dort depuis deux heures.",
+        "gloss": "She has been asleep for two hours."
+      },
+      {
+        "text": "nous avons marché pendant une heure.",
+        "gloss": "We walked for an hour."
+      },
+      {
+        "text": "il est parti il y a une semaine.",
+        "gloss": "He left a week ago."
+      }
+    ],
+    "fr-conditionnel": [
+      {
+        "text": "j'aimerais un thé.",
+        "gloss": "I would like a tea."
+      },
+      {
+        "text": "si tu venais, ce serait mieux.",
+        "gloss": "If you came, it would be better."
+      },
+      {
+        "text": "elle devrait partir maintenant.",
+        "gloss": "She ought to leave now."
+      }
+    ],
+    "fr-subjonctif": [
+      {
+        "text": "il faut que nous partions.",
+        "gloss": "We have to leave."
+      },
+      {
+        "text": "je suis content que tu sois là.",
+        "gloss": "I am glad you are here."
+      },
+      {
+        "text": "il faut que tu manges.",
+        "gloss": "You need to eat."
+      }
+    ],
+    "fr-prepositions-places": [
+      {
+        "text": "nous allons en Espagne.",
+        "gloss": "We are going to Spain."
+      },
+      {
+        "text": "elle habite au Japon.",
+        "gloss": "She lives in Japan."
+      },
+      {
+        "text": "je vais à la gare.",
+        "gloss": "I am going to the station."
+      }
+    ],
+    "fr-demonstratives": [
+      {
+        "text": "ces fleurs sont belles.",
+        "gloss": "These flowers are beautiful."
+      },
+      {
+        "text": "cet enfant est fatigué.",
+        "gloss": "This child is tired."
+      },
+      {
+        "text": "cette voiture est chère.",
+        "gloss": "This car is expensive."
+      }
+    ],
+    "fr-possessives": [
+      {
+        "text": "ma sœur habite à Lyon.",
+        "gloss": "My sister lives in Lyon."
+      },
+      {
+        "text": "nos amis arrivent demain.",
+        "gloss": "Our friends are arriving tomorrow."
+      },
+      {
+        "text": "leur maison est petite.",
+        "gloss": "Their house is small."
+      }
+    ]
+  }
+}

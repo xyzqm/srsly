@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed:dev": "node scripts/dev-seed.mjs",
+    "build:practice": "vitest run --config scripts/lesson-practice.vitest.mts",
     "dev:agent": "SRSLY_STUB_AI=1 NEXT_DIST_DIR=.next-agent next dev"
   },
   "dependencies": {

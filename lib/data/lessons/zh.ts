@@ -45,6 +45,7 @@ about which word goes where.
 
 Time is the one thing that moves to the front. If a sentence says when something happened, that
 comes before the verb, usually right after the subject.`,
+    pitfall: 'The time word goes BEFORE the verb, not after it. 我买书今天 is wrong — in Chinese when something happened is never an afterthought tacked on the end.',
     examples: [
       { text: '我吃饭。', gloss: 'I eat.',
         tiles: ['我', '吃饭。'] },
@@ -76,6 +77,23 @@ with a noun in French: 本 for books, 张 for flat things like paper and tables,
 animals, 杯 for cups of something.
 
 The same rule applies after 这 and 那: 这本书, not 这书.`,
+    pitfall: '个 is the fallback, but leaving the measure word out altogether is the actual error. 三书 is not a slightly clumsy 三本书, it is not a sentence.',
+    table: {
+      caption: 'The measure words you will meet first',
+      columns: ['Measure word', 'Used for', 'Example'],
+      rows: [
+        ['个', 'the general one — people, and anything with no special word', '三个人 — three people'],
+        ['本', 'books and bound volumes', '两本书 — two books'],
+        ['张', 'flat things — paper, tables, tickets, beds', '一张纸 — one sheet of paper'],
+        ['只', 'many animals, and one of a pair', '一只猫 — one cat'],
+        ['杯', 'cups and glasses of something', '一杯茶 — a cup of tea'],
+        ['件', 'clothes, and matters or affairs', '一件衣服 — one piece of clothing'],
+        ['条', 'long thin things — roads, rivers, fish, trousers', '一条路 — one road'],
+        ['位', 'people, politely', '三位老师 — three teachers'],
+        ['辆', 'vehicles', '两辆车 — two cars'],
+        ['口', 'people in a household', '五口人 — a family of five'],
+      ],
+    },
     examples: [
       { text: '三个人。', gloss: 'Three people — 个 is the general measure word.',
         tiles: ['三', '个人。'] },
@@ -105,6 +123,7 @@ down for whenever you meet a long stretch that ends in 的.
 
 的 is dropped in two very common cases: with close family and relationships (我妈妈, not 我的妈妈),
 and with a one-syllable adjective directly before a noun.`,
+    pitfall: '的 is dropped with close family and after a one-syllable adjective. 我的妈妈 and 红的车 are both understood, and both sound like they came out of a textbook.',
     examples: [
       { text: '这是我的书。', gloss: 'This is my book.',
         tiles: ['这', '是', '我', '的', '书。'] },
@@ -130,6 +149,7 @@ Here is the part that catches everyone. 是 is NOT used before an adjective. "I 
 simply what fills the gap. If you actually mean "very", you stress it or use a stronger word.
 
 The negative of 有 is irregular and worth memorising on its own: it is 没有, never 不有.`,
+    pitfall: 'Never put 是 in front of an adjective. 我是累 is the single commonest beginner mistake in Chinese — it is 我很累, with no 是 anywhere.',
     examples: [
       { text: '我是学生。', gloss: 'I am a student — 是 between two nouns.',
         tiles: ['我', '是', '学生。'] },
@@ -158,6 +178,16 @@ there is. That is worth noticing while reading: 不 and 没 tell you when, and o
 in the sentence does.
 
 有 is the exception that proves it: it always takes 没, whatever the time.`,
+    pitfall: '没 negates 有 and things that did not happen; 不 negates everything else. 不有 does not exist at all.',
+    table: {
+      caption: 'Which negative, and when',
+      columns: ['Word', 'Negates', 'Example'],
+      rows: [
+        ['不', 'habit, choice, the present and the future', '我不喝咖啡 — I do not drink coffee'],
+        ['没', '有, and anything that did not happen', '我没喝咖啡 — I did not drink the coffee'],
+        ['别', 'a command — do not', '别走 — do not go'],
+      ],
+    },
     examples: [
       { text: '我不喝咖啡。', gloss: 'I do not drink coffee — a habit, so 不.',
         tiles: ['我', '不', '喝', '咖啡。'] },
@@ -189,6 +219,7 @@ A second 了 at the END of a sentence is doing a different job: it marks a chang
 
 If you take one thing from this lesson: Chinese has no tense, and looking for one is what makes
 了 confusing.`,
+    pitfall: '了 is not a past tense. A habitual past never takes it — 我以前住在北京 is past and has no 了 — and a 了 can sit happily in a sentence about tomorrow.',
     examples: [
       { text: '我吃了饭。', gloss: 'I have eaten — the action is complete.',
         tiles: ['我', '吃', '了', '饭。'] },
@@ -215,6 +246,7 @@ The contrast with 了 is the useful part. 我吃了 says the eating is finished 
 我吃过 says I have eaten that before, at some unspecified time.
 
 The negative uses 没 and, unusually, keeps 过: 我没去过 — I have never been.`,
+    pitfall: '过 says you have done it at some point in your life; 了 says you did it. 我吃了 means the meal is over; 我吃过 means you have met that food before.',
     examples: [
       { text: '我去过中国。', gloss: 'I have been to China.',
         tiles: ['我去', '过', '中国。'] },
@@ -239,6 +271,7 @@ you which one you are looking at: a place after 在 is location, a verb after �
 When a sentence has both a place and an action, the place comes FIRST — before the verb, not
 after it. 我在家吃饭 is "I eat at home". Putting the place after the verb, as English does, is
 one of the most persistent beginner habits.`,
+    pitfall: '在 before a VERB is «in the middle of doing»; before a PLACE it is «at». Both can appear in one sentence and the order is fixed: 我在家吃饭, never 我吃饭在家.',
     examples: [
       { text: '我在家。', gloss: 'I am at home — 在 with a place.',
         tiles: ['我', '在家。'] },
@@ -267,6 +300,20 @@ That is worth practising, because English speakers instinctively move the questi
 front and Chinese never does.
 
 Do not use 吗 with a question word; one signal is enough.`,
+    pitfall: 'Do not add 吗 to a question that already has a question word. 你去哪儿吗 is wrong — 哪儿 is already doing the asking.',
+    table: {
+      caption: 'The question words',
+      columns: ['Word', 'Asks', 'Example'],
+      rows: [
+        ['什么', 'what', '你吃什么？'],
+        ['谁', 'who', '他是谁？'],
+        ['哪儿', 'where', '你去哪儿？'],
+        ['几', 'how many — expecting a small number', '你有几本书？'],
+        ['多少', 'how many or how much — any number', '多少钱？'],
+        ['怎么', 'how', '怎么走？'],
+        ['为什么', 'why', '你为什么不来？'],
+      ],
+    },
     examples: [
       { text: '你是学生吗？', gloss: 'Are you a student?',
         tiles: ['你', '是', '学生', '吗？'] },
@@ -293,6 +340,7 @@ There is no ending to add and no "than" to translate separately, and crucially �
 you compare, because the comparison is doing that work.
 
 To say two things are the same, use 一样: 这本书和那本书一样。`,
+    pitfall: 'An adjective standing alone needs 很, or it reads as a comparison. 我累 sounds like «I am the tired one»; 我很累 is simply «I am tired», and the 很 means nothing.',
     examples: [
       { text: '这本书很好。', gloss: 'This book is good — no verb needed.',
         tiles: ['这', '本', '书', '很', '好。'] },
@@ -319,6 +367,7 @@ bare — something must follow it saying what happened, such as a place, a resul
 
 You will meet 把 constantly in instructions and in anything describing rearranging the world,
 which is why it is worth recognising even before you produce it.`,
+    pitfall: '把 needs the verb to actually DO something to the object, so the verb cannot stand bare. 我把书看 is wrong; 我把书看完了 is right.',
     examples: [
       { text: '我把书放在桌子上。', gloss: 'I put the book on the table.',
         tiles: ['我', '把', '书', '放', '在', '桌子', '上。'] },
@@ -344,6 +393,7 @@ something unwelcome happening to you — less strongly now than it once did, but
 not the neutral construction English speakers reach for.
 
 As with 把, the verb needs something after it rather than standing bare.`,
+    pitfall: '被 carries a hint of something unwelcome and is used far less than the English passive. Where English reaches for it, Chinese usually just names who did it.',
     examples: [
       { text: '书被他拿走了。', gloss: 'The book was taken away by him.',
         tiles: ['书', '被', '他', '拿走', '了。'] },
@@ -372,6 +422,16 @@ cannot come today.
 That is the same word doing a second job, and context separates them cleanly.
 
 All three negate with 不, never 没.`,
+    pitfall: '会 is a learned skill, 能 is being able right now, 可以 is being allowed. 我不会来 does not mean you cannot come — it means you never learned how.',
+    table: {
+      caption: 'Three words for «can»',
+      columns: ['Word', 'Means', 'Example'],
+      rows: [
+        ['会', 'a skill you have learned', '我会说中文 — I can speak Chinese'],
+        ['能', 'able to, right now — free, well enough, strong enough', '我今天不能来 — I cannot come today'],
+        ['可以', 'allowed to', '我可以进来吗？ — may I come in?'],
+      ],
+    },
     examples: [
       { text: '我会说中文。', gloss: 'I can speak Chinese — a learned skill.',
         tiles: ['我', '会', '说', '中文。'] },
@@ -401,6 +461,18 @@ The common results are worth learning as a small set: 见 for perceiving, 到 fo
 understanding, 完 for finishing, 好 for doing properly.
 
 To say it did NOT work, 不 goes between the two parts: 看不见 — cannot see.`,
+    pitfall: 'The result is glued to the verb, not a separate clause. «I looked but did not see» is 我没看见 — one word for looking-and-seeing, negated once.',
+    table: {
+      caption: 'The endings that say how it turned out',
+      columns: ['Ending', 'Says', 'Example'],
+      rows: [
+        ['完', 'finished it', '我吃完了 — I finished eating'],
+        ['到', 'got there, or managed it', '我找到了 — I found it'],
+        ['见', 'perceived it', '我看见他了 — I saw him'],
+        ['懂', 'understood it', '我听懂了 — I understood'],
+        ['好', 'did it properly, and it is ready', '写好了 — written, and done'],
+      ],
+    },
     examples: [
       { text: '我看见他了。', gloss: 'I saw him — 见 says the looking succeeded.',
         tiles: ['我', '看见', '他', '了。'] },
@@ -428,6 +500,7 @@ When the verb has an object as well, the verb is repeated: 我学中文学了三
 for three years. Alternatively the duration slots between verb and object: 我学了三年中文.
 
 Both are correct and both are common; the second is shorter and easier to say.`,
+    pitfall: 'Duration goes AFTER the verb; when something happened goes before it. 我三年学了中文 is wrong — it is 我学了三年中文.',
     examples: [
       { text: '我三点去。', gloss: 'I am going at three — a time point, before the verb.',
         tiles: ['我', '三', '点', '去。'] },
@@ -455,6 +528,7 @@ translation and carry a clear attitude in Chinese, and it is worth noticing whil
 than producing at first.
 
 就 also links a condition to its result: 你来我就走 — if you come, I will go.`,
+    pitfall: '就 and 才 state an opinion, not a fact. 他八点就来了 says eight was early and 他八点才来 says eight was late; the clock reads the same in both.',
     examples: [
       { text: '他八点就来了。', gloss: 'He came at eight already — sooner than expected.',
         tiles: ['他', '八', '点', '就', '来', '了。'] },
@@ -481,6 +555,7 @@ An object usually sits between the two parts: 拿出来 becomes 拿出书来 whe
 which is worth recognising because the two halves end up far apart on the page.
 
 It is one of the clearest cases where Chinese encodes something English leaves to context.`,
+    pitfall: '来 and 去 are relative to where the SPEAKER stands, not to where the subject is going. 进来 is come in towards me; 进去 is go in away from me.',
     examples: [
       { text: '请进来。', gloss: 'Please come in — toward the speaker.',
         tiles: ['请', '进来。'] },
@@ -509,6 +584,7 @@ smiling.
 
 Because English uses "-ing" for both, this is one of the places where translation hides a
 distinction Chinese draws clearly.`,
+    pitfall: '着 is a state that is holding; 在 is an action in progress. 门开着 means the door is open, where 门在开 would mean it is in the act of opening.',
     examples: [
       { text: '门开着。', gloss: 'The door is open — a state that is holding.',
         tiles: ['门', '开', '着。'] },
@@ -534,6 +610,7 @@ In a shop that is normal rather than blunt.
 
 The negative is where it gets interesting: the negative of 要 is usually 不想, not 不要. 不要 is
 a command meaning "don't", so 不要走 is "don't go", not "I don't want to go".`,
+    pitfall: '要 is closer to «will» and can land as a demand; 想 is «would like». In a shop 我要一杯茶 is normal, but 我要走 to a friend says you are leaving, not that you feel like it.',
     examples: [
       { text: '我想去中国。', gloss: 'I would like to go to China.',
         tiles: ['我', '想', '去', '中国。'] },
@@ -560,6 +637,7 @@ The same order governs place: 中国北京 puts the country before the city, and
 from province down to house number.
 
 For clock time, 点 is the hour and 分 the minute: 三点十五分. 半 is half past.`,
+    pitfall: 'Chinese runs largest unit to smallest — year, month, day, then hour. The English order is wrong at every level, including inside the clock time itself.',
     examples: [
       { text: '今天八月十二号。', gloss: 'Today is the twelfth of August.',
         tiles: ['今天', '八月', '十', '二号。'] },
@@ -589,6 +667,7 @@ in English. In Chinese it is simply how the pair works.
 
 Both halves attach to their own clause, and the second word goes AFTER the subject rather than
 at the very front.`,
+    pitfall: 'Chinese keeps BOTH halves where English drops one. 因为…所以… and 虽然…但是… are pairs, and using only the second sounds like a sentence that stopped early.',
     examples: [
       { text: '因为下雨，所以我没去。', gloss: 'Because it rained, I did not go.',
         tiles: ['因为', '下雨，', '所以', '我', '没', '去。'] },
@@ -618,6 +697,16 @@ already expecting the answer to be yes.
 
 Because they carry tone rather than meaning, they are easy to skim past while reading and are
 often the only thing telling you the sentence was a suggestion rather than an order.`,
+    pitfall: '吗 asks a real question, 呢 throws it back, 吧 has already decided. 我们走吗 asks whether to go; 我们走吧 is telling you that we are going.',
+    table: {
+      caption: 'What each final particle does to the sentence',
+      columns: ['Particle', 'Turns it into', 'Example'],
+      rows: [
+        ['吗', 'a yes/no question', '你是学生吗？'],
+        ['呢', 'the question thrown back, or «where is…?»', '我很好，你呢？'],
+        ['吧', 'a suggestion, or an assumption looking for agreement', '我们走吧。'],
+      ],
+    },
     examples: [
       { text: '你是学生吗？', gloss: 'Are you a student? — a plain question.',
         tiles: ['你', '是', '学生', '吗？'] },
@@ -645,6 +734,7 @@ Paired with a negative it becomes the opposite: 我什么都不知道 — I know
 
 Putting either word at the end is one of the most recognisable beginner mistakes, precisely
 because English trains the habit.`,
+    pitfall: '都 and 也 go before the verb and never at the end. 我去也 is wrong — it is 我也去.',
     examples: [
       { text: '我们都去。', gloss: 'We are all going — 都 before the verb.',
         tiles: ['我们', '都', '去。'] },

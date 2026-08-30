@@ -87,6 +87,60 @@ describe('short sentences become choice questions', () => {
   });
 });
 
+describe('the pool is not the answer', () => {
+  /**
+   * THE BUG THIS EXISTS FOR, found by opening the app rather than by reading the code.
+   *
+   * The pool was rendered straight from `tiles`, which is the CORRECT order — so every
+   * build-the-sentence question presented its own answer left to right, and could be solved by
+   * tapping along the row without reading a word of it. Nothing in the suite noticed, because
+   * every assertion was about which tiles exist rather than what order they are shown in.
+   */
+  it('never opens a question with the sentence already in order', () => {
+    for (let seed = 1; seed < 60; seed++) {
+      const qs = buildQuestions(lesson([
+        { text: '我今天买书。', gloss: 'I buy a book today.', tiles: ['我', '今天', '买', '书。'] },
+      ]), seeded(seed));
+      const q = qs[0];
+      if (q.kind !== 'order') continue;
+      expect(q.shuffled, `seed ${seed} showed the answer`).not.toEqual(q.tiles);
+    }
+  });
+
+  it('shows exactly the tiles of the answer, just rearranged', () => {
+    const qs = buildQuestions(lesson([
+      { text: '我今天买书。', gloss: 'I buy a book today.', tiles: ['我', '今天', '买', '书。'] },
+    ]), seeded(3));
+    const q = qs[0];
+    if (q.kind !== 'order') throw new Error('expected an ordering question');
+    expect([...q.shuffled].sort()).toEqual([...q.tiles].sort());
+  });
+
+  /**
+   * A sentence whose tiles are all the same word has no arrangement that differs from the
+   * answer, so the reshuffle must give up rather than spin. It cannot happen in the authored
+   * data, and a loop that depends on that is a loop waiting for the data to change.
+   */
+  it('gives up rather than looping when no other order exists', () => {
+    const qs = buildQuestions(lesson([
+      { text: '好好好', gloss: 'ok', tiles: ['好', '好', '好'] },
+    ]), seeded(3));
+    expect(qs[0].kind).toBe('order');
+  });
+
+  it('every real ordering question shows a different order from its answer', () => {
+    for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
+      for (const l of grammarLessons(lessonsFor(lang))) {
+        for (const q of buildQuestions(l, seeded(13))) {
+          if (q.kind !== 'order') continue;
+          expect(q.shuffled, `${l.id}: «${q.example.text}» is shown already solved`)
+            .not.toEqual(q.tiles);
+        }
+      }
+    }
+  });
+});
+
 describe('answers are checked against the right thing', () => {
   const qs = buildQuestions(lesson([
     { text: '我今天买书。', gloss: 'I buy a book today.', tiles: ['我', '今天', '买', '书。'] },

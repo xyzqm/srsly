@@ -187,6 +187,79 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
     });
 
     /**
+     * PRACTICE SENTENCES ARE NOT THE EXAMPLES, and this is what makes that true.
+     *
+     * Building the exercise from the examples meant the answer was printed on the screen the
+     * learner had just scrolled past — it tested scrollback, not the rule. Comparing with
+     * whitespace and punctuation stripped, because "he is coming." and "he is coming?" are the
+     * same sentence for this purpose and neither is a new question.
+     */
+    it('never practises a sentence it has already printed as an example', () => {
+      const bare = (s: string) => s.replace(/[\s\p{P}]/gu, '');
+      for (const l of grammar) {
+        const shown = new Set((l.examples ?? []).map(e => bare(e.text)));
+        for (const p of l.practice ?? []) {
+          expect(shown.has(bare(p.text)), `${l.id}: practice repeats the example «${p.text}»`).toBe(false);
+        }
+      }
+    });
+
+    it('gives every grammar lesson its own practice sentences', () => {
+      for (const l of grammar) {
+        expect(l.practice?.length ?? 0, `${l.id} has no practice sentences`).toBeGreaterThanOrEqual(3);
+      }
+    });
+
+    it('has practice tiles that rebuild their own sentence', () => {
+      const strip = (s: string) => s.replace(/\s+/g, '');
+      for (const l of grammar) {
+        for (const ex of l.practice ?? []) {
+          expect(ex.tiles?.length, `${l.id}: "${ex.text}" has no tiles`).toBeGreaterThan(1);
+          expect(strip(ex.tiles!.join('')), `${l.id}: tiles do not rebuild "${ex.text}"`)
+            .toBe(strip(ex.text));
+          for (const t of ex.tiles!) {
+            expect(/[\p{L}\p{N}]/u.test(t), `${l.id}: "${t}" is punctuation only`).toBe(true);
+          }
+          expect(ex.gloss.trim(), `${l.id}: "${ex.text}" has no gloss`).not.toBe('');
+        }
+      }
+    });
+
+    /**
+     * A TABLE IS A LOOKUP, so its first column has to be tappable, so every term in it has to
+     * resolve — held to exactly the bar an example sentence is held to. A measure-word table
+     * printing 张 with no way to find out how it is said would be the very complaint the
+     * table was added to answer.
+     */
+    it('lays out any reference table squarely, with a resolvable first column', async () => {
+      const misses: string[] = [];
+      for (const l of grammar) {
+        const t = l.table;
+        if (!t) continue;
+        expect(t.caption.trim(), `${l.id} table caption`).not.toBe('');
+        expect(t.columns.length, `${l.id} table columns`).toBeGreaterThanOrEqual(2);
+        expect(t.rows.length, `${l.id} table rows`).toBeGreaterThanOrEqual(2);
+        for (const r of t.rows) {
+          expect(r.length, `${l.id}: row «${r.join(' | ')}» is not ${t.columns.length} wide`)
+            .toBe(t.columns.length);
+          expect(r[0].trim(), `${l.id}: empty term in a table row`).not.toBe('');
+          for (const w of await unresolvedWords(lang, r[0])) {
+            misses.push(`${l.id}: table term "${w}"`);
+          }
+        }
+      }
+      expect(misses, `unlookupable table terms:\n  ${misses.join('\n  ')}`).toEqual([]);
+    }, 120_000);
+
+    it('names the mistake, where the lesson has one to name', () => {
+      for (const l of grammar) {
+        if (l.pitfall === undefined) continue;
+        expect(l.pitfall.trim().length, `${l.id} pitfall is too short to say anything`)
+          .toBeGreaterThan(40);
+      }
+    });
+
+    /**
      * THE ONE THAT MATTERS, and it has no exemptions. It briefly carried two for French — `au`,
      * which the dictionary's contraction filter had deleted outright, and `est-ce`, which the
      * segmenter kept whole as one unlookupable token. Both were fixed at the source rather than
@@ -195,7 +268,9 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
     it('uses only words that resolve in the real dictionary', async () => {
       const misses: string[] = [];
       for (const l of grammar) {
-        for (const ex of l.examples ?? []) {
+        // Practice sentences are held to the same bar as the printed ones: an exercise you
+        // cannot tap through teaches the opposite of what the lesson is for.
+        for (const ex of [...(l.examples ?? []), ...(l.practice ?? [])]) {
           for (const w of await unresolvedWords(lang, ex.text)) {
             misses.push(`${l.id}: "${w}" in «${ex.text}»`);
           }
@@ -226,6 +301,8 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
       for (const l of vocab) {
         expect(l.explanation, l.id).toBeUndefined();
         expect(l.examples, l.id).toBeUndefined();
+        expect(l.practice, l.id).toBeUndefined();
+        expect(l.table, l.id).toBeUndefined();
       }
     });
   });
