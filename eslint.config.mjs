@@ -24,8 +24,10 @@ const eslintConfig = [
    */
   {
     ignores: [
-      ".next/**",
-      ".next-verify/**",
+      // A GLOB, not a list. `.next-verify` and `.next-agent` are build dirs for isolated
+      // runs, and naming them one at a time means the next one added is 140 lint errors
+      // nobody expected — which is exactly what happened when `.next-agent` was created.
+      ".next*/**",
       ".vercel/**",
       "out/**",
       "build/**",

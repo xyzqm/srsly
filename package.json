@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "start": "next start",
     "lint": "eslint",
-    "seed:dev": "node scripts/dev-seed.mjs"
+    "seed:dev": "node scripts/dev-seed.mjs",
+    "dev:agent": "SRSLY_STUB_AI=1 NEXT_DIST_DIR=.next-agent next dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
