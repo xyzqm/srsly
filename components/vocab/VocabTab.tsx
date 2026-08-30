@@ -792,7 +792,13 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
       </div>
 
       {showAdd && (
-        <AddWordForm onAdd={handleAdd} onCancel={() => setShowAdd(false)} />
+        <AddWordForm
+          onAdd={handleAdd}
+          onCancel={() => setShowAdd(false)}
+          /* Same (word + meaning) identity useVocabDeck.addWord dedupes on, so the form
+             cannot say "addable" about something the deck would silently drop. */
+          findExisting={(h, m) => deck.find(w => w.h === h && w.m.trim() === m.trim())}
+        />
       )}
 
       {showImport && (

@@ -90,7 +90,10 @@ export default function MilestoneRing({ deck, language }: Props) {
 
       <div style={{ minWidth: 200, flex: 1 }}>
         <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          Current level milestone
+          {/* NOT "milestone". This sits directly above the Milestones panel, which is about
+              earned badges — two adjacent headings using one word for two unrelated things.
+              This ring is simply where you are in the level you are studying. */}
+          Current level
         </div>
         <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.015em', margin: '6px 0 4px', lineHeight: 1.2 }}>
           <em style={{ fontStyle: 'normal', color: done ? 'var(--jade, #4a9d6e)' : 'var(--accent)' }}>

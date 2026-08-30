@@ -93,7 +93,7 @@ export default function Achievements() {
   const nextBadges = collapse(next, 'first').slice(0, NEXT_SHOWN);
 
   return (
-    <div className="rounded-[14px] px-5 py-5 mb-5" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+    <div className="rounded-[14px] px-5 py-5 mt-8" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
       <div style={label}>Milestones</div>
 
       {nextBadges.length > 0 && (

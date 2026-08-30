@@ -12,10 +12,17 @@ import { useWordLookup, splitSenses } from '@/hooks/useWordLookup';
 
 interface Props {
   onAdd: (word: DeckWord) => void;
+  /**
+   * The card already in the deck for this word + meaning, if any.
+   *
+   * Passed in rather than read here, because the deck lives in `useVocabDeck` and a second
+   * instance of that hook inside this form would be a second copy of the same state.
+   */
+  findExisting: (h: string, m: string) => DeckWord | undefined;
   onCancel: () => void;
 }
 
-export default function AddWordForm({ onAdd, onCancel }: Props) {
+export default function AddWordForm({ onAdd, onCancel, findExisting }: Props) {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const isZh = language === 'zh';
@@ -65,7 +72,20 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
    */
   const missingRequiredCompound =
     strictlyBound && compounds.every(c => !c.trim());
-  const canAdd = status === 'found' && definitions.length > 0 && !missingRequiredCompound;
+  /**
+   * ALREADY IN THE DECK — checked while typing, not on submit.
+   *
+   * `useVocabDeck.addWord` silently returns when a card with the same word and meaning is
+   * already there, so pressing Add appeared to work and did nothing at all. Worse, you only
+   * found out after committing to the word. The check now runs on every keystroke against
+   * the same (word + meaning) identity the deck dedupes on, so the answer arrives while you
+   * are still looking at what you typed.
+   */
+  const duplicate = status === 'found' && definitions.length > 0
+    ? findExisting(canonicalWord, definitions.join('; '))
+    : undefined;
+
+  const canAdd = status === 'found' && definitions.length > 0 && !missingRequiredCompound && !duplicate;
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,6 +173,8 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
   async function submit() {
     // The dictionary is the only source of words and meanings now — nothing here is
     // free text, so there is no unvalidated input to guard against.
+    // The duplicate case cannot get here (the button is disabled and relabelled), but the
+    // guard stays: `canAdd` is the one gate, and a keyboard submit must respect it too.
     if (!canAdd) return;
     const h = canonicalWord;
     const m = definitions.join('; ');
@@ -469,6 +491,26 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
         </div>
       )}
 
+      {/* Already in the deck. Shown the moment the lookup resolves, not on submit, and it
+          names the card so it is clear WHICH one matched — the deck dedupes on word plus
+          meaning, so the same character with a different sense is a different card and can
+          still be added. */}
+      {duplicate && (
+        <div
+          role="status"
+          className="mt-3 rounded-lg px-4 py-3"
+          style={{ background: 'var(--gold-soft)', border: '1px solid var(--gold)' }}
+        >
+          <div style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500 }}>
+            {canonicalWord} is already in your deck
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.5, marginTop: 3 }}>
+            {duplicate.m}
+            {duplicate.pool ? ' · waiting in the pool' : ''}
+          </div>
+        </div>
+      )}
+
       {/* Says WHY the button is off, next to the button. The compounds field above is
           already open and pre-filled, so the fix is one tap away — but if it has been
           cleared the form must not just sit there greyed out with no explanation. */}
@@ -495,6 +537,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
           disabled={!canAdd}
           title={
             canAdd ? undefined
+              : duplicate ? `${canonicalWord} is already in your deck`
               : missingRequiredCompound ? `${trimmed} only appears inside a compound — add one first`
               : 'Look up a word in the dictionary first'
           }
@@ -507,7 +550,7 @@ export default function AddWordForm({ onAdd, onCancel }: Props) {
             opacity: canAdd ? 1 : 0.45,
           }}
         >
-          {status === 'loading' ? 'Looking up…' : 'Add to deck'}
+          {status === 'loading' ? 'Looking up…' : duplicate ? 'Already in your deck' : 'Add to deck'}
         </button>
         <button
           onClick={onCancel}
