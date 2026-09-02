@@ -86,7 +86,7 @@ forgetting just as well as one you know.
   Routing those imports through an alias tsc *cannot resolve* lets an ambient declaration apply
   instead, so the files are never read — while webpack resolves them normally and chunk
   splitting is unaffected.
-- **First-load JS: ~890 kB → 295 kB.** The level tables are 338 kB–900 kB of source each.
+- **First-load JS: ~890 kB → 296 kB.** The level tables are 338 kB–900 kB of source each.
   Loading them on demand rather than importing them at module scope is the whole difference.
 - **A shipped grammar table cut from 22.6 MB to 4.2 MB** by keeping only the forms the
   lemmatizer can actually produce — 93% of Wiktionary's Spanish conjugations can never match a
