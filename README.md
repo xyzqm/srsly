@@ -8,8 +8,11 @@ something you actually wanted to read — an article, a novel, a chapter of an E
 words you don't know, and they become scheduled review cards. The app's whole argument is that
 levels are a map, not the goal.
 
-<!-- TODO: replace with the deployed URL once the Vercel project is claimed. -->
-**Live demo:** _not yet linked_ · **Engineering log:** [CLAUDE.md](CLAUDE.md)
+**[Live demo](https://srsly-zeta.vercel.app)** · **Engineering log:** [CLAUDE.md](CLAUDE.md)
+
+No account needed to try it: reading, dictionary lookups, EPUBs, the lesson tree and flashcards
+all work signed out. Signing in only adds sync. Passage generation is the one thing that costs
+money, so it asks for your own Anthropic key rather than spending someone else's.
 
 ---
 
