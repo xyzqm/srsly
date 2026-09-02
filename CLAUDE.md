@@ -6,9 +6,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Prioritize **elegance and concision** over volume. Concretely:
 
-- **Don't reinvent existing tools.** Reach for well-maintained libraries (e.g. `ts-fsrs` for spaced-repetition scheduling) instead of hand-rolling their logic.
-- **Prevent data bloat.** Keep persisted models minimal — store only what can't be derived, and let types extend a library's own model (e.g. `DeckWord extends ts-fsrs`'s `Card`) rather than duplicating fields.
-- **Use the framework, not bespoke plumbing.** Prefer built-in mechanisms (e.g. SvelteKit `load` / remote functions) over custom state/store layers.
+- **Store only what cannot be derived.** Milestones are computed from the deck on read rather
+  than kept in a table of unlocked badges; whether a vocabulary lesson's words are in the deck
+  is derived, while "I have read this explanation" is not and so is the one thing stored. A
+  second record of a fact drifts from the first the moment either is written alone.
+- **Generated data is JSON behind an alias, never a TypeScript object literal.** Routing 29 MB
+  of dictionaries through a specifier tsc cannot resolve took the typecheck from 2.13 GB and
+  2.86M symbols to 0.31 GB and 220k. See the section below; `scripts/lib/emitData.mjs` is what
+  keeps it true.
+- **Nothing that renders on every screen may import a language's data.** Level tables and
+  lesson prose load on demand, which is what holds `/` first-load JS in the high 200s of kB
+  rather than ~890 kB. Adding a language means following that pattern, not widening the bundle.
+- **Differences between languages live on `LanguageConfig`, not in a ternary.** A third arm on
+  `language === 'xx'` is the signal that a flag belongs on the config instead.
+- **Prefer a well-maintained library to hand-rolled logic — but say so when you don't.** The
+  one deliberate exception is the scheduler: `lib/fsrs.ts` implements FSRS v4.5 directly (19
+  weights, learning steps, the retrievability curve) rather than depending on `ts-fsrs`, and
+  `DeckWord` in `lib/types.ts` is srsly's own interface rather than an extension of anyone's
+  `Card`. Kuromoji, JSZip and the Supabase client are all used rather than reimplemented.
+
+*(This section previously cited `ts-fsrs` as a dependency, described `DeckWord` as extending
+its `Card`, and recommended SvelteKit `load` functions — in a Next.js project. All three were
+template leftovers that contradicted the code they were meant to describe.)*
 
 ## Commands
 

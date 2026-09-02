@@ -1,0 +1,60 @@
+name: CI
+
+# The gate this project already runs by hand, run by a machine that cannot forget.
+#
+# NO SECRETS ARE NEEDED, and that is not luck. Not one test reads `process.env`; the four
+# dictionaries the segmenters load (public/*.json, 22 MB) are committed; and kuromoji resolves
+# its own dictionary from `process.cwd()/node_modules/kuromoji/dict`, which exists after
+# `npm ci`. So a fork can run this workflow green on the first push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Lint, types and tests, in one job because they share an install and all finish in seconds.
+  check:
+    name: lint · typecheck · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The suite loads the REAL dictionaries — the lemmatizer rules are claims about that
+      # data, so a stub would test the regex rather than the behaviour. That is why this step
+      # takes a couple of minutes rather than a couple of seconds.
+      - name: Test
+        run: npm test
+
+  # SEPARATE JOB, deliberately. The production build raises the Node heap to 4 GB and takes
+  # minutes — webpack has to parse and minify every generated grammar table. Putting it in the
+  # job above would delay the fast signal that actually catches most mistakes.
+  build:
+    name: production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build

@@ -357,8 +357,30 @@ function AppShell() {
             />
           )}
         </main>
+        {/* ── The footer credits the dictionaries, and that is an obligation, not manners ──
+            Every definition in this app comes from CC BY-SA data — CC-CEDICT, JMdict and
+            Wiktionary — and share-alike requires attribution wherever the work is
+            redistributed. The EDRDG asks specifically that software displaying JMdict content
+            acknowledge it on screen rather than only in a file, and says a footer is enough.
+            NOTICE.md carries the full detail; this is the copy a reader actually meets. */}
         <footer className="text-center pb-10 text-xs" style={{ color: 'var(--ink-faint)' }}>
-          srsly.
+          <div>srsly.</div>
+          <div style={{ marginTop: 6, lineHeight: 1.6 }}>
+            Definitions from{' '}
+            <a href="https://www.mdbg.net/chinese/dictionary?page=cc-cedict" target="_blank"
+              rel="noreferrer noopener" style={{ color: 'inherit', textDecoration: 'underline' }}>
+              CC-CEDICT
+            </a>,{' '}
+            <a href="https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project"
+              target="_blank" rel="noreferrer noopener"
+              style={{ color: 'inherit', textDecoration: 'underline' }}>
+              JMdict
+            </a>{' '}and{' '}
+            <a href="https://www.wiktionary.org/" target="_blank" rel="noreferrer noopener"
+              style={{ color: 'inherit', textDecoration: 'underline' }}>
+              Wiktionary
+            </a>, used under CC BY-SA 4.0.
+          </div>
         </footer>
       </div>
 

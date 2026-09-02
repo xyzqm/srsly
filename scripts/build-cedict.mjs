@@ -2,6 +2,17 @@
 /**
  * Downloads CC-CEDICT and builds public/cedict.json
  * Run with: node scripts/build-cedict.mjs
+ *
+ * Source:  CC-CEDICT, the community Chinese–English dictionary published by MDBG.
+ *          https://www.mdbg.net/chinese/dictionary?page=cc-cedict
+ * Licence: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0).
+ *
+ * The emitted JSON is a DERIVATIVE WORK — entries are reshaped, pinyin is converted from
+ * numbered to tone-marked form, and name-only senses are dropped — so it carries the same
+ * CC BY-SA 4.0 licence, and public/cedict.json is served to every visitor. The other build
+ * scripts have carried their source and licence in this header from the start; this one did
+ * not, which left the largest redistributed file in the repository undocumented. See
+ * NOTICE.md, which is the copy a recipient of the data can actually find.
  */
 import { createGunzip } from 'zlib';
 import { writeFile } from 'fs/promises';
