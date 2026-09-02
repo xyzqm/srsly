@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which holds no values — only the names, and why each one is
+# optional. `.env*` swallowed it silently, which is the failure mode a negation exists for.
+!.env.example
 
 # vercel
 .vercel

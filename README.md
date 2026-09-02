@@ -186,10 +186,14 @@ npm install
 npm run dev      # localhost:3000
 ```
 
-No API key is needed to read, look words up, use an EPUB, or review flashcards. Passage
-generation asks for your own Anthropic key in Settings (about 1¢ a passage, billed to you by
-Anthropic, never stored anywhere but the device you typed it on). Sync needs a Supabase
-project — see [`supabase/schema.sql`](supabase/schema.sql), which is a one-file setup.
+No API key is needed to read, look words up, use an EPUB, or review flashcards — with an empty
+environment the app runs fully in local-guest mode. Passage generation asks for your own
+Anthropic key in Settings (about 1¢ a passage, billed to you by Anthropic, never stored
+anywhere but the device you typed it on). Sync needs a Supabase project — see
+[`supabase/schema.sql`](supabase/schema.sql), which is a one-file setup.
+
+[`.env.example`](.env.example) lists every variable, all of them optional, and says which ones
+must stay **unset** on a public deployment and why.
 
 ## Licence and data
 
