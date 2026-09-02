@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { mergedActivity, type DayActivity } from '@/lib/activityLog';
 import { storage } from '@/lib/storage';
+import { monthLabels } from '@/lib/heatmap';
 
 /**
  * Three months of study, one square per day.
@@ -39,7 +40,6 @@ function intensity(n: number, max: number): number {
   return r > 0.75 ? 4 : r > 0.5 ? 3 : r > 0.25 ? 2 : 1;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** Wide enough for a three-letter weekday plus a little air. */
 const GUTTER = 26;
@@ -61,7 +61,7 @@ export default function ReviewHeatmap({ deck }: Props) {
     return () => { live = false; };
   }, []);
 
-  const { grid, max, total, activeDays, firstRecorded, monthLabels } = useMemo(() => {
+  const { grid, max, total, activeDays, firstRecorded, labels } = useMemo(() => {
     const { counts, firstRecorded } = mergedActivity(deck, log ?? undefined);
 
     // End on the LAST day of the current week so today is never clipped mid-column, then
@@ -74,9 +74,7 @@ export default function ReviewHeatmap({ deck }: Props) {
 
     const today = iso(new Date());
     const grid: { date: string; n: number; future: boolean }[][] = [];
-    const monthLabels: { col: number; label: string }[] = [];
     let max = 0, total = 0, activeDays = 0;
-    let lastMonth = -1;
 
     for (let w = 0; w < WEEKS; w++) {
       const col: { date: string; n: number; future: boolean }[] = [];
@@ -87,27 +85,11 @@ export default function ReviewHeatmap({ deck }: Props) {
         const n = counts.get(date) ?? 0;
         if (date <= today) { max = Math.max(max, n); total += n; if (n > 0) activeDays++; }
         col.push({ date, n, future: date > today });
-        if (dow === 0 && d.getMonth() !== lastMonth) {
-          lastMonth = d.getMonth();
-          monthLabels.push({ col: w, label: MONTHS[d.getMonth()] });
-        }
       }
+
       grid.push(col);
     }
-    /**
-     * Drop the first month's label when it barely appears.
-     *
-     * The window is a rolling 91 days, so the leftmost month is whatever 13 weeks ago landed
-     * in — often one or two columns. Labelling that put "May" hard against "Jun" with a single
-     * column between them, which reads as a squashed collision rather than two months. GitHub
-     * does the same thing: a partial leading month gets no label and the space stays blank.
-     */
-    const MIN_COLS_FOR_LABEL = 3;
-    if (monthLabels.length > 1 && monthLabels[1].col - monthLabels[0].col < MIN_COLS_FOR_LABEL) {
-      monthLabels.shift();
-    }
-
-    return { grid, max, total, activeDays, firstRecorded, monthLabels };
+    return { grid, max, total, activeDays, firstRecorded, labels: monthLabels(grid) };
   }, [deck, log]);
 
   const swatch = (level: number) => level === 0
@@ -144,7 +126,7 @@ export default function ReviewHeatmap({ deck }: Props) {
         <div style={{ display: 'inline-block', minWidth: 'min-content' }}>
           {/* Month ruler, aligned to the week each month starts in. */}
           <div style={{ position: 'relative', height: 14, marginLeft: GUTTER + GAP }}>
-            {monthLabels.map(({ col, label }) => (
+            {labels.map(({ col, label }) => (
               <span key={`${col}-${label}`} style={{
                 position: 'absolute', left: col * (CELL + GAP),
                 fontFamily: 'var(--f-mono)', fontSize: 9.5, color: 'var(--ink-faint)', letterSpacing: '.06em',
