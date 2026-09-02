@@ -206,15 +206,20 @@ Wiktionary and stay under **CC BY-SA 4.0**; the character-decomposition data is 
 including why the LGPL source was chosen over the more obvious GPLv2 one for the only dataset
 whose licence travels into the browser.
 
-## On how this was built
+## Who built this, and how
 
-srsly is built with heavy AI assistance, and it seems worth saying so plainly rather than
-leaving it to be inferred from the commit trailers.
+srsly was started with my brother [Daniel](https://github.com/xyzqm), who made the first commit
+in June 2026 and worked on it through July. I have written the large majority of it — 235 of
+295 commits, and every commit since 26 July. `git shortlog -sne` will tell you the same thing
+without taking my word for it.
+
+It is also built with heavy AI assistance, which seems worth saying plainly rather than leaving
+to be inferred from the commit trailers.
 
 I use AI for generation and acceleration; the architecture, the product decisions and the
-verification are mine. What I think that actually looks like is in this repository:
-[CLAUDE.md](CLAUDE.md) is a decision log — measurements, and the alternatives that were tried
-and rejected, and the bugs that were only ever found by running the app rather than reading it.
+verification are mine. What that actually looks like is in this repository:
+[CLAUDE.md](CLAUDE.md) is a decision log — measurements, the alternatives that were tried and
+rejected, and the bugs that were only ever found by running the app rather than reading it.
 Deciding that the Ollama generator had to go despite working, that a cap on blank density was
 silently overriding an explicit setting, or that a "fix" which made 90% of a licence check pass
 was hiding a deleted dictionary entry — that is the part I would want to be judged on, and it
