@@ -1113,6 +1113,53 @@ which is the same undercount posture `lib/activityLog.ts` already takes.
 and a laptop's streak can be clobbered. Not fixed — but named here, because "sync works" would
 otherwise be read as "conflicts are handled".
 
+#### A write that fails offline is queued, not lost
+
+`patch()` used to `console.error` a failed upsert and return. Nothing retried — so reviews
+graded without signal were written to the device and never to the cloud, and then the app's own
+refresh-on-focus (`app/page.tsx`) called `invalidate()` and re-read, and every getter mirrored
+the cloud's OLDER copy back down over local. **The reviews were deleted, by the feature that
+exists to keep devices in step.** Not a slow drift: one focus event.
+
+**The queue is a MAP keyed by column, not a log of operations** (`lib/storage/writeQueue.ts`).
+Every write in this layer is a whole-column blob — `patch({ decks: <the entire decks object> })`,
+never `{ add: word }` — so a later value supersedes an earlier one completely. That one property
+removes everything hard about a retry queue: no ordering to preserve, no stale delta replayed
+over a fresh one, and a queue bounded at eight entries however long the device stays offline.
+An append-only log would have had all three problems to solve.
+
+**`isPending` is the half that actually prevents the loss.** A queue alone does not: the app can
+read, and mirror the stale cloud value down over local, before the queue ever drains. So while a
+column is pending, local is by definition the newer copy and the cloud must not overwrite it —
+the guard is on `getVocabDeck`, `getSRSState`, `getPrefs`, `getShelf` and `getLessonsDone`. The
+facade also flushes BEFORE the focus re-read, so the two are belt and braces.
+
+**A schema fault is not a network fault.** A missing column will never succeed, so queueing it
+would mean retrying forever on every focus; it stays learned-once and is dropped from the queue
+rather than retried. That is why this cannot simply queue on `error`.
+
+**The cold-cache merge base was the more dangerous bug, and it was caused BY going offline.**
+Every payload is built by spreading the cloud's current value, `{ ...(r?.decks ?? {}), [lang]:
+deck }`. Offline with a cold cache `row()` returns null, so that `?? {}` produced an object
+naming only the language being studied — and replaying it would delete the other three
+languages' decks. It failed harmlessly at the time, which is exactly what hid it. `localDecks()`
+and `localShelves()` rebuild the base from local instead.
+
+`passage_state` is the one column that is SKIPPED rather than queued when the row is unreadable,
+because `LocalStorage` keeps cloze progress under one key per passage and there is no local copy
+of the whole map to rebuild from. It is pruned to today on every write, so the worst case is a
+blank filled offline not reappearing on a second device later the same day.
+
+**It does not change the conflict model.** A replayed write still overwrites whatever another
+device did meanwhile, exactly as an online write would. The claim is narrower and worth stating
+exactly: an offline write gets to be a writer at all, instead of vanishing. The one exception is
+`activity_log`, which is re-merged through `mergeActivity` at replay — idempotent per-day MAX, so
+folding in what the cloud learned is strictly better and costs nothing.
+
+When the queue cannot be persisted (quota), it is dropped and warned about rather than failing
+the local write: local is written first and is the truth, so the cost is the SYNC of that change
+and never the change.
+
 **`poolAutoDate` lives in prefs, not in `srsly-pool-auto-{lang}`.** Device-local was harmless
 while decks were; the moment they sync, two devices hold two dates against one shared pool and
 both activate a batch on the same day — exactly the avalanche `lib/poolAutoActivate.ts` exists

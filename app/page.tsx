@@ -242,8 +242,12 @@ function AppShell() {
       // A short guard so a flurry of focus events is one refresh, not several.
       if (Date.now() - last < 2000) return;
       last = Date.now();
-      storage.invalidate();
-      void reloadDeck();
+      // Flush FIRST. Coming back to the tab is also the moment a write that failed offline
+      // can finally land, and re-reading before it does is what used to overwrite it.
+      void storage.flush().finally(() => {
+        storage.invalidate();
+        void reloadDeck();
+      });
     };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);

@@ -12,8 +12,23 @@ import type { DayActivity } from '@/lib/activityLog';
 class StorageFacade implements DataService {
   private impl: DataService = new LocalStorage();
 
-  setBackend(impl: DataService) { this.impl = impl; }
-  resetToLocal() { this.impl = new LocalStorage(); }
+  setBackend(impl: DataService) { this.dispose(); this.impl = impl; }
+  resetToLocal() { this.dispose(); this.impl = new LocalStorage(); }
+
+  /** Let a backend release anything global before it is replaced — SupabaseStorage keeps an
+   *  `online` listener for its retry queue, and a swapped-out instance holding one would keep
+   *  flushing into a row the signed-out user no longer owns. */
+  private dispose() { (this.impl as { dispose?: () => void }).dispose?.(); }
+
+  /**
+   * Retry anything that failed to reach the cloud.
+   *
+   * Called alongside `invalidate()` on focus, and BEFORE the re-read — the ordering matters.
+   * A read that mirrors the cloud down while a write is still queued is the exact deletion
+   * the queue exists to prevent, and the read guards in SupabaseStorage are the belt to this
+   * pair of braces. LocalStorage has nothing to flush.
+   */
+  flush() { return (this.impl as { flush?: () => Promise<void> }).flush?.() ?? Promise.resolve(); }
 
   /**
    * Drop any cached remote state so the next read goes to the network.

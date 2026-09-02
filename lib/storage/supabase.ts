@@ -5,6 +5,7 @@ import { LocalStorage } from './local';
 import { mergeShelf } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, mergeActivity, type DayActivity } from '@/lib/activityLog';
+import * as queue from './writeQueue';
 
 /**
  * COLUMNS THIS FILE NAMES ARE CREATED BY `supabase/schema.sql` AND `supabase/migrations/`.
@@ -61,7 +62,73 @@ function deduplicateDeck(deck: DeckWord[]): DeckWord[] {
  */
 export class SupabaseStorage implements DataService {
   private local = new LocalStorage();
-  constructor(private sb: SupabaseClient, private userId: string) {}
+
+  constructor(private sb: SupabaseClient, private userId: string) {
+    this.pending = queue.load(userId);
+    // Anything still queued was written on a previous visit — closing the app on a train and
+    // reopening it at home is the ordinary case, so replay is attempted on construction and
+    // not only on an `online` event this tab was never around to hear.
+    if (!queue.isEmpty(this.pending)) void this.flush();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.onOnline);
+    }
+  }
+
+  /**
+   * Writes that have not reached the cloud. See lib/storage/writeQueue.ts for why this is a
+   * map keyed by column rather than a log of operations.
+   */
+  private pending: queue.PendingWrites = {};
+  private flushing: Promise<void> | null = null;
+
+  private onOnline = () => { void this.flush(); };
+
+  /** Stop listening. Called when the backend is swapped out on sign-out. */
+  dispose(): void {
+    if (typeof window !== 'undefined') window.removeEventListener('online', this.onOnline);
+  }
+
+  private persistQueue(): void {
+    if (queue.save(this.userId, this.pending)) return;
+    // Could not be parked — too large, or the origin is out of quota. Local was already
+    // written and is the truth, so dropping the queue costs the SYNC of this change and never
+    // the change. Saying so is the point: silence here is how the original bug behaved.
+    console.warn(
+      '[SupabaseStorage] offline write queue could not be saved (quota). ' +
+      'Changes are safe on this device but may not reach other devices.',
+    );
+    this.pending = {};
+    queue.drop(this.userId);
+  }
+
+  /**
+   * Retry everything queued, once, as a single upsert.
+   *
+   * Serialised through `flushing` so an `online` event landing on top of a focus refresh does
+   * not send the same columns twice concurrently — two upserts racing on one row is how a
+   * newer value loses to an older one.
+   */
+  async flush(): Promise<void> {
+    if (this.flushing) return this.flushing;
+    if (queue.isEmpty(this.pending)) return;
+    this.flushing = (async () => {
+      const send = { ...this.pending };
+      /**
+       * The activity log is RE-MERGED rather than replayed as-is.
+       *
+       * `mergeActivity` is per-day MAX and idempotent, so folding in whatever the cloud has
+       * learned while this device was away is strictly better than overwriting it — and it is
+       * free, because the function already exists. Every other column keeps the whole-blob
+       * last-writer-wins posture the rest of this file has.
+       */
+      if ('activity_log' in send) {
+        const cloud = (await this.row())?.activity_log ?? [];
+        send.activity_log = mergeActivity(send.activity_log as DayActivity[], cloud);
+      }
+      await this.patch(send);
+    })().finally(() => { this.flushing = null; });
+    return this.flushing;
+  }
 
   /**
    * The last row we read, kept so a write does not have to fetch one first.
@@ -120,15 +187,39 @@ export class SupabaseStorage implements DataService {
    */
   private missingColumns = new Set<string>();
 
+  /**
+   * The one place every synced write goes, and therefore the only place a retry belongs.
+   *
+   * THREE OUTCOMES, and telling them apart is the whole job:
+   *   landed          → remember it, and drop those columns from the queue
+   *   missing column  → a schema fault; it will NEVER succeed, so queueing it would mean
+   *                     retrying forever on every focus. Learned once, as before.
+   *   anything else   → network, timeout, 5xx. Retryable, so it is queued.
+   *
+   * That middle case is why this cannot simply queue on `error`. A database that has not run
+   * `supabase/migrations/` would otherwise accumulate a permanent queue that fails on every
+   * replay and never drains.
+   */
   private async patch(patch: Record<string, unknown>): Promise<void> {
     const send = Object.fromEntries(
       Object.entries(patch).filter(([k]) => !this.missingColumns.has(k)),
     );
-    if (Object.keys(send).length === 0) return;
+    const columns = Object.keys(send);
+    if (columns.length === 0) return;
 
     const { error } = await this.sb.from('user_data')
       .upsert({ user_id: this.userId, ...send, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-    if (!error) { this.remember(send as Partial<UserDataRow>); return; }
+    if (!error) {
+      this.remember(send as Partial<UserDataRow>);
+      // Only now is local no longer the newer copy, so only now may a read mirror the cloud
+      // back down over these columns. Checks EVERY column, not just the first: a patch can
+      // carry `decks` and `activity_log` together while only one of them was queued.
+      if (columns.some(c => queue.isPending(this.pending, c))) {
+        this.pending = queue.forget(this.pending, columns);
+        this.persistQueue();
+      }
+      return;
+    }
 
     // "Could not find the 'shelf' column of 'user_data' in the schema cache"
     const missing = /Could not find the '(\w+)' column/.exec(error.message)?.[1];
@@ -138,18 +229,57 @@ export class SupabaseStorage implements DataService {
         `[SupabaseStorage] no '${missing}' column — that feature stays on this device. ` +
         'Run supabase/migrations/ against this project to enable syncing it.',
       );
+      // A column the schema does not have is not a retry candidate — forget it rather than
+      // queueing a write that can only fail again.
+      this.pending = queue.forget(this.pending, [missing]);
+      this.persistQueue();
       // Land everything else rather than dropping the whole write on the floor.
       const rest = Object.fromEntries(Object.entries(send).filter(([k]) => k !== missing));
       if (Object.keys(rest).length > 0) await this.patch(rest);
       return;
     }
-    console.error('[SupabaseStorage] write', error.message);
+
+    this.pending = queue.supersede(this.pending, send);
+    this.persistQueue();
+    console.warn(
+      `[SupabaseStorage] write failed, queued for retry (${Object.keys(send).join(', ')}):`,
+      error.message,
+    );
+  }
+
+  /**
+   * A merge base built from LOCAL, for when the cloud row cannot be read.
+   *
+   * ── THE HAZARD THIS EXISTS FOR ──
+   * Every whole-column write is built by spreading the cloud's current value —
+   * `{ ...(r?.decks ?? {}), [lang]: deck }`. Offline with a cold cache, `row()` returns null,
+   * so that `?? {}` produced an object holding ONLY the language being studied. It failed
+   * harmlessly at the time, which is what hid it; queue that write and replay it, and it
+   * lands, and the other three languages' decks are gone from the cloud.
+   *
+   * So going offline did not merely fail to save — it assembled a payload that destroys data
+   * the moment it succeeds. A retry queue without this fix would faithfully replay the poison.
+   */
+  private async localDecks(): Promise<Partial<Record<LanguageCode, DeckWord[]>>> {
+    const pairs = await Promise.all(
+      SUPPORTED_LANGS.map(async l => [l, await this.local.getVocabDeck(l)] as const),
+    );
+    return Object.fromEntries(pairs.filter(([, d]) => d.length > 0));
+  }
+
+  private async localShelves(): Promise<Partial<Record<LanguageCode, ShelfEntry[]>>> {
+    const pairs = await Promise.all(
+      SUPPORTED_LANGS.map(async l => [l, await this.local.getShelf(l)] as const),
+    );
+    return Object.fromEntries(pairs.filter(([, e]) => e.length > 0));
   }
 
   async getVocabDeck(lang: LanguageCode): Promise<DeckWord[]> {
     const r = await this.row();
     const cloudDeck = deckFromRow(r, lang);
-    if (cloudDeck) {
+    // A pending write means LOCAL is the newer copy — mirroring the cloud down over it is
+    // precisely the deletion this queue exists to stop. See writeQueue.isPending.
+    if (cloudDeck && !queue.isPending(this.pending, 'decks')) {
       const deck = deduplicateDeck(cloudDeck);
       await this.local.saveVocabDeck(lang, deck);
       return deck;
@@ -159,7 +289,7 @@ export class SupabaseStorage implements DataService {
   async saveVocabDeck(lang: LanguageCode, deck: DeckWord[]): Promise<void> {
     await this.local.saveVocabDeck(lang, deck);
     const r = await this.row({ cached: true });
-    const decks = { ...(r?.decks ?? {}), [lang]: deck };
+    const decks = { ...(r?.decks ?? await this.localDecks()), [lang]: deck };
     /**
      * The activity log rides along, rather than getting a write of its own.
      *
@@ -173,14 +303,18 @@ export class SupabaseStorage implements DataService {
 
   async getSRSState(): Promise<SRSState> {
     const r = await this.row();
-    if (r?.srs_state) { await this.local.saveSRSState(r.srs_state); return r.srs_state; }
+    if (r?.srs_state && !queue.isPending(this.pending, 'srs_state')) {
+      await this.local.saveSRSState(r.srs_state); return r.srs_state;
+    }
     return this.local.getSRSState();
   }
   async saveSRSState(state: SRSState): Promise<void> { await this.local.saveSRSState(state); await this.patch({ srs_state: state }); }
 
   async getPrefs(): Promise<UserPrefs> {
     const r = await this.row();
-    if (r?.prefs) { await this.local.savePrefs(r.prefs); return r.prefs; }
+    if (r?.prefs && !queue.isPending(this.pending, 'prefs')) {
+      await this.local.savePrefs(r.prefs); return r.prefs;
+    }
     return this.local.getPrefs();
   }
   async savePrefs(prefs: UserPrefs): Promise<void> { await this.local.savePrefs(prefs); await this.patch({ prefs }); }
@@ -201,13 +335,15 @@ export class SupabaseStorage implements DataService {
   async getShelf(lang: LanguageCode): Promise<ShelfEntry[]> {
     const r = await this.row();
     const cloud = r?.shelf?.[lang];
-    if (cloud) { await this.local.saveShelf(lang, cloud); return cloud; }
+    if (cloud && !queue.isPending(this.pending, 'shelf')) {
+      await this.local.saveShelf(lang, cloud); return cloud;
+    }
     return this.local.getShelf(lang);
   }
   async saveShelf(lang: LanguageCode, entries: ShelfEntry[]): Promise<void> {
     await this.local.saveShelf(lang, entries);
     const r = await this.row({ cached: true });
-    await this.patch({ shelf: { ...(r?.shelf ?? {}), [lang]: entries } });
+    await this.patch({ shelf: { ...(r?.shelf ?? await this.localShelves()), [lang]: entries } });
   }
 
   async getPassageState(contentKey: string, passageIdx: number): Promise<ClozeOccurrenceMap | null> {
@@ -225,6 +361,19 @@ export class SupabaseStorage implements DataService {
   async savePassageState(contentKey: string, passageIdx: number, state: ClozeOccurrenceMap): Promise<void> {
     await this.local.savePassageState(contentKey, passageIdx, state);
     const r = await this.row({ cached: true });
+    /**
+     * THE ONE COLUMN THAT IS SKIPPED RATHER THAN QUEUED WHEN THE ROW IS UNREADABLE.
+     *
+     * The others rebuild their merge base from local — see `localDecks` — but `LocalStorage`
+     * keeps cloze progress under one key PER PASSAGE (`clozeStateKey`), so there is no local
+     * copy of the whole map to rebuild from. Writing `{ [thisKey]: state }` would drop every
+     * other passage's progress from the cloud the moment it landed.
+     *
+     * Skipping is cheap here in a way it would not be for a deck: `passage_state` is pruned
+     * to TODAY on every write, local already has it, and the worst case is that a blank filled
+     * offline is not restored on a second device later the same day.
+     */
+    if (!r) return;
     const today = todayStr();
     // Prune stale entries (different dates) and write the updated state.
     // Key format: "${date}|{level}|{deck}|{passageIdx}" — date is the first segment.
@@ -264,7 +413,9 @@ export class SupabaseStorage implements DataService {
    */
   async getLessonsDone(): Promise<string[]> {
     const r = await this.row();
-    if (r?.lessons_done) { await this.local.saveLessonsDone(r.lessons_done); return r.lessons_done; }
+    if (r?.lessons_done && !queue.isPending(this.pending, 'lessons_done')) {
+      await this.local.saveLessonsDone(r.lessons_done); return r.lessons_done;
+    }
     return this.local.getLessonsDone();
   }
   async saveLessonsDone(ids: string[]): Promise<void> {
