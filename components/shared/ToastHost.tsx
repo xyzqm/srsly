@@ -39,7 +39,7 @@ interface Toast {
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ToastHost({ deck }: { deck: DeckWord[] }) {
+export default function ToastHost({ deck, loadSeq }: { deck: DeckWord[]; loadSeq: number }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   /** Ids present at the last check. `null` until the first deck has loaded. */
   const seenIds = useRef<Set<string> | null>(null);
@@ -49,6 +49,27 @@ export default function ToastHost({ deck }: { deck: DeckWord[] }) {
     setToasts(prev => (prev.some(x => x.id === t.id) ? prev : [...prev, t]));
     setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), ms);
   }
+
+  /**
+   * A deck that arrived from STORAGE is absorbed silently — it is not something the learner
+   * just did.
+   *
+   * `loadSeq` counts loads and not edits (see hooks/useVocabDeck.ts). Signing in swaps a small
+   * local deck for a large cloud one, and by diff alone that is identical to adding hundreds
+   * of words at once: it announced "Added 542 words to your deck" and fired a Collector 1000
+   * milestone crossed months earlier on another device. Re-seeding here is what makes a
+   * sync silent while leaving a real save loud.
+   *
+   * `acknowledge()` is exactly the right primitive for the milestone half, and it already
+   * exists: it marks what is currently earned as seen WITHOUT showing anything.
+   */
+  const lastLoad = useRef(loadSeq);
+  useEffect(() => {
+    if (loadSeq === lastLoad.current) return;
+    lastLoad.current = loadSeq;
+    seenIds.current = new Set(deck.map(w => w.id ?? w.h));
+    if (fresh.length > 0) acknowledge();
+  }, [loadSeq, deck, fresh, acknowledge]);
 
   /**
    * A word was saved. Seeded on the first pass rather than compared against zero, so arriving

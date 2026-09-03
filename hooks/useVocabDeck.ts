@@ -149,6 +149,16 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
 
   /** Bumped by `reload` to re-run the load effect without changing language. */
   const [reloadKey, setReloadKey] = useState(0);
+  /**
+   * How many times the deck has arrived from STORAGE rather than from a local edit.
+   *
+   * Consumers that announce changes need to tell the two apart, and cannot from the deck
+   * alone. Signing in replaces a small local deck with a large cloud one, which is
+   * indistinguishable by diff from the learner adding hundreds of words at once — and that
+   * is exactly how a sign-in came to announce "Added 542 words to your deck" and fire a
+   * milestone the learner had crossed months earlier on another device.
+   */
+  const [loadSeq, setLoadSeq] = useState(0);
 
   // Mirror of deck that's always current — lets mutators compute from the latest
   // state even when several fire in one synchronous pass (e.g. ReadTab grading
@@ -235,6 +245,8 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       setDeck(resynced);
       publishDeck(language, resynced);
       setLoadedLang(language);
+      // This deck came from storage, not from anything the learner just did here.
+      setLoadSeq(n => n + 1);
       if (changed) storage.saveVocabDeck(language, resynced);
     });
     return () => { live = false; };
@@ -504,7 +516,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
   }, [commit]);
 
   return {
-    deck, deckLoaded, reload, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
+    deck, deckLoaded, loadSeq, reload, addWord, addWords, removeWord, gradeCard, updateWordReview, updateWord, clearDeck,
     toggleFocus, setPaused, snoozeWord, unsnoozeWord, rescheduleWord, resetProgress,
     resumeAll, unsnoozeAll, unfocusAll, releaseFromPool, restoreToPool, releaseWord, unstickCard, patchCard,
   };

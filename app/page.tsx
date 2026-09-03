@@ -217,7 +217,7 @@ function AppShell() {
    * Keyed on `language` so switching to a language you have not opened today activates its
    * pool too. Each language keeps its own date, because each has its own deck.
    */
-  const { releaseFromPool, deckLoaded, deck, reload: reloadDeck } = useVocabDeck(language);
+  const { releaseFromPool, deckLoaded, deck, loadSeq, reload: reloadDeck } = useVocabDeck(language);
   useEffect(() => {
     // The deck has to be in memory first: releasing from a pool that has not loaded yet
     // would find nothing pooled, and then record the day as done.
@@ -315,7 +315,7 @@ function AppShell() {
             each with its own `useAchievements`, racing to acknowledge the same milestone.
             Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
             be the one nobody could see and the milestone simply never appeared. */}
-        <ToastHost deck={deck} />
+        <ToastHost deck={deck} loadSeq={loadSeq} />
         <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its
