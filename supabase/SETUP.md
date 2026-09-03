@@ -26,8 +26,23 @@ ungated, no sign-in UI.** The whole auth + budget layer is gated on the
    - **Email** — magic-link / OTP.
    - **Google** — add your Google OAuth client ID + secret. In Authentication → URL
      Configuration, set the **Site URL** and add redirect URLs (e.g.
-     `http://localhost:3000`, your prod domain). Google's authorized redirect URI is
-     `https://<project-ref>.supabase.co/auth/v1/callback`.
+     `http://localhost:3000/**`, `https://<your-domain>/**`). Google's authorized redirect
+     URI is `https://<project-ref>.supabase.co/auth/v1/callback`.
+
+   > **If signing in on a DEPLOYED site sends you to `localhost` — this is why.**
+   >
+   > The symptom is a browser error page reading *"This site can't be reached — localhost
+   > refused to connect"* immediately after choosing a Google account, and it looks nothing
+   > like an auth problem, which is what makes it worth writing down.
+   >
+   > `AuthProvider.signInWithGoogle` asks for `${window.location.origin}/auth/callback`, which
+   > is correct on every origin. But Supabase **validates `redirectTo` against the redirect
+   > allow-list, and silently falls back to the Site URL when it does not match** — so a
+   > project still configured for local development hands every deployed user back to
+   > `localhost:3000`. Nothing in the app can detect this: the redirect never returns.
+   >
+   > Add the deployed origin to **both** fields, not just one. The Site URL is the fallback;
+   > the allow-list is what makes the app's own request legal.
 
 4. **Set env vars** in `.env.local` (Project Settings → API):
    ```
