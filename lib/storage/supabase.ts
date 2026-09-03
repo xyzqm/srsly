@@ -44,6 +44,21 @@ function deckFromRow(r: UserDataRow | null, lang: LanguageCode): DeckWord[] | nu
   return null;
 }
 
+/**
+ * JSON with object keys sorted, so two values that differ only in key order compare equal.
+ *
+ * Postgres round-trips JSONB through its own representation and does not promise to give
+ * back the key order it was handed. Comparing raw `JSON.stringify` output would therefore
+ * report every column as changed on every read, which is exactly the false positive that
+ * would make a skip-if-unchanged check do nothing.
+ */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_k, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+      : v);
+}
+
 /** Semantic identity: same character + same meaning = same card, regardless of id. */
 function semanticKey(w: DeckWord): string {
   return `${w.h}|${(w.m ?? '').trim()}`;
@@ -520,8 +535,30 @@ export async function migrateLocalToCloud(sb: SupabaseClient, userId: string): P
   const columns: Record<string, unknown> = {
     decks, prefs, srs_state: srs, shelf, activity_log: activity, lessons_done: lessonsDone,
   };
-  let send = { ...columns };
-  for (let attempt = 0; attempt < Object.keys(columns).length; attempt++) {
+
+  /**
+   * ONLY SEND WHAT ACTUALLY CHANGED — which on most loads is nothing.
+   *
+   * This runs on EVERY page load, not only the first sign-in, and it used to upsert all six
+   * columns unconditionally: the whole deck, shelf, activity log and lesson list, re-written
+   * every time the app opened. AuthProvider blocks the entire UI behind it — the app is a
+   * bare "loading…" until it resolves — so that full-row write was sitting between a signed-in
+   * learner and their first frame, on cellular as much as on wifi.
+   *
+   * The block itself stays. Rendering early would let a graded card interleave with this
+   * function's read-compute-write and be clobbered by a snapshot taken before it. What can go
+   * is the cost: for a returning learner with nothing new locally, every column already
+   * matches and the whole thing collapses to one SELECT.
+   *
+   * Compared through a CANONICAL stringify because Postgres does not preserve JSONB key
+   * order — a plain `JSON.stringify` comparison would report every column as changed on every
+   * load and quietly restore the behaviour this removes.
+   */
+  const cloudCols = (cloud ?? {}) as Record<string, unknown>;
+  let send = Object.fromEntries(
+    Object.entries(columns).filter(([k, v]) => canonicalJson(v) !== canonicalJson(cloudCols[k] ?? null)),
+  );
+  for (let attempt = 0; Object.keys(send).length > 0 && attempt < Object.keys(columns).length; attempt++) {
     const { error } = await sb.from('user_data').upsert(
       { user_id: userId, ...send, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' },

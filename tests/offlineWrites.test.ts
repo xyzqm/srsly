@@ -7,7 +7,7 @@
  * `online` listener on `window`, which is half of what is under test here.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SupabaseStorage } from '@/lib/storage/supabase';
+import { SupabaseStorage, migrateLocalToCloud } from '@/lib/storage/supabase';
 import { LocalStorage } from '@/lib/storage/local';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 
@@ -199,5 +199,82 @@ describe('a schema fault is not treated as a network fault', () => {
     await store.flush();
     expect(upserts).toHaveLength(0);
     expect(localStorage.getItem('srsly-write-queue-user-1')).toBeNull();
+  });
+});
+
+describe('the sign-in migration does not rewrite an unchanged row', () => {
+  /**
+   * It runs on EVERY page load, not only the first sign-in, and AuthProvider blocks the whole
+   * UI behind it — the app is a bare "loading…" until it resolves. It used to upsert all six
+   * columns unconditionally, so a returning learner waited on a full-row write of their deck,
+   * shelf, activity log and lesson list before seeing a single frame.
+   *
+   * Tested by running it TWICE against its own output rather than against a hand-built row:
+   * a fixture invites the fixture to be wrong, and what actually matters is that the second
+   * load of a real session is free.
+   */
+  it('writes on the first run and sends nothing on the second', async () => {
+    const local = new LocalStorage();
+    await local.saveVocabDeck('zh', [word('猫')]);
+
+    const state = { online: true, row: null as Record<string, unknown> | null };
+    const { sb, upserts } = fakeClient(state);
+
+    await migrateLocalToCloud(sb, 'user-1');
+    expect(upserts, 'the first sign-in must carry local data up').toHaveLength(1);
+
+    // The cloud now holds exactly what the migration produced — a returning learner's row.
+    state.row = { ...upserts[0] };
+    await migrateLocalToCloud(sb, 'user-1');
+    expect(upserts, 'a second load should cost one SELECT and no writes').toHaveLength(1);
+  });
+
+  /**
+   * Key ORDER is the trap. Postgres does not promise to hand JSONB back in the order it was
+   * given, so a plain JSON.stringify comparison would call every column changed on every load
+   * and silently restore the behaviour this removes.
+   */
+  it('is not fooled by JSONB key reordering', async () => {
+    const local = new LocalStorage();
+    await local.saveVocabDeck('zh', [{ h: '猫', p: 'māo', m: 'cat' }]);
+
+    const state = { online: true, row: null as Record<string, unknown> | null };
+    const { sb, upserts } = fakeClient(state);
+    await migrateLocalToCloud(sb, 'user-1');
+
+    // Round-trip the row through a key-reversing pass, as a JSONB column may.
+    const reorder = (v: unknown): unknown =>
+      v && typeof v === 'object' && !Array.isArray(v)
+        ? Object.fromEntries(Object.entries(v as Record<string, unknown>).reverse().map(([k, x]) => [k, reorder(x)]))
+        : Array.isArray(v) ? v.map(reorder) : v;
+    state.row = reorder({ ...upserts[0] }) as Record<string, unknown>;
+
+    await migrateLocalToCloud(sb, 'user-1');
+    expect(upserts, 'key order alone was treated as a change').toHaveLength(1);
+  });
+
+  /**
+   * The skip must not swallow a real change. Note this uses the ACTIVITY LOG rather than the
+   * deck, and the reason is a contract worth knowing: once the cloud holds any deck,
+   * `anyCloudDeck` makes the cloud authoritative and this function deliberately stops
+   * carrying local deck edits up — that is what makes deletions propagate, and deck changes
+   * travel by `saveVocabDeck` instead. The log, the shelf and the lesson list are the things
+   * it still merges on every load.
+   */
+  it('still writes a column that genuinely differs', async () => {
+    const local = new LocalStorage();
+    await local.saveVocabDeck('zh', [word('猫')]);
+
+    const state = { online: true, row: null as Record<string, unknown> | null };
+    const { sb, upserts } = fakeClient(state);
+    await migrateLocalToCloud(sb, 'user-1');
+    state.row = { ...upserts[0] };
+
+    // A day of study recorded on this device since the last sync.
+    await local.saveActivityLog([{ d: '2026-09-02', n: 12 }]);
+    await migrateLocalToCloud(sb, 'user-1');
+
+    expect(upserts).toHaveLength(2);
+    expect(Object.keys(upserts[1])).toContain('activity_log');
   });
 });
