@@ -1,5 +1,6 @@
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import type { DayActivity } from '@/lib/activityLog';
+import type { DayCounts } from '@/lib/reviewCounts';
 
 export interface DataService {
   // Vocab decks are per-language (a Chinese deck and a Japanese deck are independent).
@@ -35,6 +36,10 @@ export interface DataService {
    */
   getActivityLog(): Promise<DayActivity[]>;
   saveActivityLog(log: DayActivity[]): Promise<void>;
+  /** Today's new/review tallies, per device. Synced so the daily budget is one budget and
+   *  not one per device — see lib/reviewCounts.ts. */
+  getReviewCounts(): Promise<DayCounts>;
+  saveReviewCounts(day: DayCounts): Promise<void>;
 
   /**
    * Finished lesson ids. Synced, unlike `srsly-achievements-seen` and

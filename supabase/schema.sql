@@ -32,6 +32,8 @@ create table if not exists public.user_data (
   shelf         jsonb,   -- { zh: ShelfEntry[], ... } — finished passages, per language
   passage_state jsonb,   -- { "${contentKey}|${idx}": ClozeOccurrenceMap } — today's only
   activity_log  jsonb,   -- [{ d, n }] — the review heatmap's record; merged per-day MAX
+  review_counts jsonb,   -- { date, by: { deviceId: { n, r } } } — today's budget spend, merged
+                         -- per DEVICE: a sum double-counts on replay and a max under-enforces
   lessons_done  jsonb,   -- string[] of finished lesson ids; merged as a union
   updated_at    timestamptz not null default now()
 );

@@ -227,6 +227,18 @@ function AppShell() {
   }, [language, deckLoaded, releaseFromPool]);
 
   /**
+   * Today's budget, as spent on EVERY device.
+   *
+   * Read once on mount because the readers cannot read it themselves: `getTodayCounts()` is
+   * synchronous — called from render and effect paths in three files — and so sees only this
+   * device's localStorage. `SupabaseStorage.getReviewCounts` merges the cloud's copy in and
+   * writes the result back locally, which is what those synchronous readers then pick up.
+   * Without this the counter merges perfectly and nothing ever asks it to. See
+   * lib/reviewCounts.ts.
+   */
+  useEffect(() => { void storage.getReviewCounts(); }, []);
+
+  /**
    * Re-read from the cloud when this tab comes back to the front.
    *
    * Nothing else re-reads after the initial load — there is no realtime subscription — so
@@ -247,6 +259,10 @@ function AppShell() {
       void storage.flush().finally(() => {
         storage.invalidate();
         void reloadDeck();
+        // Pull the other device's share of today's budget down with everything else. Nothing
+        // else reads it: `getTodayCounts()` is synchronous and sees only localStorage, so
+        // without this the cap stays per-device however well it merges.
+        void storage.getReviewCounts();
       });
     };
     window.addEventListener('focus', refresh);

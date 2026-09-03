@@ -5,6 +5,7 @@ import { LocalStorage } from './local';
 import { mergeShelf } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, mergeActivity, type DayActivity } from '@/lib/activityLog';
+import { loadDay, saveDay, mergeCounts, type DayCounts } from '@/lib/reviewCounts';
 import * as queue from './writeQueue';
 
 /**
@@ -29,6 +30,7 @@ interface UserDataRow {
   passage_state: Record<string, ClozeOccurrenceMap> | null;
   shelf: Partial<Record<LanguageCode, ShelfEntry[]>> | null;
   activity_log: DayActivity[] | null;
+  review_counts: DayCounts | null;
   lessons_done: string[] | null;
 }
 
@@ -298,7 +300,12 @@ export class SupabaseStorage implements DataService {
      * nothing; giving the log its own save would double the writes on the one path where
      * round trips are already the thing to watch.
      */
-    await this.patch({ decks, activity_log: getActivityLog() });
+    /**
+     * The review counters ride along too, for the same reason the activity log does: every
+     * graded card already causes this exact upsert, and giving the budget its own save would
+     * double the writes on the one path where round trips are worth watching.
+     */
+    await this.patch({ decks, activity_log: getActivityLog(), review_counts: loadDay() });
   }
 
   async getSRSState(): Promise<SRSState> {
@@ -384,6 +391,23 @@ export class SupabaseStorage implements DataService {
     }
     pruned[`${contentKey}|${passageIdx}`] = state;
     await this.patch({ passage_state: pruned });
+  }
+
+  /**
+   * The daily budget, merged PER DEVICE — see lib/reviewCounts.ts on why neither a sum nor a
+   * plain max will do. Written back locally so the synchronous `getTodayCounts()` that the
+   * render paths call sees the cloud's contribution too.
+   */
+  async getReviewCounts(): Promise<DayCounts> {
+    const r = await this.row();
+    const merged = mergeCounts(loadDay(), r?.review_counts ?? null);
+    saveDay(merged);
+    return merged;
+  }
+  async saveReviewCounts(day: DayCounts): Promise<void> {
+    const merged = mergeCounts(day, (await this.row())?.review_counts ?? null);
+    saveDay(merged);
+    await this.patch({ review_counts: merged });
   }
 
   /** Cloud and device merged per-day MAX — see mergeActivity on why not a sum. */

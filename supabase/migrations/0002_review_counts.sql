@@ -1,0 +1,11 @@
+-- The daily new-card / review budget, made one budget instead of one per device.
+--
+-- `srsly-review-counts` was device-local while the deck it rations syncs, so a laptop counted
+-- to 20 and a phone counted to 20 and the learner got 40 — quietly doubling the intake FSRS
+-- is calibrated around, on exactly the setup sync exists to serve.
+--
+-- Shape: { date, by: { <deviceId>: { n, r } } }. Each device increments only its own entry;
+-- merging takes a per-device MAX (idempotent, so writing a merged copy back cannot inflate
+-- it) and the total is the sum across entries (exact, where a plain MAX would under-count two
+-- devices used at once and hand back budget already spent). See lib/reviewCounts.ts.
+alter table public.user_data add column if not exists review_counts jsonb;

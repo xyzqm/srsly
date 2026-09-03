@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mergeActivity, type DayActivity } from '@/lib/activityLog';
 
@@ -26,7 +26,19 @@ describe('the schema can hold every column the code writes', () => {
    */
   const root = resolve(__dirname, '..');
   const schema = readFileSync(resolve(root, 'supabase/schema.sql'), 'utf8');
-  const migrations = readFileSync(resolve(root, 'supabase/migrations/0001_sync_columns.sql'), 'utf8');
+  /**
+   * EVERY migration, not a named one.
+   *
+   * This read `0001_sync_columns.sql` by filename, which quietly made the test a gate against
+   * ever adding a second migration: `review_counts` arrived in `0002` and was reported as
+   * having no migration at all. A rule about "the migrations directory" has to read the
+   * directory.
+   */
+  const migrations = readdirSync(resolve(root, 'supabase/migrations'))
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+    .map(f => readFileSync(resolve(root, 'supabase/migrations', f), 'utf8'))
+    .join('\n');
   const source = readFileSync(resolve(root, 'lib/storage/supabase.ts'), 'utf8');
 
   /** The `interface UserDataRow { ... }` body, which is the list of columns this code uses. */

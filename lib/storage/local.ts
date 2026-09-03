@@ -3,6 +3,7 @@ import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, Languag
 import { contentKeyOf, entriesFrom, mergeShelf } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, type DayActivity } from '@/lib/activityLog';
+import { loadDay, saveDay, type DayCounts } from '@/lib/reviewCounts';
 import { loadDone, saveDone } from '@/lib/lessons';
 
 const KEYS = {
@@ -187,6 +188,9 @@ export class LocalStorage implements DataService {
   // to one key is how the two copies start disagreeing.
   async getActivityLog(): Promise<DayActivity[]> { return getActivityLog(); }
   async saveActivityLog(log: DayActivity[]): Promise<void> { setActivityLog(log); }
+
+  async getReviewCounts(): Promise<DayCounts> { return loadDay(); }
+  async saveReviewCounts(day: DayCounts): Promise<void> { saveDay(day); }
 
   async getLessonsDone(): Promise<string[]> { return [...loadDone()]; }
   async saveLessonsDone(ids: string[]): Promise<void> { saveDone(new Set(ids)); }
