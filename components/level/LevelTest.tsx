@@ -135,6 +135,8 @@ export default function LevelTest({ language, mode, onFinish, onClose, onSkip }:
   useEffect(() => {
     if (phase !== 'asking') return;
     const onKey = (e: KeyboardEvent) => {
+      // ⌘1–⌘4 / Ctrl+1–4 are the browser's tab switches — see Flashcards for the full note.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key < '1' || e.key > '4') return;
       const opt = questions[qi]?.options[Number(e.key) - 1];
       if (opt) { e.preventDefault(); answer(opt); }

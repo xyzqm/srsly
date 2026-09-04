@@ -164,6 +164,17 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       if (!k.canAct) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      /**
+       * A MODIFIER MEANS THE KEY BELONGS TO THE BROWSER, NOT TO US.
+       *
+       * `e.key` is the character produced, so ⌘R and Ctrl+R both arrive here as plain 'r' —
+       * and this handler called `preventDefault()` on them. Reloading the page silently
+       * stopped working and read the flashcard aloud instead, which is unattributable to a
+       * shortcut nobody knowingly pressed. The same held for ⌘1–⌘4 against the grade keys.
+       *
+       * Shift is deliberately still allowed: Shift+R is 'R', which is this app's own key.
+       */
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); k.replay(); return; }
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
