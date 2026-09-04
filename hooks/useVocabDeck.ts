@@ -125,8 +125,23 @@ const deckCache = new Map<LanguageCode, DeckWord[]>();
  */
 const deckSubs = new Set<(lang: LanguageCode) => void>();
 
-function publishDeck(lang: LanguageCode, next: DeckWord[]): void {
+/**
+ * How many times each language's deck has arrived from STORAGE. Module-level, because it is
+ * a fact about the DECK and not about any one mounted copy of this hook.
+ *
+ * It lived in per-instance state first, and that was the bug. Only the instance that ran the
+ * load bumped its own counter; every other instance adopted the new deck through `notify`
+ * below, which sets `deck` and nothing else. So whichever copy feeds the toast host saw the
+ * deck jump from 8 words to 550 with the counter unmoved, and announced "Added 542 words to
+ * your deck" on sign-in — the exact bug the counter was added to prevent, surviving because
+ * the fix was recorded in the wrong place. Four instances are alive at once and any of them
+ * can win the load; a fact that several readers must agree on cannot be one reader's state.
+ */
+const deckLoadSeq = new Map<LanguageCode, number>();
+
+function publishDeck(lang: LanguageCode, next: DeckWord[], fromStorage = false): void {
   deckCache.set(lang, next);
+  if (fromStorage) deckLoadSeq.set(lang, (deckLoadSeq.get(lang) ?? 0) + 1);
   for (const notify of deckSubs) notify(lang);
 }
 
@@ -158,7 +173,7 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
    * is exactly how a sign-in came to announce "Added 542 words to your deck" and fire a
    * milestone the learner had crossed months earlier on another device.
    */
-  const [loadSeq, setLoadSeq] = useState(0);
+  const [loadSeq, setLoadSeq] = useState(() => deckLoadSeq.get(language) ?? 0);
 
   // Mirror of deck that's always current — lets mutators compute from the latest
   // state even when several fire in one synchronous pass (e.g. ReadTab grading
@@ -180,6 +195,9 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       if (!next || next === deckRef.current) return;   // our own publish, or nothing new
       deckRef.current = next;
       setDeck(next);
+      // Adopt the load counter with the deck. Without this the deck and the counter disagree
+      // in every instance that did not run the load, which is most of them.
+      setLoadSeq(deckLoadSeq.get(language) ?? 0);
     };
     deckSubs.add(notify);
     return () => { deckSubs.delete(notify); };
@@ -243,10 +261,10 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       if (!live) return;
       deckRef.current = resynced;
       setDeck(resynced);
-      publishDeck(language, resynced);
+      // `fromStorage` — this deck came from storage, not from anything the learner just did.
+      publishDeck(language, resynced, true);
       setLoadedLang(language);
-      // This deck came from storage, not from anything the learner just did here.
-      setLoadSeq(n => n + 1);
+      setLoadSeq(deckLoadSeq.get(language) ?? 0);
       if (changed) storage.saveVocabDeck(language, resynced);
     });
     return () => { live = false; };
