@@ -509,7 +509,17 @@ function hasAnyDailyContentToday(today: string): boolean {
   }
   return false;
 }
-export type DailyContentStatus = 'idle' | 'loading' | 'ready' | 'error' | 'no-key';
+/**
+ * `restoring` is READING, never WRITING — the day's cached content is being fetched and the
+ * dictionary preloaded. It was called `loading`, and ReadTab rendered it as "Writing today's
+ * passage around your due words — this usually takes about 15-25 seconds" over a
+ * passage-shaped skeleton. Nothing was being written: generation moved to `loadMore` alone,
+ * and the arm of this state that once meant "a passage is on its way" became unreachable the
+ * same day. So the app claimed to be generating a passage for the length of a dictionary
+ * download, then resolved to the "Generate passage" empty state — which reads exactly like a
+ * passage that was generated and thrown away. Real generation is `loadingMore`.
+ */
+export type DailyContentStatus = 'idle' | 'restoring' | 'ready' | 'error' | 'no-key';
 
 export interface UseDailyContentResult {
   dailyContent: DailyContent | null;
@@ -604,7 +614,7 @@ export function useDailyContent(
     const wantSet = new Set(wantKey ? wantKey.split(',') as ContentSection[] : []);
 
     async function load() {
-      setStatus(prev => (prev === 'ready' ? prev : 'loading'));
+      setStatus(prev => (prev === 'ready' ? prev : 'restoring'));
       await preloadDict(language).catch(() => {});
       if (cancelled) return;
 
@@ -675,10 +685,12 @@ export function useDailyContent(
       if (wantSet.has('fill')    && hasDueWords && !flags.fill  && !alreadyToday) needed.push('fill');
       if (wantSet.has('convo')   && hasDueWords && !flags.convo && !alreadyToday) needed.push('convo');
 
-      // If a fresh passage is being generated (none cached yet), stay in 'loading' so the
-      // user sees the skeleton until the real passage lands. When an AI passage is already
-      // cached, show it immediately.
-      setStatus(needed.includes('passage') ? 'loading' : 'ready');
+      // The cache has been read, so there is nothing left to restore whatever happens next.
+      // This was `needed.includes('passage') ? 'loading' : 'ready'` — a ternary whose first
+      // arm was already dead, because the two pushes above are the only ones there are and
+      // neither pushes 'passage'. Fill and convo do still generate below, and they are not a
+      // passage; the ReadTab skeleton they were holding open is not theirs to hold.
+      setStatus('ready');
 
       if (needed.length === 0) return;
 
@@ -782,8 +794,8 @@ export function useDailyContent(
           await storage.saveDailyContent(merged);
           if (cancelled) return;
           setDailyContent(prev => mergeSection(prev ?? content, section, built, done));
-          // Section landed (real or static fallback) — leave the loading skeleton.
-          setStatus(prev => (prev === 'loading' ? 'ready' : prev));
+          // Section landed (real or static fallback) — leave the restore skeleton.
+          setStatus(prev => (prev === 'restoring' ? 'ready' : prev));
         } catch (err) {
           if (cancelled) return;
           console.error('[useDailyContent]', section, err);
@@ -987,9 +999,10 @@ export function useDailyContent(
       storage.saveDailyContent(updated);
       return updated;
     });
-    // There is content to read now, whatever the generator managed earlier. Never override
-    // an in-flight generation's skeleton, though — that one still has a passage coming.
-    setStatus(prev => (prev === 'loading' ? prev : 'ready'));
+    // There is content to read now, whatever the generator managed earlier. Don't jump ahead
+    // of an in-flight restore, though — it is about to set 'ready' itself, and its cache read
+    // is still holding the content this passage was appended to.
+    setStatus(prev => (prev === 'restoring' ? prev : 'ready'));
   }, [language, hskLevel]);
 
   return { dailyContent, status, errorMsg, generating, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage };

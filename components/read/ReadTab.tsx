@@ -130,7 +130,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   // One deck per language, so passages always draw on the whole due queue.
   const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
-
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
   // 402 we must never show the banner or auto-prompt them.
@@ -955,7 +954,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 ✦ AI · {dailyContent.date}
               </span>
             )}
-            {dailyStatus === 'loading' && (
+            {/* `loadingMore`, not the status. This read `dailyStatus === 'loading'`, which
+                since generation moved to loadMore has meant "reading the cache and preloading
+                the dictionary" and nothing else — so the badge announced a generation that
+                was not happening, for as long as a 8 MB dictionary takes to arrive. */}
+            {loadingMore && (
               <span style={{ fontSize: 9, letterSpacing: '.06em', color: 'var(--ink-faint)', opacity: 0.6 }}>
                 generating… {genEstShort}
               </span>
@@ -973,7 +976,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.01em', marginTop: 4 }}>
             {/* Same rule as the body below: shimmer only when there is no title to show. */}
-            {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
+            {(hskLevel === 0 || dailyStatus === 'restoring' || loadingMore) && !currentPassage ? (
               <div className="shimmer" style={{ height: 28, width: 140, borderRadius: 6, marginTop: 4 }} />
             ) : (
               <span style={{ fontFamily: 'var(--f-han)' }}>
@@ -1090,9 +1093,9 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           in state, and invisible: the reader clicked "Read this" and kept staring at a
           shimmer. Whenever there is something to read, read it; the generation carries on and
           appends its own passage when it lands. */}
-      {(hskLevel === 0 || dailyStatus === 'loading') && !currentPassage ? (
+      {(hskLevel === 0 || dailyStatus === 'restoring' || loadingMore) && !currentPassage ? (
         <>
-          {dailyStatus === 'loading' && (
+          {loadingMore && (
             <p style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, color: 'var(--ink-faint)', lineHeight: 1.5, marginBottom: 16 }}>
               Writing today&apos;s passage around your due words — this usually takes {genEstLong}.
             </p>
@@ -1329,7 +1332,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         </>
       )}
 
-      {dailyStatus === 'loading' && (
+      {dailyStatus === 'restoring' && (
         <div className="mt-8 pt-8" style={{ borderTop: '1px solid var(--line)' }}>
           <div className="shimmer" style={{ height: 14, width: 180, borderRadius: 4, marginBottom: 22 }} />
           <div className="shimmer" style={{ height: 96, borderRadius: 10, marginBottom: 14 }} />
@@ -1338,7 +1341,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         </div>
       )}
 
-      {dailyStatus !== 'loading' && currentPassage && (
+      {dailyStatus !== 'restoring' && currentPassage && (
         <>
           <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
