@@ -43,7 +43,7 @@ function set(key: string, value: unknown): void {
  * only honest fix is to stop reading the old ones. Bump this again if the passage shape ever
  * changes in a way old entries cannot satisfy.
  */
-function dailyKey(lang: LanguageCode, level: number, date: string): string {
+export function dailyKey(lang: LanguageCode, level: number, date: string): string {
   return `srsly-daily-v2-${lang}-${level}-${date}`;
 }
 

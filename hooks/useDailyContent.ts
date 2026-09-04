@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PassageToken, Sentence, FillItem, ConvoTurn, Question, MCOption, DailyContent, DailyPassage, DeckWord, ContentSection, LanguageCode } from '@/lib/types';
 import { storage } from '@/lib/storage';
+import { dailyKey } from '@/lib/storage/local';
 import { lookupReading, preloadDict } from '@/lib/data/lookup';
 import { groupReadings, pickReading, type ReadingHint } from '@/lib/readings';
 import { buildAnchorMap } from '@/lib/anchors';
@@ -493,6 +494,33 @@ const ALL_SECTIONS: ContentSection[] = ['passage', 'fill', 'convo'];
  * suppressed it for the rest of the day — the user would have spent nothing and lost the
  * passage anyway.
  */
+/**
+ * Is there a passage waiting in the cache? Decided SYNCHRONOUSLY, so the skeleton can be
+ * honest about what it is standing in for.
+ *
+ * A skeleton is a promise that something is coming. During the restore we used not to know
+ * whether anything was — the answer only arrived with the cache read, behind a dictionary
+ * download — so a passage-shaped shimmer was drawn every time and then, on the common path,
+ * replaced by "Generate passage". That is a passage appearing to arrive and be thrown away,
+ * which is what it was repeatedly reported as. Dropping the caption helped and was not
+ * enough: the SHAPE makes the same claim.
+ *
+ * The daily cache is device-local — `SupabaseStorage.getDailyContent` delegates straight to
+ * LocalStorage — so this needs no await, and it reuses `dailyKey` rather than rebuilding the
+ * key here, since a second copy of that format drifts the first time it is versioned.
+ */
+function hasCachedPassage(lang: LanguageCode, level: number): boolean {
+  if (typeof localStorage === 'undefined' || level === 0) return false;
+  try {
+    const raw = localStorage.getItem(dailyKey(lang, level, todayStr()));
+    if (!raw) return false;
+    const c = JSON.parse(raw) as DailyContent | null;
+    return (c?.passages ?? []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function hasAnyDailyContentToday(today: string): boolean {
   if (typeof localStorage === 'undefined') return false;
   for (let i = 0; i < localStorage.length; i++) {
@@ -587,7 +615,19 @@ export function useDailyContent(
   blankDensity?: number,
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
-  const [status, setStatus] = useState<DailyContentStatus>('idle');
+  /**
+   * Seeded, not defaulted — but only where the answer is actually known.
+   *
+   * 'restoring' from the first frame when a passage is cached, so the skeleton stands in for
+   * it rather than the empty state flashing first. Otherwise 'idle', which renders nothing
+   * and lets the effect below decide. Seeding 'ready' here instead was wrong and silently
+   * removed the skeleton altogether: `hskLevel` can still be 0 on the first render, so the
+   * probe returned false, and the `prev === 'ready'` guard in the effect then held that
+   * answer forever.
+   */
+  const [status, setStatus] = useState<DailyContentStatus>(
+    () => (hskLevel !== 0 && hasCachedPassage(language, hskLevel) ? 'restoring' : 'idle'),
+  );
   const [errorMsg, setErrorMsg] = useState('');
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
@@ -614,7 +654,7 @@ export function useDailyContent(
     const wantSet = new Set(wantKey ? wantKey.split(',') as ContentSection[] : []);
 
     async function load() {
-      setStatus(prev => (prev === 'ready' ? prev : 'restoring'));
+      setStatus(prev => (prev === 'ready' ? prev : hasCachedPassage(language, hskLevel) ? 'restoring' : 'ready'));
       await preloadDict(language).catch(() => {});
       if (cancelled) return;
 

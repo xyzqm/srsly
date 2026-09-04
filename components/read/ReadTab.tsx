@@ -1,7 +1,7 @@
 'use client';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap, DailyPassage } from '@/lib/types';
+import type { ResponseMode, FRResponse, DeckWord, ContentSection, ClozeOccurrenceMap, DailyPassage, UserPrefs } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { useLanguage } from '@/lib/LanguageContext';
 import { levelFor, levelLabel, getLanguageConfig } from '@/lib/languageConfig';
@@ -94,8 +94,26 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   /** Brand-new words already charged to today's budget, so a word blanked twice costs one. */
   const spentNewRef = useRef<Set<string>>(new Set());
 
-  // Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
-  const [hskLevel, setHskLevel] = useState(0);
+  /**
+   * Proficiency level in the active language (HSK 1–6 / JLPT 5–1). 0 = not loaded yet.
+   *
+   * SEEDED SYNCHRONOUSLY FROM localStorage, for the same reason `savedLanguage()` in
+   * app/page.tsx is: correcting itself a tick later is a visible wrong first frame, not a
+   * detail. Every load began at 0, and 0 is what the passage skeleton keys on — so opening
+   * the app always flashed a passage-shaped shimmer before anything knew whether a passage
+   * existed. The async read below still runs and still wins; this only stops the first frame
+   * from being a guess. Prefs are the cloud's write-through cache locally, so it is the same
+   * value in all but the first moments of a second device.
+   */
+  const [hskLevel, setHskLevel] = useState(() => {
+    if (typeof localStorage === 'undefined') return 0;
+    try {
+      const raw = localStorage.getItem('srsly-prefs');
+      return raw ? levelFor(language, JSON.parse(raw) as UserPrefs) : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [blankDensity, setBlankDensity] = useState<number | undefined>(undefined);
 
   /**
@@ -130,6 +148,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
 
   // One deck per language, so passages always draw on the whole due queue.
   const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
+
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
   // 402 we must never show the banner or auto-prompt them.
