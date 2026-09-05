@@ -24,6 +24,7 @@ import { useReadability } from '@/hooks/useReadability';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
+import Mark from '@/components/shared/Mark';
 import ReadingSources from './ReadingSources';
 import DailyProverb from './DailyProverb';
 import AchievementToast from '@/components/stats/AchievementToast';
@@ -1043,8 +1044,8 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           a novel is the confusion this whole separation exists to remove. */}
       {bookPassage && (
         <div className="flex items-center gap-3 mb-2 flex-wrap">
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            📚 Reading a book
+          <span className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            <Mark name="book" size={12} inline /> Reading a book
           </span>
           <button
             onClick={closeBook}
@@ -1176,11 +1177,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   reading your own text, a book or audio is the larger half and needs nothing.
                   A power feature, badged as one. */}
               <div className="flex items-center gap-2 flex-wrap" style={{ marginBottom: 10 }}>
-                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-                  ✨ Or write one for me
+                <span className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+                  <Mark name="spark" size={11} inline /> Or write one for me
                 </span>
-                <span style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.04em', background: 'var(--paper-2)', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 6px' }}>
-                  🔑 needs your API key
+                <span className="inline-flex items-center gap-1.5" style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, letterSpacing: '.04em', background: 'var(--paper-2)', color: 'var(--ink-soft)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 6px' }}>
+                  <Mark name="key" size={11} inline /> needs your API key
                 </span>
               </div>
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>

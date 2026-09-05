@@ -2,19 +2,25 @@
 import { useEffect, useState } from 'react';
 import type { DeckWord, DailyPassage, LanguageCode } from '@/lib/types';
 import PasteTextPanel from './PasteTextPanel';
+import Mark, { type MarkName } from '@/components/shared/Mark';
 import EpubPanel from './EpubPanel';
-import StarterPanel from './StarterPanel';
 
 /**
  * The ways to get something to read.
  *
  * TWO SHAPES, and the difference is the whole design:
  *
- * - **Nothing to read yet** → four cards, laid out as the primary content of the screen.
+ * - **Nothing to read yet** → the cards, laid out as the primary content of the screen.
  *   There is nothing else on an empty tab, so the chooser IS the screen and hiding it behind
- *   a click hides the only thing worth doing. It leads with a starter text because the other
- *   three all ask the learner to supply something — an article, a book, an audio file — and a
- *   first session that cannot start is the whole funnel.
+ *   a click hides the only thing worth doing.
+ *
+ *   It used to LEAD with a starter text, on the reasoning that the other cards all ask the
+ *   learner to supply something and a first session that cannot start is the whole funnel.
+ *   That card was removed on request. The reasoning was not wrong and is worth keeping
+ *   written down: an empty tab now offers paste, upload and generate, and all three want
+ *   something the learner does not have in front of them yet. `StarterPanel` and
+ *   `lib/data/starterTexts.ts` are left in the tree, unreferenced, so putting it back is one
+ *   line rather than re-authoring twelve texts.
  * - **Already reading** → one "+ Add reading" button. Once a passage is on screen the chooser
  *   is furniture, and it grew by one every time a source was added.
  *
@@ -43,12 +49,11 @@ interface Props {
   clip?: { title: string; text: string } | null;
 }
 
-type Source = 'starter' | 'paste' | 'epub';
+type Source = 'paste' | 'epub';
 
-const CARDS: { id: Source; icon: string; label: string; hint: string }[] = [
-  { id: 'starter', icon: '📖', label: 'Start with a story', hint: 'Three short texts, ready to read' },
-  { id: 'paste',   icon: '📋', label: 'Paste any article',  hint: 'Anything you already want to read' },
-  { id: 'epub',    icon: '📚', label: 'Upload a book',      hint: 'EPUB — read a chapter at a time' },
+const CARDS: { id: Source; mark: MarkName; label: string; hint: string }[] = [
+  { id: 'paste', mark: 'page', label: 'Paste any article', hint: 'Anything you already want to read' },
+  { id: 'epub',  mark: 'book', label: 'Upload a book',     hint: 'EPUB — read a chapter at a time' },
 ];
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
@@ -75,7 +80,6 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
   const panelProps = { language, deck, dueWords, blankDensity, onCommit };
 
   function panel(s: Source) {
-    if (s === 'starter') return <StarterPanel {...panelProps} />;
     if (s === 'paste') return <PasteTextPanel {...panelProps} startOpen clip={clip} />;
     return <EpubPanel {...panelProps} onCommit={onCommitBook} startOpen />;
   }
@@ -108,7 +112,7 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
               className="cursor-pointer transition-all duration-150 text-left"
               style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '15px 16px' }}
             >
-              <div style={{ fontSize: 19, lineHeight: 1, marginBottom: 9 }}>{c.icon}</div>
+              <div style={{ color: 'var(--ink-soft)', marginBottom: 9 }}><Mark name={c.mark} size={20} /></div>
               <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
               <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.45 }}>{c.hint}</div>
             </button>
@@ -155,8 +159,10 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
               className="cursor-pointer transition-all duration-150 text-left"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px' }}
             >
-              <span style={{ fontSize: 14, marginRight: 7 }}>{c.icon}</span>
-              <span style={{ fontSize: 13, color: 'var(--ink)' }}>{c.label}</span>
+              <span className="inline-flex items-center gap-2">
+                <span style={{ color: 'var(--ink-faint)', display: 'inline-flex' }}><Mark name={c.mark} size={15} /></span>
+                <span style={{ fontSize: 13, color: 'var(--ink)' }}>{c.label}</span>
+              </span>
             </button>
           ))}
         </div>
