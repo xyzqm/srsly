@@ -174,21 +174,56 @@ export class SupabaseStorage implements DataService {
    * `fresh` is the default for a REASON. Every read path must see the cloud's current state,
    * because that is what cross-device sync IS; only the pre-write merge base may be reused.
    */
+  /**
+   * A fetch that has been started but has not come back yet, shared by everyone who asks
+   * while it is in the air.
+   *
+   * WITHOUT THIS, ONE PAGE LOAD ISSUED 52 QUERIES. Every getter above calls `row()` fresh,
+   * and `row()` is `select('*')` — the WHOLE row, all four decks, the shelf and the activity
+   * log, on every one. Four languages times several mounted copies of `useVocabDeck`, plus
+   * prefs, SRS state, lessons, counts and per-passage cloze state, and they all mount at
+   * once: measured on the live site, the last of them landed 25.9 SECONDS after navigation,
+   * against a page that was itself ready in 468ms. The app was not slow; it was downloading
+   * the same row fifty-two times.
+   *
+   * Sharing the in-flight promise does NOT weaken the freshness rule below. Those callers ran
+   * at the same instant, so a single fetch started at that instant is exactly as current as
+   * fifty-two would have been — there is no older snapshot being served, only one request
+   * where there were dozens. A caller arriving after it resolves still gets its own fetch.
+   */
+  private inflight: Promise<UserDataRow | null> | null = null;
+
   private async row(opts?: { cached?: boolean }): Promise<UserDataRow | null> {
     const withinTtl = Date.now() - this.fetchedAt < SupabaseStorage.ROW_TTL_MS;
     if (opts?.cached && this.fetchedAt > 0 && withinTtl) return this.cached;
-    // select('*') so a not-yet-migrated column doesn't error the query.
-    const { data, error } = await this.sb
-      .from('user_data').select('*').eq('user_id', this.userId).maybeSingle();
-    if (error) { console.error('[SupabaseStorage] read', error.message); return null; }
-    this.cached = (data as UserDataRow | null) ?? null;
-    this.fetchedAt = Date.now();
-    return this.cached;
+    if (this.inflight) return this.inflight;
+    const pending = (async () => {
+      // select('*') so a not-yet-migrated column doesn't error the query.
+      const { data, error } = await this.sb
+        .from('user_data').select('*').eq('user_id', this.userId).maybeSingle();
+      if (error) { console.error('[SupabaseStorage] read', error.message); return null; }
+      this.cached = (data as UserDataRow | null) ?? null;
+      this.fetchedAt = Date.now();
+      return this.cached;
+    })();
+    this.inflight = pending;
+    try {
+      return await pending;
+    } finally {
+      // Only the fetch that is still the current one clears the slot — an `invalidate()`
+      // mid-flight replaces it, and that replacement must survive this handler.
+      if (this.inflight === pending) this.inflight = null;
+    }
   }
 
   /** Drop the cached row so the next read goes to the network. Called when a tab regains
    *  focus — the moment another device's changes are most likely to be waiting. */
-  invalidate(): void { this.fetchedAt = 0; }
+  invalidate(): void {
+    this.fetchedAt = 0;
+    // Drop the in-flight share too. It was started before the learner came back to the tab,
+    // so joining it would hand out exactly the pre-focus snapshot this call exists to discard.
+    this.inflight = null;
+  }
 
   /** Fold a landed write into the cache, so the next read does not need the network. */
   private remember(patch: Partial<UserDataRow>): void {
