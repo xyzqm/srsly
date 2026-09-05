@@ -88,7 +88,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
-  const { deck, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
+  const { deck, deckLoaded, addWord, updateWord, updateWordReview, gradeCard } = useVocabDeck(language);
   // Latest deck, readable from a callback without making it depend on every deck change.
   const deckRef = useRef(deck);
   deckRef.current = deck;
@@ -1126,6 +1126,21 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           )}
           <PassageSkeleton />
         </>
+      ) : !currentPassage && !deckLoaded ? (
+        /**
+         * NOTHING, while the deck is still on its way.
+         *
+         * `deck` is [] until storage answers, and an empty deck reads as a definite fact
+         * here: the branch below says "Nothing to review yet" and tells the learner their
+         * deck needs building. Shown to someone with 542 words, on every single load, for
+         * as long as the read takes. It is the same mistake as the passage skeleton — a
+         * loading state rendered as an answer — and `deckLoaded` is the flag that already
+         * exists to tell the two apart (SrsTab and app/page.tsx both gate on it).
+         *
+         * Blank rather than a placeholder: the wait is one storage read, and an empty box
+         * for that long is not worth a shape of its own.
+         */
+        null
       ) : !currentPassage ? (
         <div className="flex flex-col items-center text-center py-16 px-6">
           {dueDeckWords.size === 0 ? (
