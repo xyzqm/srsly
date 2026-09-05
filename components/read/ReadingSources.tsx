@@ -52,7 +52,7 @@ interface Props {
 type Source = 'paste' | 'epub';
 
 const CARDS: { id: Source; mark: MarkName; label: string; hint: string }[] = [
-  { id: 'paste', mark: 'page', label: 'Paste any article', hint: 'Anything you already want to read' },
+  { id: 'paste', mark: 'page', label: 'Paste text',        hint: 'Anything you already want to read' },
   { id: 'epub',  mark: 'book', label: 'Upload a book',     hint: 'EPUB — read a chapter at a time' },
 ];
 
