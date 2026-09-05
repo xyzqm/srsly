@@ -1138,9 +1138,40 @@ summing double-counts on every round trip — a+b, then a+b+b. MAX is idempotent
 is that a day studied on two devices reads as the busier of the two rather than the total,
 which is the same undercount posture `lib/activityLog.ts` already takes.
 
-**`prefs` and `srs_state` are still whole-blob last-writer-wins.** Change the theme on a phone
-and a laptop's streak can be clobbered. Not fixed — but named here, because "sync works" would
-otherwise be read as "conflicts are handled".
+**`prefs` and `srs_state` are MERGED per field, not written whole** (`lib/prefsMerge.ts`,
+`lib/srsStateMerge.ts`). They were whole-blob last-writer-wins until 2026-09-05, so every
+setting travelled with every save and a device holding a stale copy reverted the column on its
+next write: change the theme on a phone and the laptop's level went back; open the phone after
+studying on the laptop and the streak walked backwards. Nothing errored, and a value that
+quietly reverts to one you did once choose is close to undetectable.
+
+The two halves need different rules, and the interesting one is where the obvious answer is
+wrong:
+
+- **`srs_state` — the streak is OWNED, not maximised.** MAX is right for the counters and
+  wrong for the streak, because a streak is allowed to go DOWN: break it and it resets to 1,
+  and a per-field maximum can never represent that, so a stale 40 would resurrect a streak the
+  learner had already lost. The streak instead belongs to whichever side has the later
+  `lastActive` — already the authoritative "last day studied", already what `lib/streak.ts`
+  advances when it persists a reconciled streak — and the two travel TOGETHER, since a count
+  from one device beside a date from the other describes a state neither was ever in.
+  `todayScore` likewise never outlives its `todayScoreDate`. `forgivenDays` unions, `sessions`
+  and `accuracy` take per-day MAX, the same undercount posture `mergeActivity` documents.
+- **`prefs` — a THREE-WAY merge against the last value this device saw in the cloud.** These
+  are choices, not tallies: no max or union means anything for a theme, and the only honest
+  rule is "whoever changed it last". That needs to know what the device CHANGED rather than
+  what it holds, which is the entire bug, so `savePrefs` applies only the fields that differ
+  from its base. With no base — a first sync — `mine` wins the scalars, which is the old
+  behaviour kept deliberately as the floor. Four keyed collections merge per key regardless:
+  `poolAutoDate` by later date (losing one language's entry reintroduces the exact
+  double-activation avalanche it was moved into prefs to prevent), `testedLevels` by max,
+  `placementSeen` by OR, `languages` by union.
+
+Both merges are idempotent and commutative, because a device writes its merged copy back and
+the cloud then holds the merge — the same requirement `lib/reviewCounts.ts` documents.
+`tests/blobMergeWiring.test.ts` asserts the PAYLOAD rather than the function, because the
+wiring is the half that can silently regress: these were one-line blob writes, and an edit
+could make them one again without failing a merge test.
 
 #### A write that fails offline is queued, not lost
 

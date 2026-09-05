@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { canonicalJson } from '@/lib/canonicalJson';
+import { mergeSRSState } from '@/lib/srsStateMerge';
+import { mergePrefs } from '@/lib/prefsMerge';
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import { LocalStorage } from './local';
@@ -44,20 +47,6 @@ function deckFromRow(r: UserDataRow | null, lang: LanguageCode): DeckWord[] | nu
   return null;
 }
 
-/**
- * JSON with object keys sorted, so two values that differ only in key order compare equal.
- *
- * Postgres round-trips JSONB through its own representation and does not promise to give
- * back the key order it was handed. Comparing raw `JSON.stringify` output would therefore
- * report every column as changed on every read, which is exactly the false positive that
- * would make a skip-if-unchanged check do nothing.
- */
-function canonicalJson(value: unknown): string {
-  return JSON.stringify(value, (_k, v) =>
-    v && typeof v === 'object' && !Array.isArray(v)
-      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
-      : v);
-}
 
 /** Semantic identity: same character + same meaning = same card, regardless of id. */
 function semanticKey(w: DeckWord): string {
@@ -358,6 +347,16 @@ export class SupabaseStorage implements DataService {
     await this.patch({ decks, activity_log: getActivityLog(), review_counts: loadDay() });
   }
 
+  /**
+   * The prefs this device last SAW in the cloud, which is the base of the three-way merge.
+   *
+   * In memory rather than on disk, and that is enough: a save is in practice always preceded
+   * by a read in the same session, because `getPrefs()` runs on load in every surface that
+   * writes one. Persisting it would add a second record of a fact that can itself go stale,
+   * and the fallback when it is absent is the old behaviour rather than a wrong answer.
+   */
+  private prefsBase: UserPrefs | null = null;
+
   async getSRSState(): Promise<SRSState> {
     const r = await this.row();
     if (r?.srs_state && !queue.isPending(this.pending, 'srs_state')) {
@@ -365,16 +364,51 @@ export class SupabaseStorage implements DataService {
     }
     return this.local.getSRSState();
   }
-  async saveSRSState(state: SRSState): Promise<void> { await this.local.saveSRSState(state); await this.patch({ srs_state: state }); }
+
+  /**
+   * MERGED, not replaced. `srs_state` was one blob written whole, so a device holding a stale
+   * copy walked the streak backwards on its next save — see lib/srsStateMerge.ts for why the
+   * streak in particular cannot be a per-field maximum.
+   *
+   * The merged value is written back to LOCAL as well, so this device immediately agrees with
+   * what it just sent rather than keeping the narrower copy it started from.
+   */
+  async saveSRSState(state: SRSState): Promise<void> {
+    await this.local.saveSRSState(state);
+    const cloud = (await this.row({ cached: true }))?.srs_state ?? null;
+    const merged = queue.isPending(this.pending, 'srs_state') ? state : mergeSRSState(state, cloud);
+    if (merged !== state) await this.local.saveSRSState(merged);
+    await this.patch({ srs_state: merged });
+  }
 
   async getPrefs(): Promise<UserPrefs> {
     const r = await this.row();
     if (r?.prefs && !queue.isPending(this.pending, 'prefs')) {
+      // Reading the cloud's value is also how the merge base is established.
+      this.prefsBase = r.prefs;
       await this.local.savePrefs(r.prefs); return r.prefs;
     }
     return this.local.getPrefs();
   }
-  async savePrefs(prefs: UserPrefs): Promise<void> { await this.local.savePrefs(prefs); await this.patch({ prefs }); }
+
+  /**
+   * THREE-WAY, so changing the theme here cannot revert a level set over there.
+   *
+   * `prefs` are choices rather than tallies, so there is no max or union that means anything
+   * for most of them — the only honest rule is "whoever changed it last", and that needs to
+   * know what this device CHANGED rather than merely what it holds. `prefsBase` is that.
+   */
+  async savePrefs(prefs: UserPrefs): Promise<void> {
+    await this.local.savePrefs(prefs);
+    const cloud = (await this.row({ cached: true }))?.prefs ?? null;
+    const merged = queue.isPending(this.pending, 'prefs')
+      ? prefs
+      : mergePrefs(this.prefsBase, prefs, cloud);
+    if (merged !== prefs) await this.local.savePrefs(merged);
+    // What we are about to send becomes the base: it is what the cloud will hold.
+    this.prefsBase = merged;
+    await this.patch({ prefs: merged });
+  }
 
   // Ephemeral / per-device — never synced.
   getClaimedWords(): Promise<ClaimedWords> { return this.local.getClaimedWords(); }
