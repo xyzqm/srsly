@@ -509,13 +509,19 @@ const ALL_SECTIONS: ContentSection[] = ['passage', 'fill', 'convo'];
  * LocalStorage — so this needs no await, and it reuses `dailyKey` rather than rebuilding the
  * key here, since a second copy of that format drifts the first time it is versioned.
  */
-function hasCachedPassage(lang: LanguageCode, level: number): boolean {
+function hasCachedPassage(lang: LanguageCode, level: number, kind: PassageKind): boolean {
   if (typeof localStorage === 'undefined' || level === 0) return false;
   try {
     const raw = localStorage.getItem(dailyKey(lang, level, todayStr()));
     if (!raw) return false;
     const c = JSON.parse(raw) as DailyContent | null;
-    return (c?.passages ?? []).length > 0;
+    // The SAME test ReadTab filters its own list with — `pasted` is the marker for "the
+    // learner brought this". Counting every passage regardless was wrong in one direction
+    // and it was the reachable one: open a starter text, and the SRS tab then expected a
+    // passage that only the Read tab ever draws. Measured on the live site, that put an
+    // 11-element shimmer on screen for 710ms before it resolved to the empty state — the
+    // same flash, one paste away from coming back.
+    return (c?.passages ?? []).some(p => (kind === 'own' ? !!p.pasted : !p.pasted));
   } catch {
     return false;
   }
@@ -548,6 +554,9 @@ function hasAnyDailyContentToday(today: string): boolean {
  * passage that was generated and thrown away. Real generation is `loadingMore`.
  */
 export type DailyContentStatus = 'idle' | 'restoring' | 'ready' | 'error' | 'no-key';
+
+/** Which half of the day's passages a reader draws — see ReadTab's `variant`. */
+export type PassageKind = 'own' | 'generated';
 
 export interface UseDailyContentResult {
   dailyContent: DailyContent | null;
@@ -613,6 +622,8 @@ export function useDailyContent(
   want: ContentSection[] = ALL_SECTIONS,
   language: LanguageCode = 'zh',
   blankDensity?: number,
+  /** Which passages this instance renders, so the skeleton promises only what it can show. */
+  passageKind: PassageKind = 'generated',
 ): UseDailyContentResult {
   const [dailyContent, setDailyContent] = useState<DailyContent | null>(null);
   /**
@@ -626,7 +637,7 @@ export function useDailyContent(
    * answer forever.
    */
   const [status, setStatus] = useState<DailyContentStatus>(
-    () => (hskLevel !== 0 && hasCachedPassage(language, hskLevel) ? 'restoring' : 'idle'),
+    () => (hskLevel !== 0 && hasCachedPassage(language, hskLevel, passageKind) ? 'restoring' : 'idle'),
   );
   const [errorMsg, setErrorMsg] = useState('');
   const [generating, setGenerating] = useState<Set<ContentSection>>(new Set());
@@ -654,7 +665,7 @@ export function useDailyContent(
     const wantSet = new Set(wantKey ? wantKey.split(',') as ContentSection[] : []);
 
     async function load() {
-      setStatus(prev => (prev === 'ready' ? prev : hasCachedPassage(language, hskLevel) ? 'restoring' : 'ready'));
+      setStatus(prev => (prev === 'ready' ? prev : hasCachedPassage(language, hskLevel, passageKind) ? 'restoring' : 'ready'));
       await preloadDict(language).catch(() => {});
       if (cancelled) return;
 
@@ -853,7 +864,7 @@ export function useDailyContent(
 
     load();
     return () => { cancelled = true; };
-  }, [hskLevel, wantKey, language]);
+  }, [hskLevel, wantKey, language, passageKind]);
 
   const loadMore = useCallback(async () => {
     if (!dailyContent || loadingMore || hskLevel === 0) return;

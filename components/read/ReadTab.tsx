@@ -147,7 +147,11 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [language]);
 
   // One deck per language, so passages always draw on the whole due queue.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(hskLevel, deck, READ_WANT, language, blankDensity);
+  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(
+    hskLevel, deck, READ_WANT, language, blankDensity,
+    // Same split as `passages` below: 'read' draws what the learner brought, 'srs' the rest.
+    variant === 'srs' ? 'generated' : 'own',
+  );
 
   // The guest AI cap only applies to guests. A signed-in user is unlimited (the server
   // never returns 402 for them), so even if `guestLimited` lingered from a pre-sign-in
