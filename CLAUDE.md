@@ -112,7 +112,7 @@ character.
 
 ### When something here looks flaky
 
-Five failure modes that each recurred, or nearly did. They are recorded because every one of
+Six failure modes that each recurred, or nearly did. They are recorded because every one of
 them cost more time to re-diagnose than to read about:
 
 - **Assuming instead of measuring.** A stored lemma looked redundant next to `baseForm`; 33% of
@@ -126,9 +126,23 @@ them cost more time to re-diagnose than to read about:
   array — so the subjunctive shipped numbered ahead of `être` and was caught by eye, not by CI.
 - **Disk filling up.** ENOSPC has surfaced as five unrelated test failures. `.next` and the
   scratchpad are what to clear.
+- **A LOADING STATE RENDERED AS AN ANSWER.** Four separate bug reports in one day were this one
+  mistake wearing four faces, and none of them looked related until they were lined up:
+  a passage-shaped skeleton and a "writing today's passage… 15–25 seconds" caption shown while
+  the app was only reading its cache; "Nothing to review yet — it needs a deck first" shown to a
+  learner holding 542 words, because `deck` is `[]` until storage answers; and "Added 542 words
+  to your deck" fired on sign-in, because a deck arriving from the cloud is indistinguishable by
+  diff from words the learner just added. In every case a value meaning "not here yet" was
+  rendered as a value meaning "there is none". **The flag that separates them usually already
+  exists** — `deckLoaded`, `loadingMore`, `loadSeq`, a synchronous cache probe — so the fix is
+  almost never new state. Ask what an empty value MEANS before rendering a sentence about it.
 
-The pattern behind all five: **the real bugs were found by running the app, not by reading the
-code.** Open the browser before saying something works.
+The pattern behind the first five: **the real bugs were found by running the app, not by reading
+the code.** Open the browser before saying something works. The sixth adds a corollary, learned
+by failing to reproduce three of those four locally: **run it in the conditions the bug lives
+in.** LocalStorage answers before React can paint, so every one of these is invisible on a
+laptop reading its own disk and appears only once the data comes over the network. Staging that
+— a deliberate delay on the read — is what turned "cannot reproduce" into a control.
 
 ## Environment
 
@@ -227,12 +241,14 @@ passage, driven by the "Generate passage" button in the empty state.
 Fill and conversation are still generated on the day's first load: they are cheap next to a
 passage, and the Practice tab has no equivalent affordance to hang them off.
 
-The three ways to bring your own text — paste, EPUB, lyrics — live behind one
-`ReadingSources` control rather than three permanent dashed buttons. It is collapsed to
-"+ Add reading" in EVERY state, the empty tab included. It briefly started expanded when there
-was nothing to read, on the theory that the chooser IS the screen there — but that put the
-three dashed buttons back on the empty tab, which is the furniture the control exists to
-remove, and made it look like two different things depending on when you met it.
+The ways to bring your own text — paste and EPUB — live behind one `ReadingSources` control
+rather than permanent dashed buttons, and it has TWO shapes. With nothing to read it draws the
+cards as the primary content of the screen; once a passage is open it collapses to
+"+ Add reading". An earlier pass collapsed BOTH states to the single button, on the reasoning
+that one control should look the same wherever you meet it — right about consistency, wrong
+about the empty tab, where it left a beginner with a bare screen, a disabled Generate button
+and no way in. What made the old empty tab bad was three identical unlabelled dashed buttons,
+not the fact that the options were visible. `ReadingSources`' own docstring is the long form.
 
 **Levels are calibration and a map, NOT the goal.** This is a deliberate product answer and
 the code reflects it: a level tells the generator how hard to write and marks roughly where
@@ -241,13 +257,26 @@ audio ignore levels entirely, and always should. The app is for reading things y
 want to read; "advance through HSK 1–6" is what a textbook is for. Settings says so in as many
 words, because a learner who thinks the ladder is the point will not open their own book.
 
-**The empty Read tab leads with four reading cards** (`ReadingSources`), starter text first,
-with AI generation set apart below and badged `🔑 needs your API key`. Three of the four ask
-the learner to supply something — an article, a book, an audio file — so `lib/data/starterTexts.ts`
-ships three short texts per language as the fourth. They go through `/api/segment-text` exactly
-as pasted text does; a starter text IS a pasted text that happens to ship with the app.
+**The empty Read tab leads with two reading cards** (`ReadingSources`) — Paste text and Upload
+a book — with AI generation set apart below and badged "needs your API key".
 
-Those texts are WRITTEN, not sourced, for the same reason as `proverbs-seed.json` and the
+**It used to lead with a STARTER TEXT, and that card was removed on request (2026-09-04).** The
+reasoning for it is kept because it was not wrong and the cost of removing it is real: every
+remaining route asks the learner to go and find something first, so an empty tab is now three
+things none of which can start on their own. `StarterPanel` and `lib/data/starterTexts.ts` are
+left in the tree unreferenced, and `tests/starterTexts.test.ts` still holds that data to its
+contract, so restoring the card is one entry in `CARDS` rather than re-authoring twelve texts.
+
+**The marks are geometry, not emoji** (`components/shared/Mark.tsx`). Emoji were used first and
+are the wrong tool for the same reason `BadgeSeal` gives: 📖 is a different drawing on every OS,
+it arrives in full colour into a palette assembled from six themes' worth of CSS variables, and
+it will not sit on the mono baseline the rest of the UI is set on. Four paths on `currentColor`
+inherit the theme like text. The stroke width scales inversely with the box because the viewBox
+scales and the stroke does not — a flat 1.5 is a hairline at 12px and a slab at 20px, and these
+render at both.
+
+Those texts are WRITTEN, not sourced — still true of the data, which is still tested even
+though nothing renders it — for the same reason as `proverbs-seed.json` and the
 `beginner` sets: good graded readers are unlicensed or copyrighted, and real public-domain
 literature is almost never A1. `tests/starterTexts.test.ts` runs all twelve through the REAL
 dictionaries and segmenters — es/fr/ja resolve server-side so a gloss must land in the token,
@@ -1159,6 +1188,27 @@ folding in what the cloud learned is strictly better and costs nothing.
 When the queue cannot be persisted (quota), it is dropped and warned about rather than failing
 the local write: local is written first and is the truth, so the cost is the SYNC of that change
 and never the change.
+
+#### A read is fresh, but one page load is not fifty-two reads
+
+`row()` is `select('*')` — the WHOLE row: all four languages' decks, the shelf, the activity
+log — and every read path calls it FRESH, deliberately, because that is what cross-device sync
+is. What that missed is that the reads on a page load are CONCURRENT: four languages times
+several mounted copies of `useVocabDeck`, plus prefs, SRS state, lessons, counts and
+per-passage cloze state, all mounting together.
+
+Measured on the live site, signed in: **52 Supabase calls, the last landing 25.9 seconds after
+navigation**, against a page that was itself interactive at 468 ms. The app was not slow; it was
+downloading the same row fifty-two times. After coalescing: 9 calls, none of them duplicates of
+each other, all finished by 2.8 s.
+
+**The freshness rule did not change, and must not.** Callers running in the same instant share
+one in-flight fetch, and a single request started at that instant is exactly as current as
+fifty-two started at that instant — no older snapshot is served. A caller arriving after it
+resolves still gets its own. `invalidate()` drops the in-flight share as well as the cache, so a
+focus re-read cannot join a request issued before the learner came back to the tab.
+`tests/rowCoalescing.test.ts` pins both halves; against the old `row()` its first case fails
+12 to 1.
 
 **`poolAutoDate` lives in prefs, not in `srsly-pool-auto-{lang}`.** Device-local was harmless
 while decks were; the moment they sync, two devices hold two dates against one shared pool and
