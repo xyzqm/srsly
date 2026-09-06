@@ -3,7 +3,7 @@ import cedictData from '@dict/cedict.json';
 import { HAN_DECOMP } from '@/lib/data/han-decomp';
 import type { HanEntry } from '@/lib/hanDecomp';
 import {
-  toneless, nearSyllable, buildSeries, clusters, RELIABLE_THRESHOLD,
+  toneless, nearSyllable, buildSeries, clusters, examples, RELIABLE_THRESHOLD,
 } from '@/lib/phoneticSeries';
 
 /**
@@ -128,5 +128,30 @@ describe('the golden numbers', () => {
   it('leaves most families below the bar, which is the honest outcome', () => {
     const all = [...series.values()];
     expect(all.filter(s => !s.predictive).length).toBeGreaterThan(all.length / 2);
+  });
+});
+
+describe('the sample shown to a learner argues the family’s own case', () => {
+  /** A reliable family should look reliable: every example shares the sound. */
+  it('shows members of one cluster for a predictive family', () => {
+    const s = series.get('青')!;
+    const ex = examples(s);
+    expect(ex.length).toBe(3);
+    for (const m of ex) expect(nearSyllable(m.reading, s.modalReading)).toBe(true);
+  });
+
+  /**
+   * And an unreliable one should look unreliable. Showing three members that happen to agree
+   * would demonstrate a regularity 者 does not have — the sample would contradict the verdict
+   * printed beside it.
+   */
+  it('shows one member per cluster for an unreliable family, so they disagree', () => {
+    const ex = examples(series.get('者')!);
+    const readings = new Set(ex.map(m => m.reading));
+    expect(readings.size).toBe(ex.length);
+  });
+
+  it('never returns more than the limit', () => {
+    for (const s of series.values()) expect(examples(s, 3).length).toBeLessThanOrEqual(3);
   });
 });

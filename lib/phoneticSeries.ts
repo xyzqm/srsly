@@ -184,3 +184,32 @@ export function clusters(series: PhoneticSeries): SeriesMember[][] {
   }
   return out.sort((a, b) => b.length - a.length);
 }
+
+/**
+ * The two or three members to actually SHOW, chosen to demonstrate the family's own verdict.
+ *
+ * ── NOT THE WHOLE FAMILY, AND NOT THE COMMONEST ONES EITHER ──
+ * 者 has fourteen members; a popup listing all of them is a wall of text at the exact moment
+ * the learner is already working hard. So it is capped — and what it is capped TO matters
+ * more than the cap. Frequency ordering was the obvious rule and it teaches the wrong thing:
+ * on an unreliable family it would happily show three members that all happen to agree, which
+ * demonstrates a regularity that is not there.
+ *
+ * Instead the sample argues the family's actual case. A PREDICTIVE family shows members of
+ * its modal cluster, so the shared sound is the visible pattern. An UNRELIABLE one shows one
+ * member from each of its largest clusters, so the DISAGREEMENT is the visible pattern. The
+ * examples make the claim rather than the caption.
+ *
+ * ── AND THIS IS WHERE THE TONE CAVEAT LIVES ──
+ * The members are printed with their real tone marks, side by side: 清 qīng · 情 qíng ·
+ * 请 qǐng. Three different tones on one line, adjacent, with the shared syllable obvious —
+ * which shows that the phonetic fixes the sound and not the tone, without a disclaimer
+ * sentence nobody reads and without colour-coding, which would carry the point in hue alone
+ * and lose it for a colour-blind reader across six themes.
+ */
+export function examples(series: PhoneticSeries, limit = 3): SeriesMember[] {
+  const groups = clusters(series);
+  if (series.predictive) return groups[0].slice(0, limit);
+  // One from each cluster, biggest first — the sample IS the evidence of disagreement.
+  return groups.slice(0, limit).map(g => g[0]);
+}
