@@ -1,12 +1,14 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import type { DeckWord } from '@/lib/types';
+import type { DeckWord, LanguageCode } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { isDueToday, isActive, todayStr } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
-import { getReverseCards, setReverseCards } from '@/lib/flashcardPrefs';
+import { getReverseCards, setReverseCards, getTypedRecall, setTypedRecall } from '@/lib/flashcardPrefs';
+import { canType, typedOrientation, otherReading, expectedAnswer, type TypedResult } from '@/lib/typedAnswer';
+import TypedAnswer from '@/components/practice/TypedAnswer';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import AchievementToast from '@/components/stats/AchievementToast';
@@ -58,6 +60,48 @@ function sdm(m: string) {
   ));
 }
 
+/**
+ * What a typed card ASKS FOR, said plainly.
+ *
+ * Chinese and Japanese are asking for the PRONUNCIATION and must say so. Typing `taberu`
+ * proves you know how 食べる is read; it does not ask you to produce 食べる, and a label
+ * implying otherwise would take credit for testing something this exercise cannot test.
+ * (The JLPT has no writing section either, so the reading is the skill the exam measures too.)
+ * Spanish and French are asking for the word itself, because their reading IS their spelling.
+ */
+function typedLabels(lang: LanguageCode): { question: string; placeholder: string; hint: string } {
+  switch (lang) {
+    case 'zh': return {
+      question: 'How is this pronounced?',
+      placeholder: 'pinyin — hao3 or hǎo',
+      hint: 'Type the pinyin. A missed tone is a near miss, not a failure.',
+    };
+    case 'ja': return {
+      question: 'How is this read?',
+      placeholder: 'romaji — becomes kana',
+      // Said explicitly because the alternative is a confusing mess rather than a mild
+      // annoyance: wanakana does the conversion here, so a learner who ALSO has their OS
+      // Japanese IME switched on gets both converting the same keystrokes.
+      hint: 'Type the reading in romaji — it becomes kana as you go, so no Japanese keyboard needed.',
+    };
+    default: return {
+      question: "What's the word?",
+      placeholder: `the ${getLanguageConfig(lang).name} word`,
+      hint: 'Type the word. A missing accent is a near miss, not a failure.',
+    };
+  }
+}
+
+/** One line naming what happened, shown where "How well did you remember?" normally sits. */
+function verdictLine(r: TypedResult, wrongReading: string | null): string {
+  if (r.verdict === 'exact') return 'Correct.';
+  if (r.verdict === 'close') return `Nearly — it is written ${r.expected}.`;
+  // A polyphone's OTHER reading is a right answer to a different card, and saying only
+  // "wrong" there teaches a learner to doubt a distinction they have actually made.
+  if (wrongReading) return `That is ${wrongReading}, this card's other reading — here it is ${r.expected}.`;
+  return `Not this time — it is ${r.expected}.`;
+}
+
 const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Again', grade: 1, color: 'var(--accent)' },
   { label: 'Hard',  grade: 2, color: 'var(--gold)' },
@@ -92,6 +136,27 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   const toggleReverse = () => {
     setReverse(prev => { const next = !prev; setReverseCards(next); return next; });
     setRevealed(false); // re-hide so the new orientation's answer isn't already showing
+  };
+
+  /**
+   * "Type answers" — recall by producing the word rather than by judging yourself.
+   *
+   * It PINS the orientation, which is why it and Flip cannot both be on: Spanish and French
+   * have no reading to type so they must face meaning-first, while Chinese and Japanese cannot
+   * be typed at all without an IME handing over the characters, so they must face word-first
+   * and ask for the reading. `lib/typedAnswer.ts` carries the full argument, including why
+   * allowing the fourth combination would write real FSRS lapses for correct answers.
+   */
+  const [typedOn, setTypedOn] = useState(false);
+  useEffect(() => { setTypedOn(getTypedRecall()); }, []);
+  const [typedResult, setTypedResult] = useState<TypedResult | null>(null);
+  /** What they actually typed, kept so a wrong answer can be inspected rather than only scored. */
+  const [typedText, setTypedText] = useState('');
+  const toggleTyped = () => {
+    setTypedOn(prev => { const next = !prev; setTypedRecall(next); return next; });
+    setRevealed(false);
+    setTypedResult(null);
+    setTypedText('');
   };
 
   // Build session queue once when deck loads
@@ -151,10 +216,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   // grade directly. A single listener reads live handlers from a ref so it always
   // acts on the current card without re-binding every render.
   const kbd = useRef<{
-    canAct: boolean; revealed: boolean;
+    canAct: boolean; revealed: boolean; suggested: FsrsGrade;
     reveal: () => void; grade: (g: FsrsGrade) => void; replay: () => void;
   }>({
-    canAct: false, revealed: false,
+    canAct: false, revealed: false, suggested: 3,
     reveal: () => {}, grade: () => {}, replay: () => {},
   });
   const lastPrefetch = useRef<string | null>(null);
@@ -178,7 +243,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); k.replay(); return; }
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
-        if (!k.revealed) k.reveal(); else k.grade(3);
+        // Enter after the answer is showing takes the SUGGESTED grade, not always Good — a
+        // typed answer that was wrong suggests Again, and defaulting to Good there would let
+        // the commonest keypress silently promote every failure.
+        if (!k.revealed) k.reveal(); else k.grade(k.suggested);
       } else if (k.revealed && e.key >= '1' && e.key <= '4') {
         e.preventDefault();
         k.grade(Number(e.key) as FsrsGrade);
@@ -330,6 +398,30 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
 
+  /**
+   * A card is typed only when there is something stored to grade against. An imported card
+   * with no pinyin has no answer, and marking the learner wrong for a hole in OUR data is the
+   * same error as rendering a loading state as an answer — so it falls back to self-grading.
+   */
+  const typing = typedOn && canType(card, language);
+  /** Typing pins the orientation; otherwise the Flip toggle decides it. */
+  const showReverse = typing ? typedOrientation(language) === 'reverse' : reverse;
+  /** Whether the front of the card is deliberately withholding the answer. */
+  const answerHidden = showReverse || typing;
+  const suggested: FsrsGrade = typedResult && typedResult.verdict === 'wrong' ? 1 : 3;
+  const labels = typedLabels(language);
+  const typedPrompt = labels.question;
+  const typedHint = labels.hint;
+  /**
+   * Chinese: they typed a real reading of this character, just not this card's one.
+   *
+   * 行 holds a xíng card and a háng card. Answering one with the other is a correct answer to
+   * a different question, and saying only "wrong" there teaches a learner to distrust a
+   * distinction they have in fact made.
+   */
+  const wrongReading = typedResult?.verdict === 'wrong' && language === 'zh'
+    ? otherReading(typedText, card) : null;
+
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
     onGrade?.(card.id ?? card.h, fsrsGrade);
     // Count toward the daily limits: a first-ever grade introduces a new card; a
@@ -360,6 +452,8 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
     });
 
     setRevealed(false);
+    setTypedResult(null);
+    setTypedText('');
   }
 
   // Audio: warm the cache when a new card appears so the first replay is instant.
@@ -374,6 +468,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   kbd.current = {
     canAct: true,
     revealed,
+    suggested,
     reveal: () => setRevealed(true),
     grade: (g) => { const m = GRADES.find(x => x.grade === g)!; handleGrade(m.grade, m.label, m.color); },
     replay: () => { void speak(speechText); },
@@ -399,15 +494,35 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
         </div>
       </div>
 
-      {/* Flip-cards (reverse study) toggle — persists across sessions */}
-      <div className="flex justify-end mb-3">
+      {/* Study-mode toggles. Flip is DISABLED while typing, because typing pins the card's
+          orientation per language — see lib/typedAnswer.ts for why the fourth combination
+          (reverse + typed, in Chinese) writes FSRS lapses for answers that were correct. */}
+      <div className="flex justify-end items-center mb-3 gap-4">
+        <button
+          onClick={toggleTyped}
+          role="switch"
+          aria-checked={typedOn}
+          className="inline-flex items-center gap-2 cursor-pointer"
+          title="Type answers — produce the word instead of judging yourself"
+          style={{ background: 'none', border: 'none', padding: 0 }}
+        >
+          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: typedOn ? 'var(--accent)' : 'var(--ink-faint)' }}>
+            Type answers
+          </span>
+          <span style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: typedOn ? 'var(--accent)' : 'var(--line)', transition: 'background .15s', flexShrink: 0 }}>
+            <span style={{ position: 'absolute', top: 2, left: typedOn ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
+          </span>
+        </button>
         <button
           onClick={toggleReverse}
+          disabled={typedOn}
           role="switch"
           aria-checked={reverse}
-          className="inline-flex items-center gap-2 cursor-pointer"
-          title="Flip cards — show the meaning first and recall the word"
-          style={{ background: 'none', border: 'none', padding: 0 }}
+          className="inline-flex items-center gap-2"
+          title={typedOn
+            ? 'Typing sets the card direction for you — turn it off to flip cards yourself'
+            : 'Flip cards — show the meaning first and recall the word'}
+          style={{ background: 'none', border: 'none', padding: 0, opacity: typedOn ? 0.4 : 1, cursor: typedOn ? 'not-allowed' : 'pointer' }}
         >
           <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: reverse ? 'var(--accent)' : 'var(--ink-faint)' }}>
             Flip cards
@@ -443,10 +558,15 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
-          {reverse ? "What's the word?" : 'What does this mean?'}
+          {typing
+            ? (showReverse ? "What's the word?" : typedPrompt)
+            : (showReverse ? "What's the word?" : 'What does this mean?')}
         </div>
-        {/* Audio plays the word — in reverse it'd give the answer away, so hide until revealed */}
-        {(!reverse || revealed) && (
+        {/* Audio plays the word, so it hands over the answer on any card whose answer is
+            hidden — in reverse, and in typed mode too, where the answer IS the pronunciation.
+            Missing that second case would have made every Chinese and Japanese typed card
+            solvable by pressing play. */}
+        {(!answerHidden || revealed) && (
           <button
             onClick={(e) => { e.stopPropagation(); void speak(speechText); }}
             title="Play audio (R)"
@@ -460,7 +580,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
         )}
 
         {/* Front: the word (normal) or its meaning (reverse) */}
-        {reverse ? (
+        {showReverse ? (
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 34, fontWeight: 500, lineHeight: 1.3, maxWidth: '22ch' }}>
             {sdm(card.m)}
           </div>
@@ -489,12 +609,16 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
           </div>
         )}
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
-          {revealed ? 'How well did you remember?' : (reverse ? 'Recall the word, then reveal' : 'Think of the meaning, then reveal')}
+          {revealed
+            ? (typedResult ? verdictLine(typedResult, wrongReading) : 'How well did you remember?')
+            : typing ? typedHint
+            : showReverse ? 'Recall the word, then reveal'
+            : 'Think of the meaning, then reveal'}
         </div>
 
         {/* Back (revealed): the answer — the word + pinyin (reverse) or pinyin + meaning (normal) */}
         <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 300 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
-          {reverse ? (
+          {showReverse ? (
             <>
               <div style={{ fontFamily: 'var(--f-han)', fontSize: 56, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>{card.h}</div>
               <div style={{ fontFamily: 'var(--f-mono)', fontSize: 18, color: 'var(--accent)', letterSpacing: '.04em', marginTop: 12 }}>{card.p}</div>
@@ -527,14 +651,46 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       {/* Grade buttons */}
       <div className="text-center mt-5">
         {!revealed ? (
-          <button
-            onClick={() => setRevealed(true)}
-            className="cursor-pointer transition-all duration-150"
-            style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '11px 22px' }}
-          >
-            Show answer
-          </button>
+          typing ? (
+            /* KEYED BY THE CARD, so the field and its wanakana binding are torn down and
+               rebuilt for each word. Without that, a half-typed answer would carry over and be
+               graded against the next card. */
+            <TypedAnswer
+              key={cardKey}
+              expected={expectedAnswer(card, language)}
+              language={language}
+              placeholder={labels.placeholder}
+              onSubmit={(result, typed) => {
+                setTypedResult(result);
+                setTypedText(typed);
+                setRevealed(true);
+              }}
+            />
+          ) : (
+            <button
+              onClick={() => setRevealed(true)}
+              className="cursor-pointer transition-all duration-150"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '11px 22px' }}
+            >
+              Show answer
+            </button>
+          )
         ) : (
+          <>
+          {/* THE OVERRIDE BELONGS ON SPANISH AND FRENCH ONLY.
+              "Give the word for 'friend'" has more than one right answer and the deck stores
+              one of them, so a learner can be marked wrong for a synonym. Chinese and Japanese
+              ask for THIS card's reading, which is determined — there is nothing to appeal, and
+              offering an appeal would just be a button that turns any failure into a pass. */}
+          {showReverse && typedResult?.verdict === 'wrong' && (
+            <button
+              onClick={() => handleGrade(3, 'Good', 'var(--jade)')}
+              className="cursor-pointer"
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '8px 14px', marginBottom: 4 }}
+            >
+              I was actually right
+            </button>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);
@@ -544,7 +700,15 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
                   key={g.label}
                   onClick={() => handleGrade(g.grade, g.label, g.color)}
                   className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-                  style={{ background: 'var(--card)', border: `1px solid var(--line)`, borderBottom: `2px solid ${g.color}`, borderRadius: 10, padding: '13px 8px', textAlign: 'center' }}
+                  style={{
+                    background: 'var(--card)',
+                    // The suggested grade is only ever a SUGGESTION: every button stays live, so
+                    // a learner who knows the machine misjudged them can still say so.
+                    border: typedResult && g.grade === suggested ? `1px solid ${g.color}` : '1px solid var(--line)',
+                    borderBottom: `2px solid ${g.color}`,
+                    boxShadow: typedResult && g.grade === suggested ? `0 0 0 2px color-mix(in srgb, ${g.color} 22%, transparent)` : 'none',
+                    borderRadius: 10, padding: '13px 8px', textAlign: 'center',
+                  }}
                 >
                   <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
                   <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>
@@ -552,6 +716,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
               );
             })}
           </div>
+          </>
         )}
       </div>
 

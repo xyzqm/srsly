@@ -114,9 +114,42 @@ export function splitLeadingPinyin(def: string): { pinyin: string; meaning: stri
   return { pinyin: head, meaning };
 }
 
-/** Canonical form for comparison: tone numbers → marks, drop spaces/separators, lowercase. */
-function canonPinyin(s: string): string {
-  return toneNumToMark(s).normalize('NFC').replace(/[\s'·]/g, '').toLowerCase();
+/**
+ * Strip tone marks while KEEPING `ü`.
+ *
+ * `ü` decomposes under NFD into u + a combining diaeresis, and that diaeresis is
+ * indistinguishable from a tone mark to a blanket combining-mark strip — so the naive version
+ * merges 女 nü into 努 nu, which are different syllables. It is parked behind a sentinel first.
+ *
+ * Lives here rather than in a caller because two features need it and both need it to agree:
+ * `lib/phoneticSeries.ts` compares family members' readings, and `lib/typedAnswer.ts` decides
+ * whether a typed answer is the right syllables with the wrong tone. Two copies of this would
+ * drift the first time either was touched.
+ */
+export function stripTones(s: string): string {
+  if (!s) return '';
+  const PARK = '\u0001';
+  let out = s;
+  for (const u of 'ǖǘǚǜü') out = out.replaceAll(u, PARK);
+  out = out.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return out.replaceAll(PARK, 'ü');
+}
+
+/**
+ * Canonical form for comparison: tone numbers → marks, drop spaces/separators, lowercase.
+ *
+ * `v` and `u:` both mean `ü` — they are how ü is typed on a keyboard that has no ü key, which
+ * is every keyboard a learner is likely to be using. `toneNumToMark` already converts a `v`
+ * that carries a tone number (`lv4` → `lǜ`); a bare one (`lv`, `nv`) reaches here untouched,
+ * and `v` is not a letter Hanyu Pinyin uses for anything else, so the mapping is unambiguous.
+ */
+export function canonPinyin(s: string): string {
+  // The ü substitution runs BEFORE the tone marks are applied, not after. `toneNumToMark`
+  // finds the vowel to mark by scanning letters immediately left of the digit, and `u:` puts
+  // a colon in the way — so `lu:4` came out as an unmarked `lü` and failed against `lǜ`.
+  // Converted first, it is an ordinary `lü4` and marks correctly.
+  const typed = (s || '').toLowerCase().replace(/u:/g, 'ü').replace(/v/g, 'ü');
+  return toneNumToMark(typed).normalize('NFC').replace(/[\s'·]/g, '').toLowerCase();
 }
 
 /**

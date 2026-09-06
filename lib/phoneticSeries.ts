@@ -38,18 +38,16 @@
  * been taught something false by omission.
  */
 import type { HanEntry } from './hanDecomp';
+import { stripTones } from './pinyin';
 
 /** A pinyin syllable with the tone removed. `ü` survives — it is a vowel, not a tone mark. */
 export function toneless(pinyin: string): string {
   if (!pinyin) return '';
-  let s = pinyin.trim().split(/\s+/)[0].toLowerCase();
-  // `ü` is PARKED behind a sentinel first, because NFD decomposes it into u + diaeresis
-  // and the combining-mark strip below cannot tell that diaeresis from a tone mark. Losing
-  // it would merge 女 nü with 努 nu, which are different syllables.
-  const PARK = '\u0001';
-  for (const u of 'ǖǘǚǜü') s = s.replaceAll(u, PARK);
-  s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return s.replaceAll(PARK, 'ü');
+  // FIRST SYLLABLE ONLY, which is what makes this different from `stripTones` itself: a
+  // family is compared on the reading of the character, and cedict gives multi-syllable
+  // entries for some of them. `stripTones` owns the ü-preserving part, because
+  // lib/typedAnswer.ts needs exactly the same rule and two copies would drift.
+  return stripTones(pinyin.trim().split(/\s+/)[0].toLowerCase());
 }
 
 /** Longest-first, so `zh` is not read as `z`. */

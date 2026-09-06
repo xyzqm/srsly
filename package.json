@@ -24,15 +24,16 @@
     "kuromoji": "^0.1.2",
     "next": "^15.3.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "wanakana": "^5.3.1"
   },
   "//overrides": [
     "Pins two transitive dependencies of Next 15 onto patched releases. Next 15.5.22 is",
     "the latest 15.x and still resolves postcss 8.4.31 and sharp 0.34.5, both flagged high",
     "severity; npm's own fix is a major upgrade to Next 16.",
-    "  postcss >=8.5.23 \u2014 GHSA-6g55-p6wh-862q / -r28c-9q8g-f849 / -fxqj-rqcc-2cmp",
+    "  postcss >=8.5.23 — GHSA-6g55-p6wh-862q / -r28c-9q8g-f849 / -fxqj-rqcc-2cmp",
     "                    (arbitrary .map read via sourceMappingURL) and GHSA-qx2v-qp2m-jg93.",
-    "  sharp   >=0.35.0  \u2014 libvips CVE-2026-33327/33328/35590/35591.",
+    "  sharp   >=0.35.0  — libvips CVE-2026-33327/33328/35590/35591.",
     "Both are same-major, backwards-compatible bumps. Revisit when a Next release ships",
     "these itself, and drop the overrides then rather than letting them drift."
   ],
