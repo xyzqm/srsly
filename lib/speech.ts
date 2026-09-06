@@ -1,4 +1,5 @@
 'use client';
+import { getVoiceChoice } from './ttsVoice';
 
 // ─── Voice selection ──────────────────────────────────────────────────────────
 
@@ -77,6 +78,49 @@ let cachedVoice: { locale: string; voice: SpeechSynthesisVoice } | null = null;
 let currentLocale = 'zh-CN';
 
 /** Set the speech locale (e.g. 'zh-CN' or 'es-ES'). */
+/**
+ * Forget the resolved voice, so the next utterance re-ranks.
+ *
+ * The cache is keyed by LOCALE, and changing the chosen voice does not change the locale —
+ * so without this a learner picking a new voice would keep hearing the old one until they
+ * switched language or reloaded, which reads as the setting being ignored.
+ */
+export function clearVoiceCache(): void {
+  cachedVoice = null;
+}
+
+/**
+ * Every installed voice for a language, best-first — what the picker offers.
+ *
+ * Ordered by the same ranking that chooses the default, so the list a learner reads is the
+ * app's own opinion rather than the platform's arbitrary order, and the top entry is what
+ * they would get by choosing nothing. Novelty voices are kept, at the end: excluding them
+ * from a list someone opened on purpose would be deciding for them twice.
+ */
+export function voiceOptions(langBase: string): SpeechSynthesisVoice[] {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return [];
+  const base = langBase.slice(0, 2).toLowerCase();
+  const sameLang = speechSynthesis.getVoices()
+    .filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(base));
+  /**
+   * Deduped, because the priority names are SUBSTRING matches and several nest.
+   *
+   * The Chinese list holds both `Google 普通话（中国大陆）` and `Google 普通话`, and one
+   * installed voice satisfies both — so a plain map produced the same voice twice in the
+   * picker, one entry above the other, looking like two voices that sound identical. The
+   * nesting is deliberate in the ranking (the specific name should win where it exists), so
+   * the fix belongs here rather than in the list.
+   */
+  const named: SpeechSynthesisVoice[] = [];
+  for (const n of VOICE_PRIORITY[base] ?? []) {
+    const match = sameLang.find(v => v.name.includes(n));
+    if (match && !named.includes(match)) named.push(match);
+  }
+  const rest = sameLang.filter(v => !named.includes(v) && !NOVELTY_VOICE.test(v.name));
+  const novelty = sameLang.filter(v => !named.includes(v) && NOVELTY_VOICE.test(v.name));
+  return [...named, ...rest, ...novelty];
+}
+
 export function setSpeechLang(bcp47: string): void {
   if (bcp47 === currentLocale) return;
   currentLocale = bcp47;
@@ -99,6 +143,21 @@ function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null
   // search for Japanese, and would let any voice called e.g. "Frank" answer one for French.
   const sameLang = voices.filter(v => v.lang.replace('_', '-').toLowerCase().startsWith(base));
   if (sameLang.length === 0) return null;
+
+  /**
+   * A voice the learner picked outranks everything below, INCLUDING the novelty filter.
+   *
+   * The ranking exists because "the first Spanish voice" lands on a cartoon; it is a good
+   * default and a bad veto. Someone who deliberately chose Zarvox has answered the question
+   * the filter was guessing at. It is still matched against the installed list rather than
+   * trusted — a voice can be uninstalled, and a stale `voiceURI` must fall through to the
+   * ranking rather than silence the app.
+   */
+  const chosenURI = getVoiceChoice(base);
+  if (chosenURI) {
+    const chosen = sameLang.find(v => v.voiceURI === chosenURI);
+    if (chosen) return chosen;
+  }
 
   for (const name of VOICE_PRIORITY[base] ?? []) {
     const match = sameLang.find(v => v.name.includes(name));
@@ -265,9 +324,28 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
   speakBrowser(text, gen, onEnd);
 }
 
-/** Speaking rate for the active locale. */
+/**
+ * The learner's speed setting, as a MULTIPLIER on the per-language rate.
+ *
+ * Not a replacement for it. `RATE` is calibrated per language for a reason recorded above —
+ * Chinese is slowed most because tone contours are what a beginner is straining to hear —
+ * and a single absolute number would throw that away, making one language sluggish to make
+ * another intelligible. A factor keeps the calibration and moves it as a whole.
+ *
+ * Module-level, set by the app when prefs load, because `currentRate()` is called
+ * synchronously inside `speak()` and prefs are async — the same reason `currentLocale` is
+ * pushed in by `setSpeechLang` rather than read on demand.
+ */
+let speedFactor = 1;
+
+/** 0.6–1.4. Anything outside that is a bug or a corrupt pref, not a choice. */
+export function setSpeechSpeed(factor: number | undefined): void {
+  speedFactor = Number.isFinite(factor) ? Math.min(1.4, Math.max(0.6, factor as number)) : 1;
+}
+
+/** Speaking rate for the active locale, after the learner's multiplier. */
 function currentRate(): number {
-  return RATE[currentLocale.slice(0, 2).toLowerCase()] ?? 0.95;
+  return (RATE[currentLocale.slice(0, 2).toLowerCase()] ?? 0.95) * speedFactor;
 }
 
 /** Browser-only fallback, using the best voice for the ACTIVE language (never another's). */

@@ -1390,6 +1390,43 @@ scheduling, no counts, no streak — which made it the one thing in the SRS tab 
 SRS. It also had no stored state to clean up: being stateless WAS the feature. Stats' "Drill
 these" went with it, since cram was the only thing that could drill a scoped set.
 
+#### The voice and the speed are the learner's, and they are stored apart
+
+`components/settings/SpeechSettings.tsx` adds a Speech section: which installed system voice
+to read this language with, and a speed multiplier. Both were fixed constants — the voice came
+from `VOICE_PRIORITY` and the speed from `RATE` — and the ranking is a good default and a bad
+only-option, since it can only choose from what this machine happens to have installed and
+quality across system voices varies more than anything else in the audio path.
+
+**THEY LIVE IN DIFFERENT PLACES, AND THAT IS THE POINT.** SPEED is a preference and syncs in
+`prefs.ttsSpeed`: 0.8 means the same thing on every device. VOICE is a fact about the MACHINE
+and stays device-local in `srsly-tts-voice` (`lib/ttsVoice.ts`), because voices are installed
+per device — a `voiceURI` from a Mac with the enhanced Chinese voices downloaded does not
+exist on a phone, so syncing it would push a choice onto a device that cannot honour it and
+the silent fallback to the ranking would look exactly like a broken setting. It is the same
+reasoning that keeps `srsly-anthropic-key` out of the synced blob.
+
+**Speed is a MULTIPLIER, never an absolute rate.** `RATE` is calibrated per language — Chinese
+slowest, because tone contours are what a beginner strains to hear — and one absolute number
+would flatten that, making one language sluggish in order to make another intelligible. The
+factor moves the whole calibration and keeps its shape. Verified end to end rather than
+assumed: with the setting at 1.4×, a Chinese flashcard spoke at 1.148, which is 0.82 × 1.4.
+
+**A chosen voice outranks the novelty filter.** `NOVELTY_VOICE` exists because "the first
+Spanish voice" lands on a cartoon, and it is right as a default and wrong as a veto — someone
+who deliberately picked Zarvox has answered the question the filter was guessing at. The
+choice is still matched against the installed list rather than trusted, so a voice that has
+since been uninstalled falls through to the ranking instead of silencing the app.
+
+**`clearVoiceCache()` exists because the cache is keyed by LOCALE.** Choosing a new voice does
+not change the locale, so without it the next utterance keeps the old voice until the learner
+switches language or reloads — which reads as the setting being ignored.
+
+**The priority names are SUBSTRING matches and several nest**, so the picker deduplicates. The
+Chinese list holds both `Google 普通话（中国大陆）` and `Google 普通话`, one installed voice
+satisfies both, and a plain map listed it twice — two entries that would sound identical. The
+nesting is deliberate in the ranking, so the fix belongs in the list builder.
+
 #### Listening dictation is the cloze passage with the text withheld
 
 `lib/dictation.ts` and `components/read/DictationBar.tsx` add a **Listen** toggle to a

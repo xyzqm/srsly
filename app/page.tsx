@@ -7,7 +7,7 @@ import { languageFromTag } from '@/lib/languageMismatch';
 import { decodeClip } from '@/lib/webClip';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
 import AddLanguage from '@/components/level/AddLanguage';
-import { setSpeechLang } from '@/lib/speech';
+import { setSpeechLang, setSpeechSpeed } from '@/lib/speech';
 import { storage } from '@/lib/storage';
 import Header from '@/components/Header';
 import TabNav from '@/components/TabNav';
@@ -191,6 +191,9 @@ function AppShell() {
 
   useEffect(() => {
     storage.getPrefs().then(async p => {
+      // Speech reads this synchronously inside `speak()`, so it is pushed in rather than
+      // fetched on demand — the same arrangement as `setSpeechLang`.
+      setSpeechSpeed(p.ttsSpeed);
       const list = await resolveLanguages(p);
       // Persist the migration once. Left underived, a language removed in Settings would be
       // resurrected on the next load by the deck-derived fallback.

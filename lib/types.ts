@@ -168,6 +168,16 @@ export interface UserPrefs {
    * new material you can absorb, which is the same judgement `srsNewPerDay` encodes.
    */
   poolActivateCount?: number;
+  /**
+   * Speech speed as a MULTIPLIER on the per-language rate (0.6–1.4, absent = 1).
+   *
+   * A factor rather than an absolute rate: `RATE` in lib/speech.ts is calibrated per
+   * language — Chinese slowest, because tone contours are what a beginner strains to hear —
+   * and one absolute number would flatten that, making one language sluggish to make another
+   * intelligible. Which VOICE to use is deliberately NOT here: voices are installed per
+   * device, so that choice is device-local (lib/ttsVoice.ts).
+   */
+  ttsSpeed?: number;
   reverseCards?: boolean;    // Flashcards "Flip cards" — show meaning on the front, recall the word
   /**
    * Move a batch out of the pool automatically, once a day. Off unless chosen: it changes

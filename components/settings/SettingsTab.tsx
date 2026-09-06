@@ -16,6 +16,7 @@ import { levelStandings, wordsToUnlockNext, gateFor, levelAfter, RETAINED_FRACTI
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
 import ApiKeyPanel from './ApiKeyPanel';
+import SpeechSettings from './SpeechSettings';
 
 const RETENTION_PRESETS = [
   { value: 0.70, label: '70%', desc: 'Relaxed — longer intervals, more forgetting accepted' },
@@ -86,6 +87,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
   const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
   const [autoActivate, setAutoActivate] = useState(false);
+  const [ttsSpeed, setTtsSpeed] = useState<number | undefined>(undefined);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));
   const [saved,      setSaved]      = useState(false);
@@ -170,6 +172,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       setRevPerDay(rpd); setRevPerDayRaw(String(rpd));
       const bd = p.blankDensity ?? RECOMMENDED_BLANK_DENSITY;
       setBlankDensity(bd); setBlankDensityRaw(String(bd));
+      setTtsSpeed(p.ttsSpeed);
       const pa = p.poolActivateCount ?? RECOMMENDED_POOL_ACTIVATE;
       setPoolActivate(pa); setPoolActivateRaw(String(pa));
       setAutoActivate(p.autoActivatePool === true);
@@ -210,7 +213,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
     await savePrefs(RECOMMENDED);
   }
 
-  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number; autoActivatePool: boolean }>) {
+  async function savePrefs(patch: Partial<{ hskLevel: number; jlptLevel: number; cefrLevel: number; srsRetention: number; srsMaxDays: number; srsNewPerDay: number; srsReviewsPerDay: number; blankDensity: number; poolActivateCount: number; autoActivatePool: boolean; ttsSpeed: number }>) {
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, ...patch });
     setSaved(true);
@@ -516,6 +519,14 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
           );
         })}
       </div>
+
+      {/* ── Blank density ─────────────────────────────────────────────────── */}
+      {/* ── Speech ────────────────────────────────────────────────────────── */}
+      <SectionLabel>Speech</SectionLabel>
+      <SpeechSettings
+        speed={ttsSpeed}
+        onChangeSpeed={v => { setTtsSpeed(v); void savePrefs({ ttsSpeed: v }); }}
+      />
 
       {/* ── Blank density ─────────────────────────────────────────────────── */}
       <SectionLabel>Blank density</SectionLabel>
