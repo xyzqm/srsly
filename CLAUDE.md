@@ -1390,6 +1390,52 @@ scheduling, no counts, no streak — which made it the one thing in the SRS tab 
 SRS. It also had no stored state to clean up: being stateless WAS the feature. Stats' "Drill
 these" went with it, since cram was the only thing that could drill a scoped set.
 
+#### Listening dictation is the cloze passage with the text withheld
+
+`lib/dictation.ts` and `components/read/DictationBar.tsx` add a **Listen** toggle to a
+generated passage. The sentence is played whole, the text is hidden, and the learner types
+the missing words into the blanks that were already there.
+
+**IT IS A PRESENTATION, NOT A SECOND EXERCISE.** The blanks, the typed input, the
+case-insensitive accent-sensitive grading, the refusal to re-grade and the FSRS write are all
+the ones `ClozeBlank` already performs — dictation changes only what can be SEEN while
+answering. Nothing new is stored, and a heard blank grades exactly as a read one: recognising
+a word by ear is arguably harder, but a second scale would be a second record of one fact and
+`srs_state` has enough of those.
+
+**THE AUDIO IS COMPLETE; THE TEXT IS WHAT HAS GAPS.** The obvious build is `speakWithBlank()`
+— speak up to the blank, go silent, speak the rest — and it is backwards for this exercise.
+The learner is asked to type what they HEARD, and a word that was never spoken cannot be
+heard. Silence at the gap tests whether you can infer a missing word from context; playing the
+sentence whole tests whether you can recognise it by ear and spell it, which is what listening
+practice is for. `speakWithBlank` keeps a job as the "With the gap" HINT, for someone who has
+heard the sentence and still cannot place the word. It also takes exactly ONE gap while a
+sentence can carry several, so it could not have been the spine either way.
+
+**SRS only, and that is the same contract as everywhere else.** Your own reading commits with
+`vocabWords: []` and touches no schedule, so it has no blanks to dictate — and turning a book
+you chose into an exercise is what this file refuses. The toggle is gated on
+`variant === 'srs'` as well as on the passage having blanks.
+
+**A sentence is revealed the moment its last blank is answered**, not at the end of the run:
+seeing the sentence you just heard is where the learning lands, and holding it to a results
+screen puts it a long way from the moment it means something. A sentence with NO blanks is
+never hidden — there would be nothing to earn it with, so it would stay blurred for good.
+
+**A hidden token is masked plain text, not a blurred `TokenEl`.** Rendering the real thing and
+blurring it leaves it tappable, and the lookup popup would print the word and its definition
+for a token the learner is being asked to recognise by ear. Blur is a look, not a barrier. The
+characters stay in place so nothing reflows when the sentence is earned.
+
+**Hints are forced off while dictating**, whatever the toggle says: `showHint` gives live
+character-by-character feedback as you type, which in a listening exercise hands over the
+spelling being tested.
+
+**`PassagePlayer` is hidden during a run.** It reads the whole passage straight through, and
+two play buttons an inch apart doing different things is a puzzle — the wrong one reads out
+sentences the learner has not earned. Audio still fires only on physical intent, for the
+reason `PassagePlayer`'s docstring gives at length: `/api/tts` is a paid call.
+
 **The daily proverb is an SRS reward.** It shows on the two screens that say you finished
 scheduled work — a completed generated passage and a finished flashcard session. It does not
 appear on your own reading, which has no finish state to earn it: `showResults` only exists

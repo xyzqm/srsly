@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, useState, useCallback, useRef } from 'react';
+import { Fragment, useState, useCallback, useRef, useMemo } from 'react';
 import type { PassageToken, DeckWord, Sentence, ClozeGradeEntry } from '@/lib/types';
 import type { PopupData, CompoundHint } from './WordPopup';
 import WordPopup from './WordPopup';
@@ -66,6 +66,14 @@ interface Props {
   showWordBoundaries?: boolean;
   /** Per-word sense that applies in THIS passage, keyed by word — see DailyPassage. */
   contextualMeanings?: Record<string, string>;
+  /**
+   * Listening dictation: withhold each sentence's text until its blanks are answered.
+   *
+   * A PRESENTATION FLAG AND NOTHING ELSE. The blanks, the typed input, the grading and the
+   * FSRS write are all exactly what they are with it off — dictation is this passage with
+   * the text hidden and the audio supplied, not a second exercise. See lib/dictation.ts.
+   */
+  dictation?: boolean;
 }
 
 function TokenEl({ token, peeked, isReviewWord, compounds, showWordBoundaries, reserveGap, onClick }: {
@@ -427,10 +435,44 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
   );
 }
 
-export default function PassageText({ sentences, activeSentenceIdx, showPinyin, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true, contextualMeanings }: Props) {
+export default function PassageText({ sentences, activeSentenceIdx, showPinyin, deckWords, clozeWords, pendingDeckWords, deckReadings, onAddToDeck, onClaimVocab, poolWords, onReleaseFromPool, showClozeHints, onClozeAnswer, restoredClozeGrades, showWordBoundaries = true, contextualMeanings, dictation = false }: Props) {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
+
+  /**
+   * Which occurrences are blanks, and how many of each sentence's are answered.
+   *
+   * ONE PASS, because the rule is not membership and duplicating it is how two copies come
+   * to disagree: a Japanese token matches on its BASE form, and an occurrence that already
+   * carries a grade stays a blank even after that grade pushed the word out of the due set.
+   * The token loop below reads this rather than re-deriving it, and dictation reads it to
+   * decide when a sentence has been earned.
+   *
+   * A restored grade must NAME the same word — `occurrenceId` is positional ("sentence 3,
+   * token 7") and passage state is keyed only by date, language, level and passage index, so
+   * two devices at the same level on the same day produce the same key for two different
+   * passages. `ClozeGradeEntry` already carries the word, which is what makes the check free.
+   */
+  const blanks = useMemo(() => {
+    const info = new Map<string, { reviewKey: string; storedEntry?: ClozeGradeEntry }>();
+    const perSentence = sentences.map((sent, si) => {
+      const idxs: number[] = [];
+      let answered = 0;
+      sent.tokens.forEach((token, ti) => {
+        const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
+        const oid = `${si}-${ti}`;
+        const restored = restoredClozeGrades?.get(oid);
+        const restoredMatches = restored !== undefined && restored.word === reviewKey;
+        if (!((clozeWords.has(reviewKey) || restoredMatches) && token.type === 'vocab')) return;
+        idxs.push(ti);
+        if (restoredMatches) answered++;
+        info.set(oid, { reviewKey, storedEntry: restoredMatches ? restored : undefined });
+      });
+      return { idxs, answered };
+    });
+    return { info, perSentence };
+  }, [sentences, clozeWords, restoredClozeGrades]);
 
   const openTokenPopup = useCallback((e: React.MouseEvent, token: PassageToken, compounds: CompoundHint[]) => {
     // Same "reading OR meaning" test as TokenEl — a reading-only gate would stop Spanish
@@ -511,7 +553,18 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
             fontWeight: 'var(--han-weight)' as 'bold',
           }}
         >
-          {sentences.map((sent, si) => (
+          {sentences.map((sent, si) => {
+            /**
+             * In dictation, a sentence is hidden until every blank in it is answered.
+             *
+             * Revealed the MOMENT it is earned rather than at the end of the run: seeing the
+             * sentence you just heard is where the learning lands, and holding it back to a
+             * results screen puts it a long way from the moment it would mean something.
+             * A sentence with no blanks is never hidden — there is nothing to earn it with.
+             */
+            const st = blanks.perSentence[si];
+            const hidden = dictation && st.idxs.length > 0 && st.answered < st.idxs.length;
+            return (
             <Fragment key={si}>
             {/* Sentences are separate spans (each is independently highlightable), so the
                 space BETWEEN them has to be emitted here — a spaced script would otherwise
@@ -527,54 +580,53 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               }
             >
               {sent.tokens.map((token, ti) => {
-                // Due vocab words become cloze blanks. A conjugated Japanese token is
-                // a review word if its base form (not surface form) is in clozeWords.
-                const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
                 const occurrenceId = `${si}-${ti}`;
-                /**
-                 * A blank you already answered stays a blank.
-                 *
-                 * Answering it grades the card, which pushes `dueAt` into the future and
-                 * drops the word out of `clozeWords` — so coming back to the passage found
-                 * your answered `por favor` rendered as ordinary black text, with no sign
-                 * you had ever filled it in. The recorded grade is the durable fact here,
-                 * so an occurrence that has one is a blank regardless of the schedule.
-                 */
-                /**
-                 * A RESTORED GRADE MUST NAME THE SAME WORD, because the occurrence id does not.
-                 *
-                 * `occurrenceId` is positional ("sentence 3, token 7"), and passage state is
-                 * keyed only by date, language, level and passage INDEX. Two devices on the
-                 * same day at the same level therefore produce the same key for two different
-                 * passages — the topic is seeded deterministically but the model's prose is
-                 * not — so the grade recorded against `playa` on one device would render as a
-                 * ✓ on whatever word happened to sit at that index on the other. Comparing
-                 * the stored word costs nothing: `ClozeGradeEntry` already carries it, which
-                 * is what `resultsCloze` reads.
-                 */
-                const restored = restoredClozeGrades?.get(occurrenceId);
-                const restoredMatches = restored !== undefined && restored.word === reviewKey;
-                const isReviewWord = (clozeWords.has(reviewKey) || restoredMatches)
-                  && token.type === 'vocab';
+                const blank = blanks.info.get(occurrenceId);
+                const isReviewWord = blank !== undefined;
+                const reviewKey = blank?.reviewKey ?? token.text;
+                // A blank you already answered STAYS a blank, and a restored grade must name
+                // the same word — both decided in `blanks` above, where the reasoning lives.
                 // Spaced scripts need the spaces put back: the segmenter drops whitespace,
                 // and rendering tokens flush together (correct for CJK) would otherwise
                 // produce "muchos amigos . El" with the punctuation adrift.
                 const space = needsSpaceBefore(sent.tokens, ti, langConfig.scriptIsUnspaced);
                 // Due vocab words become cloze blanks — rendered separately.
                 if (isReviewWord) {
-                  const storedEntry = restoredMatches ? restored : undefined;
+                  const storedEntry = blank.storedEntry;
                   return (
                     <Fragment key={`${ti}-${storedEntry !== undefined ? 'r' : 'f'}`}>
                     {space}
                     <ClozeBlank
                       token={token}
-                      showHint={showClozeHints ?? true}
+                      /* Hints OFF in dictation, whatever the toggle says. `showHint` gives
+                         live character-by-character feedback as you type, which in a listening
+                         exercise hands over the spelling being tested. The toggle still governs
+                         the reading mode it was written for. */
+                      showHint={dictation ? false : (showClozeHints ?? true)}
                       accentKeys={langConfig.accentKeys}
                       contextualMeaning={contextualMeanings?.[reviewKey] ?? contextualMeanings?.[token.text]}
                       onGrade={(correct) => onClozeAnswer?.(occurrenceId, reviewKey, correct)}
                       initialGrade={storedEntry ? { correct: storedEntry.grade === 3 } : undefined}
                       onWordClick={openTokenPopup}
                     />
+                    </Fragment>
+                  );
+                }
+                /**
+                 * A hidden token is plain masked text, not a muted `TokenEl`.
+                 *
+                 * Rendering the real thing and blurring it leaves it tappable, and the lookup
+                 * popup would cheerfully print the word — and its definition — for a token the
+                 * learner is being asked to recognise by ear. Blur is a look, not a barrier.
+                 * The characters stay in place so nothing reflows when the sentence is earned.
+                 */
+                if (hidden) {
+                  return (
+                    <Fragment key={ti}>
+                      {space}
+                      <span aria-hidden="true" style={{
+                        filter: 'blur(6px)', opacity: 0.5, userSelect: 'none', pointerEvents: 'none',
+                      }}>{token.text}</span>
                     </Fragment>
                   );
                 }
@@ -598,7 +650,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
               })}
             </span>
             </Fragment>
-          ))}
+            );
+          })}
         </div>
       )}
 

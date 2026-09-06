@@ -24,6 +24,8 @@ import { useReadability } from '@/hooks/useReadability';
 import PassagePlayer from './PassagePlayer';
 import PassageText from './PassageText';
 import PassageSkeleton from './PassageSkeleton';
+import DictationBar from './DictationBar';
+import { dictationSentences } from '@/lib/dictation';
 import Mark from '@/components/shared/Mark';
 import ReadingSources from './ReadingSources';
 import DailyProverb from './DailyProverb';
@@ -440,6 +442,50 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     });
     return { clozeWordCount: count, clozeDistinctCount: distinct.size, blankIds: ids };
   }, [SENTENCES, clozeWords, clozeGrades]);
+
+  /**
+   * LISTENING DICTATION — a presentation of this passage, not a second exercise.
+   *
+   * The blanks, the typed input, the grading and the FSRS write are all the ones already on
+   * screen; turning this on hides each sentence until its blanks are answered and offers the
+   * audio instead. Nothing new is stored. See lib/dictation.ts.
+   *
+   * SRS ONLY, and that is a contract rather than a preference: your own reading commits with
+   * `vocabWords: []` and touches no schedule, so it has no blanks to dictate — and turning a
+   * book you chose into an exercise is the thing this app refuses.
+   */
+  const [dictation, setDictation] = useState(false);
+  const [stopIdx, setStopIdx] = useState(0);
+
+  const dictationStops = useMemo(
+    // `blankIds` is the same set the passage renders by, so the run cannot stop on a
+    // sentence with no blank in it or skip one that has one.
+    () => dictationSentences(SENTENCES, (si, ti) => blankIds.has(`${si}-${ti}`)),
+    [SENTENCES, blankIds],
+  );
+
+  /**
+   * Clamped, because `stopIdx` outlives the passage it was counting.
+   *
+   * "+ New passage" replaces `SENTENCES`, so a run left on stop 5 of 6 would index past the
+   * end of a shorter passage's stops and the transport would simply vanish — the failure
+   * looking like the feature had broken rather than like an index being stale.
+   */
+  const safeStopIdx = Math.min(stopIdx, Math.max(0, dictationStops.length - 1));
+
+  /** Blanks in the current stop that have no grade yet — what the gap hint aims at. */
+  const dictationUnanswered = useMemo(() => {
+    const stop = dictationStops[safeStopIdx];
+    if (!stop) return [];
+    return stop.blankTokenIdxs.filter(ti => !clozeGrades.has(`${stop.index}-${ti}`));
+  }, [dictationStops, safeStopIdx, clozeGrades]);
+
+  const stepDictation = useCallback((next: number) => {
+    const clamped = Math.max(0, Math.min(next, dictationStops.length - 1));
+    setStopIdx(clamped);
+    const stop = dictationStops[clamped];
+    if (stop) setActiveSentence(stop.index);
+  }, [dictationStops]);
 
   /**
    * Is there enough passage to ask about?
@@ -1246,8 +1292,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         <>
           <div className="flex gap-2 items-center mb-4 flex-wrap">
             {/* The panel stays mounted when you leave the tab, so playback would otherwise
-                follow you onto Stats. `active` is what stops it. */}
-            <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} active={active} />
+                follow you onto Stats. `active` is what stops it.
+
+                Hidden during a dictation run: that has its own transport, and this one reads
+                the whole passage straight through — two play buttons an inch apart doing
+                different things is a puzzle, and the wrong one reads out sentences the
+                learner has not earned yet. */}
+            {!dictation && (
+              <PassagePlayer sentences={SENTENCES} onSentenceChange={setActiveSentence} active={active} />
+            )}
             <div className="ml-auto flex gap-2 items-center flex-wrap">
               {/* Scoped to ONE thing: the English meaning shown when you hover a blank.
                   It briefly also gated the letter-by-letter colouring as you type, which
@@ -1256,6 +1309,29 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   so it stays on and this switch is about the meaning alone. */}
               {/* Only where there ARE blanks. Your own reading has none, so the toggle
                   offered to hide a hint about nothing. */}
+              {/* Dictation is SRS-only: your own reading has no blanks to hide, and a book
+                  you chose is not an exercise. `clozeWordCount > 0` already says "this
+                  passage has blanks", which is the same distinction in the one place the
+                  renderer can see it. */}
+              {variant === 'srs' && clozeWordCount > 0 && dictationStops.length > 0 && (
+                <button
+                  style={toggleStyle(dictation)}
+                  onClick={() => {
+                    setDictation(v => {
+                      const on = !v;
+                      // Entering starts at the first sentence that asks something, so the
+                      // learner is not left staring at a blurred paragraph with no stop.
+                      if (on) { setStopIdx(0); setActiveSentence(dictationStops[0]?.index ?? 0); }
+                      return on;
+                    });
+                  }}
+                  title={dictation
+                    ? 'Reading the passage — the text is visible'
+                    : 'Hide the text and type what you hear'}
+                >
+                  Listen
+                </button>
+              )}
               {clozeWordCount > 0 && (
                 <button
                   style={toggleStyle(showClozeHints)}
@@ -1345,8 +1421,22 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             </p>
           )}
 
+          {/* The run's controls sit directly above the passage they drive, so the sentence
+              being played and the sentence being highlighted are never far apart. */}
+          {dictation && (
+            <DictationBar
+              sentences={SENTENCES}
+              stops={dictationStops}
+              stopIdx={safeStopIdx}
+              onStepTo={stepDictation}
+              scriptIsUnspaced={langConfig.scriptIsUnspaced}
+              unanswered={dictationUnanswered}
+            />
+          )}
+
           <PassageText
             sentences={SENTENCES}
+            dictation={dictation}
             activeSentenceIdx={activeSentence}
             deckWords={passageDeckWords}
             clozeWords={clozeWords}
