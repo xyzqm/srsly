@@ -207,9 +207,59 @@ export function clusters(series: PhoneticSeries): SeriesMember[][] {
  * sentence nobody reads and without colour-coding, which would carry the point in hue alone
  * and lose it for a colour-blind reader across six themes.
  */
-export function examples(series: PhoneticSeries, limit = 3): SeriesMember[] {
-  const groups = clusters(series);
+export function examples(series: PhoneticSeries, limit = 3, exclude?: string): SeriesMember[] {
+  /**
+   * The excluded character is dropped BEFORE clustering, not after.
+   *
+   * Filtering the sample afterwards silently deletes a cluster's only representative. 很 is
+   * the first member of 艮's largest group, so excluding it late left 眼 yǎn and 退 tuì — two
+   * singletons — and a family where 7 of 11 share "-en" was displayed as pure noise. Caught by
+   * opening the popup, which is the only place it was visible.
+   */
+  const trimmed: PhoneticSeries = exclude
+    ? { ...series, members: series.members.filter(m => m.char !== exclude) }
+    : series;
+  const groups = clusters(trimmed);
+  if (groups.length === 0) return [];
   if (series.predictive) return groups[0].slice(0, limit);
   // One from each cluster, biggest first — the sample IS the evidence of disagreement.
   return groups.slice(0, limit).map(g => g[0]);
+}
+
+/**
+ * The family index, built once and reused.
+ *
+ * 3,696 characters is small enough to compute at runtime from data the app already loads, so
+ * there is no generated file to keep in step — the families ARE derivable, and this codebase
+ * stores only what is not. But it is far too much to redo per rendered card.
+ *
+ * ── THE CACHE REFUSES TO REMEMBER AN EMPTY ANSWER, AND THAT IS THE POINT ──
+ * Readings come from cedict, which loads asynchronously. Called before it lands, every member
+ * resolves to no reading and the index comes out EMPTY — and caching that would freeze "there
+ * are no phonetic families" for the rest of the session, on the first render, silently. That
+ * is exactly the mistake CLAUDE.md records as its sixth failure mode: a value meaning "not
+ * loaded yet" stored as a value meaning "there is none". An empty build is returned but never
+ * kept, so the next call after the dictionary arrives builds the real thing.
+ */
+let cachedIndex: Map<string, PhoneticSeries> | null = null;
+
+export function seriesIndex(
+  decomp: Record<string, HanEntry>,
+  readingOf: (char: string) => string | undefined,
+): Map<string, PhoneticSeries> {
+  if (cachedIndex) return cachedIndex;
+  const built = buildSeries(decomp, readingOf);
+  if (built.size > 0) cachedIndex = built;   // never cache the not-loaded-yet answer
+  return built;
+}
+
+/** The family a character belongs to, or null if it has no phonetic part or too small a one. */
+export function seriesFor(
+  char: string,
+  decomp: Record<string, HanEntry>,
+  readingOf: (char: string) => string | undefined,
+): PhoneticSeries | null {
+  const ph = decomp[char]?.ph;
+  if (!ph) return null;
+  return seriesIndex(decomp, readingOf).get(ph) ?? null;
 }

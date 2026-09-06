@@ -155,3 +155,27 @@ describe('the sample shown to a learner argues the family’s own case', () => {
     for (const s of series.values()) expect(examples(s, 3).length).toBeLessThanOrEqual(3);
   });
 });
+
+describe('excluding the character being looked at', () => {
+  /**
+   * FOUND BY OPENING THE POPUP, not by reading the code. 很 is the first member of 艮's
+   * largest cluster, so filtering it out of the SAMPLE — after clustering rather than before
+   * — deleted that cluster's only representative. A family where 7 of 11 share "-en" was then
+   * displayed as 眼 yǎn and 退 tuì: two singletons, and a real majority pattern rendered as
+   * pure noise.
+   */
+  it('keeps a representative of the biggest cluster when the looked-up char is in it', () => {
+    const s = series.get('艮')!;
+    const ex = examples(s, 3, '很');
+    expect(ex.map(m => m.char)).not.toContain('很');
+    // The first example must still speak for the largest group, which reads "-en".
+    expect(nearSyllable(ex[0].reading, s.modalReading)).toBe(true);
+  });
+
+  it('never returns the excluded character in any family', () => {
+    for (const s of series.values()) {
+      const victim = s.members[0].char;
+      expect(examples(s, 3, victim).map(m => m.char)).not.toContain(victim);
+    }
+  });
+});
