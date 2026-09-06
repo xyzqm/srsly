@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 
@@ -9,6 +9,42 @@ export const metadata: Metadata = {
   // search engine sees, so it was the app's own description of itself being wrong in public.
   description: 'Read what you actually want to read, in Chinese, Japanese, Spanish or French. '
     + 'Spaced repetition built around your own reading.',
+
+  /**
+   * INSTALLABLE. `app/manifest.ts` carries the rest; these are the parts iOS reads and the
+   * web manifest does not cover.
+   *
+   * `appleWebApp.capable` is what makes an iPad or iPhone open it in its own window instead
+   * of a Safari tab, and `statusBarStyle: 'default'` keeps the status bar legible on the
+   * paper ground rather than painting it over.
+   */
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'srsly',
+    statusBarStyle: 'default',
+  },
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: '/icon-192.png',
+  },
+};
+
+/**
+ * The colour the OS paints around the app, and the width it lays out against.
+ *
+ * `themeColor` matches the manifest's, so the phone's status bar and the app's own accent are
+ * one colour rather than two that nearly match. `viewportFit: 'cover'` lets the page reach
+ * under a notch, which is what a standalone window is expected to do.
+ */
+export const viewport: Viewport = {
+  themeColor: '#B23A2E',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
