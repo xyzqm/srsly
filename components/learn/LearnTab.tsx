@@ -43,15 +43,24 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   const all = useMemo(() => lessonsFor(language), [language]);
 
   const [done, setDone] = useState<Set<string>>(() => new Set());
+  /** Whether `done` is an answer yet, or still just its empty starting value. */
+  const [doneLoaded, setDoneLoaded] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Read in an effect, not in useState's initialiser, so the server render and the first
   // client render agree — otherwise React hydration mismatches on the ticks. Through
   // `storage` rather than localStorage directly, so a signed-in learner picks up lessons
   // they finished on another device instead of being sent back through the tree.
+  //
+  // `doneLoaded` is set either way, including on failure: a rejected read leaves `done`
+  // empty, which is a poor answer but IS the answer, and never flipping the flag would hide
+  // the "start here" marker for the rest of the session.
   useEffect(() => {
     let live = true;
-    storage.getLessonsDone().then(ids => { if (live) setDone(new Set(ids)); });
+    storage.getLessonsDone()
+      .then(ids => { if (live) setDone(new Set(ids)); })
+      .catch(() => {})
+      .finally(() => { if (live) setDoneLoaded(true); });
     return () => { live = false; };
   }, []);
 
@@ -71,7 +80,17 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   const open = all.find(l => l.id === openId) ?? null;
   const grammar = grammarLessons(all);
   const words = vocabLessons(all);
-  const next = nextGrammarLesson(all, done);
+  /**
+   * NOT UNTIL WE KNOW. `done` is an empty Set until storage answers, and "the next lesson"
+   * computed from an empty set is always lesson ONE — so the marker painted itself on the
+   * first lesson and then jumped down to the real one a moment later, which reads as the
+   * tree changing its mind about where you are.
+   *
+   * Same mistake as the passage skeleton and the empty-deck copy, in a third place: a value
+   * meaning "not loaded yet" rendered as a value meaning "you have finished nothing". The
+   * marker simply appears once, on the right lesson.
+   */
+  const next = doneLoaded ? nextGrammarLesson(all, done) : undefined;
 
   if (!all.length) return null;
 
