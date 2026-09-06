@@ -25,6 +25,19 @@ const RETENTION_PRESETS = [
   { value: 0.95, label: '95%', desc: 'Strict — shorter intervals, reviewed more often' },
 ];
 
+/**
+ * The four groups, in the order someone meets them: who you are, what you are studying, how
+ * it is scheduled, and how to get it out again. Declared once and read twice — as the nav and
+ * as the render gate — so a group cannot exist in one and not the other.
+ */
+const GROUPS = [
+  { id: 'account'  as const, label: 'Account' },
+  { id: 'study'    as const, label: 'Studying' },
+  { id: 'schedule' as const, label: 'Scheduling' },
+  { id: 'data'     as const, label: 'Backup' },
+];
+type Group = (typeof GROUPS)[number]['id'];
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
@@ -87,6 +100,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
   const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
   const [autoActivate, setAutoActivate] = useState(false);
+  const [group, setGroup] = useState<Group>('study');
   const [ttsSpeed, setTtsSpeed] = useState<number | undefined>(undefined);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));
@@ -330,7 +344,8 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         Your preferences
       </div>
       <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '48ch', lineHeight: 1.55, marginBottom: 18 }}>
-        Adjust your {langConfig.name} proficiency level and spaced-repetition schedule.
+        Your level, how passages are read aloud, how reviews are scheduled, and how to get
+        your data out.
       </p>
 
       {/* One button instead of six. Every section carries its own "Use recommended", which is
@@ -352,6 +367,34 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         </span>
       </div>
 
+      {/* ── Grouped, because ten sections in one scroll is a list to be endured ──
+          The page had grown to ten stacked sections and the only way to a daily limit was
+          past the level table, the voice picker and the retention dial. Grouping is
+          navigation, not hierarchy: nothing is hidden that was not already several screens
+          down, and every group is one click from every other. */}
+      <div className="flex gap-1.5 mb-8 flex-wrap">
+        {GROUPS.map(g => {
+          const on = g.id === group;
+          return (
+            <button
+              key={g.id}
+              onClick={() => setGroup(g.id)}
+              className="cursor-pointer transition-all duration-150"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.08em',
+                padding: '7px 13px', borderRadius: 8,
+                border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+                background: on ? 'var(--accent-soft)' : 'var(--card)',
+                color: on ? 'var(--accent)' : 'var(--ink-soft)',
+              }}
+            >
+              {g.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {group === 'account' && (<>
       {/* ── Account ───────────────────────────────────────────────────────── */}
       {authEnabled && (
         <>
@@ -438,6 +481,9 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         </button>
       )}
 
+      </>)}
+
+      {group === 'study' && (<>
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
       <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 10 }}>
@@ -520,10 +566,10 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         })}
       </div>
 
-      {/* ── Blank density ─────────────────────────────────────────────────── */}
       {/* ── Speech ────────────────────────────────────────────────────────── */}
       <SectionLabel>Speech</SectionLabel>
       <SpeechSettings
+        languages={languages}
         speed={ttsSpeed}
         onChangeSpeed={v => { setTtsSpeed(v); void savePrefs({ ttsSpeed: v }); }}
       />
@@ -571,6 +617,9 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         onClick={() => { setBlankDensity(RECOMMENDED_BLANK_DENSITY); setBlankDensityRaw(String(RECOMMENDED_BLANK_DENSITY)); savePrefs({ blankDensity: RECOMMENDED_BLANK_DENSITY }); }}
       />
 
+      </>)}
+
+      {group === 'schedule' && (<>
       {/* ── Desired Retention ─────────────────────────────────────────────── */}
       <SectionLabel>Desired retention</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
@@ -788,6 +837,9 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
         }}
       />
 
+      </>)}
+
+      {group === 'data' && (<>
       {/* ── Backup & data ─────────────────────────────────────────────────── */}
       <SectionLabel>Backup &amp; data</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
@@ -821,6 +873,8 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--jade)', letterSpacing: '.06em', visibility: saved ? 'visible' : 'hidden', opacity: saved ? 1 : 0, transition: 'opacity .2s' }}>
         Saved.
       </div>
+
+      </>)}
 
       <SignInModal 
         open={signInOpen && !hasDismissed} 

@@ -1,8 +1,9 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
+import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig } from '@/lib/languageConfig';
-import { voiceOptions, clearVoiceCache, setSpeechSpeed, speak, stopAll, primeTTS } from '@/lib/speech';
+import { voiceOptions, clearVoiceCache, setSpeechSpeed, setSpeechLang, speak, stopAll, primeTTS } from '@/lib/speech';
 import { getVoiceChoice, setVoiceChoice } from '@/lib/ttsVoice';
 
 /**
@@ -46,12 +47,26 @@ interface Props {
   /** Absent = 1. Comes from prefs, so it arrives a tick after mount. */
   speed: number | undefined;
   onChangeSpeed: (speed: number) => void;
+  /** Every language the learner has added — one voice each, all settable from here. */
+  languages: LanguageCode[];
 }
 
-export default function SpeechSettings({ speed, onChangeSpeed }: Props) {
-  const language = useLanguage();
-  const base = language.slice(0, 2).toLowerCase();
-  const langConfig = getLanguageConfig(language);
+export default function SpeechSettings({ speed, onChangeSpeed, languages }: Props) {
+  const studying = useLanguage();
+  /**
+   * WHICH language's voice is being set, which is not necessarily the one being studied.
+   *
+   * It used to follow `useLanguage()` alone, so someone studying four languages could only
+   * ever set the voice for the one currently selected — and the section said "How Chinese is
+   * read aloud" with no hint that the other three had their own. A voice is per language by
+   * nature (a French voice cannot read Chinese), so the section needs its own selector rather
+   * than borrowing the study language.
+   */
+  const [lang, setLang] = useState<LanguageCode>(studying);
+  useEffect(() => { setLang(studying); }, [studying]);
+
+  const base = lang.slice(0, 2).toLowerCase();
+  const langConfig = getLanguageConfig(lang);
 
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [chosen, setChosen] = useState<string>('');
@@ -78,17 +93,59 @@ export default function SpeechSettings({ speed, onChangeSpeed }: Props) {
     clearVoiceCache();
   }, [base]);
 
+  /**
+   * The preview must speak in the language being CONFIGURED, not the one being studied.
+   *
+   * `speak()` resolves its voice from the module's `currentLocale`, which the app sets from
+   * the study language — so previewing French while studying Chinese would have read French
+   * text through a Chinese voice, and the picker would have seemed to do nothing. The locale
+   * is pushed for the preview and restored below.
+   */
   const preview = useCallback(() => {
     primeTTS();
     stopAll();
+    setSpeechLang(getLanguageConfig(lang).bcp47);
     void speak(PREVIEW[base] ?? PREVIEW.zh);
-  }, [base]);
+  }, [base, lang]);
+
+  /**
+   * Put the study language's locale back on the way out.
+   *
+   * A preview leaves `currentLocale` pointing at whatever was auditioned, and the next
+   * flashcard would inherit it. Restoring on unmount covers leaving the tab, which is the
+   * only way out of here.
+   */
+  useEffect(() => () => { setSpeechLang(getLanguageConfig(studying).bcp47); }, [studying]);
 
   const factor = speed ?? 1;
   const unsupported = typeof window !== 'undefined' && !('speechSynthesis' in window);
 
   return (
     <>
+      {/* Only shown with more than one language added: a single-option switch is furniture. */}
+      {languages.length > 1 && (
+        <div className="flex gap-1.5 mb-3 flex-wrap">
+          {languages.map(l => {
+            const on = l === lang;
+            return (
+              <button
+                key={l}
+                onClick={() => setLang(l)}
+                className="cursor-pointer"
+                style={{
+                  ...mono, fontSize: 11, letterSpacing: '.06em', padding: '5px 10px', borderRadius: 7,
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+                  background: on ? 'var(--accent-soft)' : 'var(--card)',
+                  color: on ? 'var(--accent)' : 'var(--ink-soft)',
+                }}
+              >
+                {getLanguageConfig(l).name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
         How {langConfig.name} is read aloud — in flashcards, passage playback and dictation.
         The voices are the ones installed on this device, so the list is different on a phone
@@ -107,6 +164,7 @@ export default function SpeechSettings({ speed, onChangeSpeed }: Props) {
           defaults.
         </p>
       ) : (
+        <>
         <div className="flex items-center gap-3 mb-3 flex-wrap">
           <select
             value={chosen}
@@ -136,6 +194,16 @@ export default function SpeechSettings({ speed, onChangeSpeed }: Props) {
             ▶ Preview
           </button>
         </div>
+        {/* This is the first thing anyone hits after downloading a voice, so it is said here
+            rather than left to be discovered. Browsers enumerate system voices once at
+            startup; a voice installed since then is genuinely absent from the list, not
+            filtered out of it. */}
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', lineHeight: 1.55, maxWidth: '48ch', marginBottom: 16 }}>
+          Just downloaded one and cannot see it? Quit the browser completely and reopen — the
+          voice list is read once at startup. Some macOS voices are reserved for the system
+          and are never offered to a web page.
+        </p>
+        </>
       )}
 
       <div className="flex items-center gap-3 mb-2" style={{ maxWidth: 380 }}>
@@ -158,9 +226,9 @@ export default function SpeechSettings({ speed, onChangeSpeed }: Props) {
         </span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10, maxWidth: '48ch', lineHeight: 1.55 }}>
-        A multiplier on the pace already set for each language — {langConfig.name} is read
-        {base === 'zh' ? ' slowest of the four, because tone contours are the hardest part to catch' : ' at a pace tuned for it'}.
-        1.00× keeps that as it is.
+        Applies to every language. It multiplies the pace already tuned for each one —
+        Chinese is read slowest, because tone contours are the hardest part to catch — so
+        1.00× leaves that calibration exactly as it is.
       </div>
     </>
   );
