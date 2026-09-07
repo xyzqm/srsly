@@ -1,23 +1,27 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LanguageCode } from '@/lib/types';
-import { loadKana } from '@/lib/kana';
-import { answerScript, gradeTyped, type TypedResult } from '@/lib/typedAnswer';
+import { gradeTyped, type TypedResult } from '@/lib/typedAnswer';
 
 /**
  * The typed-answer field on a flashcard.
  *
- * ── THE INPUT IS UNCONTROLLED, AND THAT IS NOT LAZINESS ──
- * `wanakana.bind` attaches its own listener and REWRITES `element.value` in place as you type,
- * turning `ta` into た before React ever hears about it. A controlled input fights that: React
- * re-renders with the value from state, wanakana rewrites it again, and the caret jumps. So the
- * element owns its value and `submit()` reads it off the ref, which is authoritative whatever
- * the library did to it. `value` in state is only a mirror, kept so the button can be disabled.
+ * ── THE APP DOES NOT TOUCH THE FIELD, AND THAT IS THE POINT ──
+ * This used to bind `wanakana`, which rewrote `element.value` in place to turn romaji into
+ * kana. It is gone: a learner typing Chinese or Japanese is using their OS IME, which
+ * transforms the same keystrokes, and two things rewriting one field fight over every
+ * character. The browser and the IME own the input now.
  *
- * ── THE IME MODE IS CHOSEN FROM THE ANSWER'S OWN SCRIPT ──
- * Bound to hiragana, `ko-hi-` gives こーひー and never reaches コーヒー. Bound to KATAKANA the
- * same keystrokes give コーヒー exactly. We know the answer's script from the card, so the app
- * makes that choice instead of asking the learner to. See lib/typedAnswer.ts.
+ * ── THE INPUT IS STILL UNCONTROLLED, FOR THE IME'S SAKE ──
+ * A controlled React input re-renders mid-composition and can drop the candidate window or
+ * jump the caret. The element owns its value and `submit()` reads it off the ref, which is
+ * authoritative whatever the IME did to it; `value` in state is only a mirror for the hint
+ * line below.
+ *
+ * ── `isComposing` IS LOAD-BEARING, NOT DEFENSIVE ──
+ * Enter during composition COMMITS the IME's candidate — 朋友 out of `pengyou` — and must not
+ * also submit the card. Without that guard the first Enter of every Chinese and Japanese
+ * answer would grade a half-finished string.
  *
  * ── AUTOCORRECT OFF, FOR THE REASON THE CLOZE BLANK ALREADY GIVES ──
  * iOS rewrites a typed word on blur or space — `pero` becomes `Pero`, `casa` becomes `case` —
@@ -33,51 +37,34 @@ import { answerScript, gradeTyped, type TypedResult } from '@/lib/typedAnswer';
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
 interface Props {
-  /** The answer to grade against — the reading (zh/ja) or the word itself (es/fr). */
+  /** The answer to grade against: the word itself, in every language. */
   expected: string;
+  /**
+   * The card's reading, if it has one. Only ever produces a `close` — typing `pengyou` with
+   * the IME switched off, or leaving たべる unconverted, is "knew the word, missed the script".
+   */
+  reading?: string;
   language: LanguageCode;
   /** What to type, in the learner's words. The UI must not overclaim what is being tested. */
   placeholder: string;
   onSubmit: (result: TypedResult, typed: string) => void;
 }
 
-export default function TypedAnswer({ expected, language, placeholder, onSubmit }: Props) {
+export default function TypedAnswer({ expected, reading = '', language, placeholder, onSubmit }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
-  const [kanaReady, setKanaReady] = useState(language !== 'ja');
-
-  /**
-   * Bind romaji→kana for Japanese only, and unbind on the way out.
-   *
-   * `bind` throws on an element that is already bound, so the cleanup is load-bearing rather
-   * than tidiness — without it, remounting for the next card would throw on the second card.
-   * The `cancelled` flag covers the import resolving after this card has already gone.
-   */
-  useEffect(() => {
-    if (language !== 'ja') { setKanaReady(true); return; }
-    let cancelled = false;
-    let release: (() => void) | undefined;
-    void loadKana().then(wk => {
-      const el = inputRef.current;
-      if (cancelled || !wk || !el) return;
-      wk.bind(el, { IMEMode: answerScript(expected) === 'katakana' ? 'toKatakana' : 'toHiragana' });
-      release = () => { try { wk.unbind(el); } catch { /* already gone */ } };
-      setKanaReady(true);
-    });
-    return () => { cancelled = true; release?.(); };
-  }, [language, expected]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   const submit = useCallback(() => {
-    // READ FROM THE ELEMENT, not from state: wanakana writes the kana directly onto it, and
-    // an input event it did not re-dispatch would leave the mirror one keystroke behind.
+    // READ FROM THE ELEMENT, not from state: an IME commits its candidate straight onto the
+    // input, and a composition event React did not surface would leave the mirror behind.
     const typed = inputRef.current?.value ?? value;
     // Blur first, or the card's keyboard shortcuts stay dead — the global handler ignores keys
     // while focus is in an input, which is what stops 1–4 being typed into this box.
     inputRef.current?.blur();
-    onSubmit(gradeTyped(typed, expected, language), typed);
-  }, [expected, language, onSubmit, value]);
+    onSubmit(gradeTyped(typed, expected, language, reading), typed);
+  }, [expected, reading, language, onSubmit, value]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -91,7 +78,7 @@ export default function TypedAnswer({ expected, language, placeholder, onSubmit 
           // Japanese or Chinese keyboard's Enter commits a candidate and must not also submit.
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
         }}
-        placeholder={kanaReady ? placeholder : 'Loading…'}
+        placeholder={placeholder}
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}

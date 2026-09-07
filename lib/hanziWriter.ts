@@ -5,7 +5,7 @@
  * 863 kB unpacked, and only a Chinese learner who opens Write can ever use it. A static import
  * would put a whole animation and stroke-matching engine in the initial bundle for every
  * Spanish, French and Japanese learner — the same failure the level tables, the French grammar
- * table and `lib/kana.ts` all describe. Cached after the first call, null on failure so the
+ * table and the lesson tree all describe. Cached after the first call, null on failure so the
  * caller can say so rather than rendering a dead square.
  *
  * ── WHY A LIBRARY HERE ──

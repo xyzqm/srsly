@@ -23,9 +23,11 @@ Prioritize **elegance and concision** over volume. Concretely:
   one deliberate exception is the scheduler: `lib/fsrs.ts` implements FSRS v4.5 directly (19
   weights, learning steps, the retrievability curve) rather than depending on `ts-fsrs`, and
   `DeckWord` in `lib/types.ts` is srsly's own interface rather than an extension of anyone's
-  `Card`. Kuromoji, JSZip, wanakana and the Supabase client are all used rather than
-  reimplemented — romaji→kana in particular is a large fully-specified table with no judgement
-  in it, so srsly's version could only be worse.
+  `Card`. Kuromoji, JSZip, hanzi-writer and the Supabase client are all used rather than
+  reimplemented. `wanakana` was added for romaji→kana and then REMOVED: typed recall now uses
+  the learner's own OS IME, and a library rewriting the same input the IME is rewriting fights
+  it for every character. A dependency earns its place by what it does for the learner, not by
+  being well-made.
 
 *(This section previously cited `ts-fsrs` as a dependency, described `DeckWord` as extending
 its `Card`, and recommended SvelteKit `load` functions — in a Next.js project. All three were
@@ -1493,70 +1495,64 @@ table, a statement of what changed and when (§2a) plus the modification being f
 carries the entry. Nothing inside a character file is touched — rounding coordinates to save a
 few hundred kB would be a deeper modification of shapes the licence exists to keep traceable.
 
-#### Typed recall asks a different question in each script
+#### Typed recall: one question in every language, typed with your own keyboard
 
 `lib/typedAnswer.ts` grades an answer the learner TYPES, and `components/practice/TypedAnswer.tsx`
-is the field. It is a toggle on the existing flashcard, not a fifth tab and not a new card type:
-`gradeCard` is untouched and there is NO schema change.
+is the field. A toggle on the existing flashcard — not a fifth tab, not a new card type,
+`gradeCard` untouched, no schema change.
 
-**IT IS NOT ONE EXERCISE WEARING FOUR HATS.** Spanish and French have `hasReadings: false` — the
-`p` slot is empty by construction — so their forward card has nothing to type and the exercise
-has to be the REVERSE one, meaning shown and the word typed. Chinese and Japanese have the
-opposite problem: you cannot type 朋友 or 食べる without an IME offering you the answer, so
-theirs is the FORWARD card, word shown and its READING typed. Those are opposite orientations,
-and `typedOrientation` reads `hasReadings` rather than inventing a second flag.
+**MEANING IN, WORD OUT, IN ALL FOUR LANGUAGES.** The card shows the English meaning; the learner
+types the word. Chinese and Japanese are typed with the learner's own OS IME, so the answer is
+the CHARACTERS — 朋友, 食べる — exactly as Spanish and French have always asked for `comer` and
+`parler`.
 
-**So typing PINS the orientation and disables "Flip cards"**, and that is a correctness fix
-rather than tidiness. Reverse + typed in Chinese asks "what is the word for friend?" and demands
-one exact romanisation; any other correct word is marked wrong and FSRS records a lapse for a
-card the learner knew. The question has no single answer, so it is not asked.
+**IT USED TO FACE zh/ja THE OTHER WAY, and the old argument is kept because it was not wrong.**
+The first design showed the character and asked for the READING, reasoning that an IME hands
+you the character once you have the sound. That is TRUE and was measured: a multi-character HSK
+word has a median of ONE homophone in the whole of CC-CEDICT, so pinyin → characters is close
+to deterministic. What it got wrong is that this is not the only thing worth testing —
+producing a word from its meaning and picking the right characters is what writing Chinese on a
+keyboard actually IS, and a learner asking to practise that is asking for a real skill. Changed
+on request (2026-09-07) after testing the live build.
 
-**The Chinese and Japanese cards ask for the PRONUNCIATION, and the UI says so.** Typing
-`taberu` proves you know how 食べる is read; it does not ask you to produce 食べる, and a label
-implying otherwise would take credit for testing something this cannot test. The JLPT has no
-writing section either, so the reading is what the exam measures too.
+**THE SYNONYM PROBLEM IS ANSWERED BY THE BUTTONS THAT WERE ALREADY THERE.** "Give the word for
+friend" has more than one right answer and the deck stores one, so the grader will sometimes
+mark a valid synonym wrong. The old design met that with a bespoke "I was actually right"
+override; it is gone. Again/Hard/Good/Easy are on screen the moment the answer is revealed, and
+pressing Good does precisely what the override did. A second control for one action is one more
+thing to explain and one more path to the same grade.
 
-**Three tiers, and the middle one is the same idea in three scripts.** `exact`, `close`, `wrong`.
-`close` is "the skeleton is right and the layer written on top of it is not" — right syllables
-wrong tone, right letters wrong accent, right kana written sloppily — and it grades Good while
-showing the correct form. What is deliberately NOT folded is the marks that carry a contrast:
-`ü` (女 nǚ is not 努 nǔ) and `ñ` (`año` is not `ano`). `ç` IS folded, because no French pair
-turns on a cedilla and `facon` is not a word. The test is whether the mark distinguishes two
-words, not how it is drawn.
+**THE `close` TIER IS NOW THE FORGOTTEN-KEYBOARD TIER**, and it is the reason the pinyin and
+kana work survived the pivot. Type `pengyou` with the IME switched off, or press Enter on
+たべる before converting it to 食べる, and you have shown you know the word and failed only to
+produce the script. That grades Good and shows the correct form rather than recording a lapse.
+The comparison is deliberately toneless for Chinese, because toneless pinyin is what an IME is
+actually driven with. For Japanese the realistic miss is NOT romaji — with an IME on you never
+see romaji — it is unconverted kana, which needs no romaji table at all.
 
-**`wanakana` is used for the INPUT and never for grading**, and that seam was forced by a
-measurement. wanakana's own `toHiragana` expands the long mark, so コーヒー becomes こうひい,
-while a learner typing `ko-hi-` produces こーひー — the library disagrees with itself about the
-10.4% of JMdict readings (6.8% of JLPT vocab) written in katakana. `lib/typedAnswer.ts` instead
-shifts katakana to hiragana by codepoint and resolves `ー` to the vowel it lengthens, with ONE
-rule applied to both sides. That keeps the grader synchronous, keeps 21 kB of romaji tables out
-of every Spanish learner's bundle (`lib/kana.ts` is a lazy import, like `loadHanDecomp`), and
-keeps every test free of module mocks.
+A katakana loanword typed in hiragana lands in the same tier: こーひー is not an alternative
+spelling of コーヒー, it is the reading in the wrong script.
 
-**The IME mode is chosen from the ANSWER's script, which is what makes loanwords gradeable.**
-Bound to hiragana, `ko-hi-` gives こーひー and `pa-thi-` gives ぱーてぃー — neither is a stored
-form. Bound to KATAKANA the same keystrokes give コーヒー and パーティー exactly. The card knows
-its own answer, so the app makes that choice instead of asking the learner to.
+**`wanakana` WAS REMOVED, AND THAT IS THE POINT OF THE PIVOT.** It converted romaji to kana by
+rewriting the input's value as the learner typed. With a real Japanese keyboard that is two
+things transforming the same keystrokes, and they fight over every character. The app now keeps
+its hands off the field entirely — no library, no binding, and `lib/typedAnswer.ts` stays
+synchronous because every comparison left is a codepoint operation.
 
-**A long vowel is not a slip.** The `close` tier folds small kana and dakuten, and treats
-おう/おお and えい/ええ as one sound spelled twice — but it never collapses a doubled vowel,
-because おばさん and おばあさん are different words.
+**`isComposing` IS LOAD-BEARING, NOT DEFENSIVE.** Enter during composition COMMITS the IME's
+candidate — 朋友 out of `pengyou` — and must not also submit the card. Without that guard the
+first Enter of every Chinese and Japanese answer would grade a half-finished string. The input
+also stays UNCONTROLLED: a controlled React input re-renders mid-composition and can drop the
+candidate window or jump the caret, so the element owns its value and `submit()` reads the ref.
 
-**The "I was actually right" override is on Spanish and French ONLY.** Meaning → word genuinely
-has synonyms and the deck stores one gloss, so a learner can be marked wrong for a right answer.
-Chinese and Japanese ask for THIS card's reading, which is determined — there is nothing to
-appeal, and an appeal button there would just convert any failure into a pass. A polyphone gets
-a sentence instead of a button: typing háng on the 行 xíng card is a correct answer to a
-different question, so the line names the reading they hit rather than only saying "wrong".
+**WHAT IS DELIBERATELY NOT FOLDED**: `ü` and `ñ` are LETTERS, not accents — folding them merges
+女 nü with 努 nu and accepts `ano` for `año`. `ç` IS folded, because no French pair turns on a
+cedilla. The test is whether the mark distinguishes two words, not how it is drawn. NFKC is
+applied to the CJK comparison so a full-width `ａ` from a CJK keyboard in the wrong mode is the
+same answer as `a`.
 
-**A card with no stored answer is not typed at all.** An imported Chinese card can carry no
-pinyin; grading an absent answer marks the learner wrong for a hole in OUR data, which is the
-sixth failure mode above wearing yet another face. `canType` sends it back to
-reveal-and-self-grade.
-
-**Audio is hidden until reveal in typed mode, for the same reason as in reverse.** The play
-button speaks the word, and on a Chinese or Japanese typed card the word's PRONUNCIATION is the
-answer — so leaving it visible made every one of those cards solvable by pressing play.
+**Audio is hidden until reveal**, as in reverse mode: the play button speaks the word, and the
+word is the answer.
 
 #### The voice and the speed are the learner's, and they are stored apart
 

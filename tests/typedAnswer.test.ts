@@ -1,256 +1,181 @@
 import { describe, it, expect } from 'vitest';
 import hskVocab from '@data/hsk-vocab.json';
 import jlptVocab from '@data/jlpt-vocab.json';
-import {
-  gradeTyped, typedOrientation, expectedAnswer, canType, answerScript, otherReading,
-} from '@/lib/typedAnswer';
-import { stripTones } from '@/lib/pinyin';
+import { gradeTyped, expectedAnswer, answerReading, canType } from '@/lib/typedAnswer';
 
 /**
  * Typed recall, graded against the REAL dictionaries.
  *
- * The claims here are about the LANGUAGES, not about the arithmetic — that a learner typing
- * `koohii` has produced コーヒー, that `pengyou` is the right word with the tone missing, that
- * `ano` is not a near miss for `año` — so a fixture would test the normalizer against itself.
- * Same reasoning the lemmatizer tests give for loading the real dictionary.
+ * The claims are about the LANGUAGES, not the arithmetic — that `pengyou` is the right word
+ * with the keyboard in the wrong mode, that `ano` is not a near miss for `año` — so a fixture
+ * would only test the normalizer against itself.
  *
- * The Japanese inputs below are the kana `wanakana` ACTUALLY produces, measured rather than
- * assumed. That measurement is the whole reason this module exists in the shape it does.
+ * ── THIS FILE REPLACED AN EARLIER ONE THAT ASSERTED THE OPPOSITE ──
+ * The previous design faced Chinese and Japanese forward (character shown, reading typed) and
+ * these tests pinned that. The app now asks one question in every language — meaning shown,
+ * word typed, CJK entered with the learner's own IME — so the old assertions were not merely
+ * stale, they were claims about a design that no longer exists.
  */
 
 const hsk = hskVocab as unknown as Record<string, { pinyin: string; meaning: string }>;
 const jlpt = jlptVocab as unknown as Record<string, { reading: string; meaning: string }>;
 
-describe('the orientation is decided by hasReadings, and is opposite in the two pairs', () => {
-  it('shows the word and asks for the reading where a reading exists', () => {
-    expect(typedOrientation('zh')).toBe('forward');
-    expect(typedOrientation('ja')).toBe('forward');
+describe('one question in every language: the answer is the word', () => {
+  it('asks for the word itself, never a romanisation', () => {
+    expect(expectedAnswer({ h: '朋友' })).toBe('朋友');
+    expect(expectedAnswer({ h: '食べる' })).toBe('食べる');
+    expect(expectedAnswer({ h: 'comer' })).toBe('comer');
   });
 
-  /**
-   * Spanish and French have no reading layer at all — `p` is empty by construction — so the
-   * forward card has nothing to type. Getting this backwards would render an empty input.
-   */
-  it('shows the meaning and asks for the word where there is no reading', () => {
-    expect(typedOrientation('es')).toBe('reverse');
-    expect(typedOrientation('fr')).toBe('reverse');
+  it('exposes the reading separately, for the near-miss tier only', () => {
+    expect(answerReading({ p: 'péngyou' })).toBe('péngyou');
+    expect(answerReading({ p: '' })).toBe('');
   });
 
-  it('takes the answer from the matching field', () => {
-    expect(expectedAnswer({ h: '朋友', p: 'péngyou' }, 'zh')).toBe('péngyou');
-    expect(expectedAnswer({ h: 'comer', p: '' }, 'es')).toBe('comer');
-  });
-});
-
-describe('a card with no stored answer is not typed at all', () => {
-  /**
-   * An imported card can carry no pinyin. Grading an absent answer marks the learner wrong for
-   * a gap in OUR data — the same mistake as rendering a loading state as an answer — so the
-   * card falls back to reveal-and-self-grade instead.
-   */
-  it('refuses a Chinese card with no pinyin', () => {
-    expect(canType({ h: '朋友', p: '' }, 'zh')).toBe(false);
-    expect(canType({ h: '朋友', p: '   ' }, 'zh')).toBe(false);
-    expect(canType({ h: '朋友', p: 'péngyou' }, 'zh')).toBe(true);
-  });
-
-  it('always accepts a Spanish card, whose answer is the word itself', () => {
-    expect(canType({ h: 'comer', p: '' }, 'es')).toBe(true);
+  /** A word always has its own text; only a malformed card could fail this. */
+  it('refuses a card with no word', () => {
+    expect(canType({ h: '' })).toBe(false);
+    expect(canType({ h: '   ' })).toBe(false);
+    expect(canType({ h: '朋友' })).toBe(true);
   });
 });
 
-describe('Chinese: tone numbers, ü, and the tone-slip tier', () => {
-  const zh = (typed: string, want: string) => gradeTyped(typed, want, 'zh').verdict;
+describe('Chinese: characters are the answer, pinyin is the near miss', () => {
+  const zh = (typed: string, want = '朋友', reading = 'péngyou') =>
+    gradeTyped(typed, want, 'zh', reading).verdict;
 
-  it('accepts tone marks and tone numbers as the same answer', () => {
-    expect(zh('péngyou', 'péngyou')).toBe('exact');
-    expect(zh('peng2you5', 'péngyou')).toBe('exact');
-    expect(zh('peng2 you5', 'péngyou')).toBe('exact');
-    expect(zh('PÉNGYOU', 'péngyou')).toBe('exact');
-  });
-
-  /** How ü is typed on a keyboard that has no ü key, which is every keyboard a learner has. */
-  it('accepts v and u: for ü', () => {
-    expect(zh('lv4', 'lǜ')).toBe('exact');
-    expect(zh('lü4', 'lǜ')).toBe('exact');
-    expect(zh('nv3', 'nǚ')).toBe('exact');
-    expect(zh('lu:4', 'lǜ')).toBe('exact');
-  });
-
-  it('calls the right syllables with the wrong tone a near miss, not a failure', () => {
-    expect(zh('pengyou', 'péngyou')).toBe('close');
-    expect(zh('peng2you2', 'péngyou')).toBe('close');
-    expect(zh('qing', 'qíng')).toBe('close');
+  it('accepts the characters', () => {
+    expect(zh('朋友')).toBe('exact');
+    expect(zh(' 朋友 ')).toBe('exact');
   });
 
   /**
-   * ü IS A VOWEL, NOT A TONE. Folding it merges 女 nǚ into 努 nǔ, which are different
-   * syllables — the same trap `lib/phoneticSeries.ts` documents, and it has to hold at the
-   * forgiving tier too or the forgiveness swallows a real distinction.
+   * THE FORGOTTEN-KEYBOARD TIER. An IME is driven with toneless pinyin, so that is exactly
+   * what lands in the box when the learner never switched keyboards. They knew the word; they
+   * failed to produce the script, which is a near miss and not a lapse.
    */
-  it('never folds ü into u, even when forgiving tones', () => {
-    expect(zh('nu', 'nǚ')).toBe('wrong');
-    expect(zh('nu3', 'nǚ')).toBe('wrong');
-    expect(zh('lu4', 'lǜ')).toBe('wrong');
+  it('treats typed pinyin as a near miss, with or without tones', () => {
+    expect(zh('pengyou')).toBe('close');
+    expect(zh('péngyou')).toBe('close');
+    expect(zh('peng2you5')).toBe('close');
   });
 
   it('calls a different word wrong', () => {
-    expect(zh('nǐhǎo', 'péngyou')).toBe('wrong');
-    expect(zh('', 'péngyou')).toBe('wrong');
+    expect(zh('你好')).toBe('wrong');
+    expect(zh('nihao')).toBe('wrong');
+    expect(zh('')).toBe('wrong');
   });
 
-  /** Every HSK reading must grade itself exact, and its toneless form close. Nothing else. */
+  /** A full-width Latin letter is the same answer — CJK keyboards emit them in the wrong mode. */
+  it('folds full-width forms', () => {
+    expect(gradeTyped('ＯＫ', 'OK', 'zh').verdict).toBe('exact');
+  });
+
+  /** Every HSK word must accept its own characters, and its own pinyin as a near miss. */
   it('holds over the whole HSK vocabulary', () => {
-    let exact = 0, close = 0;
-    for (const [, entry] of Object.entries(hsk)) {
-      const p = entry.pinyin;
-      if (!p) continue;
-      if (gradeTyped(p, p, 'zh').verdict === 'exact') exact++;
-      const flat = stripTones(p);
-      const v = gradeTyped(flat, p, 'zh').verdict;
-      if (v === 'exact' || v === 'close') close++;
+    let exact = 0, close = 0, total = 0;
+    for (const [word, entry] of Object.entries(hsk)) {
+      if (!entry.pinyin) continue;
+      total++;
+      if (gradeTyped(word, word, 'zh', entry.pinyin).verdict === 'exact') exact++;
+      if (gradeTyped(entry.pinyin, word, 'zh', entry.pinyin).verdict === 'close') close++;
     }
-    const total = Object.values(hsk).filter(e => e.pinyin).length;
     expect(exact).toBe(total);
     expect(close).toBe(total);
+    expect(total).toBeGreaterThan(4900);
   });
 });
 
-describe('Japanese: the katakana long mark, which is where this breaks silently', () => {
-  const ja = (typed: string, want: string) => gradeTyped(typed, want, 'ja').verdict;
+describe('Japanese: kanji are the answer, unconverted kana is the near miss', () => {
+  const ja = (typed: string, want: string, reading: string) =>
+    gradeTyped(typed, want, 'ja', reading).verdict;
 
-  /**
-   * THE MEASURED TRAP. `wanakana.toKatakana` turns `ko-hi-` into コーヒー exactly, and
-   * `koohii` into コオヒイ. Both are the word. 10.4% of JMdict readings are katakana, so
-   * without the long-mark rule a learner is told they are wrong on roughly one Japanese card
-   * in fifteen — and it reads as their mistake, not ours.
-   */
-  it('accepts every spelling a learner can actually produce for コーヒー', () => {
-    expect(ja('コーヒー', 'コーヒー')).toBe('exact');   // ko-hi-
-    expect(ja('コオヒイ', 'コーヒー')).toBe('exact');   // koohii
-    expect(ja('こーひー', 'コーヒー')).toBe('exact');   // hiragana-bound
-    expect(ja('こおひい', 'コーヒー')).toBe('exact');
-  });
-
-  it('accepts both spellings of パーティー', () => {
-    expect(ja('パーティー', 'パーティー')).toBe('exact');  // pa-thi-
-    expect(ja('パアティイ', 'パーティー')).toBe('exact');  // paathii
-  });
-
-  it('grades an ordinary hiragana word', () => {
-    expect(ja('たべる', 'たべる')).toBe('exact');
-    expect(ja('たべます', 'たべます')).toBe('exact');
-    expect(ja('がっこう', 'がっこう')).toBe('exact');
-  });
-
-  it('forgives small kana and dakuten as a near miss', () => {
-    expect(ja('きつて', 'きって')).toBe('close');
-    expect(ja('がつこう', 'がっこう')).toBe('close');
-    expect(ja('りよこう', 'りょこう')).toBe('close');
+  it('accepts the written form', () => {
+    expect(ja('食べる', '食べる', 'たべる')).toBe('exact');
+    expect(ja('コーヒー', 'コーヒー', 'コーヒー')).toBe('exact');
   });
 
   /**
-   * A LONG VOWEL IS NOT A SLIP. おばさん is an aunt and おばあさん is a grandmother; collapsing
-   * doubled vowels to forgive typing would accept one for the other, so the fold stops at the
-   * long MARK and never touches a vowel the writer actually typed twice.
+   * The realistic miss is NOT romaji — with an IME on you never see it. It is pressing Enter
+   * on たべる before pressing space to reach 食べる.
    */
-  it('does not collapse a genuine long vowel', () => {
-    expect(ja('おばさん', 'おばあさん')).toBe('wrong');
-    expect(ja('おばあさん', 'おばあさん')).toBe('exact');
+  it('treats unconverted kana as a near miss', () => {
+    expect(ja('たべる', '食べる', 'たべる')).toBe('close');
+    expect(ja('がっこう', '学校', 'がっこう')).toBe('close');
+  });
+
+  /**
+   * A LOANWORD IN HIRAGANA IS NOT THE SAME SPELLING, and the grader is right to say so.
+   * コーヒー is written in katakana; こーひー is not an alternative spelling of it, it is the
+   * reading typed in the wrong script — which is precisely the near-miss tier. The long mark
+   * and the kana script both fold on that side, so every way of writing the sound lands there
+   * together rather than some of them falling through to `wrong`.
+   */
+  it('treats a katakana word typed in hiragana as a near miss, however it is spelled', () => {
+    expect(ja('こーひー', 'コーヒー', 'コーヒー')).toBe('close');
+    expect(ja('こおひい', 'コーヒー', 'コーヒー')).toBe('close');
+    expect(ja('コオヒイ', 'コーヒー', 'コーヒー')).toBe('close');
   });
 
   it('calls a different word wrong', () => {
-    expect(ja('ねこ', 'いぬ')).toBe('wrong');
+    expect(ja('犬', '猫', 'ねこ')).toBe('wrong');
   });
 
-  /** Every JLPT reading grades itself exact — including the 6.8% written in katakana. */
   it('holds over the whole JLPT vocabulary', () => {
-    const readings = Object.values(jlpt).map(e => e.reading).filter(Boolean);
-    const bad = readings.filter(r => gradeTyped(r, r, 'ja').verdict !== 'exact');
+    const bad: string[] = [];
+    let close = 0, withKanji = 0;
+    for (const [word, entry] of Object.entries(jlpt)) {
+      if (!entry.reading) continue;
+      if (gradeTyped(word, word, 'ja', entry.reading).verdict !== 'exact') bad.push(word);
+      if (word !== entry.reading) {
+        withKanji++;
+        if (gradeTyped(entry.reading, word, 'ja', entry.reading).verdict === 'close') close++;
+      }
+    }
     expect(bad).toEqual([]);
-    expect(readings.length).toBeGreaterThan(7000);
-  });
-
-  /**
-   * Every katakana reading must also be reachable from its hiragana spelling, because that is
-   * what a learner produces when their input is bound the other way.
-   */
-  it('reaches every katakana reading from hiragana', () => {
-    const kata = Object.values(jlpt).map(e => e.reading)
-      .filter(r => r && /[ァ-ヶ]/.test(r));
-    const hira = (s: string) => s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-    const bad = kata.filter(r => gradeTyped(hira(r), r, 'ja').verdict !== 'exact');
-    expect(bad).toEqual([]);
-    expect(kata.length).toBeGreaterThan(400);
-  });
-});
-
-describe('the input is bound to the script the answer is written in', () => {
-  /** Bound to hiragana, `ko-hi-` can never reach a katakana headword. See the module docstring. */
-  it('reads the script off the expected answer', () => {
-    expect(answerScript('コーヒー')).toBe('katakana');
-    expect(answerScript('たべる')).toBe('hiragana');
-    expect(answerScript('しんぶん')).toBe('hiragana');
-  });
-
-  it('agrees with the dictionary on real entries', () => {
-    expect(answerScript(jlpt['新聞'].reading)).toBe('hiragana');
+    expect(close).toBe(withKanji);
+    expect(withKanji).toBeGreaterThan(6000);
   });
 });
 
 describe('Spanish and French: accents forgive, ñ does not', () => {
-  const es = (typed: string, want: string) => gradeTyped(typed, want, 'es').verdict;
-  const fr = (typed: string, want: string) => gradeTyped(typed, want, 'fr').verdict;
+  const es = (t: string, w: string) => gradeTyped(t, w, 'es').verdict;
+  const fr = (t: string, w: string) => gradeTyped(t, w, 'fr').verdict;
 
-  it('accepts the word itself, ignoring case', () => {
+  it('accepts the word, ignoring case and padding', () => {
     expect(es('comer', 'comer')).toBe('exact');
-    expect(es('COMER', 'comer')).toBe('exact');
-    expect(es('  comer  ', 'comer')).toBe('exact');
+    expect(es('  COMER ', 'comer')).toBe('exact');
   });
 
   it('treats a missing accent as a near miss', () => {
-    expect(es('hablo', 'habló')).toBe('close');
     expect(es('estacion', 'estación')).toBe('close');
     expect(fr('etre', 'être')).toBe('close');
-    expect(fr('eleve', 'élève')).toBe('close');
+    expect(fr('garcon', 'garçon')).toBe('close');
   });
 
-  /**
-   * `ñ` IS A LETTER. año/ano is the pair every Spanish learner is warned about, and grading
-   * one as a near miss for the other would teach exactly the mistake the warning is about.
-   */
+  /** año/ano is the pair every learner is warned about; grading it a near miss teaches it. */
   it('never folds ñ', () => {
     expect(es('ano', 'año')).toBe('wrong');
     expect(es('espanol', 'español')).toBe('wrong');
     expect(es('año', 'año')).toBe('exact');
   });
 
-  /** `ç` carries no contrast in French — `facon` is not a word — so the cedilla is forgiven. */
-  it('does fold ç, which distinguishes nothing', () => {
-    expect(fr('garcon', 'garçon')).toBe('close');
-    expect(fr('garçon', 'garçon')).toBe('exact');
-  });
-
-  it('calls a different word wrong', () => {
-    expect(es('beber', 'comer')).toBe('wrong');
+  /** There is no reading to fall back on, so nothing accidental can reach `close`. */
+  it('has no reading tier', () => {
+    expect(gradeTyped('komer', 'comer', 'es', '').verdict).toBe('wrong');
   });
 });
 
-describe('a polyphone’s other reading is not ignorance', () => {
-  /**
-   * 行 holds two cards. Typing háng on the xíng card is the OTHER card's correct answer, and
-   * saying "wrong" there teaches a learner to distrust a distinction they have actually made.
-   */
-  it('names the reading they landed on', () => {
-    expect(otherReading('háng', { h: '行', p: 'xíng' })).toBe('háng');
-    expect(otherReading('hang2', { h: '行', p: 'xíng' })).toBe('háng');
+describe('the near-miss tier cannot fire without a reading', () => {
+  it('grades a missing reading as wrong rather than throwing', () => {
+    expect(gradeTyped('pengyou', '朋友', 'zh').verdict).toBe('wrong');
+    expect(gradeTyped('pengyou', '朋友', 'zh', '').verdict).toBe('wrong');
   });
 
-  it('says nothing when they typed this card’s own reading', () => {
-    expect(otherReading('xíng', { h: '行', p: 'xíng' })).toBeNull();
-  });
-
-  it('says nothing for a character with one reading', () => {
-    expect(otherReading('pengyou', { h: '朋友', p: 'péngyou' })).toBeNull();
+  /** An empty answer is how this screen spells "I don't know". */
+  it('grades an empty answer wrong in every language', () => {
+    for (const lang of ['zh', 'ja', 'es', 'fr'] as const) {
+      expect(gradeTyped('', 'x', lang, 'y').verdict).toBe('wrong');
+    }
   });
 });

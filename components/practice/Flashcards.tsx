@@ -7,7 +7,7 @@ import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { isDueToday, isActive, todayStr } from '@/lib/deck';
 import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { getReverseCards, setReverseCards, getTypedRecall, setTypedRecall } from '@/lib/flashcardPrefs';
-import { canType, typedOrientation, otherReading, expectedAnswer, type TypedResult } from '@/lib/typedAnswer';
+import { canType, expectedAnswer, answerReading, type TypedResult } from '@/lib/typedAnswer';
 import TypedAnswer from '@/components/practice/TypedAnswer';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
@@ -69,36 +69,23 @@ function sdm(m: string) {
  * (The JLPT has no writing section either, so the reading is the skill the exam measures too.)
  * Spanish and French are asking for the word itself, because their reading IS their spelling.
  */
-function typedLabels(lang: LanguageCode): { question: string; placeholder: string; hint: string } {
+function typedLabels(lang: LanguageCode): { placeholder: string; hint: string } {
+  const name = getLanguageConfig(lang).name;
+  const placeholder = `the ${name} word`;
   switch (lang) {
-    case 'zh': return {
-      question: 'How is this pronounced?',
-      placeholder: 'pinyin — hao3 or hǎo',
-      hint: 'Type the pinyin. A missed tone is a near miss, not a failure.',
-    };
-    case 'ja': return {
-      question: 'How is this read?',
-      placeholder: 'romaji — becomes kana',
-      // Said explicitly because the alternative is a confusing mess rather than a mild
-      // annoyance: wanakana does the conversion here, so a learner who ALSO has their OS
-      // Japanese IME switched on gets both converting the same keystrokes.
-      hint: 'Type the reading in romaji — it becomes kana as you go, so no Japanese keyboard needed.',
-    };
-    default: return {
-      question: "What's the word?",
-      placeholder: `the ${getLanguageConfig(lang).name} word`,
-      hint: 'Type the word. A missing accent is a near miss, not a failure.',
-    };
+    // Chinese and Japanese are typed with the learner's OWN IME, so the hint names the escape
+    // hatch rather than the method: forgetting to switch keyboards is a near miss, not a lapse.
+    case 'zh': return { placeholder, hint: 'Type it with your IME. Pinyin alone still counts as a near miss.' };
+    case 'ja': return { placeholder, hint: 'Type it with your IME. Kana left unconverted still counts as a near miss.' };
+    default:   return { placeholder, hint: 'Type the word. A missing accent is a near miss, not a failure.' };
   }
 }
 
 /** One line naming what happened, shown where "How well did you remember?" normally sits. */
-function verdictLine(r: TypedResult, wrongReading: string | null): string {
+function verdictLine(r: TypedResult): string {
   if (r.verdict === 'exact') return 'Correct.';
+  // The forgotten-keyboard tier: the word was produced, just not in its own script.
   if (r.verdict === 'close') return `Nearly — it is written ${r.expected}.`;
-  // A polyphone's OTHER reading is a right answer to a different card, and saying only
-  // "wrong" there teaches a learner to doubt a distinction they have actually made.
-  if (wrongReading) return `That is ${wrongReading}, this card's other reading — here it is ${r.expected}.`;
   return `Not this time — it is ${r.expected}.`;
 }
 
@@ -150,13 +137,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   const [typedOn, setTypedOn] = useState(false);
   useEffect(() => { setTypedOn(getTypedRecall()); }, []);
   const [typedResult, setTypedResult] = useState<TypedResult | null>(null);
-  /** What they actually typed, kept so a wrong answer can be inspected rather than only scored. */
-  const [typedText, setTypedText] = useState('');
   const toggleTyped = () => {
     setTypedOn(prev => { const next = !prev; setTypedRecall(next); return next; });
     setRevealed(false);
     setTypedResult(null);
-    setTypedText('');
   };
 
   // Build session queue once when deck loads
@@ -421,24 +405,18 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
    * with no pinyin has no answer, and marking the learner wrong for a hole in OUR data is the
    * same error as rendering a loading state as an answer — so it falls back to self-grading.
    */
-  const typing = typedOn && canType(card, language);
-  /** Typing pins the orientation; otherwise the Flip toggle decides it. */
-  const showReverse = typing ? typedOrientation(language) === 'reverse' : reverse;
+  const typing = typedOn && canType(card);
+  /**
+   * Typing is ALWAYS meaning-first, in every language. Chinese and Japanese are typed with the
+   * learner's own IME, so the answer is the word itself — the same question Spanish and French
+   * have always asked, rather than the reading the old forward card wanted.
+   */
+  const showReverse = typing ? true : reverse;
   /** Whether the front of the card is deliberately withholding the answer. */
   const answerHidden = showReverse || typing;
   const suggested: FsrsGrade = typedResult && typedResult.verdict === 'wrong' ? 1 : 3;
   const labels = typedLabels(language);
-  const typedPrompt = labels.question;
   const typedHint = labels.hint;
-  /**
-   * Chinese: they typed a real reading of this character, just not this card's one.
-   *
-   * 行 holds a xíng card and a háng card. Answering one with the other is a correct answer to
-   * a different question, and saying only "wrong" there teaches a learner to distrust a
-   * distinction they have in fact made.
-   */
-  const wrongReading = typedResult?.verdict === 'wrong' && language === 'zh'
-    ? otherReading(typedText, card) : null;
 
   function handleGrade(fsrsGrade: FsrsGrade, label: string, color: string) {
     onGrade?.(card.id ?? card.h, fsrsGrade);
@@ -471,7 +449,6 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
 
     setRevealed(false);
     setTypedResult(null);
-    setTypedText('');
   }
 
   // Audio: warm the cache when a new card appears so the first replay is instant.
@@ -576,9 +553,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       >
         <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
-          {typing
-            ? (showReverse ? "What's the word?" : typedPrompt)
-            : (showReverse ? "What's the word?" : 'What does this mean?')}
+          {showReverse ? "What's the word?" : 'What does this mean?'}
         </div>
         {/* Audio plays the word, so it hands over the answer on any card whose answer is
             hidden — in reverse, and in typed mode too, where the answer IS the pronunciation.
@@ -628,7 +603,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
         )}
         <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
           {revealed
-            ? (typedResult ? verdictLine(typedResult, wrongReading) : 'How well did you remember?')
+            ? (typedResult ? verdictLine(typedResult) : 'How well did you remember?')
             : typing ? typedHint
             : showReverse ? 'Recall the word, then reveal'
             : 'Think of the meaning, then reveal'}
@@ -670,17 +645,17 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
       <div className="text-center mt-5">
         {!revealed ? (
           typing ? (
-            /* KEYED BY THE CARD, so the field and its wanakana binding are torn down and
+            /* KEYED BY THE CARD, so the field is torn down and
                rebuilt for each word. Without that, a half-typed answer would carry over and be
                graded against the next card. */
             <TypedAnswer
               key={cardKey}
-              expected={expectedAnswer(card, language)}
+              expected={expectedAnswer(card)}
+              reading={answerReading(card)}
               language={language}
               placeholder={labels.placeholder}
-              onSubmit={(result, typed) => {
+              onSubmit={(result) => {
                 setTypedResult(result);
-                setTypedText(typed);
                 setRevealed(true);
               }}
             />
@@ -695,20 +670,10 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
           )
         ) : (
           <>
-          {/* THE OVERRIDE BELONGS ON SPANISH AND FRENCH ONLY.
-              "Give the word for 'friend'" has more than one right answer and the deck stores
-              one of them, so a learner can be marked wrong for a synonym. Chinese and Japanese
-              ask for THIS card's reading, which is determined — there is nothing to appeal, and
-              offering an appeal would just be a button that turns any failure into a pass. */}
-          {showReverse && typedResult?.verdict === 'wrong' && (
-            <button
-              onClick={() => handleGrade(3, 'Good', 'var(--jade)')}
-              className="cursor-pointer"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '8px 14px', marginBottom: 4 }}
-            >
-              I was actually right
-            </button>
-          )}
+          {/* NO OVERRIDE BUTTON. Meaning → word has synonyms in every language, so a valid
+              answer can be marked wrong — but the four grade buttons are already on screen and
+              pressing Good does exactly what an appeal button would. A second control for the
+              same action is one more thing to explain and one more way to reach Good. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);

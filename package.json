@@ -25,8 +25,7 @@
     "kuromoji": "^0.1.2",
     "next": "^15.3.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "wanakana": "^5.3.1"
+    "react-dom": "^19.0.0"
   },
   "//overrides": [
     "Pins two transitive dependencies of Next 15 onto patched releases. Next 15.5.22 is",

@@ -1,46 +1,41 @@
 import type { DeckWord, LanguageCode } from './types';
-import { getLanguageConfig } from './languageConfig';
 import { canonPinyin, stripTones } from './pinyin';
-import { POLYPHONES } from './polyphones';
 
 /**
  * Grading a TYPED answer, for all four languages.
  *
- * ── WHAT IS TYPED IS NOT THE SAME QUESTION IN EVERY LANGUAGE ──
- * Spanish and French have `hasReadings: false` — the `p` slot is empty by construction, so
- * there is nothing to type on the front of a normal card and the exercise has to be the
- * REVERSE one: meaning shown, type the word. Chinese and Japanese have the opposite problem:
- * you cannot type the characters without an IME offering you the answer, so theirs is the
- * FORWARD card — word shown, type its reading.
+ * ── ONE QUESTION IN EVERY LANGUAGE: MEANING IN, WORD OUT ──
+ * The card shows the English meaning and the learner types the word — `comer`, `parler`,
+ * 朋友, 食べる. Chinese and Japanese are typed with the learner's own OS IME, which means the
+ * answer is the CHARACTERS, not a romanisation of them.
  *
- * Those are opposite orientations, and the flag that separates them already exists.
- * `typedOrientation` reads `hasReadings` rather than introducing a second one, which is the
- * rule this codebase states about every other cross-language difference.
+ * ── THIS REPLACES AN EARLIER SPLIT, AND THE REASONING IS WORTH KEEPING ──
+ * It used to face zh/ja the other way — character shown, reading typed — on the argument that
+ * an IME hands you the character once you have the sound, so typing 朋友 tests less than it
+ * appears to. That argument is still TRUE and was measured: a multi-character HSK word has a
+ * median of ONE homophone in the whole of CC-CEDICT, so pinyin→characters is near
+ * deterministic. What it got wrong is that it is not the only thing worth testing. Producing
+ * the word from its meaning and picking the right characters is what writing Chinese on a
+ * keyboard actually is, and a learner who wants to practise that is asking for a real skill.
+ * The synonym risk that made the old design nervous is handled by the four grade buttons,
+ * which are always on screen — a learner who is marked wrong for a valid synonym presses Good.
  *
- * ── THE ORIENTATION IS PINNED, AND THAT PREVENTS A REAL FSRS CORRUPTION ──
- * Reverse + typed in Chinese would ask "what is the word for friend?" and demand one exact
- * romanisation. A learner answering with any other correct word for friend is marked wrong,
- * and FSRS records a lapse for a card they knew. The question has no single answer, so it must
- * not be asked. Forward + typed in Spanish is the mirror problem: the answer is already on
- * screen.
- *
- * ── THREE TIERS, AND THE MIDDLE ONE IS THE SAME IDEA IN THREE SCRIPTS ──
- * `exact` is right. `wrong` is wrong. `close` is "the skeleton is right and the layer written
- * on top of it is not" — the right syllables with the wrong tone, the right letters with the
- * wrong accent, the right kana written sloppily. It grades Good and shows the correct form,
- * because a learner who produced the syllable without its tone has recalled the word and
- * missed the tone, and calling that a total failure teaches them to fear the exercise.
+ * ── THE `close` TIER IS NOW THE FORGOTTEN-KEYBOARD TIER ──
+ * Type `pengyou` with the IME switched off, or leave たべる unconverted, and you have shown you
+ * know the word and failed only to produce the script. That grades Good and shows the correct
+ * form rather than recording a lapse — the same "right skeleton, wrong layer written on top"
+ * the accent tier expresses for Spanish and French.
  *
  * ── WHAT IS DELIBERATELY NOT FOLDED ──
- * `ü`, `ñ` and `ç` are LETTERS, not accents. Folding them merges 女 nü with 努 nu and, worse,
- * accepts `ano` for `año`. The same judgement `lib/phoneticSeries.ts` makes about ü, applied
- * in two more scripts.
+ * `ü` and `ñ` are LETTERS, not accents: folding them merges 女 nü with 努 nu and accepts `ano`
+ * for `año`. `ç` IS folded, because no French pair turns on a cedilla. The test is whether the
+ * mark distinguishes two words, not how it is drawn.
  *
- * ── THIS FILE IS SYNCHRONOUS AND IMPORTS NO LIBRARY, ON PURPOSE ──
- * `wanakana` converts romaji to kana on the INPUT; by the time a value reaches here it is
- * already kana, and all that is left is a codepoint shift. Pulling wanakana in would make the
- * grader async, put 21 kB in front of every Spanish learner, and force every unit test to
- * mock a module. See lib/kana.ts.
+ * ── NO LIBRARY, AND NOTHING TOUCHES THE INPUT ──
+ * `wanakana` used to convert romaji to kana as the learner typed. It had to go: it transforms
+ * the same keystrokes an OS IME is transforming, so with a real Japanese keyboard the two
+ * fight over every character. The app now keeps its hands off the field entirely, and this
+ * module stays synchronous — every comparison here is a codepoint operation.
  */
 
 export type Verdict = 'exact' | 'close' | 'wrong';
@@ -51,39 +46,43 @@ export interface TypedResult {
   expected: string;
 }
 
-/** `forward` = the word is shown and its reading typed; `reverse` = the opposite. */
-export type Orientation = 'forward' | 'reverse';
-
-export function typedOrientation(lang: LanguageCode): Orientation {
-  return getLanguageConfig(lang).hasReadings ? 'forward' : 'reverse';
-}
-
-/** What the learner must produce for this card: its reading (zh/ja) or the word (es/fr). */
-export function expectedAnswer(card: Pick<DeckWord, 'h' | 'p'>, lang: LanguageCode): string {
-  return (typedOrientation(lang) === 'forward' ? card.p : card.h) ?? '';
-}
-
 /**
- * Whether this card can be typed at all.
+ * What the learner must produce: the word itself, in every language.
  *
- * A Chinese card imported without pinyin has no answer to grade against, and grading an
- * absent answer as a failure is the same mistake as rendering a loading state as an answer:
- * the value means "not stored", not "you got it wrong". Such a card falls back to
- * reveal-and-self-grade instead.
+ * There is no orientation to choose any more. The old `typedOrientation` read `hasReadings`
+ * to face zh/ja forward and es/fr reverse; now all four are meaning-first, so the flag has no
+ * job here and asking it would only invite the split back.
  */
-export function canType(card: Pick<DeckWord, 'h' | 'p'>, lang: LanguageCode): boolean {
-  return expectedAnswer(card, lang).trim().length > 0;
+export function expectedAnswer(card: Pick<DeckWord, 'h'>): string {
+  return card.h ?? '';
 }
 
-/* ─────────────────────────── Japanese ─────────────────────────── */
+/**
+ * The reading, if this card has one — the answer to the `close` tier.
+ *
+ * Empty for Spanish and French, where the reading IS the spelling and there is nothing
+ * separate to half-credit.
+ */
+export function answerReading(card: Pick<DeckWord, 'p'>): string {
+  return card.p ?? '';
+}
 
 /**
- * Katakana → hiragana as a pure codepoint shift, NOT via `wanakana.toHiragana`.
+ * Whether this card can be typed at all. A word always has its own text, so this is only ever
+ * false for a malformed card — but grading an absent answer would mark the learner wrong for
+ * a hole in OUR data, which is the failure mode CLAUDE.md documents at length.
+ */
+export function canType(card: Pick<DeckWord, 'h'>): boolean {
+  return expectedAnswer(card).trim().length > 0;
+}
+
+/* ─────────────────────────── kana folding ─────────────────────────── */
+
+/**
+ * Katakana → hiragana as a pure codepoint shift.
  *
- * They disagree, and that disagreement is the bug this file was written around: wanakana
- * expands the long mark while converting, so コーヒー comes out as こうひい, while a learner
- * typing `ko-hi-` produces こーひー. A codepoint shift leaves ー alone, so both sides can then
- * be lengthened by ONE rule (`expandLong`) instead of two that disagree.
+ * Kept from the previous design because the reason still holds: it is the only way to compare
+ * コーヒー with こーひー without a library that disagrees with itself about the long mark.
  */
 function kataToHira(s: string): string {
   return s.replace(/[ァ-ヶヽヾ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
@@ -98,129 +97,90 @@ for (const [vowel, row] of [
   ['お', 'ぉおこごそぞとどのほぼぽもょよろを'],
 ] as const) for (const kana of row) VOWEL_OF.set(kana, vowel);
 
-/**
- * Resolve `ー` to the vowel it lengthens, so a loanword's stored katakana and the kana a
- * learner types compare equal.
- *
- * MEASURED: 10.4% of JMdict readings and 6.8% of JLPT vocabulary are katakana, which is where
- * every long mark lives. Without this a learner who typed the right word is told they are
- * wrong roughly once every fifteen Japanese cards, and the failure looks like their mistake
- * rather than ours. After ん, or at the start of a string, there is no vowel to copy and the
- * mark is left as itself rather than guessed at.
- */
+/** Resolve `ー` to the vowel it lengthens, so コーヒー and こおひい compare equal. */
 function expandLong(s: string): string {
   let out = '';
   for (const ch of s) {
-    if (ch === 'ー') {
-      const vowel = VOWEL_OF.get(out[out.length - 1] ?? '');
-      out += vowel ?? ch;
-    } else out += ch;
+    if (ch === 'ー') out += VOWEL_OF.get(out[out.length - 1] ?? '') ?? ch;
+    else out += ch;
   }
   return out;
 }
 
-/** Small kana → their full-size counterparts. Used by the `close` tier only. */
-const SMALL_KANA: Record<string, string> = {
-  'ぁ': 'あ', 'ぃ': 'い', 'ぅ': 'う', 'ぇ': 'え', 'ぉ': 'お',
-  'っ': 'つ', 'ゃ': 'や', 'ゅ': 'ゆ', 'ょ': 'よ', 'ゎ': 'わ',
-};
+/** One canonical spelling of a kana string, for comparing a reading against what was typed. */
+function foldKana(s: string): string {
+  return expandLong(kataToHira(s.trim().normalize('NFKC')));
+}
 
 /* ─────────────────────── per-language rules ─────────────────────── */
 
-interface Normalizer {
-  /** Right answer, spelled right. */
-  exact: (s: string) => string;
-  /** Right answer, spelled sloppily — tones, accents, or small kana and dakuten. */
-  close: (s: string) => string;
+/**
+ * The word itself, compared exactly — but normalised for the shapes an IME can emit.
+ *
+ * NFKC collapses the full-width Latin and digits a CJK input method produces when it is in
+ * the wrong mode, so `ａ` and `a` are the same answer. Nothing else is folded: a different
+ * character is a different word, and there is no near-miss to be generous about.
+ */
+const cjkExact = (s: string) => s.trim().normalize('NFKC').replace(/\s+/g, '');
+
+/** `ñ` is parked; `ç` is not. See the module docstring. */
+function latinClose(s: string): string {
+  // A sentinel written as an escape, not a literal control character.
+  const PARK_N = '\u0001';
+  let out = s.trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFC');
+  out = out.replaceAll('ñ', PARK_N);
+  out = out.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return out.replaceAll(PARK_N, 'ñ');
 }
 
-const PINYIN: Normalizer = {
-  exact: s => canonPinyin(s),
-  // Right syllables, wrong tone — the commonest Chinese slip by a wide margin, and worth
-  // naming rather than failing, because the tone is a separate thing to learn from the word.
-  close: s => stripTones(canonPinyin(s)),
-};
-
-const KANA: Normalizer = {
-  exact: s => expandLong(kataToHira(s.trim())),
-  close: s => expandLong(kataToHira(s.trim()))
-    // Dakuten and handakuten decompose under NFD into their own combining marks.
-    .normalize('NFD').replace(/[\u3099\u309a]/g, '').normalize('NFC')
-    .replace(/[ぁぃぅぇぉっゃゅょゎ]/g, c => SMALL_KANA[c])
-    // おう/おお and えい/ええ are one sound written two ways, so choosing the other spelling
-    // means the word was heard correctly. Doubled vowels are NOT collapsed any further:
-    // おばさん and おばあさん are different words, not a typing slip.
-    .replace(/おう/g, 'おお').replace(/えい/g, 'ええ'),
-};
+const latinExact = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFC');
 
 /**
- * `ñ` is PARKED, `ç` is NOT, and the difference is not fussiness.
+ * Did they type the READING instead of the word?
  *
- * `ñ` is a LETTER of the Spanish alphabet with its own place in the dictionary, and `año`
- * and `ano` are two different words — one of them notoriously. Folding it would grade the
- * wrong one as a near miss. `ç` is an ordinary `c` wearing a cedilla: no French pair is
- * distinguished by it (`facon` is not a word), so `garcon` for `garçon` is exactly the kind
- * of keyboard slip this tier exists to forgive. The test is whether the mark carries a
- * contrast, not how it is drawn — the same question asked of `ü` in pinyin.
+ * Chinese: an IME is driven with toneless pinyin, so that is what a learner types when they
+ * forget to switch it on — the comparison drops tones on both sides deliberately.
+ * Japanese: the realistic miss is not romaji but UNCONVERTED KANA. You type `taberu`, the IME
+ * gives たべる, and you submit without pressing space to reach 食べる. That is the case worth
+ * catching, and it needs no romaji table at all.
  */
-const LATIN: Normalizer = {
-  exact: s => s.trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFC'),
-  close: s => {
-    // A sentinel written as an ESCAPE, not as a literal control character: a raw U+0001 in a
-    // source file is invisible in every editor and survives a copy-paste only by luck.
-    const PARK_N = '\u0001';
-    let out = s.trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFC');
-    out = out.replaceAll('ñ', PARK_N);
-    out = out.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return out.replaceAll(PARK_N, 'ñ');
-  },
-};
-
-const NORMALIZE: Record<LanguageCode, Normalizer> = { zh: PINYIN, ja: KANA, es: LATIN, fr: LATIN };
+function typedTheReading(typed: string, reading: string, lang: LanguageCode): boolean {
+  if (!reading.trim()) return false;
+  if (lang === 'zh') {
+    const t = stripTones(canonPinyin(typed));
+    return t.length > 0 && t === stripTones(canonPinyin(reading));
+  }
+  if (lang === 'ja') {
+    const t = foldKana(typed);
+    return t.length > 0 && t === foldKana(reading);
+  }
+  return false;
+}
 
 /**
  * Grade one typed answer. Pure — same inputs, same verdict, no clock and no storage.
  *
- * An empty answer is `wrong` rather than ungraded: the learner submitted nothing, which is how
- * this screen spells "I don't know". An empty EXPECTED is also `wrong`, but `canType` is what
- * stops such a card being offered for typing in the first place.
+ * `reading` is optional and only ever produces a `close`; passing nothing simply means the
+ * forgotten-keyboard tier is unavailable, never that a right answer is marked wrong.
  */
-export function gradeTyped(typed: string, expected: string, lang: LanguageCode): TypedResult {
+export function gradeTyped(
+  typed: string,
+  expected: string,
+  lang: LanguageCode,
+  reading = '',
+): TypedResult {
   const want = (expected ?? '').trim();
   const got = (typed ?? '').trim();
   const result = (verdict: Verdict): TypedResult => ({ verdict, expected: want });
   if (!got || !want) return result('wrong');
-  const n = NORMALIZE[lang];
-  if (n.exact(got) === n.exact(want)) return result('exact');
-  if (n.close(got) === n.close(want)) return result('close');
+
+  if (lang === 'zh' || lang === 'ja') {
+    if (cjkExact(got) === cjkExact(want)) return result('exact');
+    if (typedTheReading(got, reading, lang)) return result('close');
+    return result('wrong');
+  }
+
+  if (latinExact(got) === latinExact(want)) return result('exact');
+  if (latinClose(got) === latinClose(want)) return result('close');
   return result('wrong');
-}
-
-/**
- * Which script the answer is written in, so the input can be put in the matching IME mode.
- *
- * MEASURED, and it is what makes Japanese loanwords gradeable at all. Bound to hiragana,
- * `ko-hi-` gives こーひー and `pa-thi-` gives ぱーてぃー, neither of which is a stored form.
- * Bound to KATAKANA the same keystrokes give コーヒー and パーティー exactly. The app knows the
- * answer's script from the card, so it can spare the learner a conversion it is better placed
- * to make than they are.
- */
-export function answerScript(expected: string): 'katakana' | 'hiragana' {
-  return /[ァ-ヺ]/.test(expected) ? 'katakana' : 'hiragana';
-}
-
-/**
- * Chinese only: did they type a DIFFERENT valid reading of this same character?
- *
- * A polyphone holds one card per reading — 行 is both xíng and háng. Typing the other card's
- * reading is not ignorance of the character, it is a correct answer to a different question,
- * and calling it simply wrong teaches a learner to distrust a distinction they have in fact
- * learned. Returns the reading they landed on, or null.
- */
-export function otherReading(typed: string, card: Pick<DeckWord, 'h' | 'p'>): string | null {
-  const readings = POLYPHONES[card.h];
-  if (!readings) return null;
-  const got = canonPinyin(typed);
-  const hit = readings.find(r => canonPinyin(r.p) === got);
-  return hit && canonPinyin(hit.p) !== canonPinyin(card.p ?? '') ? hit.p : null;
 }
