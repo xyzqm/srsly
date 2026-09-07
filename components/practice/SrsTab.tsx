@@ -1,9 +1,11 @@
 'use client';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { stopAll } from '@/lib/speech';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import Flashcards from './Flashcards';
+import WritingPractice from './WritingPractice';
+import { getLanguageConfig } from '@/lib/languageConfig';
 import ReadTab from '@/components/read/ReadTab';
 
 /**
@@ -34,6 +36,13 @@ export default function SrsTab({
   onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, active = true,
 }: Props) {
   const language = useLanguage();
+  /**
+   * Which drill is on screen. Session-local on purpose, unlike the flashcard toggles that
+   * persist: writing is something you deliberately go and do, and reopening the app into a
+   * drawing canvas because of a choice made last Tuesday would put the optional half of the
+   * tab in front of the scheduled one.
+   */
+  const [mode, setMode] = useState<'cards' | 'write'>('cards');
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
 
   /**
@@ -74,6 +83,42 @@ export default function SrsTab({
 
       <div className="h-px my-8" style={{ background: 'var(--line)' }} />
 
+      {/* CARDS or WRITE, over the same deck.
+          Only offered where stroke data exists — Chinese — via `hasHandwriting` on the config
+          rather than a `language === 'zh'` check. Writing keeps its OWN schedule and touches
+          neither the streak nor the daily budget, so switching here changes what you practise
+          and never what you owe. */}
+      {getLanguageConfig(language).hasHandwriting && (
+        <div className="flex gap-1.5 mb-4">
+          {(['cards', 'write'] as const).map(m => {
+            const on = mode === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="cursor-pointer"
+                style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em',
+                  textTransform: 'uppercase', padding: '6px 12px', borderRadius: 7,
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+                  background: on ? 'var(--accent-soft)' : 'var(--card)',
+                  color: on ? 'var(--accent)' : 'var(--ink-soft)',
+                }}
+              >
+                {m === 'cards' ? 'Cards' : 'Write'}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {mode === 'write' ? (
+        /* Keyed by language for the same reason Flashcards is: the queue latches on first
+           load, so a language switch has to be a new session rather than the old one holding
+           the outgoing language's characters. */
+        <WritingPractice key={`write-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
+      ) : (
+      <>
       {/* Keyed by language, and gated on deckLoaded.
           Flashcards latches its queue on first load and never rebuilds it — deliberately, so
           grading a card can't reshuffle the session underneath you. That made switching
@@ -88,6 +133,8 @@ export default function SrsTab({
         onGrade={gradeCard}
         onScore={onScore}
       />
+      </>
+      )}
     </div>
   );
 }

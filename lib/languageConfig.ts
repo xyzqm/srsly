@@ -86,6 +86,20 @@ export interface LanguageConfig {
    * again and nothing else has to change.
    */
   showsCharacterDecomposition: boolean;
+  /**
+   * Whether handwriting practice can be offered — i.e. whether srsly ships stroke data this
+   * language can be graded against.
+   *
+   * TRUE FOR CHINESE ONLY, and the reason is data honesty rather than scope. `public/strokes/`
+   * is subset from hanzi-writer-data, which is Chinese. Measured against JLPT, 88.7% of kanji
+   * are present — but the 223 missing are exactly the shinjitai (厳 倹 権 鉱 渉 沢 団 読 売
+   * 楽 児 発), and among those that ARE present are characters whose Japanese stroke order or
+   * shape differs (直, 令, 骨). Teaching a confidently wrong stroke order to a subset nobody
+   * can identify is worse than teaching none — the same judgement
+   * `showsCharacterDecomposition` makes just above. Japanese needs KanjiVG before this can
+   * become true, and when it does nothing else has to change.
+   */
+  hasHandwriting: boolean;
   /** Matches a single "word character" — used by the paste-import parsers. */
   wordCharRe: RegExp;
   /**
@@ -188,6 +202,7 @@ export const ZH_CONFIG: LanguageConfig = {
   segmentation: 'pipe',
   scriptIsUnspaced: true,
   showsCharacterDecomposition: true,
+  hasHandwriting: true,
   accentKeys: [],
   wordCharRe: /[一-鿿]/,
   levelSectionLabel: 'HSK level',
@@ -229,6 +244,7 @@ export const JA_CONFIG: LanguageConfig = {
   segmentation: 'server',
   scriptIsUnspaced: true,
   showsCharacterDecomposition: false,
+  hasHandwriting: false,
   accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,
   levelSectionLabel: 'JLPT level',
@@ -279,6 +295,7 @@ export const ES_CONFIG: LanguageConfig = {
   segmentation: 'server',
   scriptIsUnspaced: false,
   showsCharacterDecomposition: false,
+  hasHandwriting: false,
   accentKeys: ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ', '¿', '¡'],
   wordCharRe: /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/,
   levelSectionLabel: 'CEFR level',
@@ -378,6 +395,7 @@ export const FR_CONFIG: LanguageConfig = {
   segmentation: 'server',
   scriptIsUnspaced: false,
   showsCharacterDecomposition: false,
+  hasHandwriting: false,
   accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',

@@ -15,8 +15,8 @@ Prioritize **elegance and concision** over volume. Concretely:
   2.86M symbols to 0.31 GB and 220k. See the section below; `scripts/lib/emitData.mjs` is what
   keeps it true.
 - **Nothing that renders on every screen may import a language's data.** Level tables and
-  lesson prose load on demand, which is what holds `/` first-load JS in the high 200s of kB
-  rather than ~890 kB. Adding a language means following that pattern, not widening the bundle.
+  lesson prose load on demand, which is what holds `/` first-load JS around 300 kB rather than
+  ~890 kB. Adding a language means following that pattern, not widening the bundle.
 - **Differences between languages live on `LanguageConfig`, not in a ternary.** A third arm on
   `language === 'xx'` is the signal that a flag belongs on the config instead.
 - **Prefer a well-maintained library to hand-rolled logic — but say so when you don't.** The
@@ -1097,7 +1097,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS in the high 200s of kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured 287 kB for `/` at the time of writing; `npm run build` prints it. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **305 kB** for `/` after the handwriting work; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the PWA and the writing UI landed. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
 
 ### Storage abstraction
 
@@ -1431,6 +1431,34 @@ order, because the rule must be COMMUTATIVE and not merely deterministic: a devi
 merged copy back, so "mine wins ties" makes two devices ping-pong for ever, invisibly from
 either one. There is no deletion to preserve — a writing card only ever comes into existence by
 being practised — which is what makes a union safe.
+
+**The UI is `WritingCanvas` inside `WritingPractice`, behind a Cards/Write toggle in `SrsTab`,
+gated on `hasHandwriting`.** The toggle is session-local rather than persisted, unlike the
+flashcard ones: writing is something you deliberately go and do, and reopening the app into a
+drawing canvas because of a choice made last Tuesday would put the optional half of the tab in
+front of the scheduled one.
+
+**`touch-action: none` ON THE DRAWING SURFACE IS THE WHOLE MOBILE STORY.** hanzi-writer listens
+for pointer and touch moves and calls preventDefault, but the browser decides whether a touch is
+a SCROLL before it delivers any move event. Without that one property a finger drag scrolls the
+page and the library receives almost nothing — the character cannot be drawn at all on a phone
+or an iPad, which is the hardware this feature exists for.
+
+**The library has no `destroy()`.** It appends an SVG to the host element and leaves it there, so
+the cleanup clears the host by hand; without that, every character stacks another SVG on the
+last. Verified by advancing a card and counting: one SVG before, one after.
+
+**Colours are resolved from CSS variables at runtime, not hardcoded.** hanzi-writer parses hex
+strings into rgba and cannot read `var(--ink)` itself, so passing its defaults (#555, #DDD) would
+make this the one screen that ignores all six themes. `getComputedStyle` resolves them at mount
+and a MutationObserver on `data-theme` pushes changes through `updateColor`, so switching theme
+mid-session does not leave a stale palette until the next character.
+
+**`hanzi-writer` is lazily imported** (`lib/hanziWriter.ts`, the `loadHanDecomp` pattern) and
+lands in its own 36 kB chunk — confirmed against `.next/app-build-manifest.json`, which lists
+seven chunks for `/` and not that one. Stroke data is fetched from srsly's own `public/strokes/`
+rather than a CDN: a CDN would make the feature depend on a third party being up and would leak
+which characters a learner is practising to a host they never chose.
 
 **The grade comes from the strokes, and there is deliberately no Easy.** `HanziWriter`'s quiz
 reports wrong strokes and whether the outline was shown, which is more than a self-graded
