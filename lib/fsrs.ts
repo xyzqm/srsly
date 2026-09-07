@@ -159,19 +159,35 @@ function daysBetween(a: string, b: string): number {
   ));
 }
 
+/**
+ * The fields the scheduler actually reads — and the ONLY thing it needs to be handed.
+ *
+ * Every function below took a whole `DeckWord`, which is a word: it carries hanzi, pinyin, a
+ * gloss, an example sentence and the learner's mnemonic, none of which FSRS has ever looked
+ * at. That was fine while words were the only schedulable thing, and stopped being fine when
+ * handwriting arrived scheduled per CHARACTER (`lib/writingState.ts`) — a character card has
+ * no gloss to invent, and inventing one to satisfy a type is how a fake value gets stored.
+ *
+ * A `DeckWord` satisfies this structurally, so every existing caller is unaffected.
+ */
+export type Schedulable = Pick<DeckWord,
+  'stability' | 'difficulty' | 'lapses' | 'reviews' | 'dueAt' | 'dueAtMs' | 'lastReview' |
+  'phase' | 'learningStep'
+>;
+
 /** True when a card is in the learning/relearning phase. */
-export function isLearningCard(word: DeckWord): boolean {
+export function isLearningCard(word: Schedulable): boolean {
   return word.phase === 'learning' || (word.phase === undefined && word.stability === undefined);
 }
 
 // ── Core scheduler ────────────────────────────────────────────────────────────
 
 export function fsrsSchedule(
-  word: DeckWord,
+  word: Schedulable,
   grade: FsrsGrade,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
   opts: { fuzz?: boolean } = {},
-): Partial<DeckWord> {
+): Partial<Schedulable> {
   const today  = todayStr();
   const nowMs  = Date.now();
   const step   = word.learningStep ?? 0;
@@ -329,7 +345,7 @@ export function fsrsSchedule(
  * though every missed word had been given the same interval.
  */
 export function fsrsNextInterval(
-  word: DeckWord,
+  word: Schedulable,
   grade: FsrsGrade,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
   opts?: { minDaysOut?: number },
@@ -373,7 +389,7 @@ export interface CardInsight {
 }
 
 export function cardInsight(
-  word: DeckWord,
+  word: Schedulable,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
   today: string = todayStr(),
 ): CardInsight | null {

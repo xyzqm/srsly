@@ -3,6 +3,7 @@ import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, Languag
 import { LocalStorage } from './local';
 import type { DayActivity } from '@/lib/activityLog';
 import type { DayCounts } from '@/lib/reviewCounts';
+import type { WritingCards } from '@/lib/writingState';
 
 /**
  * The app imports this singleton and never the concrete backend. By default it forwards
@@ -60,6 +61,10 @@ class StorageFacade implements DataService {
   saveActivityLog(log: DayActivity[]) { return this.impl.saveActivityLog(log); }
   getLessonsDone() { return this.impl.getLessonsDone(); }
   saveLessonsDone(ids: string[]) { return this.impl.saveLessonsDone(ids); }
+  getWritingCards(lang: LanguageCode) { return this.impl.getWritingCards(lang); }
+  saveWritingCards(lang: LanguageCode, cards: WritingCards) {
+    return this.impl.saveWritingCards(lang, cards);
+  }
 }
 
 export const storage = new StorageFacade();

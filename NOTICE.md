@@ -64,6 +64,32 @@ under CC BY-SA 4.0. The same extracts also supply the inflected-form → lemma t
 `lib/data/es-forms.*` and `lib/data/fr-forms.*`, and the grammar tables in
 `lib/data/es-grammar.json` and `lib/data/fr-grammar.json`, which are covered identically.
 
+### `public/strokes/` — 2,663 files, 7.0 MB
+
+Built by [`scripts/build-strokes.mjs`](scripts/build-strokes.mjs) from **hanzi-writer-data**,
+the character data behind [Hanzi Writer](https://github.com/chanind/hanzi-writer), itself
+derived from the [Make Me a Hanzi](https://github.com/skishore/makemeahanzi) project and
+ultimately from Arphic Technology's TrueType fonts.
+
+Source: <https://github.com/chanind/hanzi-writer-data>
+Licence: **ARPHIC PUBLIC LICENSE** — copied verbatim to
+[`public/strokes/ARPHICPL.TXT`](public/strokes/ARPHICPL.TXT), as §1 requires of every copy.
+
+**This is a modified copy, and the modification is stated where the licence requires it.**
+Upstream ships 9,574 characters; this copy keeps the **2,663** that appear in HSK 1–6, which
+are the only characters srsly can ask anyone to write. Deleting characters from the glyph table
+is explicitly a modification under §2, so
+[`public/strokes/MODIFICATIONS.txt`](public/strokes/MODIFICATIONS.txt) records what was removed
+and when, and the build script reproduces the subset exactly — §2(b)'s "freely available"
+condition being satisfied by this repository being public.
+
+Nothing inside a character file was touched. Outlines, medians and radical markers are copied
+byte for byte; rounding coordinates to save a few hundred kB would be a deeper modification of
+the glyph shapes, and the point of the licence is that those stay traceable to Arphic.
+
+srsly's own source is MIT and is unaffected: §2 states that a work not derived from the Font,
+merely aggregated with it, does not fall under this licence.
+
 ### `lib/data/han-decomp.json` — 350 KB
 
 Built by [`scripts/build-radicals.mjs`](scripts/build-radicals.mjs) from **Make Me a Hanzi** by

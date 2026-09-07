@@ -1,0 +1,27 @@
+-- Handwriting practice, scheduled per CHARACTER and firewalled from reading.
+--
+-- ── WHY A COLUMN RATHER THAN A FIELD ON DeckWord ──
+-- A DeckWord would have been free — it lives inside the `decks` jsonb, and nothing strips
+-- unknown fields — but it is the wrong key. A deck card is a WORD and writing is a CHARACTER
+-- skill: 朋友 is one card and two things to learn to draw, and 朋 turns up again in 朋辈 and
+-- in every other word the learner owns that contains it. Keyed by word, one character's
+-- schedule would exist in as many copies as it has words, and they would disagree from the
+-- first review — the "second record of a fact" this codebase refuses everywhere.
+--
+-- Keyed by character it is also a SMALLER set than the deck, not a doubling of it: HSK's
+-- 4,991 words are built from 2,663 distinct characters.
+--
+-- Shape: { zh: { "好": WritingCard, … } } — per language then per character, the same shape
+-- as `decks`, so adding Japanese (which needs KanjiVG before it can be honest about stroke
+-- order) is a key in this column rather than a second migration.
+--
+-- ── MERGED BY OWNERSHIP, NOT PER FIELD ──
+-- A character's stability, difficulty, lapses and due date describe ONE review history, so a
+-- per-field max would compose a state neither device was ever in — the same argument
+-- lib/srsStateMerge.ts makes for the streak. The later `lastReview` owns the whole card.
+--
+-- ── IT DELIBERATELY FEEDS NOTHING ELSE ──
+-- Not `isDueToday`, not the reading streak, not the daily new-card budget, not the activity
+-- heatmap. Writing is optional practice; being a month behind on it must not read as a broken
+-- reading streak. See lib/writingState.ts.
+alter table public.user_data add column if not exists writing_state jsonb;

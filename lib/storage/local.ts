@@ -5,6 +5,7 @@ import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, type DayActivity } from '@/lib/activityLog';
 import { loadDay, saveDay, type DayCounts } from '@/lib/reviewCounts';
 import { loadDone, saveDone } from '@/lib/lessons';
+import { loadWriting, saveWriting, type WritingCards } from '@/lib/writingState';
 
 const KEYS = {
   vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
@@ -194,4 +195,9 @@ export class LocalStorage implements DataService {
 
   async getLessonsDone(): Promise<string[]> { return [...loadDone()]; }
   async saveLessonsDone(ids: string[]): Promise<void> { saveDone(new Set(ids)); }
+
+  async getWritingCards(lang: LanguageCode): Promise<WritingCards> { return loadWriting(lang); }
+  async saveWritingCards(lang: LanguageCode, cards: WritingCards): Promise<void> {
+    saveWriting(lang, cards);
+  }
 }

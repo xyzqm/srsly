@@ -1,3 +1,4 @@
+import type { WritingCards } from '@/lib/writingState';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import type { DayActivity } from '@/lib/activityLog';
 import type { DayCounts } from '@/lib/reviewCounts';
@@ -49,4 +50,14 @@ export interface DataService {
    */
   getLessonsDone(): Promise<string[]>;
   saveLessonsDone(ids: string[]): Promise<void>;
+
+  /**
+   * Handwriting schedules, keyed by CHARACTER within a language.
+   *
+   * Synced, because it is a review history and losing it means redoing work. Kept in its own
+   * column rather than on `DeckWord` because a deck card is a word and writing is a character
+   * skill — see lib/writingState.ts and supabase/migrations/0003_writing_state.sql.
+   */
+  getWritingCards(lang: LanguageCode): Promise<WritingCards>;
+  saveWritingCards(lang: LanguageCode, cards: WritingCards): Promise<void>;
 }

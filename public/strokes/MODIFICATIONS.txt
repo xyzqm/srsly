@@ -1,0 +1,21 @@
+Modifications to hanzi-writer-data, as required by ARPHIC PUBLIC LICENSE section 2(a).
+
+Source:   hanzi-writer-data@2.0.1
+Modified: 2026-09-07 by scripts/build-strokes.mjs
+
+What changed:
+
+  Characters were DELETED from the glyph table. The upstream package contains stroke
+  data for 9,574 characters; this copy retains the 2663 that
+  appear in the HSK 1-6 vocabulary lists, which are the only characters srsly can ask a
+  learner to write. No other change was made.
+
+  The contents of each retained character file are byte-for-byte identical to upstream.
+  No outline, median or radical marker was altered, rounded or recomputed.
+
+Reproducing this subset:
+
+  node scripts/build-strokes.mjs
+
+The full upstream data remains freely available under the same licence at
+https://github.com/chanind/hanzi-writer-data and on npm as hanzi-writer-data.
