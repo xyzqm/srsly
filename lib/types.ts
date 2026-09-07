@@ -143,6 +143,22 @@ export interface DailyAccuracy { d: string; right: number; total: number }
 export interface UserPrefs {
   theme: Theme;
   font: Font;
+  /**
+   * Flashcard study mode. DECLARED HERE, and that is the whole fix for a real bug.
+   *
+   * It was written straight into the `srsly-prefs` blob by lib/flashcardPrefs.ts without being
+   * a field on this type — so it existed only in the LOCAL copy. `getPrefs()` mirrors the
+   * cloud row down over local, and the cloud blob never carried it, so the next read wiped it.
+   * `handleLanguageChange` calls `getPrefs()`, which is why the toggle appeared to "lose state
+   * on unmount": switching language was deleting it.
+   *
+   * `reverseCards` was declared from the start (below, beside `ttsSpeed`) and never had this
+   * problem — which is exactly why the two behaved differently and made the bug look like a
+   * lifecycle issue rather than a missing field.
+   *
+   * A field the storage layer does not know about is a field the storage layer will discard.
+   */
+  typedRecall?: boolean;     // type the answer instead of self-grading
   language?: LanguageCode;   // active study language; absent = 'zh' (backward compat)
   hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
   jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')

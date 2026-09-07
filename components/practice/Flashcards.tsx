@@ -160,6 +160,20 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   };
 
   // Build session queue once when deck loads
+  /**
+   * How many cards were already graded TODAY before this mount, so the counter does not
+   * restart at 1 every time the learner changes language.
+   *
+   * DERIVED FROM THE DECK, not stored: a card graded today carries `lastReview === today`,
+   * which is the same fact from the record that already exists. A separate per-day counter
+   * would be a second record of it and would drift the first time either was written alone —
+   * the rule this codebase states about milestones, applied to a progress number.
+   *
+   * Captured once when the queue latches, because it must mean "before this session": after
+   * that, `results.length` counts what this session has done and the two add up.
+   */
+  const [priorDone, setPriorDone] = useState(0);
+
   useEffect(() => {
     if (queue !== null) return;
     if (!deckLoaded) return;
@@ -190,6 +204,8 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
     setQueue(q);
     setTotalInitial(q.length);
     setHiddenByLimit(hidden);
+    // Captured at the latch, so it means "before this session" for the rest of the mount.
+    setPriorDone(deck.filter(w => w.lastReview === todayStr() && isActive(w)).length);
   }, [deck, deckLoaded, queue]);
 
   // Report the session once, on completion. Guarded by a ref so a later re-render (a hover,
@@ -394,7 +410,9 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   }
 
   const card          = readyCards[0];
-  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (results.length / (results.length + readyCards.length)) * 100)) : 0;
+  // Includes work done before this mount, so switching language does not visibly rewind the bar.
+  const doneToday     = priorDone + results.length;
+  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (doneToday / (doneToday + readyCards.length)) * 100)) : 0;
   const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
 
@@ -483,7 +501,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
             Vocabulary review · FSRS
           </div>
           <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
-            {results.length + 1} of {results.length + readyCards.length + futureCards.length}
+            {priorDone + results.length + 1} of {priorDone + results.length + readyCards.length + futureCards.length}
             {dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
             )}

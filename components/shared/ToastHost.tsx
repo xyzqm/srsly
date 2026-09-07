@@ -39,7 +39,9 @@ interface Toast {
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ToastHost({ deck, loadSeq }: { deck: DeckWord[]; loadSeq: number }) {
+export default function ToastHost(
+  { deck, loadSeq, language }: { deck: DeckWord[]; loadSeq: number; language: string },
+) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   /** Ids present at the last check. `null` until the first deck has loaded. */
   const seenIds = useRef<Set<string> | null>(null);
@@ -63,13 +65,27 @@ export default function ToastHost({ deck, loadSeq }: { deck: DeckWord[]; loadSeq
    * `acknowledge()` is exactly the right primitive for the milestone half, and it already
    * exists: it marks what is currently earned as seen WITHOUT showing anything.
    */
+  /**
+   * A LANGUAGE SWITCH IS NOT AN ADDITION EITHER, and that is the second face of this bug.
+   *
+   * `loadSeq` counts loads from STORAGE, so it covers signing in. It does not cover switching
+   * language: the deck is replaced wholesale with another language's words, often straight
+   * from the in-memory cache without any load happening at all — so the diff below saw 711
+   * unfamiliar ids and announced "Added 711 words to your deck" every single time.
+   *
+   * Both are the same mistake as ever: a value meaning "this is a different deck" rendered as
+   * one meaning "you just added these". Re-seeding on either signal is the whole fix.
+   */
   const lastLoad = useRef(loadSeq);
+  const lastLang = useRef(language);
   useEffect(() => {
-    if (loadSeq === lastLoad.current) return;
+    const switched = language !== lastLang.current;
+    if (loadSeq === lastLoad.current && !switched) return;
     lastLoad.current = loadSeq;
+    lastLang.current = language;
     seenIds.current = new Set(deck.map(w => w.id ?? w.h));
     if (fresh.length > 0) acknowledge();
-  }, [loadSeq, deck, fresh, acknowledge]);
+  }, [loadSeq, language, deck, fresh, acknowledge]);
 
   /**
    * A word was saved. Seeded on the first pass rather than compared against zero, so arriving
