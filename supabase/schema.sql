@@ -35,9 +35,11 @@ create table if not exists public.user_data (
   review_counts jsonb,   -- { date, by: { deviceId: { n, r } } } — today's budget spend, merged
                          -- per DEVICE: a sum double-counts on replay and a max under-enforces
   lessons_done  jsonb,   -- string[] of finished lesson ids; merged as a union
-  writing_state jsonb,   -- { zh: { "好": WritingCard } } — handwriting FSRS, keyed by
-                         -- CHARACTER not word, and merged by whole-card ownership.
-                         -- Feeds no due count, streak or budget; see migration 0003
+  drill_state   jsonb,   -- { zh: { "w:好": DrillCard } } — practice that is not the deck.
+                         -- Keys are PREFIXED by drill: w = handwriting (per character),
+                         -- c = conjugation (per stem-fact). Merged by whole-card ownership.
+                         -- Was writing_state; renamed in 0004 so a second drill costs a
+                         -- prefix rather than a column. Feeds no due count, streak or budget
   updated_at    timestamptz not null default now()
 );
 

@@ -1,4 +1,4 @@
-import type { WritingCards } from '@/lib/writingState';
+import type { DrillCards, DrillKind } from '@/lib/drillState';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
 import type { DayActivity } from '@/lib/activityLog';
 import type { DayCounts } from '@/lib/reviewCounts';
@@ -58,6 +58,11 @@ export interface DataService {
    * column rather than on `DeckWord` because a deck card is a word and writing is a character
    * skill — see lib/writingState.ts and supabase/migrations/0003_writing_state.sql.
    */
-  getWritingCards(lang: LanguageCode): Promise<WritingCards>;
-  saveWritingCards(lang: LanguageCode, cards: WritingCards): Promise<void>;
+  /**
+   * Drill scheduling — handwriting today, conjugation next. One pair of methods rather than a
+   * pair per drill: `kind` selects the namespace inside the shared `drill_state` column, so a
+   * new drill costs a prefix rather than a column, a migration and two more methods here.
+   */
+  getDrillCards(lang: LanguageCode, kind: DrillKind): Promise<DrillCards>;
+  saveDrillCards(lang: LanguageCode, kind: DrillKind, cards: DrillCards): Promise<void>;
 }

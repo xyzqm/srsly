@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { canonicalJson } from '@/lib/canonicalJson';
 import { mergeSRSState } from '@/lib/srsStateMerge';
-import { mergeWritingState, type WritingCards, type WritingState } from '@/lib/writingState';
+import { mergeDrillState, loadDrill, drillView, drillWrite,
+         type DrillCards, type DrillState, type DrillKind } from '@/lib/drillState';
 import { mergePrefs } from '@/lib/prefsMerge';
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
@@ -36,7 +37,7 @@ interface UserDataRow {
   activity_log: DayActivity[] | null;
   review_counts: DayCounts | null;
   lessons_done: string[] | null;
-  writing_state: WritingState | null;                    // { zh: { "好": WritingCard } }
+  drill_state: DrillState | null;                        // { zh: { "w:好": DrillCard } }
 }
 
 const SUPPORTED_LANGS: LanguageCode[] = ['zh', 'ja', 'es', 'fr'];
@@ -522,48 +523,53 @@ export class SupabaseStorage implements DataService {
    * guest signing in has no cloud list to conflict with, only history to carry over.
    */
   /**
-   * The writing base, rebuilt from LOCAL when the row is unreadable.
+   * The drill base, rebuilt from LOCAL when the row is unreadable.
    *
    * Same cold-cache trap `localDecks` documents: offline, `row()` returns null, so a payload
-   * built from `r?.writing_state ?? {}` would name only the language being studied — and
+   * built from `r?.drill_state ?? {}` would name only the language being studied — and
    * replaying it would delete every other language's practice history. It fails harmlessly at
    * the time, which is exactly what hides it.
+   *
+   * Reads the RAW blob, prefixes and all, because the base has to carry every drill and not
+   * just the one being saved.
    */
-  private async localWriting(): Promise<WritingState> {
-    const pairs = await Promise.all(
-      SUPPORTED_LANGS.map(async l => [l, await this.local.getWritingCards(l)] as const),
-    );
+  private async localDrill(): Promise<DrillState> {
+    const pairs = SUPPORTED_LANGS.map(l => [l, loadDrill(l)] as const);
     return Object.fromEntries(pairs.filter(([, c]) => Object.keys(c).length > 0));
   }
 
-  async getWritingCards(lang: LanguageCode): Promise<WritingCards> {
+  async getDrillCards(lang: LanguageCode, kind: DrillKind): Promise<DrillCards> {
     const r = await this.row();
-    const cloud = r?.writing_state?.[lang];
+    const cloud = r?.drill_state?.[lang];
     // Pending means LOCAL is newer — mirroring the cloud down over it is the deletion the
     // queue exists to stop.
-    if (cloud && !queue.isPending(this.pending, 'writing_state')) {
-      await this.local.saveWritingCards(lang, cloud);
-      return cloud;
+    if (cloud && !queue.isPending(this.pending, 'drill_state')) {
+      await this.local.saveDrillCards(lang, kind, drillView(cloud, kind));
+      return drillView(cloud, kind);
     }
-    return this.local.getWritingCards(lang);
+    return this.local.getDrillCards(lang, kind);
   }
 
   /**
-   * MERGED, not replaced, and per character.
+   * MERGED, not replaced, and per card.
    *
-   * There is no deletion to preserve here — a writing card only ever comes into existence by
+   * There is no deletion to preserve here — a drill card only ever comes into existence by
    * being practised, and nothing removes one — so a union whose conflicts go to the later
-   * `lastReview` loses nothing. That is what makes this safe to write back on every quiz.
+   * `lastReview` loses nothing. That is what makes this safe to write back on every answer.
+   *
+   * The payload is built by writing this drill's cards INTO the base rather than over it, so
+   * saving handwriting cannot delete conjugation progress sharing the same language.
    */
-  async saveWritingCards(lang: LanguageCode, cards: WritingCards): Promise<void> {
-    await this.local.saveWritingCards(lang, cards);
+  async saveDrillCards(lang: LanguageCode, kind: DrillKind, cards: DrillCards): Promise<void> {
+    await this.local.saveDrillCards(lang, kind, cards);
     const r = await this.row({ cached: true });
-    const base = r?.writing_state ?? await this.localWriting();
-    const merged = mergeWritingState(base, { [lang]: cards });
+    const base = r?.drill_state ?? await this.localDrill();
+    const mine = drillWrite(base[lang] ?? {}, kind, cards);
+    const merged = mergeDrillState(base, { [lang]: mine });
     // Local agrees with what was just sent, rather than keeping the narrower copy it started
     // from — the same step saveSRSState takes after merging.
-    await this.local.saveWritingCards(lang, merged[lang] ?? cards);
-    await this.patch({ writing_state: merged });
+    await this.local.saveDrillCards(lang, kind, drillView(merged[lang] ?? mine, kind));
+    await this.patch({ drill_state: merged });
   }
 
   async getLessonsDone(): Promise<string[]> {

@@ -1,10 +1,9 @@
-import type { LanguageCode } from './types';
 import { todayStr } from './deck';
-import { canonicalJson } from './canonicalJson';
 import {
   fsrsSchedule, isLearningCard, DEFAULT_SRS_SETTINGS,
-  type FsrsGrade, type SrsSettings, type Schedulable,
+  type FsrsGrade, type SrsSettings,
 } from './fsrs';
+import type { DrillCard, DrillCards } from './drillState';
 
 /**
  * Handwriting practice, scheduled per CHARACTER.
@@ -36,13 +35,19 @@ import {
  */
 
 /** One character's schedule. Nothing but scheduling — a character has no gloss to carry. */
-export type WritingCard = Schedulable;
+export type WritingCard = DrillCard;
 
 /** Every practised character in one language. Absent key = never practised. */
-export type WritingCards = Record<string, WritingCard>;
+export type WritingCards = DrillCards;
 
-/** The whole column, per language then per character — the same shape as `decks`. */
-export type WritingState = Partial<Record<LanguageCode, WritingCards>>;
+/**
+ * The storage half now lives in `lib/drillState.ts`, keyed `w:好`.
+ *
+ * Handwriting works in BARE CHARACTERS and knows nothing about that prefix — `drillView`
+ * strips it on the way in and `drillWrite` restores it on the way out, so the shared column is
+ * an encoding detail that stops at the storage boundary. Merging moved with it, because the
+ * rule (a card is owned whole, ties resolved commutatively) was never specific to characters.
+ */
 
 const HAN = /[一-鿿]/;
 
@@ -114,80 +119,4 @@ export function scheduleWriting(
 /** Whether this character is still in its learning steps — used only for the UI's own label. */
 export function isWritingLearning(card: WritingCard | undefined): boolean {
   return isLearningCard(card ?? {});
-}
-
-/**
- * Merge two devices' writing state.
- *
- * ── A CARD IS OWNED WHOLE, NOT MERGED PER FIELD ──
- * `stability`, `difficulty`, `lapses` and `dueAt` describe ONE review history. Taking a
- * per-field maximum would compose a state neither device was ever in — a stability from
- * Tuesday's laptop beside a lapse count from Wednesday's phone — which is exactly the
- * argument `lib/srsStateMerge.ts` makes about the streak. The later `lastReview` owns the
- * whole card.
- *
- * ── AND IT HAS TO BE COMMUTATIVE, NOT JUST DETERMINISTIC ──
- * A device writes its merged copy back and the cloud then holds the merge, so `merge(a, b)`
- * and `merge(b, a)` must agree or two devices ping-pong for ever. "Take mine on a tie" is
- * deterministic and NOT commutative, so ties fall through a chain of value-only comparisons
- * and finally to canonical JSON order — which depends on the cards' contents and never on
- * which argument they arrived in.
- */
-export function mergeWritingCards(mine: WritingCards, theirs: WritingCards): WritingCards {
-  const out: WritingCards = {};
-  for (const ch of new Set([...Object.keys(mine), ...Object.keys(theirs)])) {
-    const a = mine[ch], b = theirs[ch];
-    if (!a) { out[ch] = b; continue; }
-    if (!b) { out[ch] = a; continue; }
-    out[ch] = ownerOf(a, b);
-  }
-  return out;
-}
-
-/** The card with the better claim to be the real history. Value-only, so it is commutative. */
-function ownerOf(a: WritingCard, b: WritingCard): WritingCard {
-  const byDate = (a.lastReview ?? '').localeCompare(b.lastReview ?? '');
-  if (byDate !== 0) return byDate > 0 ? a : b;
-  // Same day on both devices: prefer the one that has done more, since a review is only ever
-  // added. Each of these is a count that grows, so "more" is "later" without a clock.
-  if ((a.reviews ?? 0) !== (b.reviews ?? 0)) return (a.reviews ?? 0) > (b.reviews ?? 0) ? a : b;
-  if ((a.lapses ?? 0) !== (b.lapses ?? 0)) return (a.lapses ?? 0) > (b.lapses ?? 0) ? a : b;
-  if ((a.stability ?? 0) !== (b.stability ?? 0)) return (a.stability ?? 0) > (b.stability ?? 0) ? a : b;
-  // Indistinguishable by history. Order on content so both devices pick the same one.
-  return canonicalJson(a) <= canonicalJson(b) ? a : b;
-}
-
-/** Merge whole columns, language by language. */
-export function mergeWritingState(mine: WritingState, theirs: WritingState): WritingState {
-  const out: WritingState = {};
-  for (const lang of new Set([...Object.keys(mine), ...Object.keys(theirs)]) as Set<LanguageCode>) {
-    out[lang] = mergeWritingCards(mine[lang] ?? {}, theirs[lang] ?? {});
-  }
-  return out;
-}
-
-/* ─────────────────────── device-local persistence ─────────────────────── */
-
-/**
- * One key per language, mirroring `srsly-vocab-deck-{lang}`.
- *
- * Kept here rather than in `lib/storage/local.ts` for the same reason `loadDone`/`saveDone`
- * live in `lib/lessons.ts`: the shape belongs to the feature, and the storage layer should be
- * able to delegate without knowing what a WritingCard is.
- */
-const KEY = (lang: LanguageCode) => `srsly-writing-${lang}`;
-
-export function loadWriting(lang: LanguageCode): WritingCards {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(KEY(lang)) ?? '{}');
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as WritingCards : {};
-  } catch {
-    return {};
-  }
-}
-
-export function saveWriting(lang: LanguageCode, cards: WritingCards): void {
-  if (typeof localStorage === 'undefined') return;
-  try { localStorage.setItem(KEY(lang), JSON.stringify(cards)); } catch { /* quota */ }
 }

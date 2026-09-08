@@ -55,7 +55,7 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
 
   useEffect(() => {
     let alive = true;
-    void storage.getWritingCards(language).then(c => { if (alive) setCards(c); });
+    void storage.getDrillCards(language, 'w').then(c => { if (alive) setCards(c); });
     return () => { alive = false; };
   }, [language]);
 
@@ -73,7 +73,7 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
     const grade = gradeFromStrokes(mistakes, usedHint);
     const next = { ...(cards ?? {}), [char]: scheduleWriting(cards?.[char], grade, settings) };
     setCards(next);
-    await storage.saveWritingCards(language, next);
+    await storage.saveDrillCards(language, 'w', next);
   }, [cards, language, settings]);
 
   const onDone = useCallback((r: { mistakes: number; usedHint: boolean }) => {

@@ -5,7 +5,7 @@ import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, type DayActivity } from '@/lib/activityLog';
 import { loadDay, saveDay, type DayCounts } from '@/lib/reviewCounts';
 import { loadDone, saveDone } from '@/lib/lessons';
-import { loadWriting, saveWriting, type WritingCards } from '@/lib/writingState';
+import { loadDrill, saveDrill, drillView, drillWrite, type DrillCards, type DrillKind } from '@/lib/drillState';
 
 const KEYS = {
   vocabLegacy: 'srsly-vocab-deck', // pre-multilanguage; migrated to srsly-vocab-deck-zh on first read
@@ -196,8 +196,15 @@ export class LocalStorage implements DataService {
   async getLessonsDone(): Promise<string[]> { return [...loadDone()]; }
   async saveLessonsDone(ids: string[]): Promise<void> { saveDone(new Set(ids)); }
 
-  async getWritingCards(lang: LanguageCode): Promise<WritingCards> { return loadWriting(lang); }
-  async saveWritingCards(lang: LanguageCode, cards: WritingCards): Promise<void> {
-    saveWriting(lang, cards);
+  async getDrillCards(lang: LanguageCode, kind: DrillKind): Promise<DrillCards> {
+    return drillView(loadDrill(lang), kind);
+  }
+  /**
+   * READ-MODIFY-WRITE, because the blob is shared. Writing the drill's own cards over the
+   * whole entry would delete every other drill's progress for that language silently — which
+   * is the one way a shared column can be worse than two.
+   */
+  async saveDrillCards(lang: LanguageCode, kind: DrillKind, cards: DrillCards): Promise<void> {
+    saveDrill(lang, drillWrite(loadDrill(lang), kind, cards));
   }
 }

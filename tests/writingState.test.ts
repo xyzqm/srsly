@@ -4,7 +4,7 @@ import path from 'path';
 import hskLevels from '@data/hsk-levels.json';
 import {
   writableChars, isWritingDue, dueWritingChars, gradeFromStrokes, scheduleWriting,
-  mergeWritingCards, mergeWritingState, type WritingCards,
+  type WritingCards,
 } from '@/lib/writingState';
 
 /**
@@ -138,63 +138,6 @@ describe('scheduling reuses FSRS unchanged', () => {
   it('keeps the character out of any DeckWord shape — it carries no gloss', () => {
     const card = scheduleWriting(undefined, 3) as Record<string, unknown>;
     for (const forbidden of ['h', 'p', 'm']) expect(card[forbidden]).toBeUndefined();
-  });
-});
-
-describe('merging: a card is owned whole, and the rule is commutative', () => {
-  const older = { lastReview: '2026-09-01', reviews: 2, stability: 3, difficulty: 5, lapses: 0 };
-  const newer = { lastReview: '2026-09-05', reviews: 3, stability: 9, difficulty: 6, lapses: 1 };
-
-  it('takes the whole card from the later review, never a field-wise blend', () => {
-    const merged = mergeWritingCards({ 好: older }, { 好: newer });
-    expect(merged.好).toEqual(newer);
-    // The blend would keep the higher stability AND the lower lapse count — a state neither
-    // device was ever in. This is the same trap srsStateMerge documents for the streak.
-    expect(merged.好.lapses).toBe(1);
-  });
-
-  it('unions characters only one side has', () => {
-    const merged = mergeWritingCards({ 好: older }, { 朋: newer });
-    expect(Object.keys(merged).sort()).toEqual(['好', '朋'].sort());
-  });
-
-  it('is commutative — the whole reason ties do not fall back to "mine"', () => {
-    const a: WritingCards = { 好: older, 朋: newer, 友: {} };
-    const b: WritingCards = { 好: newer, 友: { reviews: 1, lastReview: '2026-09-03' }, 学: older };
-    expect(mergeWritingCards(a, b)).toEqual(mergeWritingCards(b, a));
-  });
-
-  it('is commutative even when two cards share a review date', () => {
-    const x = { lastReview: '2026-09-05', reviews: 4, stability: 2 };
-    const y = { lastReview: '2026-09-05', reviews: 4, stability: 8 };
-    expect(mergeWritingCards({ 好: x }, { 好: y })).toEqual(mergeWritingCards({ 好: y }, { 好: x }));
-  });
-
-  /** Fully identical histories still have to resolve the same way on both devices. */
-  it('is commutative for cards that are indistinguishable by history', () => {
-    const x = { lastReview: '2026-09-05', reviews: 4, stability: 2, dueAt: '2026-09-08' };
-    const y = { lastReview: '2026-09-05', reviews: 4, stability: 2, dueAt: '2026-09-09' };
-    expect(mergeWritingCards({ 好: x }, { 好: y })).toEqual(mergeWritingCards({ 好: y }, { 好: x }));
-  });
-
-  it('is idempotent, because the merge gets written back and merged again', () => {
-    const a: WritingCards = { 好: older, 朋: newer };
-    const b: WritingCards = { 好: newer, 友: older };
-    const once = mergeWritingCards(a, b);
-    expect(mergeWritingCards(once, b)).toEqual(once);
-    expect(mergeWritingCards(once, once)).toEqual(once);
-  });
-
-  it('merges language by language', () => {
-    const merged = mergeWritingState({ zh: { 好: older } }, { zh: { 好: newer }, ja: { 学: older } });
-    expect(merged.zh?.好).toEqual(newer);
-    expect(merged.ja?.学).toEqual(older);
-  });
-
-  it('is commutative across languages too', () => {
-    const a = { zh: { 好: older }, ja: { 学: newer } };
-    const b = { zh: { 好: newer, 朋: older } };
-    expect(mergeWritingState(a, b)).toEqual(mergeWritingState(b, a));
   });
 });
 

@@ -285,10 +285,13 @@ function Row({ row, cells, hideModels }: {
           {!hideModels && <span style={{ fontFamily: 'var(--f-han)', fontSize: 13, marginRight: '2mm' }}>{row.char}</span>}
           {row.pinyin && <span style={{ color: '#555' }}>{row.pinyin}</span>}
           {row.meaning && <span style={{ color: '#888' }}>{row.pinyin ? ' · ' : ''}{row.meaning}</span>}
-          {/* WHICH character of the word, and only when it is load-bearing. 朋 and 友 both
-              label as "péngyou · friend", so without this a recall sheet asks the same
-              question twice and accepts either answer for both. */}
-          {hideModels && row.of > 1 && (
+          {/* WHICH character of the word this is. Load-bearing with the models hidden — 朋 and
+              友 both label as "péngyou · friend", so without it a recall sheet asks the same
+              question twice and accepts either answer for both. Shown with the models VISIBLE
+              too, where it is polish rather than necessity: the character already disambiguates
+              the row, but two consecutive rows carrying an identical gloss read as a glitch
+              rather than as a compound word deliberately broken into its parts. */}
+          {row.of > 1 && (
             <span style={{ color: '#aaa' }}> — {ordinal(row.index)} of {row.of}</span>
           )}
         </div>
