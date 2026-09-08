@@ -169,8 +169,17 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
           something to aim at rather than an abstract shape. */}
       <WritingPrompt deck={deck} char={char} reveal={result !== null} />
 
-      {/* Keyed by the character: a fresh HanziWriter per card, no state carried across. */}
-      <WritingCanvas key={char} char={char} onDone={onDone} onUnavailable={onUnavailable} />
+      {/* Keyed by the character: a fresh HanziWriter per card, no state carried across.
+          `isNew` decides whether it opens in Learn — a character with no reviews has never
+          been seen, and being asked to produce one you have never met is a guessing game
+          rather than a test. The same `reviews` the header already reads. */}
+      <WritingCanvas
+        key={char}
+        char={char}
+        isNew={(card?.reviews ?? 0) === 0}
+        onDone={onDone}
+        onUnavailable={onUnavailable}
+      />
 
       {result && (
         <div className="text-center mt-5">

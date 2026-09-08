@@ -29,7 +29,21 @@ export default function MilestoneRing({ deck, language }: Props) {
   // Seeded from the cache so a revisit draws on the first frame — see cachedLevelTable.
   const [table, setTable] = useState<Record<number, string[]> | null>(() => cachedLevelTable(language));
   const [testedLevel, setTestedLevel] = useState(0);
-  const [selected, setSelected] = useState(0);
+  /**
+   * THE LEVEL IS SEEDED SYNCHRONOUSLY, and that is the whole reason this card stopped popping in.
+   *
+   * It used to start at 0 and wait for `storage.getPrefs()`. Signed in, that is a Supabase
+   * round trip — so `row` stayed null, `if (!row) return null` rendered NOTHING, and about a
+   * second later the entire card appeared out of nowhere and shoved the Milestones panel down
+   * the page.
+   *
+   * That is the sixth failure mode in CLAUDE.md wearing its fifth face: a value meaning "not
+   * here yet" rendered as one meaning "there is none". `app/page.tsx` already fixed exactly
+   * this for the study language, with exactly this fix and for exactly this reason —
+   * localStorage is synchronous underneath, so the right answer is available on the first
+   * frame and the async read below still resolves authoritatively behind it.
+   */
+  const [selected, setSelected] = useState(() => cachedSelectedLevel(language));
 
   useEffect(() => {
     let live = true;
@@ -49,7 +63,15 @@ export default function MilestoneRing({ deck, language }: Props) {
     return rows.find(r => r.level === selected) ?? null;
   }, [table, deck, language, testedLevel, selected]);
 
-  if (!row) return null;
+  /**
+   * NOT `return null`. An absent card and a card that has not loaded look identical to the
+   * layout, and the difference is a second of the page jumping. The skeleton holds exactly
+   * the space the real card will take, so nothing moves when the numbers arrive.
+   *
+   * It deliberately shows no percentage. Rendering "0%" here would be the same mistake in the
+   * other direction — a loading state printed as an answer, and a discouraging one.
+   */
+  if (!row) return <RingSkeleton />;
 
   const pct = row.total > 0 ? row.retained / row.total : 0;
   const r = (SIZE - STROKE) / 2;
@@ -108,6 +130,46 @@ export default function MilestoneRing({ deck, language }: Props) {
               ? <>{row.started.toLocaleString()} more {row.started === 1 ? 'is' : 'are'} in your deck but not yet held for {RETAINED_DAYS} days — keep reviewing and they cross over.</>
               : <>Retained means the scheduler will hold it for {RETAINED_DAYS} days or more. Adding words does not move this; reviewing them does.</>}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The level this learner is on, read straight off localStorage.
+ *
+ * The same synchronous seed `app/page.tsx` and `ReadTab` already do for their own prefs, and
+ * for the same reason: `storage.getPrefs()` is async and, signed in, is a network round trip.
+ * Returns 0 when there is nothing stored, which the caller reads as "still unknown" and
+ * renders as a skeleton rather than as a level.
+ */
+function cachedSelectedLevel(language: LanguageCode): number {
+  if (typeof localStorage === 'undefined') return 0;
+  try {
+    const raw = localStorage.getItem('srsly-prefs');
+    if (!raw) return 0;
+    return levelFor(language, JSON.parse(raw));
+  } catch {
+    return 0;
+  }
+}
+
+/** The card's exact footprint, with nothing in it that could be mistaken for a number. */
+function RingSkeleton() {
+  const r = (SIZE - STROKE) / 2;
+  return (
+    <div className="mt-8 rounded-[11px] px-6 py-6 flex items-center gap-7 flex-wrap"
+         style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+         aria-hidden="true">
+      <div style={{ width: SIZE, height: SIZE, flexShrink: 0 }}>
+        <svg width={SIZE} height={SIZE}>
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={r} fill="none" stroke="var(--line-soft)" strokeWidth={STROKE} />
+        </svg>
+      </div>
+      <div style={{ minWidth: 200, flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ height: 11, width: 96, borderRadius: 3, background: 'var(--line-soft)' }} />
+        <div style={{ height: 26, width: '78%', borderRadius: 5, background: 'var(--line-soft)' }} />
+        <div style={{ height: 13, width: '62%', borderRadius: 4, background: 'var(--line-soft)' }} />
       </div>
     </div>
   );

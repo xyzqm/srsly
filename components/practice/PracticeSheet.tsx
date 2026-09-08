@@ -237,8 +237,8 @@ export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Pro
             <span>{pages.length > 1 ? `${pi + 1} / ${pages.length}` : ''}</span>
           </div>
 
-          {page.map((row, i) => (
-            <Row key={row.char} row={row} n={i + 1} cells={cells} hideModels={hideModels} />
+          {page.map(row => (
+            <Row key={row.char} row={row} cells={cells} hideModels={hideModels} />
           ))}
 
           {/* THE ANSWER KEY, and only when it is needed. A recall exercise you cannot mark
@@ -246,16 +246,13 @@ export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Pro
           {hideModels && (
             <div className="ps-key" style={{ marginTop: '8mm', paddingTop: '3mm', borderTop: '1px solid #ccc' }}>
               <div style={{ ...mono, fontSize: 9, letterSpacing: '.14em', textTransform: 'uppercase', color: '#888', marginBottom: '2mm' }}>
-                Answers — fold under
+                Answers, in row order — fold under
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4mm' }}>
-                {page.map((row, i) => (
-                  <span key={row.char} style={{ ...mono, fontSize: 10, color: '#444', display: 'inline-flex', alignItems: 'center', gap: '1.5mm' }}>
-                    {i + 1}.
-                    <svg width="7mm" height="7mm" viewBox={GLYPH_VIEWBOX} className="ps-model" style={{ color: '#222' }}>
-                      <Glyph strokes={row.strokes} />
-                    </svg>
-                  </span>
+                {page.map(row => (
+                  <svg key={row.char} width="7mm" height="7mm" viewBox={GLYPH_VIEWBOX} className="ps-model" style={{ color: '#222' }}>
+                    <Glyph strokes={row.strokes} />
+                  </svg>
                 ))}
               </div>
             </div>
@@ -275,16 +272,14 @@ export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Pro
 
 /* ───────────────────────────── one row ─────────────────────────────────── */
 
-function Row({ row, n, cells, hideModels }: {
-  row: SheetRow; n: number; cells: ReturnType<typeof rowCells>; hideModels: boolean;
+function Row({ row, cells, hideModels }: {
+  row: SheetRow; cells: ReturnType<typeof rowCells>; hideModels: boolean;
 }) {
   const band = strokeBuildUp(row.strokes);
   return (
     <div className="ps-row" style={{ marginBottom: '6mm' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4mm', marginBottom: '1.5mm', minHeight: `${STROKE_BOX_MM}mm` }}>
         <div style={{ ...mono, fontSize: 10, color: '#333', whiteSpace: 'nowrap' }}>
-          {/* Numbered, so a row can be matched against the answer key without counting. */}
-          <span style={{ color: '#999', marginRight: '1.5mm' }}>{n}.</span>
           {/* The character itself is withheld in recall mode — printing it in the label would
               hand over exactly what the blank cells are asking for. */}
           {!hideModels && <span style={{ fontFamily: 'var(--f-han)', fontSize: 13, marginRight: '2mm' }}>{row.char}</span>}
