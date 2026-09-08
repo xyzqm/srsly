@@ -40,11 +40,20 @@ interface Toast {
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
 export default function ToastHost(
-  { deck, loadSeq, language }: { deck: DeckWord[]; loadSeq: number; language: string },
+  { deck, loadSeq, language, deckLoaded = true }:
+  { deck: DeckWord[]; loadSeq: number; language: string; deckLoaded?: boolean },
 ) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  /** Ids present at the last check. `null` until the first deck has loaded. */
-  const seenIds = useRef<Set<string> | null>(null);
+  /**
+   * What the deck looked like at the last check, AND which deck that was.
+   *
+   * The language and the load counter are stored ALONGSIDE the ids rather than in refs of
+   * their own, because the question is never "has the language changed since the last
+   * render" — it is "do these ids describe the deck I am now holding". Those are different
+   * questions and the second is the one a diff needs answered. `null` until a deck has
+   * actually loaded.
+   */
+  const seen = useRef<{ lang: string; loadSeq: number; ids: Set<string> } | null>(null);
   const { fresh, acknowledge } = useAchievements(deck.length);
 
   function push(t: Toast, ms: number) {
@@ -53,51 +62,61 @@ export default function ToastHost(
   }
 
   /**
-   * A deck that arrived from STORAGE is absorbed silently — it is not something the learner
-   * just did.
+   * The one effect that decides whether the deck changed BECAUSE THE LEARNER DID SOMETHING.
    *
-   * `loadSeq` counts loads and not edits (see hooks/useVocabDeck.ts). Signing in swaps a small
-   * local deck for a large cloud one, and by diff alone that is identical to adding hundreds
-   * of words at once: it announced "Added 542 words to your deck" and fired a Collector 1000
-   * milestone crossed months earlier on another device. Re-seeding here is what makes a
-   * sync silent while leaving a real save loud.
+   * ── WHY ONE EFFECT AND NOT TWO ──
+   * This was two: one that re-seeded on a language switch or a fresh load, and one that
+   * diffed. They ran in declaration order, which is stable — and it did not matter, because
+   * they had DIFFERENT DEPENDENCY ARRAYS and the two signals do not arrive on the same
+   * render. `language` changes immediately; the new language's deck arrives one or more
+   * renders later, since `useVocabDeck` has to read storage first. So the re-seed fired
+   * against the OUTGOING language's deck, spent its guard, and by the time the incoming deck
+   * landed the diff had nothing to protect it: 711 unfamiliar ids, and "Added 711 words to
+   * your deck" on every single language switch.
    *
-   * `acknowledge()` is exactly the right primitive for the milestone half, and it already
-   * exists: it marks what is currently earned as seen WITHOUT showing anything.
-   */
-  /**
-   * A LANGUAGE SWITCH IS NOT AN ADDITION EITHER, and that is the second face of this bug.
+   * Worse, the guard it spent was `loadSeq === lastLoad.current` — and `loadSeq` is a
+   * PER-LANGUAGE counter (see hooks/useVocabDeck.ts). Comparing Chinese's third load against
+   * Spanish's third load compares two unrelated facts that happen to both be 3.
    *
-   * `loadSeq` counts loads from STORAGE, so it covers signing in. It does not cover switching
-   * language: the deck is replaced wholesale with another language's words, often straight
-   * from the in-memory cache without any load happening at all — so the diff below saw 711
-   * unfamiliar ids and announced "Added 711 words to your deck" every single time.
+   * Folding them into one effect removes the ordering entirely: the ids are compared against
+   * the language and counter they were RECORDED WITH, so there is no window in which they
+   * can describe a different deck than the one being diffed.
    *
-   * Both are the same mistake as ever: a value meaning "this is a different deck" rendered as
-   * one meaning "you just added these". Re-seeding on either signal is the whole fix.
-   */
-  const lastLoad = useRef(loadSeq);
-  const lastLang = useRef(language);
-  useEffect(() => {
-    const switched = language !== lastLang.current;
-    if (loadSeq === lastLoad.current && !switched) return;
-    lastLoad.current = loadSeq;
-    lastLang.current = language;
-    seenIds.current = new Set(deck.map(w => w.id ?? w.h));
-    if (fresh.length > 0) acknowledge();
-  }, [loadSeq, language, deck, fresh, acknowledge]);
-
-  /**
-   * A word was saved. Seeded on the first pass rather than compared against zero, so arriving
-   * with an existing deck does not announce words saved in some previous session.
+   * ── AND IT IS GATED ON deckLoaded ──
+   * Which is the same fix `Flashcards` already carries, for the same reason. Between the
+   * language changing and its deck arriving, `deck` still holds the outgoing language's
+   * words; recording those under the incoming language's name would just move the bug one
+   * step later. `deckLoaded` is derived during render from which language the deck actually
+   * belongs to, so it is false for exactly that window.
    */
   useEffect(() => {
+    if (!deckLoaded) return;                       // the deck in hand is not this language's
     const ids = new Set(deck.map(w => w.id ?? w.h));
-    const prev = seenIds.current;
-    seenIds.current = ids;
-    if (prev === null) return;                       // first load: seed, announce nothing
-    const added = deck.filter(w => !prev.has(w.id ?? w.h));
-    if (added.length === 0) return;                  // a removal, or an in-place edit
+    const prev = seen.current;
+    seen.current = { lang: language, loadSeq, ids };
+
+    // First deck of the session: seed and announce nothing. Arriving with 500 words is not
+    // 500 things you just did.
+    if (prev === null) return;
+
+    /**
+     * A DIFFERENT DECK IS NOT AN ADDITION, and it wears two faces.
+     *
+     * Switching language replaces the deck wholesale with another language's words. Signing
+     * in replaces a small local deck with a large cloud one — indistinguishable by diff from
+     * adding hundreds of words at once, which is how a sign-in came to announce "Added 542
+     * words" and fire a milestone crossed months earlier on another device.
+     *
+     * `acknowledge()` is exactly right for the milestone half and already exists: it marks
+     * what is currently earned as seen WITHOUT showing anything.
+     */
+    if (prev.lang !== language || prev.loadSeq !== loadSeq) {
+      if (fresh.length > 0) acknowledge();
+      return;
+    }
+
+    const added = deck.filter(w => !prev.ids.has(w.id ?? w.h));
+    if (added.length === 0) return;                // a removal, or an in-place edit
 
     // One word gets named; a bulk import gets counted. Naming eleven words in a corner toast
     // is a wall of text nobody reads, and the count is the useful fact there anyway.
@@ -110,7 +129,7 @@ export default function ToastHost(
       title,
       detail: added.length === 1 ? 'Scheduled for review tomorrow' : 'Scheduled for review',
     }, SAVE_MS);
-  }, [deck]);
+  }, [deck, deckLoaded, language, loadSeq, fresh, acknowledge]);
 
   useEffect(() => {
     if (fresh.length === 0) return;

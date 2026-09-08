@@ -251,21 +251,45 @@ export function useVocabDeck(language: LanguageCode = 'zh') {
       // off-curriculum word never flashes into a review surface on the way out.
       const pruned = await pruneDeckToCurriculum(language, unique);
       if (pruned !== unique) changed = true;
+      // A switch away mid-load must not publish the language we just left.
+      if (!live) return;
+      /**
+       * PUBLISHED HERE, BEFORE THE GLOSS REPAIR — which is what makes a language switch
+       * feel instant instead of laggy.
+       *
+       * `syncDeckGlosses` calls `lookupReadingAsync`, which needs the language's DICTIONARY:
+       * cedict.json is 7.98 MB and esdict.json 5.45 MB. Awaiting it here put a multi-megabyte
+       * download between the learner pressing a language and that language's deck appearing,
+       * on every first switch of a session — the tab simply sat empty for the whole chain.
+       *
+       * It does not need to be there. `pruneDeckToCurriculum` genuinely does: its whole job
+       * is to stop an off-curriculum word flashing into a review surface on its way out, so
+       * publishing before it would defeat it. The gloss repair is the opposite kind of work
+       * — deckGloss.ts's own docstring says a card that slips through "is simply repaired on
+       * the next load", so a card carrying a slightly worse definition for a few hundred
+       * milliseconds is precisely the cost that file already accepts.
+       */
+      deckRef.current = pruned;
+      setDeck(pruned);
+      // `fromStorage` — this deck came from storage, not from anything the learner just did.
+      publishDeck(language, pruned, true);
+      setLoadedLang(language);
+      setLoadSeq(deckLoadSeq.get(language) ?? 0);
+      if (changed) storage.saveVocabDeck(language, pruned);
+
       // Repair card definitions that describe the word's spelling rather than teaching it.
       // A card stores its own copy of the gloss, so improving the dictionary does nothing
       // for words already added — see lib/deckGloss.ts, which only touches glosses carrying
-      // that fingerprint, never one the learner rewrote.
+      // that fingerprint, never one the learner rewrote. Behind the paint, and re-published
+      // as `fromStorage` so a consumer diffing the deck reads it as an arrival rather than
+      // as something the learner just did.
       const resynced = await syncDeckGlosses(language, pruned);
-      if (resynced !== pruned) changed = true;
-      // A switch away mid-load must not publish the language we just left.
-      if (!live) return;
+      if (!live || resynced === pruned) return;
       deckRef.current = resynced;
       setDeck(resynced);
-      // `fromStorage` — this deck came from storage, not from anything the learner just did.
       publishDeck(language, resynced, true);
-      setLoadedLang(language);
       setLoadSeq(deckLoadSeq.get(language) ?? 0);
-      if (changed) storage.saveVocabDeck(language, resynced);
+      storage.saveVocabDeck(language, resynced);
     });
     return () => { live = false; };
     // `reloadKey` re-runs this against the cloud when a tab regains focus. It is not read

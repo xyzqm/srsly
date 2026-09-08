@@ -46,6 +46,23 @@ export default function SrsTab({
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
 
   /**
+   * Only Chinese has stroke data, so only Chinese can be in Write mode.
+   *
+   * `mode` survives a language switch — SrsTab is never unmounted by one — while the TOGGLE
+   * is gated on `hasHandwriting`. So switching from Chinese to Spanish mid-session left
+   * `mode` on 'write' with no toggle rendered to change it back: WritingPractice drew for
+   * Spanish, `writableChars` found no Han characters in `hola`, and the learner got "Nothing
+   * to write yet" with no control anywhere on screen to escape it. A dead end, and the way
+   * out was to reload the page.
+   *
+   * Reset in an effect AND guarded at the render below. The effect alone leaves one frame
+   * where the dead end is on screen; the guard alone leaves `mode` lying about what is being
+   * shown, so coming back to Chinese would silently land in Write.
+   */
+  const canWrite = getLanguageConfig(language).hasHandwriting;
+  useEffect(() => { if (!canWrite) setMode('cards'); }, [canWrite]);
+
+  /**
    * Pool words are not studiable.
    *
    * Normal review already excludes them — `isDueToday` goes through `isActive`, which returns
@@ -88,7 +105,7 @@ export default function SrsTab({
           rather than a `language === 'zh'` check. Writing keeps its OWN schedule and touches
           neither the streak nor the daily budget, so switching here changes what you practise
           and never what you owe. */}
-      {getLanguageConfig(language).hasHandwriting && (
+      {canWrite && (
         <div className="flex gap-1.5 mb-4">
           {(['cards', 'write'] as const).map(m => {
             const on = mode === m;
@@ -112,7 +129,7 @@ export default function SrsTab({
         </div>
       )}
 
-      {mode === 'write' ? (
+      {mode === 'write' && canWrite ? (
         /* Keyed by language for the same reason Flashcards is: the queue latches on first
            load, so a language switch has to be a new session rather than the old one holding
            the outgoing language's characters. */

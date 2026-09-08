@@ -318,7 +318,7 @@ function AppShell() {
             each with its own `useAchievements`, racing to acknowledge the same milestone.
             Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
             be the one nobody could see and the milestone simply never appeared. */}
-        <ToastHost deck={deck} loadSeq={loadSeq} language={language} />
+        <ToastHost deck={deck} loadSeq={loadSeq} language={language} deckLoaded={deckLoaded} />
         <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its
