@@ -9,6 +9,7 @@ import {
   type WritingCards,
 } from '@/lib/writingState';
 import WritingCanvas from './WritingCanvas';
+import PracticeSheet from './PracticeSheet';
 
 /**
  * A handwriting session — one character at a time, graded by the strokes.
@@ -43,6 +44,12 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
   const [index, setIndex] = useState(0);
   const [result, setResult] = useState<{ mistakes: number; usedHint: boolean } | null>(null);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
+  /**
+   * The printable sheet. Session-local like the Cards/Write toggle, and reachable from EVERY
+   * state of this component including "nothing due" — which is exactly when someone is most
+   * likely to want paper, since the schedule has nothing left to ask them for today.
+   */
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => { setSettings(getSrsSettings()); }, []);
 
@@ -87,6 +94,15 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
     setIndex(i => i + 1);
   }, []);
 
+  /**
+   * One return, so the practice sheet is reachable from EVERY state.
+   *
+   * These were four early returns. The sheet has to hang off all of them — most of all off
+   * "Nothing due", which is exactly when someone reaches for paper, since the schedule has
+   * nothing left to ask them for today. Four copies of the same button is how one of them
+   * ends up missing, which is the bug `AchievementToast` already had on the reading results.
+   */
+  const body = (() => {
   if (!deckLoaded || cards === null || queue === null) {
     return (
       <div className="py-10 text-center" style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>
@@ -174,6 +190,49 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
             {index + 1 >= queue.length ? 'Finish' : 'Next'}
           </button>
         </div>
+      )}
+    </div>
+  );
+  })();
+
+  const ready = deckLoaded && cards !== null;
+
+  return (
+    <div>
+      {body}
+
+      {/* PAPER GETS ITS OWN DOOR, and it is not a grade button.
+          The request this answers was "let me practise on paper and mark myself correct" —
+          which would put a self-graded review beside a stroke-verified one and leave the
+          schedule unable to tell them apart afterwards. A sheet that claims nothing costs no
+          accuracy and serves the actual need better: paper does the practice, the screen does
+          the measurement. */}
+      {ready && chars.length > 0 && (
+        <div className="text-center" style={{ marginTop: 22 }}>
+          <button
+            onClick={() => setSheetOpen(true)}
+            className="cursor-pointer"
+            style={{
+              ...mono, fontSize: 11.5, letterSpacing: '.06em', padding: '9px 16px',
+              borderRadius: 8, border: '1px solid var(--line)',
+              background: 'var(--card)', color: 'var(--ink-soft)',
+            }}
+          >
+            Practice sheet — print 田字格 paper
+          </button>
+          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 7 }}>
+            Grades nothing. Writing on paper is practice, not a review.
+          </div>
+        </div>
+      )}
+
+      {sheetOpen && cards !== null && (
+        <PracticeSheet
+          allChars={chars}
+          dueChars={dueWritingChars(chars, cards)}
+          deck={deck}
+          onClose={() => setSheetOpen(false)}
+        />
       )}
     </div>
   );

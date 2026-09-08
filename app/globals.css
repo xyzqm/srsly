@@ -263,3 +263,77 @@
 @media (pointer: coarse) {
   .tab-btn { padding-top: 13px !important; padding-bottom: 13px !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRINT — the handwriting practice sheet (components/practice/PracticeSheet.tsx)
+
+   THIS BLOCK DELIBERATELY HARDCODES COLOURS, WHICH THE REST OF THIS FILE FORBIDS.
+
+   CLAUDE.md's rule is "never use hardcoded colors — always use CSS variables", and it is
+   right for every pixel that appears on a screen. It INVERTS here, because paper has no
+   theme: the six themes exist to suit a room's lighting, and a sheet printed in `ink` or
+   `dusk` would emit a black page and drain a cartridge to produce grey-on-black practice
+   paper. Ink on white is not one theme among six here, it is what paper is.
+
+   So this is an exception with a reason, not an oversight. Please don't "fix" it.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@page {
+  margin: 12mm;
+}
+
+@media print {
+  /* Hide the whole app and reveal only the sheet. `visibility` rather than `display`,
+     because the sheet is mounted deep in the React tree rather than as a child of <body>,
+     so there is no ancestor selector that could isolate it. */
+  body * { visibility: hidden !important; }
+  .ps-root, .ps-root * { visibility: visible !important; }
+
+  html, body {
+    background: #fff !important;
+    /* A fixed overlay prints only its first screenful; static lets the pages flow. */
+    height: auto !important;
+  }
+
+  .ps-root {
+    position: absolute !important;
+    left: 0; top: 0; right: 0;
+    width: 100% !important;
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  /* The controls, the skipped-characters note, and anything else that is app rather than
+     worksheet. */
+  .ps-chrome { display: none !important; }
+
+  .ps-page {
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    break-after: page;
+  }
+  .ps-page:last-child { break-after: auto; }
+
+  /* A character's grid, its stroke band and its cells are one thing; splitting them across
+     a page break would leave a row of empty boxes with no character to write in them. */
+  .ps-row { break-inside: avoid; }
+  .ps-key { break-inside: avoid; }
+
+  /* Browsers drop background colours when printing but honour fill and stroke — which is why
+     the grid is drawn as SVG. `print-color-adjust` keeps the greys from being crushed to
+     black, so the trace characters stay traceable and the rules stay faint. */
+  .ps-root * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .ps-grid  { color: #9a9a9a !important; }
+  .ps-model { color: #000000 !important; }
+  .ps-trace { color: #cccccc !important; }
+}
