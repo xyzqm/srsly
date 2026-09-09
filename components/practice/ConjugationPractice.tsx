@@ -145,27 +145,21 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
   }, [index, queue, cards]);
 
   /**
-   * A RIGHT ANSWER MOVES ON BY ITSELF. There is nothing to read on a correct card — the
-   * feedback is the word "Correct" and the learner already knew, so making them click Next is
-   * a keystroke charged for being right. A WRONG one waits: the correction is the entire value
-   * of the card, and skipping past it automatically would be the app deciding how long you
-   * need to look at the answer.
-   */
-  useEffect(() => {
-    if (!answer?.correct) return;
-    const t = setTimeout(advance, 550);
-    return () => clearTimeout(t);
-  }, [answer, advance]);
-
-  /**
-   * Enter continues, everywhere it is unambiguous.
+   * ADVANCING IS THE LEARNER'S, NOT A TIMER'S.
    *
-   * Not bound while the input is on screen: `TypedAnswer` owns Enter there, and it also guards
-   * `isComposing` so a candidate-picking keystroke cannot submit. Once an answer is graded, or
-   * while a row is being read, nothing else wants the key.
+   * A right answer used to move on by itself after half a second. It was asked for and then
+   * asked back — and the second answer is the better one: half a second is long enough to feel
+   * hurried and short enough to miss what you just wrote, and the card vanishing on its own is
+   * the app deciding you were finished looking. Enter does the same job with none of that,
+   * because the learner says when.
+   *
+   * Enter continues everywhere it is unambiguous, and after BOTH verdicts — the whole point of
+   * removing the timer is that a correct card now waits too. It is deliberately not bound while
+   * the input is on screen: `TypedAnswer` owns Enter there, and guards `isComposing` so an IME
+   * candidate keystroke cannot submit.
    */
   useEffect(() => {
-    const waiting = phase === 'learn' || (answer !== null && !answer.correct);
+    const waiting = phase === 'learn' || answer !== null;
     if (!waiting) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.isComposing) return;
@@ -297,6 +291,9 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
                 >
                   {index + 1 >= queue.length ? 'Finish' : 'Next'}
                 </button>
+                <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 7 }}>
+                  or press Enter
+                </div>
               </div>
             )}
           </div>
