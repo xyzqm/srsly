@@ -5,6 +5,7 @@ import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
 import Flashcards from './Flashcards';
 import WritingPractice from './WritingPractice';
+import ConjugationPractice from './ConjugationPractice';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import ReadTab from '@/components/read/ReadTab';
 
@@ -42,7 +43,7 @@ export default function SrsTab({
    * drawing canvas because of a choice made last Tuesday would put the optional half of the
    * tab in front of the scheduled one.
    */
-  const [mode, setMode] = useState<'cards' | 'write'>('cards');
+  const [mode, setMode] = useState<'cards' | 'write' | 'conjugate'>('cards');
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
 
   /**
@@ -59,8 +60,28 @@ export default function SrsTab({
    * where the dead end is on screen; the guard alone leaves `mode` lying about what is being
    * shown, so coming back to Chinese would silently land in Write.
    */
-  const canWrite = getLanguageConfig(language).hasHandwriting;
-  useEffect(() => { if (!canWrite) setMode('cards'); }, [canWrite]);
+  const cfg = getLanguageConfig(language);
+  const canWrite = cfg.hasHandwriting;
+  const canConjugate = cfg.hasConjugation;
+  /**
+   * A mode cannot outlive the language that offers it.
+   *
+   * `mode` survives a language switch — SrsTab is never unmounted by one — while the toggle is
+   * gated on the config. Leaving it set stranded the learner in a drill with no control on
+   * screen to leave it; the only way out was a reload. One effect covers both drills, so a
+   * third cannot reintroduce the bug by being forgotten.
+   */
+  useEffect(() => {
+    if ((mode === 'write' && !canWrite) || (mode === 'conjugate' && !canConjugate)) setMode('cards');
+  }, [mode, canWrite, canConjugate]);
+
+  /** Which drills this language actually has, in the order they are offered. */
+  const modes = useMemo(() => {
+    const out: { id: 'cards' | 'write' | 'conjugate'; label: string }[] = [{ id: 'cards', label: 'Cards' }];
+    if (canWrite) out.push({ id: 'write', label: 'Write' });
+    if (canConjugate) out.push({ id: 'conjugate', label: 'Conjugate' });
+    return out;
+  }, [canWrite, canConjugate]);
 
   /**
    * Pool words are not studiable.
@@ -105,14 +126,14 @@ export default function SrsTab({
           rather than a `language === 'zh'` check. Writing keeps its OWN schedule and touches
           neither the streak nor the daily budget, so switching here changes what you practise
           and never what you owe. */}
-      {canWrite && (
+      {modes.length > 1 && (
         <div className="flex gap-1.5 mb-4">
-          {(['cards', 'write'] as const).map(m => {
-            const on = mode === m;
+          {modes.map(({ id, label }) => {
+            const on = mode === id;
             return (
               <button
-                key={m}
-                onClick={() => setMode(m)}
+                key={id}
+                onClick={() => setMode(id)}
                 className="cursor-pointer"
                 style={{
                   fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em',
@@ -122,14 +143,19 @@ export default function SrsTab({
                   color: on ? 'var(--accent)' : 'var(--ink-soft)',
                 }}
               >
-                {m === 'cards' ? 'Cards' : 'Write'}
+                {label}
               </button>
             );
           })}
         </div>
       )}
 
-      {mode === 'write' && canWrite ? (
+      {mode === 'conjugate' && canConjugate ? (
+        /* Keyed by language for the same reason the others are: the queue latches on first
+           load, so a language switch has to be a new session rather than the old one holding
+           the outgoing language's cards. */
+        <ConjugationPractice key={`conj-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
+      ) : mode === 'write' && canWrite ? (
         /* Keyed by language for the same reason Flashcards is: the queue latches on first
            load, so a language switch has to be a new session rather than the old one holding
            the outgoing language's characters. */

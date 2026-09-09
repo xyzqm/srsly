@@ -1,0 +1,306 @@
+"use client";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { DeckWord } from '@/lib/types';
+import { useLanguage } from '@/lib/LanguageContext';
+import { storage } from '@/lib/storage';
+import { getSrsSettings, DEFAULT_SRS_SETTINGS, type SrsSettings, type FsrsGrade } from '@/lib/fsrs';
+import { isDrillDue, scheduleDrill, type DrillCards } from '@/lib/drillState';
+import { loadEsGrammar } from '@/lib/spanishGrammar';
+import type { GrammarTable } from '@/lib/conjugation';
+import {
+  buildConjugationCards, gradeConjugation, promptCell, deltaLabel,
+  siblingForms, tenseLabel, personLabel, type ConjugationCard,
+} from '@/lib/conjugationDrill';
+import TypedAnswer from './TypedAnswer';
+
+/**
+ * The Spanish conjugation drill — one form per question, typed.
+ *
+ * ── IT IS A DRILL, AND IT IS FIREWALLED LIKE THE OTHER ONE ──
+ * Grades go to `drill_state` under the `c:` namespace and nowhere else: not the reading
+ * streak, not `isDueToday`, not the daily new-card budget, not the heatmap. Conjugation is
+ * practice you go and do, exactly like handwriting, and being behind on it must never read as
+ * a broken streak.
+ *
+ * ── TAUGHT AS A ROW, TESTED AS A CELL ──
+ * A card the learner has never answered opens in LEARN: the whole six-form row, ungraded, with
+ * the change named where there is one. "Got it, let me try" starts the typed test. That is the
+ * same shape `WritingCanvas` uses for a new character, and for the same reason — a traditional
+ * driller tests without ever teaching, so the first encounter with a pattern is a failure by
+ * construction.
+ *
+ * Nothing is scheduled until an answer is typed, so meeting a card costs the scheduler nothing.
+ *
+ * ── THE QUEUE IS LATCHED ──
+ * Built once when the cards arrive and never rebuilt, so answering cannot reshuffle the
+ * session underneath the learner. The same rule `Flashcards` and `WritingPractice` follow.
+ */
+
+interface Props {
+  deck: DeckWord[];
+  deckLoaded?: boolean;
+}
+
+const mono = { fontFamily: 'var(--f-mono)' } as const;
+
+export default function ConjugationPractice({ deck, deckLoaded = true }: Props) {
+  const language = useLanguage();
+  const [table, setTable] = useState<GrammarTable | null>(null);
+  const [cards, setCards] = useState<DrillCards | null>(null);
+  const [queue, setQueue] = useState<ConjugationCard[] | null>(null);
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState<'learn' | 'test'>('test');
+  const [answer, setAnswer] = useState<{ correct: boolean; typed: string; expected: string } | null>(null);
+  const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
+
+  useEffect(() => { setSettings(getSrsSettings()); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void loadEsGrammar().then(t => { if (alive) setTable((t as GrammarTable | null) ?? null); });
+    void storage.getDrillCards(language, 'c').then(c => { if (alive) setCards(c); });
+    return () => { alive = false; };
+  }, [language]);
+
+  /** Every card this deck earns — derived, never stored. See lib/conjugationDrill.ts. */
+  const all = useMemo(
+    () => (table ? buildConjugationCards(table, deck) : []),
+    [table, deck],
+  );
+
+  // Latched once, when the deck, the table and the stored cards are all actually here.
+  useEffect(() => {
+    if (queue !== null || !deckLoaded || table === null || cards === null) return;
+    const due = all.filter(c => isDrillDue(cards[c.id]));
+    setQueue(due);
+    setIndex(0);
+    setPhase(due.length > 0 && (cards[due[0].id]?.reviews ?? 0) === 0 ? 'learn' : 'test');
+  }, [queue, deckLoaded, table, cards, all]);
+
+  const card = queue && index < queue.length ? queue[index] : null;
+  const stored = card ? cards?.[card.id] : undefined;
+  const reviews = stored?.reviews ?? 0;
+  const cell = card ? promptCell(card, reviews) : null;
+
+  const commit = useCallback(async (id: string, grade: FsrsGrade) => {
+    const next = { ...(cards ?? {}), [id]: scheduleDrill(cards?.[id], grade, settings) };
+    setCards(next);
+    await storage.saveDrillCards(language, 'c', next);
+  }, [cards, language, settings]);
+
+  const onSubmit = useCallback((_r: unknown, typed: string) => {
+    if (!card || !cell || !table) return;
+    // Re-graded HERE rather than trusting the vocabulary verdict, because an accent in a
+    // conjugation drill separates two answers rather than spelling one — see gradeConjugation.
+    const verdict = gradeConjugation(typed, cell.form, siblingForms(table, card.lemma)).verdict;
+    const correct = verdict === 'exact';
+    setAnswer({ correct, typed, expected: cell.form });
+    void commit(card.id, correct ? 3 : 1);
+  }, [card, cell, table, commit]);
+
+  const advance = useCallback(() => {
+    setAnswer(null);
+    const next = index + 1;
+    setIndex(next);
+    const nextCard = queue?.[next];
+    setPhase(nextCard && (cards?.[nextCard.id]?.reviews ?? 0) === 0 ? 'learn' : 'test');
+  }, [index, queue, cards]);
+
+  if (!deckLoaded || table === null || cards === null || queue === null) {
+    return (
+      <div className="py-10 text-center" style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (all.length === 0) {
+    return (
+      <div className="py-10 text-center">
+        <p style={{ color: 'var(--ink-soft)', maxWidth: '38ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          Nothing to conjugate yet. Cards come from the verbs in your deck — read something and
+          tap a verb to add it.
+        </p>
+      </div>
+    );
+  }
+
+  if (!card || !cell) {
+    const remaining = all.filter(c => isDrillDue(cards[c.id])).length;
+    return (
+      <div className="py-10 text-center">
+        <div style={{ ...mono, fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          {queue.length > 0 ? 'Done for now' : 'Nothing due'}
+        </div>
+        <p style={{ color: 'var(--ink-soft)', marginTop: 10, maxWidth: '38ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          {queue.length > 0
+            ? `${queue.length} card${queue.length === 1 ? '' : 's'} answered.`
+            : 'Every pattern and exception you own is scheduled ahead. Conjugation has its own schedule — it does not affect your reading streak.'}
+          {remaining > 0 && ` ${remaining} still due — reopen to carry on.`}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-end mb-5 gap-4">
+        <div>
+          <div style={{ ...mono, fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            Conjugation · FSRS
+          </div>
+          <div style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>
+            {index + 1} of {queue.length}
+            <span style={{ marginLeft: 8 }}>
+              · {card.kind === 'pattern' ? 'pattern' : 'exception'}
+              {reviews > 0 && ` · seen ${reviews}×`}
+            </span>
+          </div>
+        </div>
+        <div style={{ height: 5, background: 'var(--line-soft)', borderRadius: 4, overflow: 'hidden', flex: 1, maxWidth: 240 }}>
+          <div style={{
+            height: '100%', background: 'var(--accent)', borderRadius: 4,
+            width: `${(index / queue.length) * 100}%`, transition: 'width .4s cubic-bezier(.2,.7,.3,1)',
+          }} />
+        </div>
+      </div>
+
+      {phase === 'learn' ? (
+        <LearnRow card={card} onReady={() => setPhase('test')} />
+      ) : (
+        <div className="text-center">
+          <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+            {tenseLabel(cell.tense)}
+          </div>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '8px 0 2px' }}>
+            {card.lemma}
+          </div>
+          {cell.person && (
+            <div style={{ ...mono, fontSize: 15, color: 'var(--accent)', letterSpacing: '.04em' }}>
+              {personLabel(cell.person)}
+            </div>
+          )}
+
+          <div style={{ maxWidth: 340, margin: '18px auto 0' }}>
+            {answer === null ? (
+              <TypedAnswer
+                key={`${card.id}:${cell.tense}:${cell.person}`}
+                expected={cell.form}
+                language="es"
+                placeholder="the form"
+                onSubmit={onSubmit}
+              />
+            ) : (
+              <div>
+                <div style={{
+                  ...mono, fontSize: 13, letterSpacing: '.04em',
+                  color: answer.correct ? 'var(--jade)' : 'var(--accent)',
+                }}>
+                  {answer.correct
+                    ? 'Correct.'
+                    : <>Not quite — it is <strong style={{ fontWeight: 600 }}>{answer.expected}</strong></>}
+                </div>
+                {/* The near-miss that is NOT forgiven, named so it teaches rather than stings. */}
+                {!answer.correct && sameLetters(answer.typed, answer.expected) && (
+                  <div style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6, lineHeight: 1.5 }}>
+                    The accent is the difference between two forms here, not a spelling detail.
+                  </div>
+                )}
+                <button
+                  onClick={advance}
+                  className="cursor-pointer transition-all duration-150"
+                  style={{
+                    ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase',
+                    background: 'var(--accent)', color: '#fff', border: 'none',
+                    borderRadius: 8, padding: '11px 22px', marginTop: 16,
+                    boxShadow: '0 2px 0 var(--accent-deep)',
+                  }}
+                >
+                  {index + 1 >= queue.length ? 'Finish' : 'Next'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Letters equal, accents not — the case the drill deliberately marks wrong. */
+function sameLetters(a: string, b: string): boolean {
+  const strip = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return a.trim() !== '' && strip(a) === strip(b);
+}
+
+/**
+ * The Learn state: the whole row, before anything is graded.
+ *
+ * A pattern card shows the six endings it teaches. An exception shows the same row with the
+ * forms that actually change picked out, so the change is met as a DEVIATION from something
+ * rather than as a list of forms to memorise — which is the entire argument for teaching the
+ * 27 patterns first.
+ */
+function LearnRow({ card, onReady }: { card: ConjugationCard; onReady: () => void }) {
+  const changed = new Set(card.cells.map(c => c.form));
+  return (
+    <div className="text-center">
+      <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+        {card.kind === 'pattern' ? `New pattern · -${card.cls} verbs` : 'New exception'}
+      </div>
+      <div style={{ fontFamily: 'var(--f-display)', fontSize: 27, fontWeight: 500, margin: '7px 0 2px' }}>
+        {card.lemma}
+      </div>
+      <div style={{ ...mono, fontSize: 12.5, color: 'var(--ink-soft)' }}>
+        {card.tense ? tenseLabel(card.tense) : ''}
+        {card.delta && <> · {deltaLabel(card.delta)}</>}
+      </div>
+
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'auto auto', gap: '6px 16px',
+        justifyContent: 'center', margin: '18px auto 0', textAlign: 'left',
+      }}>
+        {card.row.map(c => {
+          const on = changed.has(c.form);
+          return (
+            <FormRow key={`${c.tense}:${c.person}`} person={personLabel(c.person)} form={c.form} on={on} />
+          );
+        })}
+      </div>
+
+      {card.cells.length > card.row.length && (
+        <div style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)', marginTop: 12, maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.5 }}>
+          The same change runs through {card.cells.length} forms in all.
+        </div>
+      )}
+
+      <button
+        onClick={onReady}
+        className="cursor-pointer transition-all duration-150"
+        style={{
+          ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase',
+          background: 'var(--accent)', color: '#fff', border: 'none',
+          borderRadius: 8, padding: '11px 22px', marginTop: 20,
+          boxShadow: '0 2px 0 var(--accent-deep)',
+        }}
+      >
+        Got it, let me try
+      </button>
+    </div>
+  );
+}
+
+function FormRow({ person, form, on }: { person: string; form: string; on: boolean }) {
+  return (
+    <>
+      <span style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)', textAlign: 'right' }}>{person}</span>
+      <span style={{
+        fontFamily: 'var(--f-display)', fontSize: 17,
+        color: on ? 'var(--accent)' : 'var(--ink)',
+        fontWeight: on ? 600 : 400,
+      }}>
+        {form}
+      </span>
+    </>
+  );
+}

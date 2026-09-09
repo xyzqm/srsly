@@ -1,9 +1,6 @@
 import { todayStr } from './deck';
-import {
-  fsrsSchedule, isLearningCard, DEFAULT_SRS_SETTINGS,
-  type FsrsGrade, type SrsSettings,
-} from './fsrs';
-import type { DrillCard, DrillCards } from './drillState';
+import { isLearningCard, DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings } from './fsrs';
+import { isDrillDue, scheduleDrill, type DrillCard, type DrillCards } from './drillState';
 
 /**
  * Handwriting practice, scheduled per CHARACTER.
@@ -73,8 +70,7 @@ export function writableChars(words: readonly { h: string }[]): string[] {
  * writing is not one.
  */
 export function isWritingDue(card: WritingCard | undefined, today: string = todayStr()): boolean {
-  if (!card) return true;
-  return !card.dueAt || card.dueAt <= today;
+  return isDrillDue(card, today);
 }
 
 /** The writable characters that are due, in the deck's own order. */
@@ -112,8 +108,7 @@ export function scheduleWriting(
   grade: FsrsGrade,
   settings: SrsSettings = DEFAULT_SRS_SETTINGS,
 ): WritingCard {
-  const base: WritingCard = card ?? {};
-  return { ...base, ...fsrsSchedule(base, grade, settings, { fuzz: true }) };
+  return scheduleDrill(card, grade, settings);
 }
 
 /** Whether this character is still in its learning steps — used only for the UI's own label. */

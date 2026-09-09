@@ -100,6 +100,15 @@ export interface LanguageConfig {
    * become true, and when it does nothing else has to change.
    */
   hasHandwriting: boolean;
+  /**
+   * Whether this language has a conjugation drill.
+   *
+   * Spanish only for now, and the gate is DATA rather than grammar: French inflects just as
+   * richly and `lib/data/fr-grammar.json` exists, but it is Lexique's positional codes rather
+   * than Wiktionary's tag sets, so `cellsForCode` would need a second reader. Chinese does not
+   * inflect at all and never will.
+   */
+  hasConjugation: boolean;
   /** Matches a single "word character" — used by the paste-import parsers. */
   wordCharRe: RegExp;
   /**
@@ -203,6 +212,7 @@ export const ZH_CONFIG: LanguageConfig = {
   scriptIsUnspaced: true,
   showsCharacterDecomposition: true,
   hasHandwriting: true,
+  hasConjugation: false,
   accentKeys: [],
   wordCharRe: /[一-鿿]/,
   levelSectionLabel: 'HSK level',
@@ -245,6 +255,7 @@ export const JA_CONFIG: LanguageConfig = {
   scriptIsUnspaced: true,
   showsCharacterDecomposition: false,
   hasHandwriting: false,
+  hasConjugation: false,
   accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,
   levelSectionLabel: 'JLPT level',
@@ -296,6 +307,7 @@ export const ES_CONFIG: LanguageConfig = {
   scriptIsUnspaced: false,
   showsCharacterDecomposition: false,
   hasHandwriting: false,
+  hasConjugation: true,
   accentKeys: ['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ', '¿', '¡'],
   wordCharRe: /[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ]/,
   levelSectionLabel: 'CEFR level',
@@ -396,6 +408,7 @@ export const FR_CONFIG: LanguageConfig = {
   scriptIsUnspaced: false,
   showsCharacterDecomposition: false,
   hasHandwriting: false,
+  hasConjugation: false,
   accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',

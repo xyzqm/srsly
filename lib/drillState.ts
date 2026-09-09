@@ -1,5 +1,9 @@
 import type { LanguageCode } from './types';
-import type { Schedulable } from './fsrs';
+import {
+  fsrsSchedule, DEFAULT_SRS_SETTINGS,
+  type Schedulable, type FsrsGrade, type SrsSettings,
+} from './fsrs';
+import { todayStr } from './deck';
 import { canonicalJson } from './canonicalJson';
 
 /**
@@ -102,6 +106,31 @@ export function drillWrite(state: DrillCards, kind: DrillKind, cards: DrillCards
   }
   for (const [id, card] of Object.entries(cards ?? {})) out[drillKey(kind, id)] = card;
   return out;
+}
+
+/* ─────────────────────── due-ness and scheduling ──────────────────────── */
+
+/**
+ * An unpractised item IS due — the same "absent means due immediately" rule the deck's `dueAt`
+ * uses.
+ *
+ * Unlike the reading queue there is no pause, snooze or leech state to consult. Those exist to
+ * protect a DAILY OBLIGATION, and a drill is not one: writing and conjugation are practice you
+ * go and do, so being behind on them is not a debt the app has to manage down.
+ */
+export function isDrillDue(card: DrillCard | undefined, today: string = todayStr()): boolean {
+  if (!card) return true;
+  return !card.dueAt || card.dueAt <= today;
+}
+
+/** Schedule one drill item after an answer. Returns the card to store. */
+export function scheduleDrill(
+  card: DrillCard | undefined,
+  grade: FsrsGrade,
+  settings: SrsSettings = DEFAULT_SRS_SETTINGS,
+): DrillCard {
+  const base: DrillCard = card ?? {};
+  return { ...base, ...fsrsSchedule(base, grade, settings, { fuzz: true }) };
 }
 
 /* ────────────────────────────── merging ───────────────────────────────── */

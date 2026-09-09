@@ -1,0 +1,240 @@
+import type { DeckWord } from './types';
+import { gradeTyped, type TypedResult } from './typedAnswer';
+import {
+  verbClass, verbCells, verbIndex, factsForVerb, patternCards, cellKey,
+  PERSON_ORDER, FINITE_TENSES,
+  type GrammarTable, type Tense, type Person, type VerbClass, type StemDelta,
+} from './conjugation';
+
+/**
+ * Turning conjugation facts into cards a learner sits down and answers.
+ *
+ * `lib/conjugation.ts` decides WHAT is worth knowing; this decides what a card asks, how it is
+ * graded, and which cards a given deck deserves. The split matters because the first half is a
+ * claim about Spanish and the second is a claim about teaching.
+ *
+ * ── ONE CELL PER PROMPT, ONE FACT PER SCHEDULE ──
+ * Every review asks for exactly one form — "pedir, present, él/ella" → `pide`. Six boxes on a
+ * card cannot be graded Again/Good honestly, and the typed grader already exists for exactly
+ * this shape.
+ *
+ * But the SCHEDULE is per FACT, not per cell, because that is what the knowledge actually is:
+ * pedir's e→i change covers eighteen cells and a learner who has it has all eighteen. Per-cell
+ * scheduling would turn Spanish conjugation into 5,222 cards — more than the whole of HSK 1–6 —
+ * and would keep asking about `pidiendo` as though it were unrelated to `pido`.
+ *
+ * So a card rotates through its own cells, `cells[reviews % cells.length]`. Deterministic
+ * rather than random: the same review always asks the same thing, the rotation covers every
+ * cell rather than sampling, and nothing depends on a seed that would have to be stored.
+ *
+ * ── THE PATTERN IS TAUGHT AS A ROW, THEN TESTED AS A CELL ──
+ * A traditional driller tests without teaching. The first time a card comes up it opens in the
+ * same Learn state the handwriting canvas uses: the whole six-form row, ungraded, with "Got
+ * it, let me try" to start. Nothing is scheduled until an answer is typed.
+ *
+ * ── ACCENTS ARE NOT TYPOS HERE, AND THAT IS THE ONE PLACE THIS DIVERGES FROM typedAnswer ──
+ * See `gradeConjugation`. This is the single most important rule in the file.
+ */
+
+export interface DrillCell {
+  tense: Tense;
+  person: Person;
+  form: string;
+}
+
+export interface ConjugationCard {
+  /**
+   * Stable, and stored as the `drill_state` key under the `c:` prefix.
+   *
+   * `parseDrillKey` splits on the FIRST separator only, so `c:pedir:stem:e>i@1` is kind `c`
+   * with id `pedir:stem:e>i@1` — the colons inside are the card's own business.
+   */
+  id: string;
+  kind: 'pattern' | 'exception';
+  /** The verb whose forms this card shows. For a pattern card, a regular exemplar. */
+  lemma: string;
+  cls: VerbClass;
+  /** Pattern cards and whole-tense exceptions. */
+  tense?: Tense;
+  /** Stem exceptions — what actually changes. */
+  delta?: StemDelta;
+  /** Everything this card can ask, in paradigm order. */
+  cells: DrillCell[];
+  /**
+   * The full row to show in the Learn state, which is not the same as `cells`: an exception
+   * covering three cells is still best met beside the three that behave normally.
+   */
+  row: DrillCell[];
+}
+
+/* ─────────────────────────────── labels ───────────────────────────────── */
+
+const TENSE_LABEL: Record<Tense, string> = {
+  pres: 'present', pret: 'preterite', impf: 'imperfect', fut: 'future',
+  cond: 'conditional', pressubj: 'present subjunctive', impsubj: 'imperfect subjunctive',
+  gerund: 'gerund', participle: 'past participle',
+};
+
+/**
+ * PRONOUNS, NOT "1ST PERSON SINGULAR".
+ *
+ * The learner is being asked to produce a form, and the thing that cues a form in Spanish is
+ * the pronoun. Grammatical person is how the table is indexed, not how anyone conjugates.
+ */
+const PERSON_LABEL: Record<Person, string> = {
+  fs: 'yo', ss: 'tú', ts: 'él / ella', fp: 'nosotros', sp: 'vosotros', tp: 'ellos', '': '',
+};
+
+export const tenseLabel = (t: Tense) => TENSE_LABEL[t];
+export const personLabel = (p: Person) => PERSON_LABEL[p];
+
+/** What the card asks, in words. */
+export function promptLabel(lemma: string, cell: DrillCell): string {
+  const t = TENSE_LABEL[cell.tense];
+  return cell.person ? `${lemma} · ${t} · ${PERSON_LABEL[cell.person]}` : `${lemma} · ${t}`;
+}
+
+/** How a stem change reads on a card. */
+export function deltaLabel(d: StemDelta): string {
+  if (!d.from) return `insert “${d.to}”`;
+  if (!d.to) return `drop “${d.from}”`;
+  return `“${d.from}” → “${d.to}”`;
+}
+
+/* ────────────────────────────── the prompt ────────────────────────────── */
+
+/**
+ * Which cell this review asks for.
+ *
+ * Rotates by review count so a card walks its own cells instead of drilling one for ever.
+ * Deterministic on purpose — a random pick would need a stored seed to be reproducible, and
+ * without one the same card asks a different thing every render, which is a bug that looks
+ * like a shuffle.
+ */
+export function promptCell(card: ConjugationCard, reviews: number): DrillCell {
+  return card.cells[((reviews % card.cells.length) + card.cells.length) % card.cells.length];
+}
+
+/* ────────────────────────────── grading ───────────────────────────────── */
+
+const stripAccents = (s: string) =>
+  s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/**
+ * AN ACCENT IS NOT A TYPO IN A CONJUGATION DRILL, and this is where this file has to disagree
+ * with `lib/typedAnswer.ts`.
+ *
+ * That module forgives a missing accent as a near miss, and it is right to: for vocabulary,
+ * `estacion` for `estación` is someone who knows the word and missed a diacritic. Its own
+ * docstring gives the test — "whether the mark distinguishes two words".
+ *
+ * In conjugation it distinguishes two ANSWERS TO DIFFERENT QUESTIONS. `hablo` is the present
+ * first person and `habló` is the preterite third; `hable` is the subjunctive and `hablé` the
+ * preterite. Measured across the graded vocabulary, 76% of verbs carry at least one such pair
+ * and 17% of all cells are involved. Left alone, the existing grader scores `hablo` for
+ * `habló` as `close`, which grades GOOD — marking the present tense correct when the preterite
+ * was asked, on three quarters of the verbs in the language.
+ *
+ * So the near miss survives only where it cannot be a confusion: a stripped answer that
+ * matches ANOTHER REAL CELL of this same verb is wrong, and a stripped answer that matches
+ * nothing else is the ordinary diacritic slip it looks like. The verb's own paradigm decides,
+ * which is why `siblings` is passed rather than guessed at.
+ */
+export function gradeConjugation(
+  typed: string,
+  expected: string,
+  siblings: readonly string[],
+): TypedResult {
+  const result = gradeTyped(typed, expected, 'es');
+  if (result.verdict !== 'close') return result;
+  const got = stripAccents(typed);
+  const collides = siblings.some(f => f !== expected && stripAccents(f) === got);
+  return collides ? { verdict: 'wrong', expected } : result;
+}
+
+/* ─────────────────────────── building the deck ────────────────────────── */
+
+/** The exemplar a pattern card conjugates, preferring a regular verb the learner owns. */
+const FALLBACK: Record<VerbClass, string> = { ar: 'hablar', er: 'comer', ir: 'vivir' };
+
+function rowFor(table: GrammarTable, lemma: string, tense: Tense): DrillCell[] {
+  const cells = verbCells(table, lemma);
+  const persons: Person[] = tense === 'gerund' || tense === 'participle' ? [''] : [...PERSON_ORDER];
+  const out: DrillCell[] = [];
+  for (const person of persons) {
+    const form = cells.get(cellKey(tense, person));
+    if (form) out.push({ tense, person, form });
+  }
+  return out;
+}
+
+/**
+ * Every card this deck earns.
+ *
+ * ── PATTERNS FIRST, AND ONLY THE ONES THE DECK USES ──
+ * The 27 pattern cards are the framework the exceptions hang off, so they are emitted first.
+ * They are still SCOPED: a learner with no -ir verbs is not taught the -ir endings, because a
+ * pattern with nothing to apply it to is a table to memorise rather than a rule to use.
+ *
+ * ── EXCEPTIONS COME FROM THE LEARNER'S OWN VERBS ──
+ * Not from the graded list. The whole graded vocabulary carries 819 facts; a real deck carries
+ * a fraction of that, and a card for a verb you have never met is the hollow progress this
+ * codebase refuses elsewhere.
+ */
+export function buildConjugationCards(
+  table: GrammarTable,
+  deck: readonly Pick<DeckWord, 'h'>[],
+): ConjugationCard[] {
+  const index = verbIndex(table);
+  const verbs = [...new Set(deck.map(w => w.h.trim().toLowerCase()))]
+    .filter(h => verbClass(h) && index.has(h))
+    .sort();
+
+  const classes = new Set<VerbClass>(verbs.map(v => verbClass(v)!));
+  const regularOf = new Map<VerbClass, string>();
+  for (const v of verbs) {
+    const cls = verbClass(v)!;
+    if (!regularOf.has(cls) && factsForVerb(table, v).length === 0) regularOf.set(cls, v);
+  }
+
+  const out: ConjugationCard[] = [];
+
+  for (const p of patternCards()) {
+    if (!classes.has(p.cls)) continue;
+    const lemma = regularOf.get(p.cls) ?? FALLBACK[p.cls];
+    const row = rowFor(table, lemma, p.tense);
+    if (row.length === 0) continue;
+    out.push({ id: p.key, kind: 'pattern', lemma, cls: p.cls, tense: p.tense, cells: row, row });
+  }
+
+  for (const lemma of verbs) {
+    for (const fact of factsForVerb(table, lemma)) {
+      const cells: DrillCell[] = fact.cells.map(c => ({
+        tense: c.tense, person: c.person, form: c.actual,
+      }));
+      if (cells.length === 0) continue;
+      // The row a learner meets it in: the whole tense the fact first touches, so an exception
+      // covering three cells is still seen beside the three that behave.
+      const row = rowFor(table, lemma, cells[0].tense);
+      out.push({
+        id: `${lemma}:${fact.key}`,
+        kind: 'exception',
+        lemma,
+        cls: verbClass(lemma)!,
+        tense: fact.tense ?? cells[0].tense,
+        delta: fact.delta,
+        cells,
+        row: row.length > 0 ? row : cells,
+      });
+    }
+  }
+
+  return out;
+}
+
+/** Every form this verb has, for the sibling check in `gradeConjugation`. */
+export function siblingForms(table: GrammarTable, lemma: string): string[] {
+  return [...verbCells(table, lemma).values()];
+}
+
+export { FINITE_TENSES };
