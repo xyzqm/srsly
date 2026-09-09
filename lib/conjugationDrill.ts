@@ -42,6 +42,12 @@ export interface DrillCell {
   form: string;
 }
 
+/** A cell to ask for, before it is resolved against any particular verb. */
+export interface Slot {
+  tense: Tense;
+  person: Person;
+}
+
 export interface ConjugationCard {
   /**
    * Stable, and stored as the `drill_state` key under the `c:` prefix.
@@ -51,19 +57,35 @@ export interface ConjugationCard {
    */
   id: string;
   kind: 'pattern' | 'exception';
-  /** The verb whose forms this card shows. For a pattern card, a regular exemplar. */
-  lemma: string;
   cls: VerbClass;
   /** Pattern cards and whole-tense exceptions. */
   tense?: Tense;
   /** Stem exceptions — what actually changes. */
   delta?: StemDelta;
-  /** Everything this card can ask, in paradigm order. */
-  cells: DrillCell[];
   /**
-   * The full row to show in the Learn state, which is not the same as `cells`: an exception
-   * covering three cells is still best met beside the three that behave normally.
+   * THE VERBS THIS CARD CAN BE SHOWN ON, and the reason there is a list rather than a lemma.
+   *
+   * A pattern card used to pin one exemplar for the life of the card, chosen as the first
+   * regular verb in the deck — so every one of the nine `-ar` pattern cards conjugated
+   * `ayudar`, every time, for ever. Reported as "it's kind of boring cuz it's always the same
+   * word over and over again", which is exactly right and is also a teaching failure: a
+   * pattern shown on one verb is indistinguishable from a fact about that verb.
+   *
+   * So a pattern card carries every regular verb of its class the learner owns and rotates
+   * through them. An exception carries exactly one, because an exception IS a fact about its
+   * verb and showing it on another would be false.
    */
+  exemplars: string[];
+  /** The cells this card can ask. Forms come from whichever exemplar is showing. */
+  slots: Slot[];
+}
+
+/** A card resolved against one exemplar, ready to render. */
+export interface MaterialCard {
+  lemma: string;
+  /** The slots this card asks, with this exemplar's forms. */
+  cells: DrillCell[];
+  /** One complete tense to read in the Learn state, regular forms included. */
   row: DrillCell[];
 }
 
@@ -103,6 +125,16 @@ export function deltaLabel(d: StemDelta): string {
 
 /* ────────────────────────────── the prompt ────────────────────────────── */
 
+/** A tiny stable hash, so two cards at the same review count do not show the same verb. */
+function offsetOf(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const pick = <T,>(xs: readonly T[], n: number): T =>
+  xs[((n % xs.length) + xs.length) % xs.length];
+
 /**
  * Which cell this review asks for.
  *
@@ -111,8 +143,19 @@ export function deltaLabel(d: StemDelta): string {
  * without one the same card asks a different thing every render, which is a bug that looks
  * like a shuffle.
  */
-export function promptCell(card: ConjugationCard, reviews: number): DrillCell {
-  return card.cells[((reviews % card.cells.length) + card.cells.length) % card.cells.length];
+export function promptSlot(card: ConjugationCard, reviews: number): Slot {
+  return pick(card.slots, reviews);
+}
+
+/**
+ * Which verb this review shows the pattern on.
+ *
+ * Offset by the card's own id as well as the review count, so the nine `-ar` pattern cards do
+ * not all show the same verb on the same day — which is what made the drill feel like one word
+ * repeated rather than a rule applied.
+ */
+export function exemplarFor(card: ConjugationCard, reviews: number): string {
+  return pick(card.exemplars, reviews + offsetOf(card.id));
 }
 
 /* ────────────────────────────── grading ───────────────────────────────── */
@@ -154,7 +197,7 @@ export function gradeConjugation(
 
 /* ─────────────────────────── building the deck ────────────────────────── */
 
-/** The exemplar a pattern card conjugates, preferring a regular verb the learner owns. */
+/** Used only when the learner owns no regular verb of a class the deck needs. */
 const FALLBACK: Record<VerbClass, string> = { ar: 'hablar', er: 'comer', ir: 'vivir' };
 
 function rowFor(table: GrammarTable, lemma: string, tense: Tense): DrillCell[] {
@@ -166,6 +209,28 @@ function rowFor(table: GrammarTable, lemma: string, tense: Tense): DrillCell[] {
     if (form) out.push({ tense, person, form });
   }
   return out;
+}
+
+/**
+ * Resolve a card against the exemplar this review shows it on.
+ *
+ * `row` is one COMPLETE tense and is often smaller than `cells`: pedir's e→i spans nineteen
+ * cells across five tenses, but it is met in the six-form present, regular forms included, so
+ * the change reads as a deviation from something rather than as a list.
+ */
+export function materialise(
+  table: GrammarTable, card: ConjugationCard, reviews: number,
+): MaterialCard {
+  const lemma = exemplarFor(card, reviews);
+  const forms = verbCells(table, lemma);
+  const cells: DrillCell[] = [];
+  for (const slot of card.slots) {
+    const form = forms.get(cellKey(slot.tense, slot.person));
+    if (form) cells.push({ ...slot, form });
+  }
+  const anchor = card.tense ?? cells[0]?.tense ?? card.slots[0]?.tense;
+  const row = anchor ? rowFor(table, lemma, anchor) : [];
+  return { lemma, cells, row: row.length > 0 ? row : cells };
 }
 
 /**
@@ -191,44 +256,67 @@ export function buildConjugationCards(
     .sort();
 
   const classes = new Set<VerbClass>(verbs.map(v => verbClass(v)!));
-  const regularOf = new Map<VerbClass, string>();
+  /** Every regular verb of each class, so a pattern card can rotate rather than repeat. */
+  const regulars = new Map<VerbClass, string[]>();
   for (const v of verbs) {
+    if (factsForVerb(table, v).length > 0) continue;
     const cls = verbClass(v)!;
-    if (!regularOf.has(cls) && factsForVerb(table, v).length === 0) regularOf.set(cls, v);
+    regulars.set(cls, [...(regulars.get(cls) ?? []), v]);
   }
 
   const out: ConjugationCard[] = [];
 
   for (const p of patternCards()) {
     if (!classes.has(p.cls)) continue;
-    const lemma = regularOf.get(p.cls) ?? FALLBACK[p.cls];
-    const row = rowFor(table, lemma, p.tense);
-    if (row.length === 0) continue;
-    out.push({ id: p.key, kind: 'pattern', lemma, cls: p.cls, tense: p.tense, cells: row, row });
+    const exemplars = regulars.get(p.cls) ?? [FALLBACK[p.cls]];
+    // A pattern with no readable row on any exemplar is not worth a card.
+    if (!exemplars.some(v => rowFor(table, v, p.tense).length > 0)) continue;
+    const slots: Slot[] = (p.tense === 'gerund' || p.tense === 'participle')
+      ? [{ tense: p.tense, person: '' }]
+      : PERSON_ORDER.map(person => ({ tense: p.tense, person }));
+    out.push({ id: p.key, kind: 'pattern', cls: p.cls, tense: p.tense, exemplars, slots });
   }
 
   for (const lemma of verbs) {
     for (const fact of factsForVerb(table, lemma)) {
-      const cells: DrillCell[] = fact.cells.map(c => ({
-        tense: c.tense, person: c.person, form: c.actual,
-      }));
-      if (cells.length === 0) continue;
-      // The row a learner meets it in: the whole tense the fact first touches, so an exception
-      // covering three cells is still seen beside the three that behave.
-      const row = rowFor(table, lemma, cells[0].tense);
+      const slots: Slot[] = fact.cells.map(c => ({ tense: c.tense, person: c.person }));
+      if (slots.length === 0) continue;
       out.push({
         id: `${lemma}:${fact.key}`,
         kind: 'exception',
-        lemma,
         cls: verbClass(lemma)!,
-        tense: fact.tense ?? cells[0].tense,
+        tense: fact.tense ?? slots[0].tense,
         delta: fact.delta,
-        cells,
-        row: row.length > 0 ? row : cells,
+        // Exactly one: an exception IS a fact about its verb, and showing it on another
+        // would be false.
+        exemplars: [lemma],
+        slots,
       });
     }
   }
 
+  return out;
+}
+
+/**
+ * Keep only the tenses the learner has chosen to practise.
+ *
+ * An empty or absent choice means ALL — a filter that silences everything is a broken screen,
+ * not a preference, and "I have unticked all nine" is far more likely to be a fumble than an
+ * intent. A card survives if any of its slots survives, and it then asks only those, so an
+ * exception spanning five tenses can still be drilled by someone practising two of them.
+ */
+export function filterByTenses(
+  cards: readonly ConjugationCard[],
+  tenses: readonly Tense[] | null | undefined,
+): ConjugationCard[] {
+  if (!tenses || tenses.length === 0) return [...cards];
+  const on = new Set(tenses);
+  const out: ConjugationCard[] = [];
+  for (const c of cards) {
+    const slots = c.slots.filter(s => on.has(s.tense));
+    if (slots.length > 0) out.push({ ...c, slots });
+  }
   return out;
 }
 

@@ -1,5 +1,4 @@
-import { storage } from './storage';
-import type { UserPrefs } from './types';
+import { readPrefsBlob, writePrefsField } from './syncedPrefs';
 
 /**
  * Flashcard screen preferences: "Flip cards" (reverse study) and "Type answers".
@@ -34,55 +33,18 @@ import type { UserPrefs } from './types';
  * disabled while typing is on. They are still stored separately, so turning typing off restores
  * whichever flip setting the learner had chosen rather than silently resetting it.
  */
-const KEY = 'srsly-prefs';
-
-function readBlob(): Record<string, unknown> {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Write one field, locally now and to the cloud behind it.
- *
- * The cloud write is deliberately not awaited and its failure is swallowed: local is the
- * truth for this device, and a toggle that throws because the network is down would be a
- * worse bug than one that syncs late. `writeQueue` already retries a failed patch.
- */
-function writeField(field: 'reverseCards' | 'typedRecall', on: boolean): void {
-  if (typeof localStorage === 'undefined') return;
-  const prefs = readBlob();
-  prefs[field] = on;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(prefs));
-  } catch {
-    /* quota — the cloud write below is still worth attempting */
-  }
-  /**
-   * Cast rather than filled in. `UserPrefs` requires `theme` and `font`, and the stored blob
-   * may genuinely lack them on a fresh account — but supplying defaults here would be a real
-   * bug, not a formality: `mergePrefs` applies every field where `mine` differs from this
-   * device's base, so injecting `theme: 'paper'` would push it to the cloud and revert a
-   * theme chosen on another device. What is on disk is the honest value, absences included.
-   */
-  void storage.savePrefs(prefs as unknown as UserPrefs).catch(() => {});
-}
-
 export function getReverseCards(): boolean {
-  return !!readBlob().reverseCards;
+  return !!readPrefsBlob().reverseCards;
 }
 
 export function setReverseCards(on: boolean): void {
-  writeField('reverseCards', on);
+  writePrefsField('reverseCards', on);
 }
 
 export function getTypedRecall(): boolean {
-  return !!readBlob().typedRecall;
+  return !!readPrefsBlob().typedRecall;
 }
 
 export function setTypedRecall(on: boolean): void {
-  writeField('typedRecall', on);
+  writePrefsField('typedRecall', on);
 }

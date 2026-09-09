@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { storage } from '@/lib/storage';
@@ -8,9 +8,12 @@ import { isDrillDue, scheduleDrill, type DrillCards } from '@/lib/drillState';
 import { loadEsGrammar } from '@/lib/spanishGrammar';
 import type { GrammarTable } from '@/lib/conjugation';
 import {
-  buildConjugationCards, gradeConjugation, promptCell, deltaLabel,
-  siblingForms, tenseLabel, personLabel, type ConjugationCard,
+  buildConjugationCards, gradeConjugation, promptSlot, materialise, filterByTenses,
+  deltaLabel, siblingForms, tenseLabel, personLabel,
+  type ConjugationCard, type MaterialCard,
 } from '@/lib/conjugationDrill';
+import { getConjugationTenses, setConjugationTenses, allTenses } from '@/lib/conjugationPrefs';
+import type { Tense } from '@/lib/conjugation';
 import TypedAnswer from './TypedAnswer';
 
 /**
@@ -52,8 +55,14 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
   const [phase, setPhase] = useState<'learn' | 'test'>('test');
   const [answer, setAnswer] = useState<{ correct: boolean; typed: string; expected: string } | null>(null);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
+  /** Which tenses to ask about. Read synchronously so the picker paints right on frame one. */
+  const [tenses, setTenses] = useState<Tense[]>([]);
+  const [picking, setPicking] = useState(false);
 
-  useEffect(() => { setSettings(getSrsSettings()); }, []);
+  useEffect(() => {
+    setSettings(getSrsSettings());
+    setTenses(getConjugationTenses());
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -64,8 +73,8 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
 
   /** Every card this deck earns — derived, never stored. See lib/conjugationDrill.ts. */
   const all = useMemo(
-    () => (table ? buildConjugationCards(table, deck) : []),
-    [table, deck],
+    () => (table ? filterByTenses(buildConjugationCards(table, deck), tenses) : []),
+    [table, deck, tenses],
   );
 
   // Latched once, when the deck, the table and the stored cards are all actually here.
@@ -80,7 +89,12 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
   const card = queue && index < queue.length ? queue[index] : null;
   const stored = card ? cards?.[card.id] : undefined;
   const reviews = stored?.reviews ?? 0;
-  const cell = card ? promptCell(card, reviews) : null;
+  /** Resolved against the exemplar this review shows — see conjugationDrill's `exemplars`. */
+  const material: MaterialCard | null = card && table ? materialise(table, card, reviews) : null;
+  const slot = card ? promptSlot(card, reviews) : null;
+  const cell = material && slot
+    ? material.cells.find(c => c.tense === slot.tense && c.person === slot.person) ?? material.cells[0] ?? null
+    : null;
 
   const commit = useCallback(async (id: string, grade: FsrsGrade) => {
     const next = { ...(cards ?? {}), [id]: scheduleDrill(cards?.[id], grade, settings) };
@@ -89,22 +103,62 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
   }, [cards, language, settings]);
 
   const onSubmit = useCallback((_r: unknown, typed: string) => {
-    if (!card || !cell || !table) return;
+    if (!card || !cell || !table || !material) return;
     // Re-graded HERE rather than trusting the vocabulary verdict, because an accent in a
     // conjugation drill separates two answers rather than spelling one — see gradeConjugation.
-    const verdict = gradeConjugation(typed, cell.form, siblingForms(table, card.lemma)).verdict;
+    const verdict = gradeConjugation(typed, cell.form, siblingForms(table, material.lemma)).verdict;
     const correct = verdict === 'exact';
     setAnswer({ correct, typed, expected: cell.form });
     void commit(card.id, correct ? 3 : 1);
-  }, [card, cell, table, commit]);
+  }, [card, cell, table, material, commit]);
 
+  /** Guarded, because auto-advance and a keypress can both fire inside the same window. */
+  const advancing = useRef(false);
   const advance = useCallback(() => {
+    if (advancing.current) return;
+    advancing.current = true;
     setAnswer(null);
     const next = index + 1;
     setIndex(next);
     const nextCard = queue?.[next];
     setPhase(nextCard && (cards?.[nextCard.id]?.reviews ?? 0) === 0 ? 'learn' : 'test');
+    // Released on the next tick rather than immediately, so the timer below and a stray Enter
+    // arriving together still only move one card.
+    setTimeout(() => { advancing.current = false; }, 0);
   }, [index, queue, cards]);
+
+  /**
+   * A RIGHT ANSWER MOVES ON BY ITSELF. There is nothing to read on a correct card — the
+   * feedback is the word "Correct" and the learner already knew, so making them click Next is
+   * a keystroke charged for being right. A WRONG one waits: the correction is the entire value
+   * of the card, and skipping past it automatically would be the app deciding how long you
+   * need to look at the answer.
+   */
+  useEffect(() => {
+    if (!answer?.correct) return;
+    const t = setTimeout(advance, 550);
+    return () => clearTimeout(t);
+  }, [answer, advance]);
+
+  /**
+   * Enter continues, everywhere it is unambiguous.
+   *
+   * Not bound while the input is on screen: `TypedAnswer` owns Enter there, and it also guards
+   * `isComposing` so a candidate-picking keystroke cannot submit. Once an answer is graded, or
+   * while a row is being read, nothing else wants the key.
+   */
+  useEffect(() => {
+    const waiting = phase === 'learn' || (answer !== null && !answer.correct);
+    if (!waiting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault();
+      if (phase === 'learn') setPhase('test');
+      else advance();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [phase, answer, advance]);
 
   if (!deckLoaded || table === null || cards === null || queue === null) {
     return (
@@ -165,15 +219,22 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
         </div>
       </div>
 
-      {phase === 'learn' ? (
-        <LearnRow card={card} onReady={() => setPhase('test')} />
+      <TensePicker
+        open={picking}
+        onToggle={() => setPicking(p => !p)}
+        chosen={tenses}
+        onChange={next => { setConjugationTenses(next); setTenses(next); setQueue(null); }}
+      />
+
+      {phase === 'learn' && material ? (
+        <LearnRow card={card} material={material} onReady={() => setPhase('test')} />
       ) : (
         <div className="text-center">
           <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
             {tenseLabel(cell.tense)}
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '8px 0 2px' }}>
-            {card.lemma}
+            {material?.lemma ?? ''}
           </div>
           {cell.person && (
             <div style={{ ...mono, fontSize: 15, color: 'var(--accent)', letterSpacing: '.04em' }}>
@@ -241,15 +302,18 @@ function sameLetters(a: string, b: string): boolean {
  * rather than as a list of forms to memorise — which is the entire argument for teaching the
  * 27 patterns first.
  */
-function LearnRow({ card, onReady }: { card: ConjugationCard; onReady: () => void }) {
-  const changed = new Set(card.cells.map(c => c.form));
+function LearnRow(
+  { card, material, onReady }:
+  { card: ConjugationCard; material: MaterialCard; onReady: () => void },
+) {
+  const changed = new Set(material.cells.map(c => c.form));
   return (
     <div className="text-center">
       <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
         {card.kind === 'pattern' ? `New pattern · -${card.cls} verbs` : 'New exception'}
       </div>
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 27, fontWeight: 500, margin: '7px 0 2px' }}>
-        {card.lemma}
+        {material.lemma}
       </div>
       <div style={{ ...mono, fontSize: 12.5, color: 'var(--ink-soft)' }}>
         {card.tense ? tenseLabel(card.tense) : ''}
@@ -260,7 +324,7 @@ function LearnRow({ card, onReady }: { card: ConjugationCard; onReady: () => voi
         display: 'grid', gridTemplateColumns: 'auto auto', gap: '6px 16px',
         justifyContent: 'center', margin: '18px auto 0', textAlign: 'left',
       }}>
-        {card.row.map(c => {
+        {material.row.map(c => {
           const on = changed.has(c.form);
           return (
             <FormRow key={`${c.tense}:${c.person}`} person={personLabel(c.person)} form={c.form} on={on} />
@@ -268,9 +332,9 @@ function LearnRow({ card, onReady }: { card: ConjugationCard; onReady: () => voi
         })}
       </div>
 
-      {card.cells.length > card.row.length && (
+      {material.cells.length > material.row.length && (
         <div style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)', marginTop: 12, maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.5 }}>
-          The same change runs through {card.cells.length} forms in all.
+          The same change runs through {material.cells.length} forms in all.
         </div>
       )}
 
@@ -286,6 +350,9 @@ function LearnRow({ card, onReady }: { card: ConjugationCard; onReady: () => voi
       >
         Got it, let me try
       </button>
+      <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 8 }}>
+        or press Enter
+      </div>
     </div>
   );
 }
@@ -302,5 +369,60 @@ function FormRow({ person, form, on }: { person: string; form: string; on: boole
         {form}
       </span>
     </>
+  );
+}
+
+/**
+ * Which tenses to drill.
+ *
+ * Collapsed by default, because it is a setting rather than part of the exercise and a row of
+ * nine checkboxes above every question is furniture. Changing it clears the latched queue —
+ * that IS a new session, and latching through the change would leave the learner answering
+ * tenses they just turned off.
+ */
+function TensePicker(
+  { open, onToggle, chosen, onChange }:
+  { open: boolean; onToggle: () => void; chosen: Tense[]; onChange: (t: Tense[]) => void },
+) {
+  const all = allTenses();
+  const on = chosen.length === 0 ? new Set(all) : new Set(chosen);
+  return (
+    <div className="mb-4">
+      <button
+        onClick={onToggle}
+        className="cursor-pointer"
+        style={{
+          ...mono, fontSize: 11, letterSpacing: '.06em', padding: '5px 10px', borderRadius: 7,
+          border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)',
+        }}
+      >
+        Tenses · {chosen.length === 0 ? 'all' : `${chosen.length} of ${all.length}`}
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1.5" style={{ marginTop: 10 }}>
+          {all.map(t => {
+            const isOn = on.has(t);
+            return (
+              <button
+                key={t}
+                onClick={() => {
+                  const next = isOn ? [...on].filter(x => x !== t) : [...on, t];
+                  onChange(next as Tense[]);
+                }}
+                className="cursor-pointer"
+                style={{
+                  ...mono, fontSize: 11, letterSpacing: '.04em', padding: '5px 10px', borderRadius: 7,
+                  border: `1px solid ${isOn ? 'var(--accent)' : 'var(--line)'}`,
+                  background: isOn ? 'var(--accent-soft)' : 'var(--card)',
+                  color: isOn ? 'var(--accent)' : 'var(--ink-faint)',
+                }}
+              >
+                {tenseLabel(t)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

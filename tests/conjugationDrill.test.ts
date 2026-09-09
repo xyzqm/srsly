@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import esGrammar from '@data/es-grammar.json';
 import {
-  buildConjugationCards, gradeConjugation, promptCell, promptLabel, siblingForms,
-  deltaLabel, type ConjugationCard,
+  buildConjugationCards, gradeConjugation, promptSlot, exemplarFor, materialise,
+  filterByTenses, promptLabel, siblingForms, deltaLabel, type ConjugationCard,
 } from '@/lib/conjugationDrill';
 import { drillKey, parseDrillKey } from '@/lib/drillState';
 import type { GrammarTable } from '@/lib/conjugation';
@@ -49,34 +49,32 @@ describe('an accent is not a typo in a conjugation drill', () => {
 
 describe('one cell per prompt, rotating', () => {
   const card: ConjugationCard = {
-    id: 'x', kind: 'exception', lemma: 'pedir', cls: 'ir',
-    cells: [
-      { tense: 'pres', person: 'fs', form: 'pido' },
-      { tense: 'pres', person: 'ss', form: 'pides' },
-      { tense: 'pres', person: 'ts', form: 'pide' },
+    id: 'x', kind: 'exception', cls: 'ir', exemplars: ['pedir'],
+    slots: [
+      { tense: 'pres', person: 'fs' },
+      { tense: 'pres', person: 'ss' },
+      { tense: 'pres', person: 'ts' },
     ],
-    row: [],
   };
 
   it('walks every cell before repeating', () => {
-    const seen = [0, 1, 2].map(r => promptCell(card, r).form);
-    expect(seen).toEqual(['pido', 'pides', 'pide']);
-    expect(promptCell(card, 3).form).toBe('pido');
+    expect([0, 1, 2].map(r => promptSlot(card, r).person)).toEqual(['fs', 'ss', 'ts']);
+    expect(promptSlot(card, 3).person).toBe('fs');
   });
 
   it('is deterministic — the same review asks the same thing', () => {
-    expect(promptCell(card, 7).form).toBe(promptCell(card, 7).form);
-    expect(promptCell(card, 7).form).toBe(promptCell(card, 10).form);
+    expect(promptSlot(card, 7)).toEqual(promptSlot(card, 7));
+    expect(promptSlot(card, 7)).toEqual(promptSlot(card, 10));
   });
 
-  /** A card with no reviews yet, and a defensive negative, must not throw. */
   it('survives the edges', () => {
-    expect(promptCell(card, 0).form).toBe('pido');
-    expect(() => promptCell(card, -1)).not.toThrow();
+    expect(promptSlot(card, 0).person).toBe('fs');
+    expect(() => promptSlot(card, -1)).not.toThrow();
   });
 
   it('names what it is asking in pronouns, not grammar jargon', () => {
-    expect(promptLabel('pedir', card.cells[2])).toBe('pedir · present · él / ella');
+    expect(promptLabel('pedir', { tense: 'pres', person: 'ts', form: 'pide' }))
+      .toBe('pedir · present · él / ella');
     expect(promptLabel('pedir', { tense: 'gerund', person: '', form: 'pidiendo' }))
       .toBe('pedir · gerund');
   });
@@ -85,6 +83,85 @@ describe('one cell per prompt, rotating', () => {
     expect(deltaLabel({ from: '', to: 'i', at: 1 })).toContain('insert');
     expect(deltaLabel({ from: 'ce', to: '', at: 2 })).toContain('drop');
     expect(deltaLabel({ from: 'e', to: 'd', at: 3 })).toContain('→');
+  });
+});
+
+/**
+ * THE FIX FOR "it's always the same word over and over again".
+ *
+ * A pattern card used to pin the first regular verb in the deck, so all nine -ar cards showed
+ * `ayudar` for ever. That is not only dull: a pattern demonstrated on ONE verb is
+ * indistinguishable from a fact about that verb, which is the opposite of what a pattern card
+ * is for.
+ */
+describe('a pattern is shown on different verbs', () => {
+  const many = deck('hablar', 'cantar', 'ayudar', 'trabajar');
+
+  it('rotates the exemplar as the card comes round again', () => {
+    const cards = buildConjugationCards(table, many);
+    const pres = cards.find(c => c.kind === 'pattern' && c.tense === 'pres')!;
+    const shown = new Set([0, 1, 2, 3].map(r => exemplarFor(pres, r)));
+    expect(shown.size).toBeGreaterThan(1);
+  });
+
+  it('does not show every pattern card the same verb on the same day', () => {
+    const cards = buildConjugationCards(table, many).filter(c => c.kind === 'pattern');
+    const first = new Set(cards.map(c => exemplarFor(c, 0)));
+    expect(first.size).toBeGreaterThan(1);
+  });
+
+  it('is stable within one review, so the row and the question agree', () => {
+    const cards = buildConjugationCards(table, many);
+    const pres = cards.find(c => c.kind === 'pattern' && c.tense === 'pres')!;
+    expect(exemplarFor(pres, 5)).toBe(exemplarFor(pres, 5));
+  });
+
+  /** An exception is a fact about ITS verb; showing it on another would be false. */
+  it('never rotates an exception', () => {
+    const cards = buildConjugationCards(table, deck('pedir', 'hablar', 'cantar'));
+    const ex = cards.find(c => c.kind === 'exception')!;
+    expect(ex.exemplars).toEqual(['pedir']);
+    expect([0, 1, 2, 3].map(r => exemplarFor(ex, r))).toEqual(['pedir', 'pedir', 'pedir', 'pedir']);
+  });
+
+  it('resolves the forms against whichever verb is showing', () => {
+    const cards = buildConjugationCards(table, many);
+    const pres = cards.find(c => c.kind === 'pattern' && c.tense === 'pres')!;
+    for (const r of [0, 1, 2, 3]) {
+      const m = materialise(table, pres, r);
+      expect(m.row).toHaveLength(6);
+      expect(m.row.every(c => c.form.startsWith(m.lemma.slice(0, -2)))).toBe(true);
+    }
+  });
+});
+
+describe('the learner chooses the tenses', () => {
+  const cards = () => buildConjugationCards(table, deck('hablar', 'pedir'));
+
+  it('keeps only the chosen ones', () => {
+    const only = filterByTenses(cards(), ['pres']);
+    expect(only.every(c => c.slots.every(s => s.tense === 'pres'))).toBe(true);
+    expect(only.length).toBeGreaterThan(0);
+  });
+
+  /** A filter that silences the whole drill is a broken screen, not a preference. */
+  it('treats an empty choice as all, not as none', () => {
+    expect(filterByTenses(cards(), []).length).toBe(cards().length);
+    expect(filterByTenses(cards(), null).length).toBe(cards().length);
+  });
+
+  /** An exception spanning five tenses is still drillable by someone practising two. */
+  it('narrows a multi-tense exception instead of dropping it', () => {
+    const ex = cards().find(c => c.kind === 'exception')!;
+    expect(new Set(ex.slots.map(s => s.tense)).size).toBeGreaterThan(1);
+    const narrowed = filterByTenses([ex], ['pres'])[0];
+    expect(narrowed.slots.every(s => s.tense === 'pres')).toBe(true);
+    expect(narrowed.slots.length).toBeGreaterThan(0);
+  });
+
+  it('drops a card with nothing left to ask', () => {
+    const patterns = cards().filter(c => c.tense === 'gerund');
+    expect(filterByTenses(patterns, ['pres'])).toEqual([]);
   });
 });
 
@@ -111,7 +188,7 @@ describe('the deck decides which cards exist', () => {
 
   it('draws exceptions only from verbs in the deck', () => {
     const cards = buildConjugationCards(table, deck('pedir', 'hablar'));
-    const lemmas = new Set(cards.filter(c => c.kind === 'exception').map(c => c.lemma));
+    const lemmas = new Set(cards.filter(c => c.kind === 'exception').flatMap(c => c.exemplars));
     expect(lemmas).toEqual(new Set(['pedir']));      // hablar is regular, tener is not owned
   });
 
@@ -128,13 +205,13 @@ describe('the deck decides which cards exist', () => {
   it('conjugates a pattern on the learner’s own regular verb when there is one', () => {
     const cards = buildConjugationCards(table, deck('cantar'));
     const pres = cards.find(c => c.kind === 'pattern' && c.tense === 'pres');
-    expect(pres?.lemma).toBe('cantar');
+    expect(pres?.exemplars).toEqual(['cantar']);
   });
 
   it('falls back to a canonical verb when the deck has only irregulars', () => {
     const cards = buildConjugationCards(table, deck('tener'));
     const pres = cards.find(c => c.kind === 'pattern' && c.tense === 'pres');
-    expect(pres?.lemma).toBe('comer');
+    expect(pres?.exemplars).toEqual(['comer']);
   });
 
   /**
@@ -146,12 +223,13 @@ describe('the deck decides which cards exist', () => {
   it('anchors an exception in one complete row, regular forms included', () => {
     const cards = buildConjugationCards(table, deck('pedir'));
     const ex = cards.find(c => c.kind === 'exception')!;
-    expect(ex.row).toHaveLength(6);
-    expect(new Set(ex.row.map(c => c.tense)).size).toBe(1);
+    const m = materialise(table, ex, 0);
+    expect(m.row).toHaveLength(6);
+    expect(new Set(m.row.map(c => c.tense)).size).toBe(1);
     // pedimos and pedís are regular and are shown anyway — that is what makes the row teach.
-    const irregular = new Set(ex.cells.map(c => c.form));
-    expect(ex.row.some(c => !irregular.has(c.form))).toBe(true);
-    expect(ex.cells.length).toBeGreaterThan(ex.row.length);
+    const irregular = new Set(m.cells.map(c => c.form));
+    expect(m.row.some(c => !irregular.has(c.form))).toBe(true);
+    expect(m.cells.length).toBeGreaterThan(m.row.length);
   });
 });
 

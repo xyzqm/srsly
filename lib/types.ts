@@ -159,6 +159,9 @@ export interface UserPrefs {
    * A field the storage layer does not know about is a field the storage layer will discard.
    */
   typedRecall?: boolean;     // type the answer instead of self-grading
+  /** Which tenses the conjugation drill asks about. Absent or empty means all — see
+   *  lib/conjugationPrefs.ts for why those two cases are deliberately identical. */
+  conjugationTenses?: string[];
   language?: LanguageCode;   // active study language; absent = 'zh' (backward compat)
   hskLevel?: number;         // Chinese proficiency level 1–6 (used when language === 'zh')
   jlptLevel?: number;        // Japanese proficiency level 1–5, 5=N5 easiest (used when language === 'ja')
