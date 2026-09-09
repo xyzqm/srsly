@@ -189,18 +189,53 @@ export function regularFormFr(lemma: string, cls: FrClass, tense: Tense, person:
  * A verb whose forms are missing cannot be classified, and gets no class rather than a guess.
  */
 export function verbClassFr(lemma: string, cells: ReadonlyMap<CellKey, string>): FrClass | null {
+  const guess = classByEnding(lemma, cells);
+  if (!guess) return null;
+  // A verb has to earn the class its ending claims. See MAX_DEVIATION.
+  if (cells.size > 0 && deviationShare(lemma, guess, cells) >= MAX_DEVIATION) return null;
+  return guess;
+}
+
+function classByEnding(lemma: string, cells: ReadonlyMap<CellKey, string>): FrClass | null {
   const end = lemma.slice(-2);
   if (end === 'er' && lemma !== 'aller') return 'er';
   if (end === 'ir') {
     const plural = cells.get(cellKey('pres', 'fp'));
     return plural?.includes('iss') ? 'ir2' : null;
   }
-  if (end === 're') {
-    // The -dre family only. `être`, `faire`, `prendre` and `mettre` all end in -re and none of
-    // them behaves; they are caught by the diff below rather than excluded by name.
-    return 're';
-  }
+  if (end === 're') return 're';
   return null;
+}
+
+/**
+ * How far a verb strays from the class its ending claims.
+ *
+ * ── A CLASS IT DOES NOT DESERVE IS WORSE THAN NO CLASS AT ALL ──
+ * `être` ends in -re, so the ending alone called it a regular -re verb. That is not merely
+ * untidy: `candidateCost` then PREFERS whichever candidate looks most regular, and Lexique
+ * tags `étaient` as both the imperfect and the present third plural. Against a nominal `re`
+ * paradigm `étaient` scores 7 and the correct `sont` scores 101, so `être`'s present row came
+ * out as "suis es est sommes êtes étaient" — the imperfect smuggled into the present by a
+ * class the verb never had.
+ *
+ * Measured across the obvious candidates, the split is clean and there is nothing in the gap:
+ * parler 0%, vendre 0%, finir 0%, rompre 4%, battre 10%, mettre 13%, manger 21% — then
+ * prendre 48%, dire 55%, faire 94%, être 100%. So a verb deviating in two fifths or more of
+ * its cells is not that class, whatever it ends in, and is learned as rows instead. That also
+ * lands `prendre`, `dire` and `faire` in the third group, which is where a textbook has them.
+ */
+const MAX_DEVIATION = 0.4;
+
+function deviationShare(lemma: string, cls: FrClass, cells: ReadonlyMap<CellKey, string>): number {
+  let bad = 0, total = 0;
+  for (const [key, actual] of cells) {
+    const [tense, person] = key.split(':') as [Tense, Person];
+    const parts = regularPartsFr(lemma, cls, tense, person);
+    if (!parts) continue;
+    total++;
+    if (parts.stem + parts.ending !== actual) bad++;
+  }
+  return total === 0 ? 1 : bad / total;
 }
 
 /* ──────────────────────────── the index ───────────────────────────────── */
@@ -386,4 +421,102 @@ export function patternCardsFr(): FrPatternCard[] {
     }
   }
   return out;
+}
+
+/* ─────────────────────── the passé composé ────────────────────────────── */
+
+/**
+ * THE VERBS THAT TAKE `être`, AUTHORED — because no table records this.
+ *
+ * Lexique has forms, not auxiliaries, and the passé composé is two words so it is not a form
+ * at all. This is the one piece of French the drill cannot derive, so it is written down, kept
+ * short, and validated against the grammar table by `tests/conjugationFr.test.ts` — the same
+ * arrangement `core-overrides.json`'s `beginner` sets have, and the same as
+ * `FORM_DOMINANT_LEMMAS` in the French lemmatizer, which is likewise a small authored set
+ * living in TypeScript rather than a generated table.
+ *
+ * The traditional mnemonic is DR MRS VANDERTRAMP, and it is a list of sixteen verbs plus their
+ * prefixed relatives (`revenir`, `redevenir`, `remonter`). Reflexives also take `être`, but a
+ * reflexive is a construction rather than a lemma and no card here asks about one.
+ *
+ * ── SIX OF THESE TAKE `avoir` WHEN THEY HAVE A DIRECT OBJECT ──
+ * `monter`, `descendre`, `sortir`, `rentrer`, `retourner` and `passer` are `être` when
+ * intransitive ("elle est sortie") and `avoir` when transitive ("elle a sorti les poubelles").
+ * A drill card cannot see the object, so it teaches the intransitive reading and SAYS SO
+ * rather than pretending the choice is unconditional. Getting that wrong in silence would be
+ * the confidently-wrong label this codebase refuses everywhere.
+ */
+export const ETRE_VERBS: ReadonlySet<string> = new Set([
+  'aller', 'arriver', 'descendre', 'devenir', 'entrer', 'monter', 'mourir', 'naître',
+  'partir', 'passer', 'rentrer', 'rester', 'retourner', 'revenir', 'sortir', 'tomber', 'venir',
+  // Prefixed relatives that inherit the auxiliary.
+  'redevenir', 'remonter', 'repartir', 'ressortir', 'retomber', 'parvenir', 'survenir',
+  'intervenir', 'provenir', 'redescendre', 'rentrer',
+]);
+
+/** The six whose auxiliary depends on whether there is a direct object. */
+export const TRANSITIVE_SOMETIMES: ReadonlySet<string> = new Set([
+  'monter', 'descendre', 'sortir', 'rentrer', 'retourner', 'passer',
+]);
+
+export type Auxiliary = 'avoir' | 'être';
+
+/**
+ * Which auxiliary a verb takes in the compound tenses.
+ *
+ * `avoir` is the default and covers almost everything, which is exactly why the drill treats
+ * it as the PATTERN and the `être` list as the exceptions — the same shape the rest of this
+ * phase uses.
+ */
+export function auxiliaryFor(lemma: string): Auxiliary {
+  return ETRE_VERBS.has(lemma) ? 'être' : 'avoir';
+}
+
+/**
+ * The passé composé, composed.
+ *
+ * Returns one form per person: `ai parlé`, `suis allé`. The pronoun is NOT included — the card
+ * prints it as the prompt, so putting it in the answer would make the learner type something
+ * they were just shown.
+ *
+ * ── AGREEMENT IS SHOWN, NOT TESTED ──
+ * `être` verbs agree with the subject (`elle est allée`, `ils sont allés`), which depends on a
+ * gender the card has no way to know. The masculine singular is what is graded and the Learn
+ * row says agreement exists; inventing a gender in order to test it would be fabricating the
+ * question.
+ */
+export function passeCompose(
+  table: GrammarTable, lemma: string,
+): { aux: Auxiliary; forms: Map<Person, string> } | null {
+  const participle = verbCellsFr(table, lemma).get(cellKey('participle', ''));
+  if (!participle) return null;
+  const aux = auxiliaryFor(lemma);
+  const auxCells = verbCellsFr(table, aux);
+  const forms = new Map<Person, string>();
+  for (const person of PERSON_ORDER) {
+    const conjugated = auxCells.get(cellKey('pres', person));
+    if (!conjugated) continue;
+    forms.set(person, `${conjugated} ${agree(participle, aux, person)}`);
+  }
+  return forms.size > 0 ? { aux, forms } : null;
+}
+
+/**
+ * NUMBER agreement, which is not optional — and gender, which is not knowable.
+ *
+ * An `être` participle agrees with its subject, so `nous sommes allés` takes the plural. That
+ * is not a nicety: `nous sommes allé` is simply wrong French, and printing it on a row the
+ * learner is asked to read would teach an error. Number is decided by the person, so it is
+ * applied.
+ *
+ * GENDER IS NOT. `elle est allée` depends on who is speaking, which no card can know — so the
+ * masculine is what is shown and graded, and `auxiliaryNote` says agreement exists rather than
+ * the drill inventing a subject in order to test it. An `avoir` participle does not agree with
+ * its subject at all, so it is left alone.
+ */
+function agree(participle: string, aux: Auxiliary, person: Person): string {
+  if (aux !== 'être') return participle;
+  const plural = person === 'fp' || person === 'sp' || person === 'tp';
+  if (!plural || participle.endsWith('s')) return participle;
+  return participle + 's';
 }

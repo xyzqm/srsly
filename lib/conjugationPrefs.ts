@@ -1,5 +1,6 @@
 import { readPrefsBlob, writePrefsField } from './syncedPrefs';
 import { FINITE_TENSES, type Tense } from './conjugation';
+import type { LanguageCode } from './types';
 
 /**
  * Which tenses the conjugation drill asks about.
@@ -18,10 +19,18 @@ import { FINITE_TENSES, type Tense } from './conjugation';
  */
 const FIELD = 'conjugationTenses';
 
-const ALL: readonly Tense[] = [...FINITE_TENSES, 'gerund', 'participle'];
+const ALL: readonly Tense[] = [...FINITE_TENSES, 'gerund', 'participle', 'passecompose'];
 
-export function allTenses(): Tense[] {
-  return [...ALL];
+/**
+ * The tenses this language can actually be asked about.
+ *
+ * Offered per language rather than as one list, because a picker that lists something the
+ * drill will never ask is a control with no effect — and the passé composé is composed only
+ * for French, while Spanish's preterite is a simple form it already has. The STORED value is
+ * still validated against the full set, so switching language cannot corrupt a saved choice.
+ */
+export function allTenses(lang: LanguageCode = 'es'): Tense[] {
+  return ALL.filter(t => (t === 'passecompose' ? lang === 'fr' : true));
 }
 
 export function getConjugationTenses(): Tense[] {

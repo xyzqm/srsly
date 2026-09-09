@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import frGrammar from '@data/fr-grammar.json';
 import {
   cellsForCodeFr, verbClassFr, regularFormFr, verbCellsFr, verbIndexFr,
-  factsForVerbFr, patternCardsFr,
+  factsForVerbFr, patternCardsFr, passeCompose, auxiliaryFor, ETRE_VERBS,
 } from '@/lib/conjugationFr';
 import { cellKey, type GrammarTable } from '@/lib/conjugation';
 
@@ -204,5 +204,89 @@ describe('the vocabulary, in aggregate', () => {
     expect(verbs).toBeGreaterThan(1000);
     expect(regular / verbs).toBeGreaterThan(0.6);
     expect(cells / facts).toBeGreaterThan(3);
+  });
+});
+
+/**
+ * A CLASS A VERB DOES NOT DESERVE IS WORSE THAN NO CLASS AT ALL.
+ *
+ * `être` ends in -re, so the ending alone called it regular — and `candidateCost` then prefers
+ * whichever candidate looks most regular. Lexique tags `étaient` as both the imperfect and the
+ * present third plural, and against a nominal -re paradigm it scores far better than `sont`,
+ * so être's present row came out with the imperfect smuggled into it.
+ */
+describe('a verb has to earn the class its ending claims', () => {
+  const classOf = (v: string) => verbClassFr(v, verbCellsFr(table, v));
+
+  it('demotes the verbs that only look regular', () => {
+    expect(classOf('être')).toBe(null);
+    expect(classOf('faire')).toBe(null);
+    expect(classOf('dire')).toBe(null);
+    expect(classOf('prendre')).toBe(null);
+  });
+
+  /** And does not over-demote: these deviate a little and are still their class. */
+  it('keeps a verb that merely has a wrinkle', () => {
+    expect(classOf('manger')).toBe('er');      // 21% — the g→ge spelling rule
+    expect(classOf('mettre')).toBe('re');      // 13%
+    expect(classOf('vendre')).toBe('re');      // 0%
+    expect(classOf('parler')).toBe('er');
+    expect(classOf('finir')).toBe('ir2');
+  });
+
+  /** The row that went wrong, pinned. */
+  it('gives être its real present tense', () => {
+    const row = ['fs', 'ss', 'ts', 'fp', 'sp', 'tp']
+      .map(p => verbCellsFr(table, 'être').get(cellKey('pres', p as never)));
+    expect(row).toEqual(['suis', 'es', 'est', 'sommes', 'êtes', 'sont']);
+  });
+
+  it('gives avoir and aller theirs too', () => {
+    const row = (v: string) => ['fs', 'ss', 'ts', 'fp', 'sp', 'tp']
+      .map(p => verbCellsFr(table, v).get(cellKey('pres', p as never)));
+    expect(row('avoir')).toEqual(['ai', 'as', 'a', 'avons', 'avez', 'ont']);
+    expect(row('aller')).toEqual(['vais', 'vas', 'va', 'allons', 'allez', 'vont']);
+  });
+});
+
+describe('the passé composé, composed rather than looked up', () => {
+  /** The authored list is held to the same standard as core-overrides' beginner sets. */
+  it('names only verbs the table actually knows', () => {
+    const missing = [...ETRE_VERBS].filter(v => verbCellsFr(table, v).size === 0);
+    expect(missing).toEqual([]);
+  });
+
+  it('picks the auxiliary', () => {
+    expect(auxiliaryFor('aller')).toBe('être');
+    expect(auxiliaryFor('partir')).toBe('être');
+    expect(auxiliaryFor('parler')).toBe('avoir');
+    expect(auxiliaryFor('finir')).toBe('avoir');
+  });
+
+  /**
+   * NUMBER AGREEMENT IS NOT OPTIONAL. `nous sommes allé` is simply wrong French, and printing
+   * it on a row the learner is asked to read would teach an error.
+   */
+  it('agrees an être participle in number', () => {
+    const pc = passeCompose(table, 'aller')!;
+    expect([...pc.forms.values()])
+      .toEqual(['suis allé', 'es allé', 'est allé', 'sommes allés', 'êtes allés', 'sont allés']);
+  });
+
+  it('leaves an avoir participle alone, because it does not agree with the subject', () => {
+    const pc = passeCompose(table, 'parler')!;
+    expect([...pc.forms.values()])
+      .toEqual(['ai parlé', 'as parlé', 'a parlé', 'avons parlé', 'avez parlé', 'ont parlé']);
+  });
+
+  it('does not double an s that is already there', () => {
+    for (const v of ETRE_VERBS) {
+      const pc = passeCompose(table, v);
+      for (const form of pc?.forms.values() ?? []) expect(form).not.toMatch(/ss$/);
+    }
+  });
+
+  it('returns nothing for a verb with no participle', () => {
+    expect(passeCompose(table, 'zzzzer')).toBeNull();
   });
 });

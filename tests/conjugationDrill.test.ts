@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import esGrammar from '@data/es-grammar.json';
+import frGrammar from '@data/fr-grammar.json';
 import {
   buildConjugationCards, gradeConjugation, promptSlot, exemplarFor, materialise,
-  filterByTenses, promptLabel, siblingForms, deltaLabel, type ConjugationCard,
+  filterByTenses, promptLabel, siblingForms, deltaLabel, tenseLabel, personLabel,
+  isAuxiliaryCard, auxiliaryNote, type ConjugationCard,
 } from '@/lib/conjugationDrill';
 import { drillKey, parseDrillKey } from '@/lib/drillState';
 import type { GrammarTable } from '@/lib/conjugation';
 
 const table = esGrammar as unknown as GrammarTable;
+const fr = frGrammar as unknown as GrammarTable;
 const deck = (...h: string[]) => h.map(x => ({ h: x }));
 
 describe('an accent is not a typo in a conjugation drill', () => {
@@ -253,5 +256,70 @@ describe('card ids survive the storage layer', () => {
     const cards = buildConjugationCards(table, deck('pedir', 'servir'));
     const ids = cards.filter(c => c.kind === 'exception').map(c => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+/**
+ * FRENCH THROUGH THE SAME DRILL. The engines are siblings; everything above them — the card,
+ * the prompt, the rotation, the grading — is shared, and this is what proves it.
+ */
+describe('the French engine behind the same cards', () => {
+  const french = (...h: string[]) => buildConjugationCards(fr, h.map(x => ({ h: x })), 'fr');
+
+  it('builds pattern cards for the classes the deck has', () => {
+    const cards = french('parler', 'finir', 'vendre');
+    const classes = new Set(cards.filter(c => c.kind === 'pattern' && c.tense !== 'passecompose').map(c => c.cls));
+    expect(classes).toEqual(new Set(['er', 'ir2', 're']));
+  });
+
+  /** A third-group verb contributes no pattern and still earns a card per tense. */
+  it('gives a third-group verb rows rather than nothing', () => {
+    const cards = french('aller');
+    expect(cards.some(c => c.kind === 'pattern' && c.tense !== 'passecompose')).toBe(false);
+    const pres = cards.find(c => c.id === 'aller:paradigm:pres')!;
+    expect(materialise(fr, pres, 0, 'fr').cells.map(c => c.form))
+      .toEqual(['vais', 'vas', 'va', 'allons', 'allez', 'vont']);
+  });
+
+  /** avoir is the pattern; être is the exception list. */
+  it('makes the passé composé one pattern plus the être verbs', () => {
+    const cards = french('parler', 'aller', 'partir');
+    const aux = cards.filter(isAuxiliaryCard);
+    expect(aux.filter(c => c.kind === 'pattern').map(c => c.id)).toEqual(['pattern:passecompose:avoir']);
+    expect(aux.filter(c => c.kind === 'exception').map(c => c.id).sort())
+      .toEqual(['aller:aux:etre', 'partir:aux:etre']);
+  });
+
+  it('composes the compound forms, agreed in number', () => {
+    const card = french('aller').find(c => c.id === 'aller:aux:etre')!;
+    expect(materialise(fr, card, 0, 'fr').cells.map(c => c.form))
+      .toEqual(['suis allé', 'es allé', 'est allé', 'sommes allés', 'êtes allés', 'sont allés']);
+  });
+
+  it('says the one thing an être card cannot show by example', () => {
+    expect(auxiliaryNote('aller')).toMatch(/être/);
+    expect(auxiliaryNote('sortir')).toMatch(/direct object/);   // avoir when transitive
+    expect(auxiliaryNote('parler')).toBeNull();
+  });
+
+  it('speaks French in its labels', () => {
+    expect(personLabel('fs', 'fr')).toBe('je');
+    expect(personLabel('tp', 'fr')).toBe('ils');
+    expect(tenseLabel('gerund', 'fr')).toBe('present participle');
+    expect(tenseLabel('gerund', 'es')).toBe('gerund');
+    expect(promptLabel('parler', { tense: 'pres', person: 'fs', form: 'parle' }, 'fr'))
+      .toBe('parler · present · je');
+  });
+
+  /** The accent rule ports: 76% of French verbs collide too, parle/parlé above all. */
+  it('rejects the participle typed for the present, and the other way round', () => {
+    const siblings = siblingForms(fr, 'parler', 'fr');
+    expect(gradeConjugation('parle', 'parlé', siblings, 'fr').verdict).toBe('wrong');
+    expect(gradeConjugation('parlé', 'parle', siblings, 'fr').verdict).toBe('wrong');
+    expect(gradeConjugation('parlé', 'parlé', siblings, 'fr').verdict).toBe('exact');
+  });
+
+  it('emits nothing for a language with no engine', () => {
+    expect(buildConjugationCards(fr, [{ h: 'parler' }], 'zh')).toEqual([]);
   });
 });

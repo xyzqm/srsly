@@ -408,7 +408,7 @@ export const FR_CONFIG: LanguageConfig = {
   scriptIsUnspaced: false,
   showsCharacterDecomposition: false,
   hasHandwriting: false,
-  hasConjugation: false,
+  hasConjugation: true,
   accentKeys: ['à', 'â', 'ç', 'é', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ü', 'œ'],
   wordCharRe: /[a-zA-ZàâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ]/,
   levelSectionLabel: 'CEFR level',

@@ -6,14 +6,28 @@ import { storage } from '@/lib/storage';
 import { getSrsSettings, DEFAULT_SRS_SETTINGS, type SrsSettings, type FsrsGrade } from '@/lib/fsrs';
 import { isDrillDue, scheduleDrill, type DrillCards } from '@/lib/drillState';
 import { loadEsGrammar } from '@/lib/spanishGrammar';
+import { loadFrGrammar } from '@/lib/frenchGrammar';
 import type { GrammarTable } from '@/lib/conjugation';
 import {
   buildConjugationCards, gradeConjugation, promptSlot, materialise, filterByTenses,
-  deltaLabel, siblingForms, tenseLabel, personLabel,
+  deltaLabel, siblingForms, tenseLabel, personLabel, rowPersonLabel,
+  auxiliaryNote, isAuxiliaryCard,
   type ConjugationCard, type MaterialCard,
 } from '@/lib/conjugationDrill';
 import { getConjugationTenses, setConjugationTenses, allTenses } from '@/lib/conjugationPrefs';
 import type { Tense } from '@/lib/conjugation';
+import type { LanguageCode } from '@/lib/types';
+
+/**
+ * How a conjugation class reads on screen.
+ *
+ * `ir2` is the French second group and must not print as "-ir2 verbs"; it is the -ir verbs
+ * that take the -iss- infix, and naming it after the infix is what makes the card teach
+ * anything. Everything else is its own ending.
+ */
+function classLabel(cls: string): string {
+  return cls === 'ir2' ? '-ir (-iss-)' : cls === 'irregular' ? 'irregular' : `-${cls}`;
+}
 import TypedAnswer from './TypedAnswer';
 
 /**
@@ -66,15 +80,18 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
 
   useEffect(() => {
     let alive = true;
-    void loadEsGrammar().then(t => { if (alive) setTable((t as GrammarTable | null) ?? null); });
+    // Each language's table is already lazily imported for the word-popup grammar note, so
+    // this is a cache hit for anyone who has tapped a word.
+    const load = language === 'fr' ? loadFrGrammar() : loadEsGrammar();
+    void load.then(t => { if (alive) setTable((t as GrammarTable | null) ?? null); });
     void storage.getDrillCards(language, 'c').then(c => { if (alive) setCards(c); });
     return () => { alive = false; };
   }, [language]);
 
   /** Every card this deck earns — derived, never stored. See lib/conjugationDrill.ts. */
   const all = useMemo(
-    () => (table ? filterByTenses(buildConjugationCards(table, deck), tenses) : []),
-    [table, deck, tenses],
+    () => (table ? filterByTenses(buildConjugationCards(table, deck, language), tenses) : []),
+    [table, deck, tenses, language],
   );
 
   // Latched once, when the deck, the table and the stored cards are all actually here.
@@ -90,7 +107,7 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
   const stored = card ? cards?.[card.id] : undefined;
   const reviews = stored?.reviews ?? 0;
   /** Resolved against the exemplar this review shows — see conjugationDrill's `exemplars`. */
-  const material: MaterialCard | null = card && table ? materialise(table, card, reviews) : null;
+  const material: MaterialCard | null = card && table ? materialise(table, card, reviews, language) : null;
   const slot = card ? promptSlot(card, reviews) : null;
   const cell = material && slot
     ? material.cells.find(c => c.tense === slot.tense && c.person === slot.person) ?? material.cells[0] ?? null
@@ -106,11 +123,11 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
     if (!card || !cell || !table || !material) return;
     // Re-graded HERE rather than trusting the vocabulary verdict, because an accent in a
     // conjugation drill separates two answers rather than spelling one — see gradeConjugation.
-    const verdict = gradeConjugation(typed, cell.form, siblingForms(table, material.lemma)).verdict;
+    const verdict = gradeConjugation(typed, cell.form, siblingForms(table, material.lemma, language), language).verdict;
     const correct = verdict === 'exact';
     setAnswer({ correct, typed, expected: cell.form });
     void commit(card.id, correct ? 3 : 1);
-  }, [card, cell, table, material, commit]);
+  }, [card, cell, table, material, commit, language]);
 
   /** Guarded, because auto-advance and a keypress can both fire inside the same window. */
   const advancing = useRef(false);
@@ -223,22 +240,23 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
         open={picking}
         onToggle={() => setPicking(p => !p)}
         chosen={tenses}
+        lang={language}
         onChange={next => { setConjugationTenses(next); setTenses(next); setQueue(null); }}
       />
 
       {phase === 'learn' && material ? (
-        <LearnRow card={card} material={material} onReady={() => setPhase('test')} />
+        <LearnRow card={card} material={material} lang={language} onReady={() => setPhase('test')} />
       ) : (
         <div className="text-center">
           <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            {tenseLabel(cell.tense)}
+            {tenseLabel(cell.tense, language)}
           </div>
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '8px 0 2px' }}>
             {material?.lemma ?? ''}
           </div>
           {cell.person && (
             <div style={{ ...mono, fontSize: 15, color: 'var(--accent)', letterSpacing: '.04em' }}>
-              {personLabel(cell.person)}
+              {personLabel(cell.person, language)}
             </div>
           )}
 
@@ -247,7 +265,7 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
               <TypedAnswer
                 key={`${card.id}:${cell.tense}:${cell.person}`}
                 expected={cell.form}
-                language="es"
+                language={language}
                 placeholder="the form"
                 onSubmit={onSubmit}
               />
@@ -303,20 +321,22 @@ function sameLetters(a: string, b: string): boolean {
  * 27 patterns first.
  */
 function LearnRow(
-  { card, material, onReady }:
-  { card: ConjugationCard; material: MaterialCard; onReady: () => void },
+  { card, material, lang, onReady }:
+  { card: ConjugationCard; material: MaterialCard; lang: LanguageCode; onReady: () => void },
 ) {
   const changed = new Set(material.cells.map(c => c.form));
   return (
     <div className="text-center">
       <div style={{ ...mono, fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-        {card.kind === 'pattern' ? `New pattern · -${card.cls} verbs` : 'New exception'}
+        {isAuxiliaryCard(card)
+          ? (card.kind === 'pattern' ? 'New pattern · passé composé' : 'New auxiliary')
+          : card.kind === 'pattern' ? `New pattern · ${classLabel(card.cls)} verbs` : 'New exception'}
       </div>
       <div style={{ fontFamily: 'var(--f-display)', fontSize: 27, fontWeight: 500, margin: '7px 0 2px' }}>
         {material.lemma}
       </div>
       <div style={{ ...mono, fontSize: 12.5, color: 'var(--ink-soft)' }}>
-        {card.tense ? tenseLabel(card.tense) : ''}
+        {card.tense ? tenseLabel(card.tense, lang) : ''}
         {card.delta && <> · {deltaLabel(card.delta)}</>}
       </div>
 
@@ -327,10 +347,17 @@ function LearnRow(
         {material.row.map(c => {
           const on = changed.has(c.form);
           return (
-            <FormRow key={`${c.tense}:${c.person}`} person={personLabel(c.person)} form={c.form} on={on} />
+            <FormRow key={`${c.tense}:${c.person}`} person={rowPersonLabel(c.person, lang, c.form)} form={c.form} on={on} />
           );
         })}
       </div>
+
+      {/* The one thing about a French auxiliary a card cannot show by example. */}
+      {auxiliaryNote(material.lemma) && (
+        <div style={{ ...mono, fontSize: 11, color: 'var(--accent)', marginTop: 12, maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.5 }}>
+          {auxiliaryNote(material.lemma)}
+        </div>
+      )}
 
       {material.cells.length > material.row.length && (
         <div style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)', marginTop: 12, maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.5 }}>
@@ -360,7 +387,11 @@ function LearnRow(
 function FormRow({ person, form, on }: { person: string; form: string; on: boolean }) {
   return (
     <>
-      <span style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)', textAlign: 'right' }}>{person}</span>
+      <span style={{
+        ...mono, fontSize: 12, color: 'var(--ink-faint)', textAlign: 'right',
+        // An elided pronoun is part of the word, so it must not sit a gap away from it.
+        marginRight: person.endsWith("'") ? -10 : 0,
+      }}>{person}</span>
       <span style={{
         fontFamily: 'var(--f-display)', fontSize: 17,
         color: on ? 'var(--accent)' : 'var(--ink)',
@@ -381,10 +412,11 @@ function FormRow({ person, form, on }: { person: string; form: string; on: boole
  * tenses they just turned off.
  */
 function TensePicker(
-  { open, onToggle, chosen, onChange }:
-  { open: boolean; onToggle: () => void; chosen: Tense[]; onChange: (t: Tense[]) => void },
+  { open, onToggle, chosen, lang, onChange }:
+  { open: boolean; onToggle: () => void; chosen: Tense[]; lang: LanguageCode;
+    onChange: (t: Tense[]) => void },
 ) {
-  const all = allTenses();
+  const all = allTenses(lang);
   const on = chosen.length === 0 ? new Set(all) : new Set(chosen);
   return (
     <div className="mb-4">
@@ -417,7 +449,7 @@ function TensePicker(
                   color: isOn ? 'var(--accent)' : 'var(--ink-faint)',
                 }}
               >
-                {tenseLabel(t)}
+                {tenseLabel(t, lang)}
               </button>
             );
           })}

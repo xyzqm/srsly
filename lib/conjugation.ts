@@ -45,7 +45,14 @@
 
 export type Tense =
   | 'pres' | 'pret' | 'impf' | 'fut' | 'cond' | 'pressubj' | 'impsubj'
-  | 'gerund' | 'participle';
+  | 'gerund' | 'participle'
+  /**
+   * COMPOUND, AND THE ONLY TENSE NOT IN ANY TABLE. French's everyday past is `avoir`/`être`
+   * plus a participle — two words — and Lexique lists simple forms only. It is composed in
+   * `lib/conjugationFr.ts` rather than looked up, which is why it is deliberately NOT in
+   * `FINITE_TENSES`: there is no ending to append and nothing for the differ to diff.
+   */
+  | 'passecompose';
 
 /** first/second/third × singular/plural; empty for the two non-finite slots. */
 export type Person = 'fs' | 'ss' | 'ts' | 'fp' | 'sp' | 'tp' | '';

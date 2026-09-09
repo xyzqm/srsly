@@ -1,9 +1,13 @@
-import type { DeckWord } from './types';
+import type { DeckWord, LanguageCode } from './types';
 import { gradeTyped, type TypedResult } from './typedAnswer';
+import {
+  verbCellsFr, verbIndexFr, factsForVerbFr, verbClassFr, patternCardsFr,
+  passeCompose, auxiliaryFor, ETRE_VERBS, TRANSITIVE_SOMETIMES,
+} from './conjugationFr';
 import {
   verbClass, verbCells, verbIndex, factsForVerb, patternCards, cellKey,
   PERSON_ORDER, FINITE_TENSES,
-  type GrammarTable, type Tense, type Person, type VerbClass, type StemDelta,
+  type GrammarTable, type Tense, type Person, type StemDelta,
 } from './conjugation';
 
 /**
@@ -57,7 +61,7 @@ export interface ConjugationCard {
    */
   id: string;
   kind: 'pattern' | 'exception';
-  cls: VerbClass;
+  cls: string;
   /** Pattern cards and whole-tense exceptions. */
   tense?: Tense;
   /** Stem exceptions — what actually changes. */
@@ -89,12 +93,73 @@ export interface MaterialCard {
   row: DrillCell[];
 }
 
+/* ────────────────────────────── the engines ───────────────────────────── */
+
+/**
+ * The two conjugation engines behind one interface.
+ *
+ * Spanish reads Wiktionary's tag sets and French reads Lexique's positional codes; French has
+ * three regular paradigms and a third group with none at all. Those differences are large
+ * enough that the modules are siblings rather than one file with a language argument — but
+ * everything ABOVE them, which is the card, the prompt, the rotation and the grading, is
+ * genuinely identical. This is that seam.
+ *
+ * `LanguageConfig.hasConjugation` decides whether a language is offered at all; this decides
+ * what answers when it is. A third language is a third entry.
+ */
+interface Engine {
+  cells(table: GrammarTable, lemma: string): ReadonlyMap<string, string>;
+  knows(table: GrammarTable, lemma: string): boolean;
+  facts(table: GrammarTable, lemma: string): ReturnType<typeof factsForVerb>;
+  /** The regular class, or null for a verb that has none. Also the pattern-card grouping. */
+  classOf(table: GrammarTable, lemma: string): string | null;
+  patterns(): { key: string; cls: string; tense: Tense }[];
+  /**
+   * Forms that are not IN the table because they are more than one word.
+   *
+   * Only French has any: the passé composé is `avoir`/`être` plus a participle, so it is
+   * composed rather than looked up. Spanish returns nothing, and the card builder below emits
+   * no auxiliary cards for it.
+   */
+  compound(table: GrammarTable, lemma: string): ReadonlyMap<string, string>;
+}
+
+const ENGINES: Record<'es' | 'fr', Engine> = {
+  es: {
+    cells: (t, l) => verbCells(t, l),
+    knows: (t, l) => verbClass(l) !== null && verbIndex(t).has(l),
+    facts: (t, l) => factsForVerb(t, l),
+    classOf: (_t, l) => verbClass(l),
+    patterns: () => patternCards(),
+    compound: () => new Map(),
+  },
+  fr: {
+    cells: (t, l) => verbCellsFr(t, l),
+    // No spelling test: `ouvrir` and `partir` end alike and behave differently, so the table
+    // is asked whether it has forms rather than the lemma being pattern-matched.
+    knows: (t, l) => (verbIndexFr(t).get(l)?.size ?? 0) > 0,
+    facts: (t, l) => factsForVerbFr(t, l),
+    classOf: (t, l) => verbClassFr(l, verbCellsFr(t, l)),
+    patterns: () => patternCardsFr(),
+    compound: (t, l) => {
+      const pc = passeCompose(t, l);
+      const out = new Map<string, string>();
+      if (pc) for (const [person, form] of pc.forms) out.set(cellKey('passecompose', person), form);
+      return out;
+    },
+  },
+};
+
+export function engineFor(lang: LanguageCode): Engine | null {
+  return lang === 'es' || lang === 'fr' ? ENGINES[lang] : null;
+}
+
 /* ─────────────────────────────── labels ───────────────────────────────── */
 
 const TENSE_LABEL: Record<Tense, string> = {
   pres: 'present', pret: 'preterite', impf: 'imperfect', fut: 'future',
   cond: 'conditional', pressubj: 'present subjunctive', impsubj: 'imperfect subjunctive',
-  gerund: 'gerund', participle: 'past participle',
+  gerund: 'gerund', participle: 'past participle', passecompose: 'passé composé',
 };
 
 /**
@@ -103,17 +168,54 @@ const TENSE_LABEL: Record<Tense, string> = {
  * The learner is being asked to produce a form, and the thing that cues a form in Spanish is
  * the pronoun. Grammatical person is how the table is indexed, not how anyone conjugates.
  */
-const PERSON_LABEL: Record<Person, string> = {
-  fs: 'yo', ss: 'tú', ts: 'él / ella', fp: 'nosotros', sp: 'vosotros', tp: 'ellos', '': '',
+const PERSON_LABEL: Record<'es' | 'fr', Record<Person, string>> = {
+  es: { fs: 'yo', ss: 'tú', ts: 'él / ella', fp: 'nosotros', sp: 'vosotros', tp: 'ellos', '': '' },
+  fr: { fs: 'je', ss: 'tu', ts: 'il / elle', fp: 'nous', sp: 'vous', tp: 'ils', '': '' },
 };
 
-export const tenseLabel = (t: Tense) => TENSE_LABEL[t];
-export const personLabel = (p: Person) => PERSON_LABEL[p];
+/**
+ * French calls two of these something else.
+ *
+ * The gerund slot is the PARTICIPE PRÉSENT (`parlant`), and the past participle is what the
+ * passé composé is built from rather than a tense in its own right — so it is named for the
+ * job it does. Naming a slot after the language that fills it is the same discipline
+ * `lib/uiStrings.ts` keeps for the decorative glyphs.
+ */
+const TENSE_LABEL_FR: Partial<Record<Tense, string>> = {
+  gerund: 'present participle',
+  participle: 'past participle',
+  pressubj: 'subjunctive',
+  impsubj: 'imperfect subjunctive',
+};
+
+export const tenseLabel = (t: Tense, lang: LanguageCode = 'es') =>
+  (lang === 'fr' ? TENSE_LABEL_FR[t] : undefined) ?? TENSE_LABEL[t];
+export const personLabel = (p: Person, lang: LanguageCode = 'es') =>
+  PERSON_LABEL[lang === 'fr' ? 'fr' : 'es'][p];
 
 /** What the card asks, in words. */
-export function promptLabel(lemma: string, cell: DrillCell): string {
-  const t = TENSE_LABEL[cell.tense];
-  return cell.person ? `${lemma} · ${t} · ${PERSON_LABEL[cell.person]}` : `${lemma} · ${t}`;
+export function promptLabel(lemma: string, cell: DrillCell, lang: LanguageCode = 'es'): string {
+  const t = tenseLabel(cell.tense, lang);
+  return cell.person ? `${lemma} · ${t} · ${personLabel(cell.person, lang)}` : `${lemma} · ${t}`;
+}
+
+/**
+ * `je` BECOMES `j'` BEFORE A VOWEL, and the Learn row is the one place that shows.
+ *
+ * The pronoun is a label and the form is a separate cell, so a row printed them side by side
+ * as "je ai vendu" — which is not French. Elision is the first thing
+ * `lib/server/frenchLemmatizer.ts` has to undo when READING French, and this is the same rule
+ * running the other way.
+ *
+ * Only the subject pronoun `je` elides, and only before a vowel or a mute h. The prompt side
+ * is left alone: it shows the pronoun on its own as a cue and the learner types the verb, so
+ * there is nothing yet to elide against — and eliding there would leak the first letter of
+ * the answer.
+ */
+export function rowPersonLabel(person: Person, lang: LanguageCode, form: string): string {
+  const label = personLabel(person, lang);
+  if (lang !== 'fr' || person !== 'fs') return label;
+  return /^[aeiouâêîôûàèéùïüh]/i.test(form) ? "j'" : label;
 }
 
 /** How a stem change reads on a card. */
@@ -187,8 +289,9 @@ export function gradeConjugation(
   typed: string,
   expected: string,
   siblings: readonly string[],
+  lang: LanguageCode = 'es',
 ): TypedResult {
-  const result = gradeTyped(typed, expected, 'es');
+  const result = gradeTyped(typed, expected, lang);
   if (result.verdict !== 'close') return result;
   const got = stripAccents(typed);
   const collides = siblings.some(f => f !== expected && stripAccents(f) === got);
@@ -198,10 +301,20 @@ export function gradeConjugation(
 /* ─────────────────────────── building the deck ────────────────────────── */
 
 /** Used only when the learner owns no regular verb of a class the deck needs. */
-const FALLBACK: Record<VerbClass, string> = { ar: 'hablar', er: 'comer', ir: 'vivir' };
+const FALLBACK: Record<string, string> = {
+  ar: 'hablar', er: 'hablar', ir: 'vivir',       // es — `er` is comer, overridden below
+  ir2: 'finir', re: 'vendre',                     // fr
+};
+const FALLBACK_ES: Record<string, string> = { ar: 'hablar', er: 'comer', ir: 'vivir' };
+const fallbackFor = (lang: LanguageCode, cls: string) =>
+  (lang === 'es' ? FALLBACK_ES[cls] : cls === 'er' ? 'parler' : FALLBACK[cls]) ?? '';
 
-function rowFor(table: GrammarTable, lemma: string, tense: Tense): DrillCell[] {
-  const cells = verbCells(table, lemma);
+function rowFor(
+  engine: Engine, table: GrammarTable, lemma: string, tense: Tense,
+): DrillCell[] {
+  const cells = tense === 'passecompose'
+    ? engine.compound(table, lemma)
+    : engine.cells(table, lemma);
   const persons: Person[] = tense === 'gerund' || tense === 'participle' ? [''] : [...PERSON_ORDER];
   const out: DrillCell[] = [];
   for (const person of persons) {
@@ -219,17 +332,19 @@ function rowFor(table: GrammarTable, lemma: string, tense: Tense): DrillCell[] {
  * the change reads as a deviation from something rather than as a list.
  */
 export function materialise(
-  table: GrammarTable, card: ConjugationCard, reviews: number,
+  table: GrammarTable, card: ConjugationCard, reviews: number, lang: LanguageCode = 'es',
 ): MaterialCard {
+  const engine = engineFor(lang);
   const lemma = exemplarFor(card, reviews);
-  const forms = verbCells(table, lemma);
+  if (!engine) return { lemma, cells: [], row: [] };
+  const forms = new Map([...engine.cells(table, lemma), ...engine.compound(table, lemma)]);
   const cells: DrillCell[] = [];
   for (const slot of card.slots) {
     const form = forms.get(cellKey(slot.tense, slot.person));
     if (form) cells.push({ ...slot, form });
   }
   const anchor = card.tense ?? cells[0]?.tense ?? card.slots[0]?.tense;
-  const row = anchor ? rowFor(table, lemma, anchor) : [];
+  const row = anchor ? rowFor(engine, table, lemma, anchor) : [];
   return { lemma, cells, row: row.length > 0 ? row : cells };
 }
 
@@ -237,54 +352,101 @@ export function materialise(
  * Every card this deck earns.
  *
  * ── PATTERNS FIRST, AND ONLY THE ONES THE DECK USES ──
- * The 27 pattern cards are the framework the exceptions hang off, so they are emitted first.
- * They are still SCOPED: a learner with no -ir verbs is not taught the -ir endings, because a
+ * The pattern cards are the framework the exceptions hang off, so they are emitted first. They
+ * are still SCOPED: a learner with no -ir verbs is not taught the -ir endings, because a
  * pattern with nothing to apply it to is a table to memorise rather than a rule to use.
  *
  * ── EXCEPTIONS COME FROM THE LEARNER'S OWN VERBS ──
- * Not from the graded list. The whole graded vocabulary carries 819 facts; a real deck carries
- * a fraction of that, and a card for a verb you have never met is the hollow progress this
- * codebase refuses elsewhere.
+ * Not from the graded list. The whole graded vocabulary carries 819 facts in Spanish and 1,059
+ * in French; a real deck carries a fraction of that, and a card for a verb you have never met
+ * is the hollow progress this codebase refuses elsewhere.
+ *
+ * ── A FRENCH THIRD-GROUP VERB HAS NO CLASS, AND STILL EARNS CARDS ──
+ * `partir` and `aller` contribute no pattern and cannot be a pattern's exemplar, but every one
+ * of their tenses is a row to learn. `classOf` returning null is a fact about the verb, not a
+ * reason to skip it.
  */
 export function buildConjugationCards(
   table: GrammarTable,
   deck: readonly Pick<DeckWord, 'h'>[],
+  lang: LanguageCode = 'es',
 ): ConjugationCard[] {
-  const index = verbIndex(table);
+  const engine = engineFor(lang);
+  if (!engine) return [];
   const verbs = [...new Set(deck.map(w => w.h.trim().toLowerCase()))]
-    .filter(h => verbClass(h) && index.has(h))
+    .filter(h => engine.knows(table, h))
     .sort();
 
-  const classes = new Set<VerbClass>(verbs.map(v => verbClass(v)!));
-  /** Every regular verb of each class, so a pattern card can rotate rather than repeat. */
-  const regulars = new Map<VerbClass, string[]>();
+  const classes = new Set<string>();
+  const regulars = new Map<string, string[]>();
   for (const v of verbs) {
-    if (factsForVerb(table, v).length > 0) continue;
-    const cls = verbClass(v)!;
-    regulars.set(cls, [...(regulars.get(cls) ?? []), v]);
+    const cls = engine.classOf(table, v);
+    if (!cls) continue;                       // third group: rows only, no pattern
+    classes.add(cls);
+    if (engine.facts(table, v).length === 0) {
+      regulars.set(cls, [...(regulars.get(cls) ?? []), v]);
+    }
   }
 
   const out: ConjugationCard[] = [];
 
-  for (const p of patternCards()) {
+  for (const p of engine.patterns()) {
     if (!classes.has(p.cls)) continue;
-    const exemplars = regulars.get(p.cls) ?? [FALLBACK[p.cls]];
-    // A pattern with no readable row on any exemplar is not worth a card.
-    if (!exemplars.some(v => rowFor(table, v, p.tense).length > 0)) continue;
+    const fallback = fallbackFor(lang, p.cls);
+    const exemplars = regulars.get(p.cls) ?? (fallback ? [fallback] : []);
+    if (exemplars.length === 0) continue;
+    if (!exemplars.some(v => rowFor(engine, table, v, p.tense).length > 0)) continue;
     const slots: Slot[] = (p.tense === 'gerund' || p.tense === 'participle')
       ? [{ tense: p.tense, person: '' }]
       : PERSON_ORDER.map(person => ({ tense: p.tense, person }));
     out.push({ id: p.key, kind: 'pattern', cls: p.cls, tense: p.tense, exemplars, slots });
   }
 
+  /**
+   * THE PASSÉ COMPOSÉ: `avoir` IS THE PATTERN, `être` IS THE EXCEPTION LIST.
+   *
+   * Exactly the shape the rest of this phase uses, and it happens to be how French is taught:
+   * almost every verb takes `avoir`, and what has to be learned is the short list that does
+   * not. So one pattern card teaches the construction on a regular avoir-verb, and each
+   * être-verb the learner owns earns a card of its own.
+   *
+   * French only — Spanish's compound past exists but its simple preterite is the one a learner
+   * needs, and `engine.compound` returns nothing there.
+   */
+  if (lang === 'fr') {
+    const withCompound = verbs.filter(v => engine.compound(table, v).size > 0);
+    const avoirVerbs = withCompound.filter(v => auxiliaryFor(v) === 'avoir');
+    if (avoirVerbs.length > 0) {
+      out.push({
+        id: 'pattern:passecompose:avoir',
+        kind: 'pattern',
+        cls: 'avoir',
+        tense: 'passecompose',
+        exemplars: avoirVerbs,
+        slots: PERSON_ORDER.map(person => ({ tense: 'passecompose' as Tense, person })),
+      });
+    }
+    for (const lemma of withCompound) {
+      if (auxiliaryFor(lemma) !== 'être') continue;
+      out.push({
+        id: `${lemma}:aux:etre`,
+        kind: 'exception',
+        cls: 'être',
+        tense: 'passecompose',
+        exemplars: [lemma],
+        slots: PERSON_ORDER.map(person => ({ tense: 'passecompose' as Tense, person })),
+      });
+    }
+  }
+
   for (const lemma of verbs) {
-    for (const fact of factsForVerb(table, lemma)) {
+    for (const fact of engine.facts(table, lemma)) {
       const slots: Slot[] = fact.cells.map(c => ({ tense: c.tense, person: c.person }));
       if (slots.length === 0) continue;
       out.push({
         id: `${lemma}:${fact.key}`,
         kind: 'exception',
-        cls: verbClass(lemma)!,
+        cls: engine.classOf(table, lemma) ?? 'irregular',
         tense: fact.tense ?? slots[0].tense,
         delta: fact.delta,
         // Exactly one: an exception IS a fact about its verb, and showing it on another
@@ -321,8 +483,24 @@ export function filterByTenses(
 }
 
 /** Every form this verb has, for the sibling check in `gradeConjugation`. */
-export function siblingForms(table: GrammarTable, lemma: string): string[] {
-  return [...verbCells(table, lemma).values()];
+export function siblingForms(
+  table: GrammarTable, lemma: string, lang: LanguageCode = 'es',
+): string[] {
+  const engine = engineFor(lang);
+  return engine ? [...engine.cells(table, lemma).values()] : [];
 }
 
-export { FINITE_TENSES };
+/** Whether this card is about the auxiliary rather than about an ending. */
+export function isAuxiliaryCard(card: ConjugationCard): boolean {
+  return card.tense === 'passecompose';
+}
+
+/** What an auxiliary card should say about itself, if anything. */
+export function auxiliaryNote(lemma: string): string | null {
+  if (!ETRE_VERBS.has(lemma)) return null;
+  return TRANSITIVE_SOMETIMES.has(lemma)
+    ? 'Takes être with no direct object — but avoir when it has one.'
+    : 'One of the être verbs. The participle agrees with the subject.';
+}
+
+export { FINITE_TENSES, ETRE_VERBS, auxiliaryFor };
