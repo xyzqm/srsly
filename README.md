@@ -10,8 +10,15 @@ levels are a map, not the goal.
 
 **[Live demo](https://srsly-zeta.vercel.app)** · **Engineering log:** [CLAUDE.md](CLAUDE.md)
 
-No account needed to try it: reading, dictionary lookups, EPUBs, the lesson tree and flashcards
-all work signed out. Signing in only adds sync. Passage generation is the one thing that costs
+Reading fills the deck; the deck drives three drills. **Flashcards** in every language, typed
+with your own IME. **Handwriting** in Chinese — draw the character, graded by its strokes
+([`lib/writingState.ts`](lib/writingState.ts)), with printable 田字格 practice paper for when
+you would rather use a pen. **Conjugation** in Spanish
+and French, where the regular patterns are taught first and every irregularity is derived from
+the dictionary rather than authored.
+
+No account needed to try it: reading, dictionary lookups, EPUBs, the lesson tree and every drill
+work signed out. Signing in only adds sync. Passage generation is the one thing that costs
 money, so it asks for your own Anthropic key rather than spending someone else's.
 
 ---
@@ -75,6 +82,64 @@ Both of those choices were measured against alternatives that failed. So was a b
 **inverted**: adding a non-narrative register to French ranked `guerre` and `mort` *higher* and
 pushed `bonjour` to B2, because conflict is core news vocabulary and greetings are not.
 
+### Deriving a conjugation curriculum, and three heuristics that lied
+
+Spanish and French each ship a Wiktionary- or Lexique-derived grammar table for the word-popup
+grammar note. The conjugation drill ([`lib/conjugation.ts`](lib/conjugation.ts),
+[`lib/conjugationFr.ts`](lib/conjugationFr.ts)) is **derived from those tables at runtime** — no build step,
+no generated file — because a table of conjugation facts would be a second record of what the
+first already says. 1,259 Spanish verbs are analysed end to end in 246 ms.
+
+The interesting part is compression. 9.6% of Spanish cells are irregular, but treating each as
+its own fact would mean **5,222 cards** — more than the entire HSK 1–6 vocabulary. Clustering by
+what actually changes takes that to **819 facts, 6.4×**: `pedir`'s eighteen irregular cells
+across five tenses are one card, because *e→i* is one thing to learn.
+
+That works only if the diff is cut in the right place. Comparing `pensa` against `piensa` as
+whole strings finds the shared suffix `ensa` and reports the stem as **`pi`** — which clusters
+*correctly*, so it passes a counting exercise and then prints a card that says "pi". The regular
+form was *generated* as stem + ending, so the cut point is known rather than inferred.
+
+**Then the data fought back. Three times, and each was a rule that looked obviously right,
+passed its tests, and put a wrong form on a card.** All three were caught by reading the output,
+not the code.
+
+| | The rule | What it produced | The fix |
+|---|---|---|---|
+| **`tiée`** | shortest form wins — correct for clitics, since `hablándole` carries the same tag as `hablando` | Wiktionary lists both `tiene` and `tiée` as *tener*'s third person. `tiée` is not a word and is one letter shorter | cost each candidate against the regular paradigm; a one-letter insertion beats a two-letter rewrite. Removed 25 spurious A1 cards |
+| **`pincer`** | fall back to length when a verb has no regular class | Lexique tags `pincer` — "to pinch" — as *pouvoir*'s 2nd-person plural. Both candidates are six letters, so the tie broke alphabetically | a conjugated form keeps the **shape** of its verb: `pouvez` shares four letters with `pouvoir`, `pincer` shares one |
+| **`étaient`** | class a verb by its ending | `être` ends in `-re`, so it was "regular" — and the cost function then *prefers* regular-looking candidates. `étaient` scored 7 against the correct `sont`'s 101 | a verb must **earn** its class: deviate in ≥40% of cells and you are learned as whole rows instead |
+
+That last threshold is measured, not chosen, and nothing sits in the gap: parler 0%, vendre 0%,
+rompre 4%, battre 10%, mettre 13%, manger 21% — then prendre 48%, dire 55%, faire 94%, être
+100%. It also lands `prendre`, `dire` and `faire` in the third group, which is where a textbook
+has them.
+
+The lesson generalises past this project: **a heuristic that ranks candidates always returns
+something, and never says how sure it was.** Cost against a model of what the answer should look
+like rather than a proxy like length; where there is no model, use a signal that carries meaning.
+Then go and look at what it produced.
+
+### Two more places the data decided the design
+
+**The passé composé is not in the table at all.** French's everyday past is `avoir`/`être` plus
+a participle — two words — and Lexique lists simple forms only (54 multi-word entries in 86,293).
+So it is *composed*: `avoir` is the pattern, the `être` verbs are an authored exception list held
+to the same standard as everything else (a test asserts every entry is a verb the table knows),
+and number agreement is applied because `nous sommes allé` is wrong French. Gender is not,
+because `elle est allée` depends on a subject no flashcard can know.
+
+**Printing 田字格 paper ([`lib/practiceSheet.ts`](lib/practiceSheet.ts)) needed no PDF library
+and no font.** jsPDF would have to draw 水 itself,
+which means embedding a CJK font — megabytes, to render characters already shipped as vector
+outlines for the handwriting canvas. `window.print()` and a stylesheet do it, the stroke paths
+draw the glyphs, and the animation library never loads. Three numbers had to be measured rather
+than guessed: the glyph box overflows its nominal 1024 grid by 100 units at the *bottom only*
+(an estimate of "±50 all round" was wrong in size and direction); the 田字格 cross-hairs first
+shipped at 0.07 mm — a quarter of a screen pixel — because a stroke width in viewBox units is a
+different physical line in a different-sized box; and ten 18 mm cells fit both A4 and US Letter,
+which is why there are ten.
+
 ### A hand-written FSRS scheduler
 
 [`lib/fsrs.ts`](lib/fsrs.ts) implements FSRS v4.5 directly — 19 weights, learning steps, the
@@ -89,7 +154,7 @@ forgetting just as well as one you know.
   Routing those imports through an alias tsc *cannot resolve* lets an ambient declaration apply
   instead, so the files are never read — while webpack resolves them normally and chunk
   splitting is unaffected.
-- **First-load JS: ~890 kB → 296 kB.** The level tables are 338 kB–900 kB of source each.
+- **First-load JS: ~890 kB → 316 kB.** The level tables are 338 kB–900 kB of source each.
   Loading them on demand rather than importing them at module scope is the whole difference.
 - **A shipped grammar table cut from 22.6 MB to 4.2 MB** by keeping only the forms the
   lemmatizer can actually produce — 93% of Wiktionary's Spanish conjugations can never match a
@@ -97,7 +162,7 @@ forgetting just as well as one you know.
 
 ## How it is verified
 
-**563 tests across 26 files**, and they cover [`lib/`](lib) rather than components — deliberately.
+**862 tests across 44 files**, and they cover [`lib/`](lib) rather than components — deliberately.
 The bugs that actually happened were in pure functions with documented but unasserted contracts:
 `œuvres` lemmatising to a verb, NFD normalisation shredding every accented word, `d'accord`
 resolving to "chord" under a typographic apostrophe. Those are cheap to pin and expensive to
@@ -114,7 +179,7 @@ word, and every existing assertion passed because they all checked *which* tiles
 none checked their order.
 
 ```bash
-npm test        # 563 tests
+npm test        # 862 tests
 npm run lint    # 0 warnings
 npm run typecheck
 ```

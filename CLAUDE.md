@@ -1099,7 +1099,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **305 kB** for `/` after the handwriting work; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the PWA and the writing UI landed. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **316 kB** for `/` after the handwriting and conjugation work; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the PWA and the writing UI landed. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
 
 ### Storage abstraction
 
@@ -1398,9 +1398,14 @@ these" went with it, since cram was the only thing that could drill a scoped set
 
 #### Handwriting is scheduled per CHARACTER, and firewalled from reading
 
-`lib/writingState.ts` and `public/strokes/`. **The foundation only — there is no UI yet**, so
-nothing in the app reaches this code and the column is written by nobody. What exists is the
-data pipeline, the schedule, the merge and the storage wiring.
+`lib/writingState.ts`, `public/strokes/`, and the UI in `components/practice/WritingCanvas.tsx`
+and `WritingPractice.tsx`, behind a Cards/Write toggle in `SrsTab`.
+
+*(This paragraph said "the foundation only — there is no UI yet" for five phases after the UI
+shipped, and the storage section below described a `writing_state` column that had been renamed.
+Both were read as current by later sessions. A file loaded as project instructions is worse than
+useless when it is stale — it is confidently wrong about the thing it exists to describe, which
+is the same failure as the `ts-fsrs` and SvelteKit leftovers noted at the top.)*
 
 **THE KEY IS A CHARACTER, AND THAT IS THE WHOLE DESIGN.** A deck card is a WORD; writing is a
 character skill. 朋友 is one card and two things to learn to draw, and 朋 reappears in every
@@ -1411,9 +1416,9 @@ are built from 2,663 distinct characters.
 
 **That is what forced a real schema change**, the project's first. A second FSRS block on
 `DeckWord` would have been free — it lives inside the `decks` jsonb and `useVocabDeck`'s strip
-is a denylist, so an unknown field survives — but it is the wrong key. Hence `writing_state`, in
-all three places this file already demands: `UserDataRow`, `schema.sql`, and
-`supabase/migrations/0003_writing_state.sql`. `tests/sync.test.ts` catches a miss by name.
+is a denylist, so an unknown field survives — but it is the wrong key. The column began as
+`writing_state` and is now **`drill_state`** (see below), in all three places this file demands:
+`UserDataRow`, `schema.sql`, and a migration. `tests/sync.test.ts` catches a miss by name.
 
 **IT FEEDS NOTHING ELSE, AND A TEST PINS THAT.** Not `isDueToday`, not the reading streak, not
 the daily new-card budget, not the activity heatmap. Writing is optional practice — a gym, not a
@@ -1494,6 +1499,162 @@ table, a statement of what changed and when (§2a) plus the modification being f
 (§2b). `build-strokes.mjs` writes `public/strokes/MODIFICATIONS.txt` on every run and NOTICE.md
 carries the entry. Nothing inside a character file is touched — rounding coordinates to save a
 few hundred kB would be a deeper modification of shapes the licence exists to keep traceable.
+
+#### One column for every drill that is not the deck
+
+`lib/drillState.ts`, the `drill_state` jsonb column, and keys that carry which drill they
+belong to: `w:好` for handwriting, `c:pedir:stem:e>i@1` for conjugation.
+
+**IT WAS `writing_state` AND THE RENAME IS THE POINT.** The column was created for handwriting
+alone. A second drill would have meant a second column, a second migration, a second merge and
+a second entry in all three of the places `lib/storage/supabase.ts` demands — and a third drill
+a third of each. A new drill is now a key prefix.
+
+**THE PREFIX IS NOT REDUNDANT TODAY AND WOULD BE EXPENSIVE LATER.** The blob is already per
+language, so nothing can collide right now: only Chinese has handwriting and only Spanish and
+French have conjugation. But `hasHandwriting` is a config flag, not a law — Japanese is a
+KanjiVG build script away from wanting both, and then 食 and 食べる:past share one flat
+namespace with nothing but luck keeping them apart.
+
+**MIGRATED BY READING THE DATA, NOT BY A VERSION MARKER.** Every key written before the rename
+is a bare Han character, so `parseDrillKey` reads an unprefixed key as handwriting and it is
+rewritten with its prefix on the next save. `lib/deckGloss.ts` documents at length why a marker
+is a trap: it gets written by a run whose result was discarded, and the migration is then marked
+done having done nothing. SQL could not have done it anyway — it would fix the cloud and leave
+every device's localStorage. The migration RENAMES rather than replaces, because handwriting
+progress already exists in production.
+
+**`saveDrillCards` writes one drill INTO the blob, never over it.** That is the one way a shared
+column could be worse than two: handwriting saving its own cards over the whole entry would
+delete conjugation progress for that language, silently, on every character practised.
+`drillView` strips the prefix on the way in and `drillWrite` restores it on the way out, so each
+drill works in its own flat namespace and the sharing stops at the storage boundary.
+
+#### Paper practice is a sheet, not a self-grade button
+
+`lib/practiceSheet.ts` and `components/practice/PracticeSheet.tsx` generate printable 田字格
+paper from the deck.
+
+**IT ANSWERS "let me practise on paper and mark myself correct" BY REFUSING THE SECOND HALF.** A
+self-grade button beside a stroke-verified one writes a review the scheduler can never tell
+apart from an observed one afterwards. So paper gets its own surface, and that surface claims
+nothing: no FSRS write, no schedule, no streak, no heatmap — the same posture the removed cram
+mode had. A firewall test asserts the module cannot import anything able to schedule. Paper does
+the practice; the screen does the measurement.
+
+**`window.print()`, NOT A PDF LIBRARY.** jsPDF or pdfmake would have to draw 水 itself, which
+means embedding a CJK font — megabytes, to render characters already shipped as vector outlines
+in `public/strokes/`. The browser is the renderer, every print dialog has Save as PDF (including
+iOS Safari's share sheet, which is the iPad story), and one code path serves print and PDF both.
+`hanzi-writer` never loads: a stroke file is plain SVG path strings, so drawing one needs a
+`<path>` and a vertical flip.
+
+**THREE NUMBERS ARE MEASURED RATHER THAN CHOSEN, and two of them were wrong when guessed.**
+
+- *The glyph box.* Stroke coordinates run x 12..1014 and y −100..888, so after the flip
+  (`translate(0,1024) scale(1,-1)`) the overflow is entirely at the BOTTOM by 100 units. An
+  estimate of "about 50 all round" was wrong in size and direction. A test walks all 2,663 files
+  and asserts nothing clips; a control asserts half the slack WOULD clip, so it measures the data
+  rather than being generously large.
+- *Line weights.* Every box shares one viewBox, so a stroke-width in units is a different
+  PHYSICAL line depending on the size the box is drawn at. The 田字格 cross-hairs went out at 5
+  units — 0.07 mm, a quarter of a screen pixel — and the defining feature of the paper was
+  invisible. Weights are stated in millimetres and converted per box.
+- *Ten columns of 18 mm*, because ten fit both A4 (210 mm) and US Letter (216 mm) at a 12 mm
+  margin, and the narrower paper sets the number.
+
+**`@media print` IS THE ONE PLACE THIS FILE'S COLOUR RULE INVERTS.** "Never use hardcoded colors"
+is right for every pixel on a screen. Paper has no theme: printing in `ink` or `dusk` would emit
+a black page and drain a cartridge. The exception is commented in `globals.css` so it is not
+tidied away.
+
+#### Conjugation: the pattern is the rule, the exceptions are the list
+
+`lib/conjugation.ts` (Spanish), `lib/conjugationFr.ts` (French), `lib/conjugationDrill.ts` (the
+cards), `components/practice/ConjugationPractice.tsx` (the drill). Spanish and French only —
+Chinese does not inflect and Japanese would need a third reader.
+
+**NOTHING IS GENERATED AND NOTHING IS STORED.** Every fact is derived from the grammar table
+each language already downloads for the word-popup grammar note, so a table of conjugation facts
+would be a second record of what the first already says. 1,259 Spanish verbs are analysed end to
+end in 246 ms, once, behind a lazy import that has already happened.
+
+**THE SCHEDULE IS PER FACT; THE PROMPT IS PER CELL.** Every review asks for exactly one form,
+but `pedir`'s e→i covers eighteen cells and a learner who has it has all eighteen. Per-cell
+scheduling would make Spanish conjugation 5,222 cards — more than the whole of HSK 1–6. A card
+rotates through its own cells by review count, and a PATTERN card rotates its exemplar VERB too:
+pinning one meant all nine `-ar` cards showed `ayudar` for ever, which is not merely dull — a
+pattern demonstrated on one verb is indistinguishable from a fact about that verb.
+
+**THE DIFF CUTS AT A KNOWN BOUNDARY.** Comparing whole strings finds the shared suffix of `pensa`
+and `piensa` and reports the stem as `pi` — which clusters *correctly*, so it survives a counting
+exercise and then prints a card that says "pi". The regular form was GENERATED as stem + ending,
+so the cut point is known rather than inferred, and what remains is a real operation:
+`{from:'', to:'i', at:1}`.
+
+**AN ACCENT IS NOT A TYPO HERE**, and this is the one place the drill disagrees with
+`lib/typedAnswer.ts`. That module forgives a missing accent for vocabulary and is right to; its
+own test is "whether the mark distinguishes two words". In conjugation it distinguishes two
+ANSWERS TO DIFFERENT QUESTIONS — `hablo` is the present first person and `habló` the preterite
+third. Measured: **76% of graded verbs in BOTH languages** carry such a pair (17% of Spanish
+cells, 7.1% of French, where it is overwhelmingly `parle` against `parlé`). So a stripped answer
+matching another real cell of that verb is wrong, and one matching nothing else is the ordinary
+slip it looks like.
+
+**FRENCH IS A SIBLING MODULE, NOT A BRANCH.** Lexique gives positional codes where Wiktionary
+gives tag sets; `imp` means the imperative MOOD in `imp:pre` and the imparfait TENSE in
+`ind:imp`; one code packs up to five readings; and `inf` shares codes with finite forms, so
+filtering per CODE rather than per SLOT would delete real future cells. `-ir` is not one class —
+`finir` takes the -iss- infix, `partir` does not and `ouvrir` takes `-er` endings — so the second
+group is detected from the verb's own present plural rather than from its spelling. The third
+group gets no class and is learned as ROWS, because there is no rule to state and a stem delta
+would be arithmetic dressed as one.
+
+**THE PASSÉ COMPOSÉ IS ABSENT BY CONSTRUCTION AND IS COMPOSED INSTEAD.** French's everyday past
+is `avoir`/`être` plus a participle — two words — and Lexique lists simple forms only. `avoir` is
+the pattern and the `être` verbs are the exception list, which is both the shape of the rest of
+this phase and how French is taught. That list is AUTHORED (no table records an auxiliary) and a
+test asserts every entry is a verb the grammar table knows. Number agreement is applied because
+`nous sommes allé` is wrong French; GENDER is not, because `elle est allée` depends on a subject
+no card can know.
+
+##### THREE COST HEURISTICS THAT CONFIDENTLY CHOSE THE WRONG ANSWER
+
+The most reusable lesson of the phase, and all three were found by READING THE OUTPUT rather
+than the code. Each is a rule that looked obviously right, passed its tests, and put a wrong
+form on a card.
+
+1. **`tiée` — "shortest form wins" is not safe.** A clitic form carries the same code as the
+   bare one (`hablándole` is a plain gerund exactly like `hablando`), so tags cannot separate
+   them and length can. But 14% of Spanish lemma/cell pairs carry more than one candidate and
+   some are simply BAD DATA: Wiktionary lists both `tiene` and `tiée` as the third-person
+   present of `tener`. `tiée` is not a word and it is one character shorter. Candidates are now
+   costed against the regular paradigm — exact match free, stem tweak cheap, unmatched ending
+   expensive — which picks `tiene` (insert one letter) over `tiée` (rewrite two). It removed 25
+   spurious A1 facts.
+
+2. **`pincer` — a length tiebreak has no information in it.** Lexique tags `pincer`, the
+   infinitive of "to pinch", as `VER|ind:pre:2p` with the lemma `pouvoir`. Both it and `pouvez`
+   claim that cell, `pouvoir` is third group so there is no paradigm to cost against, and both
+   are six letters — so the tie broke alphabetically and the drill was ready to teach
+   `vous pincer`. A conjugated form keeps the SHAPE of its verb: `pouvez` shares four letters
+   with `pouvoir` and `pincer` shares one. Suppletion is safe from the rule because nothing else
+   claims `vais`.
+
+3. **`étaient` — a class a verb does not deserve is worse than no class.** `être` ends in `-re`,
+   so the ending alone called it regular — and the cost function then PREFERS whichever candidate
+   looks most regular. Lexique tags `étaient` as both the imperfect and the present third plural;
+   against a nominal `-re` paradigm it scores 7 where the correct `sont` scores 101. être's
+   present came out "suis es est sommes êtes étaient", the imperfect smuggled into the present by
+   a class the verb never had. A verb now has to EARN its ending's class: deviate in two fifths
+   or more of your cells and you are learned as rows. The threshold is measured and nothing sits
+   in the gap — parler 0%, vendre 0%, rompre 4%, battre 10%, mettre 13%, manger 21%, then
+   prendre 48%, dire 55%, faire 94%, être 100%.
+
+The pattern across all three: **a heuristic that ranks candidates will always return something,
+and it never says how sure it was.** Cost against a model of what the answer should look like,
+not against a proxy like length; and when there is no model, use a signal that carries meaning
+(shared shape) rather than one that does not. Then look at the output.
 
 #### Typed recall: one question in every language, typed with your own keyboard
 
