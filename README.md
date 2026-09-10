@@ -31,6 +31,10 @@ money, so it asks for your own Anthropic key rather than spending someone else's
 <td width="50%"><img src="docs/practice.png" alt="Building a sentence from tiles"></td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/conjugate.png" alt="A conjugation exception card: pedir's e→i change, with the four forms it alters picked out against the two that behave"></td>
+<td width="50%"><img src="docs/practice-sheet.png" alt="Printable tianzige practice paper, with a stroke-order band above each row"></td>
+</tr>
+<tr>
 <td colspan="2"><img src="docs/stats.png" alt="Milestones, drawn as seals with one badge per ladder"></td>
 </tr>
 </table>
