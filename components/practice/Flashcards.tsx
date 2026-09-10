@@ -9,6 +9,7 @@ import { getTodayCounts, bumpCount } from '@/lib/reviewCounts';
 import { getReverseCards, setReverseCards, getTypedRecall, setTypedRecall } from '@/lib/flashcardPrefs';
 import { canType, expectedAnswer, answerReading, type TypedResult } from '@/lib/typedAnswer';
 import TypedAnswer from '@/components/practice/TypedAnswer';
+import DrillLoading from '@/components/practice/DrillLoading';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import AchievementToast from '@/components/stats/AchievementToast';
@@ -44,6 +45,17 @@ function cardSpeechText(card: DeckWord): string {
 interface Props {
   deck: DeckWord[];
   deckLoaded?: boolean;
+  /**
+   * False while this session is mounted but hidden — see components/TabPanel.tsx.
+   *
+   * IT GATES THE KEYBOARD, AND THAT IS NOT DEFENSIVE. The shortcuts are registered on
+   * `window`, which no amount of `display: none` or `inert` on the subtree can reach: a
+   * hidden panel keeps hearing every keystroke the page gets. Verified in a browser before
+   * this existed — two Enters pressed on the SETTINGS tab revealed and then GRADED the
+   * flashcard nobody could see, and `hablar` came back with a `lastReview` of that day. So
+   * the drill has to be told it is off screen; it cannot work it out from the DOM.
+   */
+  active?: boolean;
   /** Optional next-step CTA shown when the session ends. Omitted = no button. */
   onDone?: () => void;
   onGrade?: (cardId: string, grade: number) => void; // receives the card's stable id
@@ -96,7 +108,7 @@ const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
   { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
 ];
 
-export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, onScore }: Props) {
+export default function Flashcards({ deck, deckLoaded = true, active = true, onDone, onGrade, onScore }: Props) {
   const language = useLanguage();
   const ui = uiStrings(language);
   const [settings, setSettings] = useState<SrsSettings>(DEFAULT_SRS_SETTINGS);
@@ -259,7 +271,7 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
   kbd.current.canAct = false;
 
   if (!deckLoaded || queue === null) {
-    return <div className="py-14 text-center" style={{ color: 'var(--ink-faint)', fontFamily: 'var(--f-mono)', fontSize: 12 }}>Loading…</div>;
+    return <DrillLoading />;
   }
 
   if (deck.length === 0) {
@@ -459,9 +471,11 @@ export default function Flashcards({ deck, deckLoaded = true, onDone, onGrade, o
     void prefetchAudio(speechText);
   }
 
-  // Enable keyboard shortcuts for the card currently on screen.
+  // Enable keyboard shortcuts for the card currently on screen — but only while it IS on
+  // screen. `canAct` is cleared every render above and re-enabled here, so passing `active`
+  // through is the whole gate: a hidden session falls back to the disabled default.
   kbd.current = {
-    canAct: true,
+    canAct: active,
     revealed,
     suggested,
     reveal: () => setRevealed(true),

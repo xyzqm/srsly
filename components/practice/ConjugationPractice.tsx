@@ -29,6 +29,7 @@ function classLabel(cls: string): string {
   return cls === 'ir2' ? '-ir (-iss-)' : cls === 'irregular' ? 'irregular' : `-${cls}`;
 }
 import TypedAnswer from './TypedAnswer';
+import DrillLoading from './DrillLoading';
 
 /**
  * The Spanish conjugation drill — one form per question, typed.
@@ -56,11 +57,18 @@ import TypedAnswer from './TypedAnswer';
 interface Props {
   deck: DeckWord[];
   deckLoaded?: boolean;
+  /**
+   * False while this session is mounted but hidden — see components/TabPanel.tsx. It gates
+   * the Enter shortcut, which is registered on `window` and so is deaf to `display: none`
+   * and to `inert` on the subtree; without it, Enter pressed in the flashcard session would
+   * also advance the conjugation card sitting invisibly beside it.
+   */
+  active?: boolean;
 }
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ConjugationPractice({ deck, deckLoaded = true }: Props) {
+export default function ConjugationPractice({ deck, deckLoaded = true, active = true }: Props) {
   const language = useLanguage();
   const [table, setTable] = useState<GrammarTable | null>(null);
   const [cards, setCards] = useState<DrillCards | null>(null);
@@ -160,7 +168,7 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
    */
   useEffect(() => {
     const waiting = phase === 'learn' || answer !== null;
-    if (!waiting) return;
+    if (!waiting || !active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.isComposing) return;
       e.preventDefault();
@@ -169,14 +177,10 @@ export default function ConjugationPractice({ deck, deckLoaded = true }: Props) 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [phase, answer, advance]);
+  }, [phase, answer, advance, active]);
 
   if (!deckLoaded || table === null || cards === null || queue === null) {
-    return (
-      <div className="py-10 text-center" style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>
-        Loading…
-      </div>
-    );
+    return <DrillLoading />;
   }
 
   if (all.length === 0) {

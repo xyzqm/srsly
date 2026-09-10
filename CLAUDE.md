@@ -1530,6 +1530,49 @@ delete conjugation progress for that language, silently, on every character prac
 `drillView` strips the prefix on the way in and `drillWrite` restores it on the way out, so each
 drill works in its own flat namespace and the sharing stops at the storage boundary.
 
+#### The three drills are kept alive, and a hidden one must not hear the keyboard
+
+`components/practice/SrsTab.tsx` renders Cards, Write and Conjugate inside `TabPanel` — the
+same component the app's own tabs use — rather than switching between them with a ternary.
+
+**A CONDITIONAL RENDER IS A REMOUNT, AND A REMOUNT IS A LOADING STATE.** `TabPanel`'s docstring
+already says this about the outer tabs; the drill toggle inside `SrsTab` was the one place still
+doing it the old way. Measured before the change: Cards → Conjugate collapsed the panel from
+1175px to 706px and back 12ms later, in BOTH directions, with everything already warm — the
+grammar table is module-cached and `verbIndex` is memoised on a `WeakMap` keyed by it, so a
+rebuild of the cards themselves costs 1.8 ms (es) / 4.0 ms (fr). **None of the lag was the
+engine, and neither was any of it `hanzi-writer`, which `lib/hanziWriter.ts` caches at module
+scope.** It was the unmount. Signed in it is worse than a flash: `getDrillCards` reads the
+Supabase row fresh on every mount, and a mode switch is an isolated read with nothing to
+coalesce with — a network round trip to re-fetch what the device already had.
+
+Panels still mount on FIRST activation only, so a learner who never opens Write never loads
+`hanzi-writer` and `/` first-load JS is unchanged at 316 kB. The capability guards stay OUTSIDE
+the panel rather than on `active`: a drill the current language does not offer must UNMOUNT, or
+a Chinese session would keep a Spanish drill alive and quietly fetch the 4.21 MB Spanish grammar
+table for it.
+
+**A HIDDEN PANEL STILL HEARS `window`.** Both `Flashcards` and `ConjugationPractice` register
+their shortcuts on `window`, which no amount of `display: none` or `inert` on the subtree can
+reach — those stop focus and pointer events, not a global listener. This was ALREADY a bug
+before the drills were kept alive, because `SrsTab` is itself inside a `TabPanel`: verified in a
+browser, two Enters pressed on the SETTINGS tab revealed and then graded the flashcard nobody
+could see, and the card came back with that day's `lastReview` written to the deck. Keeping the
+drills mounted would have added a second one — Enter in the card session also advancing the
+conjugation card beside it. So `active` is threaded down and gates both, and the drill is TOLD
+it is off screen because it cannot work that out from the DOM.
+
+**`DrillLoading` reserves height, and is deliberately too small.** The three drills settle
+between 416px and 788px depending on which one, which state, and how wide the window is, so no
+single number matches; 420 is the FLOOR of that range rather than the middle, because a reserve
+larger than the content it stands in for causes its own shift — upward, on settle. The empty
+states do not use it: "Nothing due" is an answer, not a placeholder.
+
+**One claim here was wrong on the first pass and the control caught it.** Keeping the drills
+mounted preserves `ConjugationPractice`'s position, which is React state; it changes nothing for
+`Flashcards`, whose counter is derived from today's PERSISTED review counts and survived a
+remount all along. Stashing the change and re-running the measurement is what separated the two.
+
 #### Paper practice is a sheet, not a self-grade button
 
 `lib/practiceSheet.ts` and `components/practice/PracticeSheet.tsx` generate printable 田字格

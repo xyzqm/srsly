@@ -10,6 +10,7 @@ import {
 } from '@/lib/writingState';
 import WritingCanvas from './WritingCanvas';
 import PracticeSheet from './PracticeSheet';
+import DrillLoading from './DrillLoading';
 
 /**
  * A handwriting session — one character at a time, graded by the strokes.
@@ -104,11 +105,7 @@ export default function WritingPractice({ deck, deckLoaded = true }: Props) {
    */
   const body = (() => {
   if (!deckLoaded || cards === null || queue === null) {
-    return (
-      <div className="py-10 text-center" style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)' }}>
-        Loading…
-      </div>
-    );
+    return <DrillLoading />;
   }
 
   if (chars.length === 0) {

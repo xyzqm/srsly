@@ -8,6 +8,7 @@ import WritingPractice from './WritingPractice';
 import ConjugationPractice from './ConjugationPractice';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import ReadTab from '@/components/read/ReadTab';
+import TabPanel from '@/components/TabPanel';
 
 /**
  * The SRS tab — everything the scheduler drives.
@@ -75,6 +76,17 @@ export default function SrsTab({
     if ((mode === 'write' && !canWrite) || (mode === 'conjugate' && !canConjugate)) setMode('cards');
   }, [mode, canWrite, canConjugate]);
 
+  /**
+   * What is actually on screen, which is not always what `mode` says.
+   *
+   * The effect above corrects `mode` one commit late, so for that one frame a language
+   * without the drill would render nothing at all. This is the render-side half of the same
+   * guard, kept as a value rather than repeated inline so the toggle's highlight and the
+   * panel that is shown can never disagree about which drill is up.
+   */
+  const shown: 'cards' | 'write' | 'conjugate' =
+    (mode === 'write' && !canWrite) || (mode === 'conjugate' && !canConjugate) ? 'cards' : mode;
+
   /** Which drills this language actually has, in the order they are offered. */
   const modes = useMemo(() => {
     const out: { id: 'cards' | 'write' | 'conjugate'; label: string }[] = [{ id: 'cards', label: 'Cards' }];
@@ -129,7 +141,7 @@ export default function SrsTab({
       {modes.length > 1 && (
         <div className="flex gap-1.5 mb-4">
           {modes.map(({ id, label }) => {
-            const on = mode === id;
+            const on = shown === id;
             return (
               <button
                 key={id}
@@ -150,33 +162,64 @@ export default function SrsTab({
         </div>
       )}
 
-      {mode === 'conjugate' && canConjugate ? (
-        /* Keyed by language for the same reason the others are: the queue latches on first
-           load, so a language switch has to be a new session rather than the old one holding
-           the outgoing language's cards. */
-        <ConjugationPractice key={`conj-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
-      ) : mode === 'write' && canWrite ? (
-        /* Keyed by language for the same reason Flashcards is: the queue latches on first
-           load, so a language switch has to be a new session rather than the old one holding
-           the outgoing language's characters. */
-        <WritingPractice key={`write-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
-      ) : (
-      <>
-      {/* Keyed by language, and gated on deckLoaded.
-          Flashcards latches its queue on first load and never rebuilds it — deliberately, so
-          grading a card can't reshuffle the session underneath you. That made switching
-          language while practising leave the OLD language's cards on screen: `hola` sitting
-          in a Japanese session. A key makes the switch a new session, which it is; passing
-          deckLoaded stops the fresh mount latching the outgoing deck, which useVocabDeck
-          still holds for the tick between the language changing and the new deck arriving. */}
-      <Flashcards
-        key={`flash-${language}`}
-        deck={scopedDeck}
-        deckLoaded={deckLoaded}
-        onGrade={gradeCard}
-        onScore={onScore}
-      />
-      </>
+      {/* ONE PANEL PER DRILL, KEPT ALIVE — the same treatment `TabPanel` already gives the
+          app's own tabs, and for the reason its docstring gives: a conditional render
+          unmounts the whole subtree, so coming back re-ran every load and redrew from a
+          loading state. Measured here before the change: switching Cards → Conjugate
+          collapsed this panel from 1175px to 706px and back 12ms later, in BOTH directions,
+          on a warm local cache. Signed in it is worse, because `getDrillCards` reads the
+          Supabase row fresh on every mount — an isolated network round trip with nothing to
+          coalesce with, spent re-fetching what the device already had.
+
+          It also stops a mode switch RESETTING the drill you left, though only where that was
+          ever true — worth stating exactly, because the obvious version of the claim is wrong.
+          `ConjugationPractice` counts "index + 1 of queue.length" out of React state, so
+          remounting rebuilt the latch and re-served a card already answered this session;
+          `Flashcards` reads its counter off today's PERSISTED review counts, so its position
+          survived a remount and always did. Measured, not assumed: the control run said so.
+
+          A panel is mounted on first activation and never before, so a learner who never
+          opens Write still never loads `hanzi-writer`. The capability guards stay OUTSIDE
+          the panel rather than on `active`: a drill the current language does not offer must
+          UNMOUNT, or a Chinese session would keep a Spanish drill alive and quietly fetch the
+          4.21 MB Spanish grammar table for it. */}
+      <TabPanel active={active && shown === 'cards'}>
+        {/* Keyed by language, and gated on deckLoaded.
+            Flashcards latches its queue on first load and never rebuilds it — deliberately, so
+            grading a card can't reshuffle the session underneath you. That made switching
+            language while practising leave the OLD language's cards on screen: `hola` sitting
+            in a Japanese session. A key makes the switch a new session, which it is; passing
+            deckLoaded stops the fresh mount latching the outgoing deck, which useVocabDeck
+            still holds for the tick between the language changing and the new deck arriving. */}
+        <Flashcards
+          key={`flash-${language}`}
+          active={active && shown === 'cards'}
+          deck={scopedDeck}
+          deckLoaded={deckLoaded}
+          onGrade={gradeCard}
+          onScore={onScore}
+        />
+      </TabPanel>
+
+      {canWrite && (
+        <TabPanel active={active && shown === 'write'}>
+          {/* Keyed by language for the same reason Flashcards is: the queue latches on first
+              load, so a language switch has to be a new session rather than the old one
+              holding the outgoing language's characters. */}
+          <WritingPractice key={`write-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
+        </TabPanel>
+      )}
+
+      {canConjugate && (
+        <TabPanel active={active && shown === 'conjugate'}>
+          {/* Keyed by language for the same reason the others are. */}
+          <ConjugationPractice
+            key={`conj-${language}`}
+            active={active && shown === 'conjugate'}
+            deck={scopedDeck}
+            deckLoaded={deckLoaded}
+          />
+        </TabPanel>
       )}
     </div>
   );
