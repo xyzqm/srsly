@@ -653,8 +653,14 @@ part of the primary school", `yaourt` with "a song where the singer makes up the
 
 ### The lesson tree
 
-`components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: 33 lessons in 6
-lessons per language across two sections — one tree per language, all four. `TabNav` still
+`components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: **186 lessons
+across four trees**, one per language, each split into two sections — a numbered grammar track
+(28 lessons for French and Spanish, 23 for Chinese and Japanese) and 21 vocabulary sets. That is
+102 grammar lessons and 84 word sets in total.
+
+*(This line read "33 lessons in 6 lessons per language" — a number that was stale by a factor of
+five and a sentence that had stopped parsing. Counted from `lessonsFor()` rather than estimated,
+the same way every other figure in this file is meant to be.)* `TabNav` still
 filters on `hasLessons`, because an empty tab reads as a broken one.
 
 **GRAMMAR IS THE COURSE; WORDS ARE A SHELF.** The two are split rather than interleaved because

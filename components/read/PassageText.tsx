@@ -9,6 +9,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { pickReading, type ReadingHint } from '@/lib/readings';
 import { needsSpaceBefore } from '@/lib/tokenText';
+import { sentenceRevealed } from '@/lib/dictation';
 import GlossText from '@/components/shared/GlossText';
 
 /** Find compound words that include `token` by checking its immediate neighbours. */
@@ -458,7 +459,16 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
     const info = new Map<string, { reviewKey: string; storedEntry?: ClozeGradeEntry }>();
     const perSentence = sentences.map((sent, si) => {
       const idxs: number[] = [];
-      let answered = 0;
+      /**
+       * WHICH blanks are answered, not how many.
+       *
+       * A count would do for the one caller below, and that is exactly how the reveal rule
+       * came to be written twice — `lib/dictation.ts` exports `sentenceRevealed` and was
+       * unit-tested, while this file decided the same thing for itself with
+       * `answered < idxs.length`. The two agreed, so nothing failed; the test simply was not
+       * testing the code that ships. A set of indices is what the exported predicate takes.
+       */
+      const answered = new Set<number>();
       sent.tokens.forEach((token, ti) => {
         const reviewKey = token.baseForm && clozeWords.has(token.baseForm) ? token.baseForm : token.text;
         const oid = `${si}-${ti}`;
@@ -466,7 +476,7 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
         const restoredMatches = restored !== undefined && restored.word === reviewKey;
         if (!((clozeWords.has(reviewKey) || restoredMatches) && token.type === 'vocab')) return;
         idxs.push(ti);
-        if (restoredMatches) answered++;
+        if (restoredMatches) answered.add(ti);
         info.set(oid, { reviewKey, storedEntry: restoredMatches ? restored : undefined });
       });
       return { idxs, answered };
@@ -563,7 +573,8 @@ export default function PassageText({ sentences, activeSentenceIdx, showPinyin, 
              * A sentence with no blanks is never hidden — there is nothing to earn it with.
              */
             const st = blanks.perSentence[si];
-            const hidden = dictation && st.idxs.length > 0 && st.answered < st.idxs.length;
+            const hidden = dictation && st.idxs.length > 0
+              && !sentenceRevealed(st.idxs, ti => st.answered.has(ti));
             return (
             <Fragment key={si}>
             {/* Sentences are separate spans (each is independently highlightable), so the

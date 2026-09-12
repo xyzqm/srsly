@@ -1,5 +1,5 @@
 import { todayStr } from './deck';
-import { isLearningCard, DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings } from './fsrs';
+import { DEFAULT_SRS_SETTINGS, type FsrsGrade, type SrsSettings } from './fsrs';
 import { isDrillDue, scheduleDrill, type DrillCard, type DrillCards } from './drillState';
 
 /**
@@ -111,7 +111,3 @@ export function scheduleWriting(
   return scheduleDrill(card, grade, settings);
 }
 
-/** Whether this character is still in its learning steps — used only for the UI's own label. */
-export function isWritingLearning(card: WritingCard | undefined): boolean {
-  return isLearningCard(card ?? {});
-}
