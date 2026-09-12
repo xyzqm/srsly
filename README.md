@@ -17,6 +17,10 @@ you would rather use a pen. **Conjugation** in Spanish
 and French, where the regular patterns are taught first and every irregularity is derived from
 the dictionary rather than authored.
 
+Generated passages carry one more mode. **Listen** hides the text, plays the sentence aloud and
+asks you to type what you heard into the blanks that were already there — the same input and the
+same grading, with the reading taken away.
+
 No account needed to try it: reading, dictionary lookups, EPUBs, the lesson tree and every drill
 work signed out. Signing in only adds sync. Passage generation is the one thing that costs
 money, so it asks for your own Anthropic key rather than spending someone else's.
@@ -143,6 +147,38 @@ than guessed: the glyph box overflows its nominal 1024 grid by 100 units at the 
 shipped at 0.07 mm — a quarter of a screen pixel — because a stroke width in viewBox units is a
 different physical line in a different-sized box; and ten 18 mm cells fit both A4 and US Letter,
 which is why there are ten.
+
+### Listening dictation, where the obvious build was already written and backwards
+
+A **Listen** toggle on a generated passage ([`lib/dictation.ts`](lib/dictation.ts)) plays a
+sentence aloud, hides its text, and asks you to type what you heard into the blanks that were
+already there.
+
+**It stores nothing and grades nothing new.** The blanks, the typed field, the accent-sensitive
+comparison, the refusal to re-grade an answered blank and the FSRS write are all the ones the
+cloze passage already performs — dictation changes only what can be *seen* while answering. No
+column, no card type, no second scale: recognising a word by ear is arguably harder than reading
+it, but a separate number for that would be a second record of one fact.
+
+**`speakWithBlank()` had been sitting in [`lib/speech.ts`](lib/speech.ts) with zero call sites**
+— speak up to the blank, go silent, speak the rest — looking exactly like the function this
+feature had been waiting for. It tests the opposite skill. A word that was never spoken cannot
+be heard, so silence at the gap asks whether you can *infer* a missing word from context, where
+listening practice asks whether you can *recognise* one by ear and spell it. It also handles
+exactly one gap, and a sentence can carry several, since a word is blanked in all of its
+occurrences and blanks have no ceiling. So the sentence is spoken whole and the page is what
+hides it — and the function kept a job as the "play it with the gap" hint, for someone who has
+heard the sentence and still cannot place the word.
+
+**Hiding text is harder than blurring it.** A blurred token is still a token: tappable, with a
+lookup popup ready to print the word *and its definition* for the one word being tested,
+selectable by dragging across it, and read out verbatim by a screen reader. So a hidden token is
+an inert span — `pointer-events: none`, `user-select: none`, `aria-hidden` — with the characters
+left in place so nothing reflows when the sentence is earned. Blur is a look, not a barrier.
+
+A sentence is revealed the moment its last blank is answered rather than at the end of the run:
+seeing the sentence you just heard is where the learning lands, and holding it to a results
+screen puts it a long way from the moment it means anything.
 
 ### A hand-written FSRS scheduler
 
