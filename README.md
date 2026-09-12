@@ -39,6 +39,9 @@ money, so it asks for your own Anthropic key rather than spending someone else's
 <td width="50%"><img src="docs/practice-sheet.png" alt="Printable tianzige practice paper, with a stroke-order band above each row"></td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/dictation.png" alt="A listening-dictation run: the sentence just earned is legible with its three typed answers ticked, and everything not yet answered stays blurred"></td>
+</tr>
+<tr>
 <td colspan="2"><img src="docs/stats.png" alt="Milestones, drawn as seals with one badge per ladder"></td>
 </tr>
 </table>

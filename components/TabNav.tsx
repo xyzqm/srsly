@@ -3,8 +3,25 @@ import type { TabId } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { hasLessons } from '@/lib/lessons';
 
+/**
+ * The visible name is PRACTICE; the id stays `practice` and the code stays SRS.
+ *
+ * "SRS" is a term of art — it means something precise to someone who already knows what
+ * spaced repetition is, and nothing at all to anyone else, which is most people meeting the
+ * app. The tab holds the scheduled drills (cards, handwriting, conjugation) and the passage
+ * written around today's due words, and "Practice" is what a learner would call that.
+ *
+ * Nothing underneath is renamed: the `TabId` is already `practice`, `ReadTab`'s `variant`
+ * stays `'srs'`, and the `srs_state` column keeps its name. Those name the SCHEDULER, which
+ * is still exactly what it was — and renaming a synced column to match a label would be a
+ * migration bought with nothing.
+ *
+ * One collision to know about: the Learn tab's "Start practice" is a different thing with
+ * the same word on it — a lesson run that deliberately grades NOTHING, because a lesson you
+ * can fail is a lesson you avoid. This tab grades everything it touches.
+ */
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'practice', label: 'SRS' },
+  { id: 'practice', label: 'Practice' },
   { id: 'read',     label: 'Read' },
   { id: 'learn',    label: 'Learn' },
   { id: 'dash',     label: 'Stats' },

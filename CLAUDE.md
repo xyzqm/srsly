@@ -1364,20 +1364,30 @@ the winner could be the instance nobody could see and the milestone simply never
 results for a while, despite this file and the component's own docstring describing two, so a
 milestone crossed on the last blank of a passage had nowhere to be announced.
 
-### Reading and SRS are separate tabs
+### Reading and scheduled practice are separate tabs
 
 One line down the middle, and it is the app's main organising idea:
 
 - **Read** is your own material — starter texts, pasted articles, web clips, books. No blanks,
   no grading, no schedule touched. Words enter the deck only when you tap one and press Add to
   deck. Comprehension questions are available (they check understanding, not recall).
-- **SRS** is what FSRS actually drives: flashcards, and generated passages, which keep their
-  blanks because a generated passage is written around the words you owe today.
+- **Practice** is what FSRS actually drives: flashcards, handwriting, conjugation, and
+  generated passages, which keep their blanks because a generated passage is written around
+  the words you owe today.
 
-**SRS is the landing tab**, with one exception that is load-bearing rather than a nicety: a
+**THE TAB IS LABELLED "Practice" AND THE CODE STILL SAYS SRS, DELIBERATELY.** It read "SRS"
+until 2026-09-12, which is a term of art: precise to someone who already knows what spaced
+repetition is, and meaningless to everyone else. Nothing underneath was renamed — the `TabId`
+was already `practice`, `ReadTab`'s `variant` is still `'srs'`, and the `srs_state` column
+keeps its name, because those name the SCHEDULER and the scheduler did not change. Renaming a
+synced column to match a label is a migration bought with nothing. The one collision to know
+about is the Learn tab's "Start practice", which is a lesson run that deliberately grades
+NOTHING; this tab grades everything it touches.
+
+**It is the landing tab**, with one exception that is load-bearing rather than a nicety: a
 URL carrying a web clip lands on Read instead. `TabPanel` mounts a tab only once it has been
 activated, and the clipper reads its payload from the location hash in an effect inside
-ReadTab — so landing on SRS with a clip in the URL would leave that effect unmounted and the
+ReadTab — so landing there with a clip in the URL would leave that effect unmounted and the
 clipped article unread until the learner opened Read by hand, which is the exact papercut the
 clipper removes. `initialTab()` in `app/page.tsx` decides it in a lazy initialiser, reusing
 `decodeClip`.
