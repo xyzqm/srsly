@@ -3,6 +3,9 @@ import {
   buildLevelIndex, calculateReadability, sampleChapters, MIN_TOKENS, type LevelBands,
 } from '@/lib/readability';
 import { FR_LEVELS } from '@/lib/data/fr-levels';
+import ES_LEVELS from '@data/cefr-levels.json';
+import ES_FORMS from '@data/es-forms.json';
+import ES_DICT from '@dict/esdict.json';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { STARTER_TEXTS } from '@/lib/data/starterTexts';
 import type { PassageToken } from '@/lib/types';
@@ -15,6 +18,8 @@ const punct = (text: string): PassageToken => ({ text, type: 'punct' });
 const BANDS: LevelBands = { 1: ['chat', 'le'], 2: ['maison'], 3: ['fléau'] };
 /** Level numbers easiest → hardest, as LanguageConfig.levels supplies them. */
 const ORDER = [1, 2, 3];
+/** The Spanish scale, easiest → hardest: A1 … C2. */
+const ES_ORDER = [1, 2, 3, 4, 5, 6];
 const index = buildLevelIndex(BANDS, ORDER);
 
 describe('the level index', () => {
@@ -237,5 +242,61 @@ describe('a real French text scores sensibly', () => {
   it('accounts for every measured token in exactly one band', () => {
     const r = calculateReadability(tokens, frIndex, 2, FR_ORDER);
     expect(Object.values(r.byRank).reduce((a, b) => a + b, 0)).toBe(r.tokens);
+  });
+});
+
+/**
+ * The Spanish metric bug, pinned against the real tables.
+ *
+ * Measured across six generated passages before the fix: 6.9% of all measured tokens (57 of
+ * 831) sat in NO band, and the frequent ones were entirely function words — `una`, `esos`,
+ * `son`, `sus`, `hay`, `me`, `era`, `veces`, `paso`. Every one is an inflection of a word
+ * already in A1, arriving with no `baseForm` because `spanishLemmatizer` deliberately leaves
+ * a surface alone when the surface is itself a common headword. Bands are keyed by lemma, so
+ * A1 grammar was counted as above-level and the mean reading ran 6.7 points low.
+ *
+ * These assertions are claims about the SHIPPED DATA, like the lemmatizer tests one file over
+ * — a stub would only prove the callback is wired, not that it resolves the words that caused
+ * the bug.
+ */
+describe('Spanish inflections resolve to a banded lemma', () => {
+  const esIndex = buildLevelIndex(ES_LEVELS as unknown as LevelBands, ES_ORDER);
+  const forms = ES_FORMS as unknown as Record<string, string>;
+  const altKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
+
+  /** The nine that actually turned up, with the lemma each has to reach. */
+  const CULPRITS: [string, string][] = [
+    ['una', 'un'], ['esos', 'ese'], ['sus', 'su'], ['son', 'ser'], ['hay', 'haber'],
+    ['paso', 'pasar'], ['veces', 'vez'], ['me', 'yo'], ['era', 'ser'],
+  ];
+
+  it.each(CULPRITS)('%s is unbanded on its own but its lemma %s is in A1', (form, lemma) => {
+    expect(esIndex.has(form)).toBe(false);
+    expect(esIndex.get(lemma)).toBe(0);
+  });
+
+  it('counts them as known once the form table is consulted', () => {
+    const toks = CULPRITS.map(([form]) => w(form, 'a function word'));
+    // A control: without the altKey every one of them reads as above-level.
+    expect(calculateReadability(toks, esIndex, 1, ES_ORDER).coverage).toBe(0);
+    expect(calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, altKey).coverage).toBe(1);
+  });
+
+  /**
+   * A proper noun is EXCLUDED, not graded — and it needs the extra test because the generator
+   * glosses names itself through its `names` side-channel, so `Madrid` arrives carrying
+   * "(place) Madrid" and is therefore resolvable. The dictionary is right to have no entry.
+   */
+  it('excludes a name the app has no lexical record of, rather than calling it hard', () => {
+    const dict = ES_DICT as unknown as Record<string, { m?: string }>;
+    const ungradeable = (form: string) => !dict[form]?.m && !forms[form];
+    const toks = [w('madrid', '(place) Madrid'), w('casa', 'house')];
+    const plain = calculateReadability(toks, esIndex, 1, ES_ORDER);
+    const fixed = calculateReadability(toks, esIndex, 1, ES_ORDER, ungradeable, altKey);
+    expect(plain.tokens).toBe(2);
+    expect(plain.coverage).toBe(0.5);
+    expect(fixed.tokens).toBe(1);
+    expect(fixed.unresolved).toBe(1);
+    expect(fixed.coverage).toBe(1);
   });
 });

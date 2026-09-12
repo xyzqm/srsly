@@ -8,6 +8,8 @@ import {
   buildLevelIndex, calculateReadability, MIN_TOKENS, type LevelBands, type Readability,
 } from '@/lib/readability';
 import { JA_GRAMMAR_WORDS } from '@/lib/japaneseGrammar';
+import { loadEsForms, cachedEsForms } from '@/lib/spanishForms';
+import { lookupEs, esdictReady } from '@/lib/data/esdict';
 import type { PassageToken } from '@/lib/types';
 
 /**
@@ -66,17 +68,61 @@ function useLevelIndex(): Map<string, number> | null {
 }
 
 /**
- * Words the active language treats as grammar rather than vocabulary.
+ * Spanish inflection → lemma, loaded lazily and only where it is used.
  *
- * Japanese is the case that needs it: no JLPT list contains を or に, so without this every
- * particle counted as above-level and crowded out the real hard words.
+ * The bands are keyed by lemma and the server deliberately does not lemmatize a surface that
+ * is itself a common headword, so `una`, `son`, `hay` and `sus` reach the metric unbanded —
+ * see lib/spanishForms.ts, which carries the measurement and the argument.
  */
-function useUngradeable(): ((form: string) => boolean) | undefined {
+function useEsForms(): Record<string, string> | null {
   const language = useLanguage();
-  return useMemo(
-    () => (language === 'ja' ? (form: string) => JA_GRAMMAR_WORDS.has(form) : undefined),
-    [language],
+  const [forms, setForms] = useState<Record<string, string> | null>(
+    () => (language === 'es' ? cachedEsForms() : null),
   );
+  useEffect(() => {
+    if (language !== 'es') { setForms(null); return; }
+    let live = true;
+    setForms(cachedEsForms());
+    void loadEsForms().then(f => { if (live) setForms(f); });
+    return () => { live = false; };
+  }, [language]);
+  return forms;
+}
+
+/**
+ * Words the active language cannot fairly grade, excluded rather than counted.
+ *
+ * TWO DIFFERENT REASONS, and the parameter serves both because `calculateReadability` only
+ * ever applies it as "this AND the index does not know the form".
+ *
+ * JAPANESE — GRAMMAR. No JLPT list contains を or に, so without this every particle counted
+ * as above-level and crowded out the real hard words.
+ *
+ * SPANISH — PROPER NOUNS THE MODEL GLOSSED ITSELF. The dictionary is right to have no entry
+ * for Madrid; `nameFilter.mjs` strips place names at build time precisely so a novel's
+ * characters resolve to nothing and are excluded. What readability could not see is that the
+ * generator glosses names through its own `names` side-channel — the route passes the model's
+ * short English gloss straight onto the token — so `Madrid` arrives carrying
+ * "(place) Madrid", is therefore resolvable, and is measured and counted as above-level.
+ * Sniffing for "(place)" would be reading a phrasing the model chose and the prompt never
+ * asked for. The honest test is whether this app has ANY lexical record of the surface: no
+ * dictionary entry and no entry in the form table means it is not a vocabulary item at all.
+ *
+ * Gated on the dictionary having actually loaded, because "not in the dictionary" and "the
+ * dictionary is not here yet" are opposite answers and the second one would exclude the whole
+ * passage. Until it lands, nothing is excluded and the behaviour is exactly what it was.
+ */
+function useUngradeable(
+  esForms: Record<string, string> | null,
+): ((form: string) => boolean) | undefined {
+  const language = useLanguage();
+  return useMemo(() => {
+    if (language === 'ja') return (form: string) => JA_GRAMMAR_WORDS.has(form);
+    if (language === 'es' && esdictReady()) {
+      return (form: string) => !lookupEs(form).meaning && !esForms?.[form];
+    }
+    return undefined;
+  }, [language, esForms]);
 }
 
 /**
@@ -85,12 +131,19 @@ function useUngradeable(): ((form: string) => boolean) | undefined {
  * Japanese only: the JLPT list is written in formal orthography (御飯, 友達) where real text
  * says ご飯 and 友だち, so ordinary N5 words read as unranked. The reading is the bridge.
  */
-function useAltKey(): ((t: PassageToken) => string | undefined) | undefined {
+function useAltKey(
+  esForms: Record<string, string> | null,
+): ((t: PassageToken) => string | undefined) | undefined {
   const language = useLanguage();
-  return useMemo(
-    () => (language === 'ja' ? (t: PassageToken) => t.reading || undefined : undefined),
-    [language],
-  );
+  return useMemo(() => {
+    if (language === 'ja') return (t: PassageToken) => t.reading || undefined;
+    // Spanish: the lemma of an inflection the server left alone. Measured at 6.9% of all
+    // tokens before this existed — see lib/spanishForms.ts.
+    if (language === 'es' && esForms) {
+      return (t: PassageToken) => esForms[(t.baseForm ?? t.text).trim().toLowerCase()];
+    }
+    return undefined;
+  }, [language, esForms]);
 }
 
 /** The same easiest → hardest order, for the comparison inside calculateReadability. */
@@ -122,8 +175,9 @@ export function useReadability(tokens: PassageToken[] | null | undefined): Reada
   const index = useLevelIndex();
   const level = useLevel();
   const order = useLevelOrder();
-  const ungradeable = useUngradeable();
-  const altKey = useAltKey();
+  const esForms = useEsForms();
+  const ungradeable = useUngradeable(esForms);
+  const altKey = useAltKey(esForms);
   // A level the scale does not contain means the learner cannot be placed, so there is no
   // question to answer — better silence than a confident "0% · very hard".
   if (!tokens || !index || level === null || !order.includes(level)) return null;
@@ -143,8 +197,9 @@ export function useTextReadability(samples: string[] | null): Readability | null
   const index = useLevelIndex();
   const level = useLevel();
   const order = useLevelOrder();
-  const ungradeable = useUngradeable();
-  const altKey = useAltKey();
+  const esForms = useEsForms();
+  const ungradeable = useUngradeable(esForms);
+  const altKey = useAltKey(esForms);
   const [tokens, setTokens] = useState<PassageToken[] | null>(null);
   const key = samples?.join(' ') ?? '';
 

@@ -36,6 +36,20 @@ export async function preloadEsdict(): Promise<void> {
   await load();
 }
 
+/**
+ * Has the dictionary actually arrived?
+ *
+ * `lookupEs` cannot say: it returns the caller's fallback when the word is missing AND when
+ * the dictionary simply is not here yet, and those mean opposite things. The readability
+ * metric asks "does this app have any lexical record of this surface?" to tell a proper noun
+ * (the model glosses one through the `names` side-channel, so it arrives WITH a meaning) from
+ * an ordinary word — and asking that before the fetch lands would answer "no" for every word
+ * in the passage. Loading-state-rendered-as-an-answer, in the one place it would be silent.
+ */
+export function esdictReady(): boolean {
+  return esdictCache !== null || baseCache !== null;
+}
+
 /** Dictionary headwords are lowercase; passage words may be capitalised at a sentence
  *  start or inside a title, so every lookup normalises case first. */
 function normalize(text: string): string {
