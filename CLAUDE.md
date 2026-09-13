@@ -304,6 +304,25 @@ A second axis, FORM (anecdote, diary entry, dialogue, how-to…), is seeded inde
 alone still produced the same *kind* of text every time. Both are pure functions, like
 `lib/proverb.ts`, so they are tested without a network call.
 
+**THE TOPIC POOL IS TIERED, AND THE MEASUREMENT IS THE REASON.** `PASSAGE_TOPICS` was one flat
+list of 42 shared by every level — `level` only shifted the index into it. Across 52 generated
+Spanish passages an A1 reading put **20.1% of its tokens above A1** against 2.6% at C1, and the
+worst were not badly written, they were written about the wrong things: `pulsera` (C2) in "how
+to make a beaded bracelet", `ave` (B1) in "recommendations for birdwatching". `BEGINNER_TOPICS`
+is the narrower pool a beginner draws from, selected by `difficultyTier` rather than
+`level <= 2` because JLPT N5 is the beginner level where HSK 1 and A1 are. Re-measured on ten
+fresh A1 passages: above-level 20.1% → 14.4%, and 12.8% after the band fixes below.
+
+**THE FORM IS DRAWN FROM THE HIGH BITS OF ITS HASH, AND THAT IS LOAD-BEARING.** FNV-1a is
+`h = (h ^ c) * prime` over 32 bits, and the low k bits of that depend only on the low k bits of
+the input — so `hash(key|form) % 8` was a fixed function of `hash(key) % 8`, whatever the string
+looked like. Narrowing the beginner pool to 16 made the topic determine `hash(key) % 8` outright
+and every topic got exactly ONE form for ever. It was never really independent, only diluted:
+over a year a topic saw a mean of 4.0 forms out of 8 at 18 topics and 3.5 at 42, against 7.9 /
+7.4 / 5.4 reading the high half. Reordering the seed string does NOT fix it — measured. The
+independence test caught this only because it went total; it had been passing at 4.0-out-of-8
+since the axis was added, and now asserts a minimum spread rather than "more than zero".
+
 **Only GENERATED passages have blanks.** Your own reading — pasted text, a web clip, an EPUB,
 a starter text — commits with `vocabWords: []` and touches no schedule. The distinction is a
 contract, not a preference: a generated passage is written around the words you owe today, so

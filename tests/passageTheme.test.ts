@@ -20,7 +20,7 @@ describe('passageTopic stops repeating', () => {
    * The old hash summed the date's parts, so 2026+8+22 and 2026+9+21 both made 2056.
    *
    * Checked at B1, where the full pool applies. It used to be checked at A1 and no longer can
-   * be: a beginner now draws from eighteen topics rather than forty-two (see BEGINNER_TOPICS),
+   * be: a beginner now draws from sixteen topics rather than forty-two (see BEGINNER_TOPICS),
    * so SOME pair of dates a month apart must collide by pigeonhole — that is arithmetic, not
    * the hash bug this guards. The guarantee is about the hash, so it is asserted where the
    * pool is not the binding constraint.
@@ -56,7 +56,7 @@ describe('passageTopic stops repeating', () => {
    * Spread over a year is the property that actually matters to a daily user.
    *
    * Asserted against the pool the level actually draws from, which is the honest form of the
-   * claim now that the pool is tiered: a beginner reaches all eighteen of theirs and an
+   * claim now that the pool is tiered: a beginner reaches all sixteen of theirs and an
    * intermediate all forty-two. Hard-coding PASSAGE_TOPICS.length would have quietly become a
    * test that a beginner sees topics they are never offered.
    */
@@ -74,20 +74,34 @@ describe('passageTopic stops repeating', () => {
 });
 
 describe('passageForm varies the shape of the text', () => {
-  it('is seeded independently of the topic', () => {
-    // If form tracked topic, every date landing on topic N would land on form N % 8 too.
-    // Collect the pairings and check more than one form shows up for a given topic.
-    const byTopic = new Map<string, Set<string>>();
-    for (let d = 0; d < 365; d++) {
-      const date = new Date(Date.UTC(2026, 0, 1 + d)).toISOString().slice(0, 10);
-      const t = passageTopic(date, 'es', 1);
-      const f = passageForm(date, 'es', 1);
-      if (!byTopic.has(t)) byTopic.set(t, new Set());
-      byTopic.get(t)!.add(f);
-    }
-    const varied = [...byTopic.values()].filter(forms => forms.size > 1);
-    expect(varied.length).toBeGreaterThan(0);
-  });
+  /**
+   * If form tracked topic, every date landing on topic N would land on one form for ever.
+   *
+   * THIS ASSERTED `varied.length > 0` AND WAS TOO WEAK FOR ITS OWN PURPOSE. It passed the old
+   * implementation at eighteen topics while a topic saw a mean of 4.0 forms out of 8, and at
+   * forty-two while it saw 3.5 — already half-collapsed. It only failed when narrowing the
+   * beginner pool to sixteen made the collapse total (1.0), because FNV-1a's low bits are a
+   * closed system: see `passageForm`. Both halves are now asserted, at both pool sizes, with
+   * thresholds the fixed implementation clears at 7.9 / 7.4 / 5.4 and the old one fails.
+   */
+  it.each([[1, 'beginner pool'], [3, 'full pool']])(
+    'at level %i (%s) the form does not track the topic',
+    level => {
+      const byTopic = new Map<string, Set<string>>();
+      for (let d = 0; d < 365; d++) {
+        const date = new Date(Date.UTC(2026, 0, 1 + d)).toISOString().slice(0, 10);
+        const t = passageTopic(date, 'es', level as number);
+        const f = passageForm(date, 'es', level as number);
+        if (!byTopic.has(t)) byTopic.set(t, new Set());
+        byTopic.get(t)!.add(f);
+      }
+      const sizes = [...byTopic.values()].map(forms => forms.size);
+      // EVERY topic, not merely one — the old assertion passed on a single exception.
+      expect(Math.min(...sizes)).toBeGreaterThan(1);
+      const mean = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+      expect(mean).toBeGreaterThanOrEqual(5);
+    },
+  );
 
   it('only ever returns a form from the list', () => {
     expect(PASSAGE_FORMS).toContain(passageForm('2026-08-22', 'ja', 2) as never);

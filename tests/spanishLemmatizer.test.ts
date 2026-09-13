@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { lemmatizeEs, type LemmaDict } from '@/lib/server/spanishLemmatizer';
 import esdictData from '@dict/esdict.json';
 import { CEFR_VOCAB } from '@/lib/data/cefr-vocab';
+import CORE_OVERRIDES from '../scripts/data/core-overrides.json';
 
 /**
  * The over-lemmatization guard is the rule worth pinning here. CLAUDE.md states it in prose:
@@ -71,4 +72,36 @@ describe('plurals reach their singular', () => {
     ['casas',  'casa'],
     ['libros', 'libro'],
   ])('%s → %s', (w, want) => expect(lemma(w)).toBe(want));
+});
+
+/**
+ * The hand-written glosses actually reach the shipped tables — and are not stale.
+ *
+ * `curatedGloss` is the ONE place this project writes a definition itself rather than taking
+ * it from the licensed source, so it earns a check. Two failure modes, both already recorded
+ * in CLAUDE.md about its sibling `leadSense`: an entry that silently does nothing, and an
+ * entry naming a word the dictionary no longer has, which sits in the file looking applied.
+ */
+describe('curated Spanish glosses are applied and none has gone stale', () => {
+  const dict = esdictData as unknown as Record<string, { m?: string }>;
+  const curated = (CORE_OVERRIDES as { curatedGloss: { es: Record<string, string> } }).curatedGloss.es;
+
+  it.each(Object.entries(curated))('%s ships the curated text verbatim', (word, gloss) => {
+    expect(dict[word]?.m).toBe(gloss);
+  });
+
+  /**
+   * `gustar` specifically, because it is the reason the section grew. Wiktionary's own lead
+   * sense reads `translated as "to like", analyzable in structure as "to please" [with dative
+   * 'someone']` — a linguist's note handed to a beginner as the definition of the first verb
+   * they meet. `leadSense` could not fix it: there is no plain "to like" sense to promote,
+   * that IS the sense.
+   */
+  it('gustar leads with the meaning, not with a note about dative structure', () => {
+    const g = dict['gustar']?.m ?? '';
+    expect(g.split(';')[0]).toBe('to like (literally, to be pleasing to)');
+    expect(g).not.toMatch(/analyzable/);
+    // The secondary sense survives: a curated gloss REPLACES, and a deleted sense is wrong.
+    expect(g).toMatch(/to taste/);
+  });
 });

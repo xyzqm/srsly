@@ -65,18 +65,29 @@ export const PASSAGE_TOPICS = [
  *
  * ── AUTHORED, AND THEN CHECKED ──
  * Which topics belong here is a judgement; what makes it more than taste is that the A1 sweep
- * is re-run against it. Kept at eighteen rather than a handful so the pool still varies — a
+ * is re-run against it. Kept at sixteen rather than a handful so the pool still varies — a
  * beginner who gets food, family and weather on rotation has traded one complaint for another.
  * Every entry must also appear in PASSAGE_TOPICS, which `tests/passageTheme.test.ts` asserts,
  * so a typo here cannot invent a topic that exists nowhere else.
+ *
+ * ── TWO WERE CUT ON A SECOND PASS, AND THE EVIDENCE DIFFERED FOR EACH ──
+ * `cooking at home` produced the worst A1 passage of the ten at 75% — `ingrediente` (C1),
+ * `casera` (C1), `delicioso` (B2) — and the mechanism is the same one that cut the bracelet:
+ * a recipe is about its ingredients, and ingredient words are technical in any language.
+ * `holidays and festivals` was cut on the MECHANISM ALONE and against its own number: its one
+ * passage scored 87%, at the A1 mean, but the vocabulary of celebrating — `decorar`, `disfrutar`,
+ * `celebrar` — is A2 and up before a beginner has anywhere to put it. Worth stating plainly
+ * because ten passages over sixteen topics is roughly ONE observation each, which cannot rank
+ * topics: `coffee and cafés` scored 82%, worse than festivals, and stays. Re-measure before
+ * cutting further, and cut on why a topic forces a word rather than on a single score.
  */
 export const BEGINNER_TOPICS = [
   'travel and transportation', 'food and restaurants',
   'family and relationships', 'health and exercise', 'shopping and money',
   'education and learning', 'city life and neighborhoods', 'weather and seasons',
   'friendship and social life', 'hobbies and free time', 'books and reading',
-  'cooking at home', 'animals and pets', 'films and television',
-  'holidays and festivals', 'clothes and style', 'coffee and cafés',
+  'animals and pets', 'films and television',
+  'clothes and style', 'coffee and cafés',
   'neighbours and community',
 ] as const;
 
@@ -133,6 +144,25 @@ export function passageTopic(date: string, language: LanguageCode, level: number
  * stable within a passage, but a different offset re-rolls both.
  */
 export function passageForm(date: string, language: LanguageCode, level: number, offset = 0): string {
-  const i = (hash(`${date}|${language}|${level}|form`) + offset) % PASSAGE_FORMS.length;
+  /**
+   * THE HIGH BITS, AND THAT IS NOT A FLOURISH.
+   *
+   * FNV-1a is `h = (h ^ c) * prime` over 32 bits, and multiply-and-xor mod 2^32 has a property
+   * worth knowing: the low k bits of the result depend ONLY on the low k bits of the input. So
+   * the low bits of `hash(key|form)` are a fixed function of the low bits of `hash(key)` — the
+   * two draws are not independent down there, however different the strings look. Measured: the
+   * offset was a constant 4, so with a topic pool of 16 the topic determined `hash(key) % 8`
+   * outright and every topic got exactly ONE form, for ever. Dropping the beginner pool from 18
+   * to 16 is what made it total, and `tests/passageTheme.test.ts` caught it on that commit.
+   *
+   * It was never actually independent, only diluted: over a year, taking the low bits gave a
+   * topic a mean of 4.0 forms out of 8 at eighteen topics and 3.5 at forty-two. The high half
+   * depends on every bit of the input, so the same measurement gives 7.9, 7.4 and 5.4 — and the
+   * forms stay evenly spread (34–53 across the eight over 365 days).
+   *
+   * Reordering the seed string does NOT fix it; that was measured too, and 16 topics still gave
+   * every topic one form. The fix has to be which BITS are read, not which string is hashed.
+   */
+  const i = ((hash(`${date}|${language}|${level}|form`) >>> 16) + offset) % PASSAGE_FORMS.length;
   return PASSAGE_FORMS[i];
 }
