@@ -264,20 +264,37 @@ describe('Spanish inflections resolve to a banded lemma', () => {
   const forms = ES_FORMS as unknown as Record<string, string>;
   const altKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
 
-  /** The nine that actually turned up, with the lemma each has to reach. */
-  const CULPRITS: [string, string][] = [
+  /**
+   * The nine forms that actually turned up in the sweep, with the lemma each has to reach.
+   *
+   * PARTITIONED AT RUNTIME rather than asserted as a fixed list, because the bands are
+   * rebuilt from corpora and the membership genuinely moves: a rebuild put `me` into A1 in
+   * its own right, which is a small improvement and broke a hard-coded "me is unbanded".
+   * The property worth pinning is not which words are unbanded — it is that an unbanded form
+   * whose lemma is banded gets there through the form table.
+   */
+  const OBSERVED: [string, string][] = [
     ['una', 'un'], ['esos', 'ese'], ['sus', 'su'], ['son', 'ser'], ['hay', 'haber'],
     ['paso', 'pasar'], ['veces', 'vez'], ['me', 'yo'], ['era', 'ser'],
   ];
+  const unbanded = OBSERVED.filter(([form]) => !esIndex.has(form));
 
-  it.each(CULPRITS)('%s is unbanded on its own but its lemma %s is in A1', (form, lemma) => {
+  /**
+   * The control, and it has to come first: if a rebuild ever banded all nine, every
+   * assertion below would pass while testing nothing at all.
+   */
+  it('most of them are still unbanded, so the rest of this is not vacuous', () => {
+    expect(unbanded.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(unbanded)('%s is unbanded on its own but its lemma %s is in A1', (form, lemma) => {
     expect(esIndex.has(form)).toBe(false);
     expect(esIndex.get(lemma)).toBe(0);
   });
 
   it('counts them as known once the form table is consulted', () => {
-    const toks = CULPRITS.map(([form]) => w(form, 'a function word'));
-    // A control: without the altKey every one of them reads as above-level.
+    const toks = unbanded.map(([form]) => w(form, 'a function word'));
+    // Without the altKey every one of them reads as above-level.
     expect(calculateReadability(toks, esIndex, 1, ES_ORDER).coverage).toBe(0);
     expect(calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, altKey).coverage).toBe(1);
   });
