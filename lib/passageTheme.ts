@@ -1,4 +1,5 @@
 import type { LanguageCode } from './types';
+import { difficultyTier } from './languageConfig';
 
 /**
  * What a generated passage is ABOUT, and what SHAPE it takes.
@@ -42,6 +43,44 @@ export const PASSAGE_TOPICS = [
 ] as const;
 
 /**
+ * The topics a BEGINNER passage may be about — and the reason this list exists is measured.
+ *
+ * ── YOU CANNOT WRITE "HOW TO MAKE A BEADED BRACELET" AT A1 ──
+ * `PASSAGE_TOPICS` was one flat list shared by every level; `level` only shifted the index
+ * into it and never filtered the pool. Across 52 generated Spanish passages, A1 put **20.1%
+ * of its tokens above A1** against 2.6% at C1 — and the worst offenders were not badly
+ * written, they were written about the wrong things. The noun the passage is ABOUT was the
+ * problem: `pulsera` (C2) in "how to make a beaded bracelet", `ave` (B1) in "recommendations
+ * for birdwatching", `mineral` (B2) in a story about a discovery. Handed that topic the model
+ * either uses the word or writes about something else, and it correctly uses the word.
+ *
+ * ── THE ARGUMENT WAS ALREADY IN THIS FILE, ON THE OTHER AXIS ──
+ * `PASSAGE_FORMS` below says it outright: "A form the model cannot execute at a beginner level
+ * produces worse output." That reasoning was applied to FORM and never to TOPIC.
+ *
+ * ── TIERED OFF THE CONFIG, NOT OFF `level <= 2` ──
+ * `difficultyTier` already answers this question for every language, and the numbering runs in
+ * opposite directions (JLPT N5 is the beginner level, HSK 1 and A1 are). A comparison on the
+ * raw number would be right for three languages and backwards for Japanese.
+ *
+ * ── AUTHORED, AND THEN CHECKED ──
+ * Which topics belong here is a judgement; what makes it more than taste is that the A1 sweep
+ * is re-run against it. Kept at eighteen rather than a handful so the pool still varies — a
+ * beginner who gets food, family and weather on rotation has traded one complaint for another.
+ * Every entry must also appear in PASSAGE_TOPICS, which `tests/passageTheme.test.ts` asserts,
+ * so a typo here cannot invent a topic that exists nowhere else.
+ */
+export const BEGINNER_TOPICS = [
+  'travel and transportation', 'food and restaurants',
+  'family and relationships', 'health and exercise', 'shopping and money',
+  'education and learning', 'city life and neighborhoods', 'weather and seasons',
+  'friendship and social life', 'hobbies and free time', 'books and reading',
+  'cooking at home', 'animals and pets', 'films and television',
+  'holidays and festivals', 'clothes and style', 'coffee and cafés',
+  'neighbours and community',
+] as const;
+
+/**
  * What KIND of text it is. Deliberately all things a short passage can actually be at A1 —
  * no essays, no reports. A form the model cannot execute at a beginner level produces worse
  * output than no instruction at all.
@@ -81,8 +120,11 @@ function hash(s: string): number {
  * @param offset      which passage this is within the day (`themeOffset`), for within-day variety
  */
 export function passageTopic(date: string, language: LanguageCode, level: number, offset = 0): string {
-  const i = (hash(`${date}|${language}|${level}`) + offset) % PASSAGE_TOPICS.length;
-  return PASSAGE_TOPICS[i];
+  // A beginner draws from the narrower pool — see BEGINNER_TOPICS for the measurement.
+  const pool: readonly string[] =
+    difficultyTier(language, level) === 'beginner' ? BEGINNER_TOPICS : PASSAGE_TOPICS;
+  const i = (hash(`${date}|${language}|${level}`) + offset) % pool.length;
+  return pool[i];
 }
 
 /**

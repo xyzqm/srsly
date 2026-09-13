@@ -10,6 +10,8 @@ import { passageTopic, passageForm } from '@/lib/passageTheme';
 import { userKeyGenerator, serverKeyGenerator, looksLikeAnthropicKey, USER_KEY_HEADER, type Generator } from '@/lib/server/generator';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
+/** Not a budget message: the request reached the meter with no session to charge. */
+const NO_SESSION_MSG = 'Could not verify your session, so generation was not attempted. Reload the page and try again.';
 
 /** Fallback batch size when the client doesn't specify one. */
 const DEFAULT_BATCH_SIZE = 5;
@@ -222,6 +224,26 @@ export async function POST(req: NextRequest) {
   const metered = !stub && generator.operatorPays;
   const credit = metered ? await consumeAiCredit() : { allowed: true, remaining: null };
   if (!credit.allowed) {
+    /**
+     * A MISSING SESSION IS NOT A SPENT BUDGET, and reporting both as 402 hid a real failure.
+     *
+     * `consume_ai_credit()` refuses for two unrelated reasons: `no_session` when `auth.uid()`
+     * is null, and `guest_limit` when an anonymous guest has spent their allowance. It has
+     * always returned a `reason` and this route always discarded it, so an auth fault came
+     * back wearing the budget's message — "You've used your free AI generations", with
+     * `aiRemaining: 0`, to a learner who had used none. It cost a real debugging detour here:
+     * a request made without the Supabase cookie 402'd identically to an exhausted guest, and
+     * the raised limit looked like it had not taken effect when it had.
+     *
+     * 401 rather than 402, because the client must NOT latch `markGuestAiExhausted()` on it —
+     * that writes the budget to spent locally and would lock a working account out of
+     * generation until storage was cleared.
+     */
+    if (credit.reason === 'no_session') {
+      return NextResponse.json(
+        { error: 'no_session', message: NO_SESSION_MSG, detail: NO_SESSION_MSG }, { status: 401 },
+      );
+    }
     return NextResponse.json({ error: 'guest_limit', message: GUEST_LIMIT_MSG, aiRemaining: 0 }, { status: 402 });
   }
 
