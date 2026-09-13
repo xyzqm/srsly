@@ -313,6 +313,17 @@ is the narrower pool a beginner draws from, selected by `difficultyTier` rather 
 `level <= 2` because JLPT N5 is the beginner level where HSK 1 and A1 are. Re-measured on ten
 fresh A1 passages: above-level 20.1% → 14.4%, and 12.8% after the band fixes below.
 
+**A SECOND ROUND OF CUTS MEASURED AT 13.1% AGAINST 12.8%, WHICH IS NOT A RESULT.** `t = 0.11`:
+a run of ten passages can only resolve a difference of about 4.8 points, so it could not have
+detected the change in either direction. `holidays and festivals` went back, having been cut
+against its own number in the first place; `cooking at home` stayed cut on a real outlier (75%,
+2.3 SD below that run's mean) and a mechanism — a recipe is about its ingredients. The useful
+half is what the worst passages of that run were: `weather and seasons` at 23.9% above level,
+`travel and transportation` 18.4%, `hobbies and free time` 17.7% — all unarguably beginner
+subjects that were in the pool from the start. **Topic surgery is finished as a lever**; the
+residual is not topic-specific, and the next look belongs on the band table and the prompt.
+Sample size is the thing to fix first: ten passages cannot see anything smaller than ~5 points.
+
 **THE FORM IS DRAWN FROM THE HIGH BITS OF ITS HASH, AND THAT IS LOAD-BEARING.** FNV-1a is
 `h = (h ^ c) * prime` over 32 bits, and the low k bits of that depend only on the low k bits of
 the input — so `hash(key|form) % 8` was a fixed function of `hash(key) % 8`, whatever the string

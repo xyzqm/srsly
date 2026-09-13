@@ -70,16 +70,27 @@ export const PASSAGE_TOPICS = [
  * Every entry must also appear in PASSAGE_TOPICS, which `tests/passageTheme.test.ts` asserts,
  * so a typo here cannot invent a topic that exists nowhere else.
  *
- * ── TWO WERE CUT ON A SECOND PASS, AND THE EVIDENCE DIFFERED FOR EACH ──
- * `cooking at home` produced the worst A1 passage of the ten at 75% — `ingrediente` (C1),
- * `casera` (C1), `delicioso` (B2) — and the mechanism is the same one that cut the bracelet:
- * a recipe is about its ingredients, and ingredient words are technical in any language.
- * `holidays and festivals` was cut on the MECHANISM ALONE and against its own number: its one
- * passage scored 87%, at the A1 mean, but the vocabulary of celebrating — `decorar`, `disfrutar`,
- * `celebrar` — is A2 and up before a beginner has anywhere to put it. Worth stating plainly
- * because ten passages over sixteen topics is roughly ONE observation each, which cannot rank
- * topics: `coffee and cafés` scored 82%, worse than festivals, and stays. Re-measure before
- * cutting further, and cut on why a topic forces a word rather than on a single score.
+ * ── ONE WAS CUT, ONE WAS CUT AND PUT BACK, AND THE SECOND IS THE USEFUL STORY ──
+ * `cooking at home` produced the worst A1 passage of ten at 75% — `ingrediente` (C1), `casera`
+ * (C1), `delicioso` (B2) — 2.3 standard deviations below that run's mean, and the mechanism is
+ * the one that cut the bracelet: a recipe is about its ingredients, and ingredient words are
+ * technical in any language. It stays cut.
+ *
+ * `holidays and festivals` was cut on the MECHANISM ALONE and against its own number — its one
+ * passage scored 87%, dead on the A1 mean — and a re-measure could not justify it, so it is
+ * back. Ten fresh A1 passages after the cut: **13.1% above level against 12.8% before, t = 0.11**.
+ * Not "the cut did not help": a run of ten can only resolve a difference of about 4.8 points,
+ * so this experiment could not have detected the change in EITHER direction. With no evidence
+ * either way the topic goes back, because a wider pool is worth something on its own — the
+ * repeat interval for a beginner is the size of this list.
+ *
+ * ── AND TOPIC SURGERY IS FINISHED AS A LEVER ──
+ * The worst passages of that run were `weather and seasons` (23.9% above), `travel and
+ * transportation` (18.4%), `hobbies and free time` (17.7%) and `neighbours and community`
+ * (15.6%) — all topics that were in the beginner pool from the start and are unarguably
+ * beginner subjects. Cutting two topics moved the mass around and left the distribution the
+ * same shape. Whatever remains is not topic-specific, so look at the band table and the prompt
+ * rather than at this list.
  */
 export const BEGINNER_TOPICS = [
   'travel and transportation', 'food and restaurants',
@@ -87,7 +98,7 @@ export const BEGINNER_TOPICS = [
   'education and learning', 'city life and neighborhoods', 'weather and seasons',
   'friendship and social life', 'hobbies and free time', 'books and reading',
   'animals and pets', 'films and television',
-  'clothes and style', 'coffee and cafés',
+  'clothes and style', 'coffee and cafés', 'holidays and festivals',
   'neighbours and community',
 ] as const;
 
