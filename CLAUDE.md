@@ -169,6 +169,24 @@ fallback content.
 costs money is having a new passage written, so that feature uses the learner's own Anthropic
 key. They pay Anthropic directly (~1c a passage) and the operator pays nothing.
 
+**THE GUEST BUDGET IS ZERO, AND A SMALL NUMBER WAS NEVER THE ALTERNATIVE.** `consume_ai_credit()`
+shipped with `guest_limit := 5` — five operator-funded generations per anonymous visitor — which
+is the previous paragraph contradicted in SQL. The number does not matter, because the budget is
+metered per ANONYMOUS SESSION: clearing site data mints a fresh allowance, so 5 is a speed bump
+rather than a cap, and the honest options were 0 or a per-IP backstop nobody is going to write
+for a bring-your-own-key feature. It is 0 in `supabase/schema.sql`, in the mirror
+`GUEST_AI_LIMIT` (`lib/aiBudget.ts`, which nothing on screen reads), and in
+`supabase/migrations/0005_guest_limit_zero.sql` — because a limit that lives only in the repo is
+a limit nobody has applied, exactly like the columns that once lived in a code comment.
+
+**It is the second lock, not the first, and the difference is worth keeping straight.** Only
+`daily-content` consumes a credit, and only when `generator.operatorPays` — a learner on their
+own key is never metered, which is the whole point. `missed-review` still reaches for the
+operator's key with no meter at all. What actually stops a public deployment spending is
+`SRSLY_API_KEY` / `ANTHROPIC_API_KEY` being UNSET there, and with them unset the no-key 503 at
+the top of the route fires before the meter is reached, so this function is never even consulted.
+Zero is what still holds the day someone sets a key.
+
 `lib/userApiKey.ts` (client) and `lib/server/generator.ts` (server) are the two halves. Rules
 that matter:
 

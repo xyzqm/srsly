@@ -11,8 +11,9 @@
 --        NEXT_PUBLIC_SUPABASE_URL=...
 --        NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 --
--- NOTE: the guest limit (5) is enforced in consume_ai_credit() below — the server is the
--- source of truth. Keep it in sync with GUEST_AI_LIMIT in lib/aiBudget.ts (UI mirror only).
+-- NOTE: the guest limit is ZERO, and consume_ai_credit() below is the source of truth for it.
+-- Keep it in sync with GUEST_AI_LIMIT in lib/aiBudget.ts (UI mirror only). The reasoning is
+-- at the declaration; the short version is that srsly does not fund strangers' generations.
 
 -- ── Per-user data (everything synced, as JSONB blobs) ─────────────────────────
 --
@@ -79,7 +80,22 @@ as $$
 declare
   uid         uuid    := auth.uid();
   is_anon     boolean := coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false);
-  guest_limit int     := 5;
+  -- ZERO, AND IT IS A DEFAULT RATHER THAN A REFUSAL. This began at 5 operator-funded
+  -- generations per guest, which is a stranger's Anthropic bill left open to the internet:
+  -- the budget is per ANONYMOUS SESSION, so clearing site data mints a fresh one, and nothing
+  -- here makes that hard to script. Generation is bring-your-own-key everywhere else in this
+  -- codebase — about a cent a passage, billed to the learner — and this line was the one
+  -- place that quietly contradicted it.
+  --
+  -- IT CLOSES LESS THAN IT LOOKS LIKE, AND SAYING SO IS THE POINT. Only /api/daily-content
+  -- consumes a credit, and only when `generator.operatorPays` — so a learner using their own
+  -- key never reaches this number, which is exactly right. /api/missed-review still falls back
+  -- to the operator's key with no meter at all. What actually keeps a public deployment from
+  -- spending is SRSLY_API_KEY and ANTHROPIC_API_KEY being UNSET there; this is the second lock,
+  -- not the first, and it is the one that survives someone setting a key later.
+  --
+  -- Raise it if you are running your own copy and mean to fund guests.
+  guest_limit int     := 0;
   cur         int;
 begin
   if uid is null then

@@ -54,18 +54,31 @@ ungated, no sign-in UI.** The whole auth + budget layer is gated on the
 
 ## How it behaves once enabled
 
-- **Guests** keep studying locally for free. AI passage generation is metered: the
-  `consume_ai_credit()` RPC decrements a per-user credit; after **5** generations a guest
-  gets HTTP 402 and the app shows a "sign in to continue" prompt (passages fall back to
-  static). Grading falls back to free keyword matching for guests.
+- **Guests** keep studying locally for free, and that is most of the app — your own text,
+  EPUBs, the web clipper, lookups, the lesson trees and the entire SRS side never call a
+  model. The one thing that costs money is having a passage WRITTEN, and the shipped guest
+  limit for that is **0**: an operator-funded generation is refused with HTTP 402. A learner
+  who puts their own Anthropic key in Settings is not metered at all — their key, their bill,
+  no limit — and that is the route the empty state actually points at. There is no static
+  fallback passage; a refusal says so rather than serving canned text. Grading falls back to
+  free keyword matching for guests.
 - **Signing in** (email or Google) upgrades the *same* anonymous account to permanent →
-  unlimited AI, and the local deck is uploaded + synced across devices.
+  unlimited AI **on the operator's key**, and the local deck is uploaded + synced across
+  devices. srsly's own deployment deliberately sets no operator key, so what signing in buys
+  there is sync; generation needs your own key whether you are signed in or not.
 - The cap is **server-enforced**, so clearing `localStorage` doesn't restore generations.
-  (A guest in a fresh incognito window gets a new anonymous account + budget — acceptable
-  for v1; add a per-IP backstop later if needed.)
+  That is also the argument for 0 rather than a small number: the budget is per ANONYMOUS
+  SESSION, so a fresh incognito window is a fresh allowance, and a small allowance is a speed
+  bump rather than a cap. A per-IP backstop is the only real fix and is not worth writing for
+  a feature that is bring-your-own-key by design.
 
 ## Changing the guest limit
 
-It lives in **two** places that must match:
+It lives in **two** places that must match, and both ship at **0**:
 - `guest_limit` in `consume_ai_credit()` (`supabase/schema.sql`) — the source of truth.
 - `GUEST_AI_LIMIT` in `lib/aiBudget.ts` — the UI mirror only.
+
+**Editing the file does not change a database that already exists.** `create or replace
+function` only does anything when the file is actually run, so after changing the number,
+paste `schema.sql` (or just [`migrations/0005_guest_limit_zero.sql`](./migrations/0005_guest_limit_zero.sql))
+into the SQL Editor. A limit that lives only in the repo is a limit nobody has applied.

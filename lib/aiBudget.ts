@@ -4,8 +4,17 @@
  * Guest AI budget — a localStorage MIRROR for instant UI only. The real cap is enforced
  * server-side by the consume_ai_credit() RPC (supabase/schema.sql); keep this number in
  * sync with the `guest_limit` there.
+ *
+ * IT IS ZERO, WHICH MAKES THIS WHOLE MIRROR VESTIGIAL — deliberately, and harmlessly.
+ * srsly does not fund strangers' generations: the feature is bring-your-own-key, so the
+ * server refuses an operator-funded guest request outright and there is no allowance left
+ * to count down. Nothing on screen reads this number — the limit state the UI renders is
+ * `guestLimited` in useDailyContent, set from the 402 itself — so a zero here cannot make a
+ * caption wrong. `markGuestAiExhausted()` now writes 0 meaning "none used", which reads as
+ * nonsense in isolation and is why this paragraph exists rather than a cleverer constant.
+ * Raise BOTH numbers to fund guests again.
  */
-export const GUEST_AI_LIMIT = 5;
+export const GUEST_AI_LIMIT = 0;
 
 const KEY = 'srsly-guest-ai-used';
 
