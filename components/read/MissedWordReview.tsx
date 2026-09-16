@@ -173,6 +173,7 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
   const [sentences, setSentences] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [error, setError] = useState('');
   const [answers, setAnswers] = useState<AnswerMap>({});
 
   /**
@@ -222,23 +223,47 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
 
   if (words.length === 0) return null;
 
+  /**
+   * A REFUSAL IS NOT AN ANSWER, AND MUST NOT BE CACHED AS ONE.
+   *
+   * This used to read `data.sentences ?? {}` off every response whatever its status, so a 402,
+   * a 503 or a 500 all arrived as "this passage has no example sentences" — written to
+   * localStorage under `cacheKey`, latched with `fetched`, and restored on every later mount.
+   * ONE failed request left the panel permanently empty for that passage, with nothing on
+   * screen saying why and no way to ask again. That is the mistake CLAUDE.md records four
+   * faces of: a value meaning "not here yet" rendered as a value meaning "there is none".
+   *
+   * It mattered little while the route answered 200 to everything; the moment it started
+   * refusing guests properly, every refusal would have poisoned a cache entry for good.
+   * Only a 2xx is cached or latched now, and a refusal keeps its own message — the server
+   * writes one for each case, because "sign in" and "add a key" are different instructions.
+   */
   async function fetchAndOpen() {
     if (!open && !fetched) {
       setLoading(true);
+      setError('');
       try {
         const res = await fetch('/api/missed-review', {
           method: 'POST',
           headers: aiHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ words, language, level }),
         });
-        const data = await res.json();
-        const s = data.sentences ?? {};
-        setSentences(s);
-        setFetched(true);
-        if (cacheKey) {
-          try { localStorage.setItem(cacheKey, JSON.stringify(s)); } catch { /* ignore */ }
+        // A refusal body is JSON, but a proxy or a crash need not be — so a parse failure is
+        // handled as the absence of a message rather than as a second kind of error.
+        const data = await res.json().catch(() => ({} as { sentences?: Record<string, string[]>; message?: string }));
+        if (!res.ok) {
+          setError(data.message || 'Example sentences could not be generated. Try again.');
+        } else {
+          const s = data.sentences ?? {};
+          setSentences(s);
+          setFetched(true);
+          if (cacheKey) {
+            try { localStorage.setItem(cacheKey, JSON.stringify(s)); } catch { /* ignore */ }
+          }
         }
-      } catch { /* show empty state */ }
+      } catch {
+        setError('Could not reach the server. Try again.');
+      }
       setLoading(false);
     }
     setOpenPersisted(!open);
@@ -291,6 +316,17 @@ export default function MissedWordReview({ words, missedCount = 0, cacheKey, lan
           </div>
         ) : (
           <div>
+            {/* Shown ABOVE the words, not instead of them: the character breakdown and the
+                gloss cost nothing to produce and are still worth reading, so a failed
+                generation should subtract the sentences and nothing else. */}
+            {error && (
+              <div
+                className="mt-6 px-4 py-3 rounded-lg"
+                style={{ border: '1px solid var(--line)', background: 'var(--card)', color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.55 }}
+              >
+                {error}
+              </div>
+            )}
             {words.map(w => (
               <WordSection key={w.h} word={w} sentences={sentences[w.h] ?? []} answers={answers} setAnswer={setAnswer} />
             ))}

@@ -179,13 +179,15 @@ for a bring-your-own-key feature. It is 0 in `supabase/schema.sql`, in the mirro
 `supabase/migrations/0005_guest_limit_zero.sql` — because a limit that lives only in the repo is
 a limit nobody has applied, exactly like the columns that once lived in a code comment.
 
-**It is the second lock, not the first, and the difference is worth keeping straight.** Only
-`daily-content` consumes a credit, and only when `generator.operatorPays` — a learner on their
-own key is never metered, which is the whole point. `missed-review` still reaches for the
-operator's key with no meter at all. What actually stops a public deployment spending is
-`SRSLY_API_KEY` / `ANTHROPIC_API_KEY` being UNSET there, and with them unset the no-key 503 at
-the top of the route fires before the meter is reached, so this function is never even consulted.
-Zero is what still holds the day someone sets a key.
+**It is the second lock, not the first, and the difference is worth keeping straight.** A credit
+is consumed only when `operatorPays` — a learner on their own key is never metered, which is the
+whole point. What actually stops a public deployment spending is `SRSLY_API_KEY` /
+`ANTHROPIC_API_KEY` being UNSET there, and with them unset the no-key 503 fires before the meter
+is reached, so this function is never even consulted. Zero is what still holds the day someone
+sets a key. *(This paragraph read "`missed-review` still reaches for the operator's key with no
+meter at all" until that was fixed — see `lib/server/aiGate.ts`. It was true when written, which
+is exactly how a file like this goes wrong: a defect recorded as a standing fact and then left
+standing after the fix.)*
 
 `lib/userApiKey.ts` (client) and `lib/server/generator.ts` (server) are the two halves. Rules
 that matter:
@@ -206,9 +208,31 @@ that matter:
   cannot succeed there and a button that reliably fails is worse than none.
 
 Three routes spend: `daily-content`, `grade-response`, `missed-review`. All three prefer the
-learner's key and fall back to the server's. `missed-review` builds its client PER REQUEST for
-this reason — a module-scoped client is fixed at import time and would silently bill every
-learner's example sentences to the operator.
+learner's key and fall back to the server's, and a client is built PER REQUEST for that reason —
+a module-scoped one is fixed at import time and would silently bill every learner to the operator.
+
+**`lib/server/aiGate.ts` IS WHERE ALL THREE ASK WHO IS PAYING, AND IT EXISTS BECAUSE THE ANSWER
+WAS COPIED RATHER THAN SHARED.** Three questions — is there a usable key, whose is it, and if it
+is the operator's does this caller have credit — were written inline in `daily-content`, and
+`missed-review` reproduced only the first: it preferred the learner's key, which is the third
+that is easy to see working, and had no key check and no meter at all. An anonymous guest's
+example sentences were billed to the operator, unlimited, and never appeared in `ai_usage`.
+**There is no symptom for "this worked and someone else paid"** — the learner gets their
+sentences and the operator gets a bill with no request attached — which is why it outlived the
+guest budget being added, that column being renamed, and the budget being set to zero.
+
+`tests/aiGate.test.ts` enumerates every route that could construct an Anthropic client and fails
+unless each one either meters through the gate or refuses guests outright, AND fails if that list
+is not exactly the known three. Comments are stripped first, for the reason
+`tests/writingState.test.ts` gives: these files name the identifiers being searched for while
+explaining the rules, so a raw substring check would pass on the documentation.
+
+**`grade-response` is the one that refuses rather than meters, deliberately** — an anonymous guest
+gets free keyword matching instead of a model call, so nothing of theirs reaches Anthropic. The
+cost is that a guest who brought their OWN key is refused AI grading too, which is the single
+place the "a learner spending their own money is never rationed" rule is not honoured. Recorded
+as a product decision to revisit rather than patched quietly, because changing it changes what
+guests get.
 
 An **Ollama** generator was built and measured, then removed. Recording why so it is not
 rediscovered as a good idea: it works (5/5 usable passages from `qwen2.5:3b` on Spanish A1,

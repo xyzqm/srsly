@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeAiCredit } from '@/lib/supabase/server';
-import { stubDailyContent, stubEnabled } from '@/lib/server/stubContent';
+import { stubDailyContent } from '@/lib/server/stubContent';
 import type { LanguageCode } from '@/lib/types';
 import { sentenceCountForLevel, getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { passageTopic, passageForm } from '@/lib/passageTheme';
-import { userKeyGenerator, serverKeyGenerator, looksLikeAnthropicKey, USER_KEY_HEADER, type Generator } from '@/lib/server/generator';
+import { type Generator } from '@/lib/server/generator';
+import { resolveAiAccess, generatorFor, meterOrRefuse, noKeyRefusal } from '@/lib/server/aiGate';
 
 const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
-/** Not a budget message: the request reached the meter with no session to charge. */
-const NO_SESSION_MSG = 'Could not verify your session, so generation was not attempted. Reload the page and try again.';
 
 /** Fallback batch size when the client doesn't specify one. */
 const DEFAULT_BATCH_SIZE = 5;
@@ -148,37 +146,19 @@ async function generateJson(
 }
 
 export async function POST(req: NextRequest) {
-  // Use SRSLY_API_KEY to avoid being blocked by Claude Code's ANTHROPIC_API_KEY='' override.
-  // Falls back to ANTHROPIC_API_KEY for standard deployments.
-  // SRSLY_STUB_AI=1 serves canned content and needs no key — see lib/server/stubContent.ts.
-  // Checked before the key so the reading tab is workable with no credentials at all.
-  const stub = stubEnabled();
-  const serverKey = process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY;
-
   /**
-   * The learner's own key, if they connected one in Settings.
+   * Who is paying, and whether this may happen at all — lib/server/aiGate.ts.
    *
-   * Used for THIS REQUEST ONLY and never written anywhere — not to a log, not to a database,
-   * not into an error response. It arrives on a header rather than in the body or the URL
-   * because URLs are routinely logged by proxies and platforms, and a logged credential is a
-   * leaked one.
+   * This was thirty lines inline here, and that is exactly how it went wrong elsewhere:
+   * `missed-review` copied the third of it that is easy to see working (prefer the learner's
+   * key) and shipped without the key check or the meter. The key check stays ahead of the
+   * body, because a server with no credentials cannot answer this request whatever it says.
    */
-  const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
-  const hasUserKey = looksLikeAnthropicKey(userKey);
-
-  const serverKeyUsable = !!serverKey && serverKey !== 'your-api-key-here';
-  if (!stub && !hasUserKey && !serverKeyUsable) {
-    return NextResponse.json({
-      error: 'no_api_key',
-      message: 'Add your own Anthropic API key in Settings to generate passages — or read your own text, a book or audio, which needs no key.',
-    }, { status: 503 });
+  const access = resolveAiAccess(req);
+  if (!access.usable) {
+    return noKeyRefusal('Add your own Anthropic API key in Settings to generate passages — or read your own text, a book or audio, which needs no key.');
   }
-
-  // The learner's key wins when present: they asked to pay for their own generations, so
-  // there is no reason to spend the operator's.
-  const generator = hasUserKey
-    ? userKeyGenerator(userKey)
-    : serverKeyGenerator(serverKey ?? 'stub');
+  const generator = generatorFor(access);
 
   let words: { h: string; p: string; m: string; compounds?: string[] }[];
   let hskLevel: number;
@@ -215,37 +195,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid request body' }, { status: 400 });
   }
 
-  // Meter generation: guests get a small budget, signed-in users are unlimited. Checked
-  // (and decremented) before we spend any Anthropic tokens. No-op when Supabase is off.
-  //
-  // The meter exists to ration the OPERATOR'S tokens. A learner using their own key is
-  // spending their own money and must never be rationed on top of it, and the stub spends
-  // nothing at all — metering either is charging for something we did not pay for.
-  const metered = !stub && generator.operatorPays;
-  const credit = metered ? await consumeAiCredit() : { allowed: true, remaining: null };
-  if (!credit.allowed) {
-    /**
-     * A MISSING SESSION IS NOT A SPENT BUDGET, and reporting both as 402 hid a real failure.
-     *
-     * `consume_ai_credit()` refuses for two unrelated reasons: `no_session` when `auth.uid()`
-     * is null, and `guest_limit` when an anonymous guest has spent their allowance. It has
-     * always returned a `reason` and this route always discarded it, so an auth fault came
-     * back wearing the budget's message — "You've used your free AI generations", with
-     * `aiRemaining: 0`, to a learner who had used none. It cost a real debugging detour here:
-     * a request made without the Supabase cookie 402'd identically to an exhausted guest, and
-     * the raised limit looked like it had not taken effect when it had.
-     *
-     * 401 rather than 402, because the client must NOT latch `markGuestAiExhausted()` on it —
-     * that writes the budget to spent locally and would lock a working account out of
-     * generation until storage was cleared.
-     */
-    if (credit.reason === 'no_session') {
-      return NextResponse.json(
-        { error: 'no_session', message: NO_SESSION_MSG, detail: NO_SESSION_MSG }, { status: 401 },
-      );
-    }
-    return NextResponse.json({ error: 'guest_limit', message: GUEST_LIMIT_MSG, aiRemaining: 0 }, { status: 402 });
-  }
+  /**
+   * Metered AFTER the body is validated: a credit spent on a request that 400s is a charge
+   * for nothing. The meter rations the OPERATOR'S tokens only — a learner on their own key is
+   * spending their own money and must never be rationed on top of it, and the stub spends
+   * nothing at all. Both of those, and the no_session/guest_limit split that a previous pass
+   * here got wrong, now live in meterOrRefuse.
+   */
+  const credit = await meterOrRefuse(access, GUEST_LIMIT_MSG);
+  if (credit.refusal) return credit.refusal;
 
   // Authoritative pinyin/meaning for the practiced words, keyed by hanzi.
   const inputMap = new Map<string, { p: string; m: string }>();
@@ -721,7 +679,7 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
    * the live path uses, so what you see is what the route would really emit. Returning a
    * ready-made passage would test the renderer against data the route never produces.
    */
-  const stubbed = stub ? stubDailyContent(language, words) : null;
+  const stubbed = access.stub ? stubDailyContent(language, words) : null;
   async function reply(prompt: string, complete: (j: Record<string, unknown>) => boolean, tag: string) {
     if (!stubbed) return generateJson(generator, prompt, complete, tag as Parameters<typeof generateJson>[3]);
     const json =
