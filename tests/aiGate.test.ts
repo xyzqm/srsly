@@ -50,13 +50,16 @@ const reachesAnthropic = routes.filter(r =>
 const METERED = ['daily-content', 'missed-review'];
 
 /**
- * The one documented exception, and it is a PRODUCT decision rather than an oversight:
- * `grade-response` gives every anonymous guest free keyword matching instead of a model call,
- * so no guest request can reach Anthropic on the operator's key at all. supabase/SETUP.md
- * states it in as many words. It is listed here rather than exempted silently, because the
- * difference between "refuses guests" and "forgot to check" is invisible from the outside.
+ * The one route that DEGRADES instead of metering, and it is a product decision rather than
+ * an oversight: `grade-response` has something free to give, so an operator-funded request it
+ * may not make falls back to keyword matching instead of returning 402. A learner never loses
+ * their grade over who is paying.
+ *
+ * Listed here rather than exempted silently, because "degrades deliberately" and "forgot to
+ * check" look identical from outside. `tests/gradeResponse.test.ts` pins which of the two
+ * graders actually runs for each combination of key and session.
  */
-const REFUSES_GUESTS = ['grade-response'];
+const DEGRADES_FOR_GUESTS = ['grade-response'];
 
 describe('every route that can reach Anthropic says who pays', () => {
   it('finds the routes at all — the control', () => {
@@ -66,7 +69,7 @@ describe('every route that can reach Anthropic says who pays', () => {
   });
 
   it('is exactly the known list, so a fourth route fails here rather than billing quietly', () => {
-    expect(reachesAnthropic.map(r => r.name).sort()).toEqual([...METERED, ...REFUSES_GUESTS].sort());
+    expect(reachesAnthropic.map(r => r.name).sort()).toEqual([...METERED, ...DEGRADES_FOR_GUESTS].sort());
   });
 
   it.each(METERED)('%s meters through the gate', name => {
@@ -75,9 +78,24 @@ describe('every route that can reach Anthropic says who pays', () => {
     expect(r.src).toContain('resolveAiAccess');
   });
 
-  it.each(REFUSES_GUESTS)('%s refuses guests outright instead', name => {
+  it.each(DEGRADES_FOR_GUESTS)('%s falls back for guests instead of metering', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;
     expect(r.src).toMatch(/isAnonymousGuest\s*\(/);
+    expect(r.src).toContain('resolveAiAccess');
+  });
+
+  /**
+   * THE RULE THAT WAS BROKEN HERE, GUARDED ACROSS EVERY ROUTE AT ONCE.
+   *
+   * `grade-response` asked "is this an anonymous guest?" and nothing else, so it withheld AI
+   * grading from a guest paying with their own key — the one place the codebase broke its own
+   * "a learner spending their own money is never rationed" rule. A bare guest check is the
+   * shape of that mistake, so any route making one must also name who is paying.
+   */
+  it('no route decides on the session alone — a guest check is qualified by who pays', () => {
+    const asking = reachesAnthropic.filter(r => /isAnonymousGuest\s*\(/.test(r.src));
+    expect(asking.length, 'control: some route should be asking').toBeGreaterThan(0);
+    for (const r of asking) expect(r.src, r.name).toContain('operatorPays');
   });
 
   /**

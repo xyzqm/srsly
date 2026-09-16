@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { isAnonymousGuest } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
-import { looksLikeAnthropicKey, USER_KEY_HEADER } from '@/lib/server/generator';
+import { resolveAiAccess } from '@/lib/server/aiGate';
 
 /** Keyword-match fallback — used when no API key or Claude fails. */
 function keywordFallback(response: string, key: string[], langName: string): {
@@ -26,13 +26,17 @@ function keywordFallback(response: string, key: string[], langName: string): {
   return { verdict: 'miss', message: `Reread the passage — the answer involves ${key.slice(0, 2).join('、')}.`, wordsHit: [] };
 }
 
+/**
+ * THIS ROUTE DEGRADES WHERE THE OTHER TWO REFUSE, AND THAT IS THE DESIGN.
+ *
+ * `daily-content` and `missed-review` return 402 when an operator-funded request may not be
+ * made, because they have nothing else to offer. Grading does: `keywordFallback` is free,
+ * instant and a real answer. So the same question — whose money is this? — routes here to a
+ * cheaper grade rather than to a refusal, and a learner never loses their answer over it.
+ */
 export async function POST(req: NextRequest) {
-  // The learner's own key wins when they connected one — see lib/server/generator.ts.
-  // Used for this request only; never logged, stored, or echoed back.
-  const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
-  const apiKey = looksLikeAnthropicKey(userKey)
-    ? userKey
-    : (process.env.SRSLY_API_KEY || process.env.ANTHROPIC_API_KEY);
+  // Who is paying: lib/server/aiGate.ts, the same resolution the other two spending routes use.
+  const access = resolveAiAccess(req);
 
   let question: string;
   let model: string;
@@ -61,13 +65,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'question and response are required' }, { status: 400 });
   }
 
-  // No API key, or an anonymous guest → free keyword grading (reserve AI grading for
-  // signed-in accounts; no AI cost for guests, and no impact on the passage budget).
-  if (!apiKey || apiKey === 'your-api-key-here' || await isAnonymousGuest()) {
+  /**
+   * WHOSE MONEY DECIDES THIS, NOT WHETHER THEY ARE SIGNED IN.
+   *
+   * This read `!apiKey || await isAnonymousGuest()`, which reserved AI grading for signed-in
+   * accounts — and so refused it to an anonymous learner who had connected their OWN key in
+   * Settings and was paying Anthropic directly for every call. `lib/server/generator.ts`
+   * states the rule outright: `operatorPays` decides metering, not the model, and a learner
+   * spending their own money must never be rationed on top of it. This was the last place in
+   * the codebase that broke it, and it broke it invisibly — the grade still came back, just
+   * from a keyword match, so the only symptom was grading that felt oddly blunt to the one
+   * group of learners who had paid to avoid exactly that.
+   *
+   * What has NOT changed: a guest with no key of their own still gets keyword matching. The
+   * operator does not fund strangers' grading, which is the same answer supabase/schema.sql
+   * gives for passages.
+   *
+   * Cheap reasons first, and that ordering is load-bearing rather than tidy —
+   * `isAnonymousGuest()` is a Supabase round trip, so it is only asked once the answer can
+   * still depend on it.
+   */
+  if (!access.usable || access.stub) {
+    return NextResponse.json(keywordFallback(response, key, langName));
+  }
+  if (access.operatorPays && await isAnonymousGuest()) {
     return NextResponse.json(keywordFallback(response, key, langName));
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey: access.apiKey });
 
   // Tier comes off the language config — the level numbering runs in opposite directions
   // per language (HSK 6 and CEFR C2 are hardest; JLPT N1 is hardest).

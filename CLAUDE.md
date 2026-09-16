@@ -227,12 +227,25 @@ is not exactly the known three. Comments are stripped first, for the reason
 `tests/writingState.test.ts` gives: these files name the identifiers being searched for while
 explaining the rules, so a raw substring check would pass on the documentation.
 
-**`grade-response` is the one that refuses rather than meters, deliberately** — an anonymous guest
-gets free keyword matching instead of a model call, so nothing of theirs reaches Anthropic. The
-cost is that a guest who brought their OWN key is refused AI grading too, which is the single
-place the "a learner spending their own money is never rationed" rule is not honoured. Recorded
-as a product decision to revisit rather than patched quietly, because changing it changes what
-guests get.
+**`grade-response` DEGRADES where the other two refuse, and that is the design.** The others
+return 402 when an operator-funded request may not be made, because they have nothing else to
+offer; grading does — `keywordFallback` is free, instant and a real answer — so it drops to the
+cheaper grader instead. A learner never loses their answer over who is paying.
+
+**Which is not the same as reserving it for signed-in accounts, and it used to do that.** The
+test was `!apiKey || await isAnonymousGuest()`, so an anonymous learner who had connected their
+OWN key in Settings — and was paying Anthropic directly for every call — was handed a keyword
+match. It is the rule `lib/server/generator.ts` states outright (`operatorPays` decides metering,
+not the model) broken in the one place nobody would look, and it broke INVISIBLY: a grade still
+came back, so the only symptom was grading that felt blunt to precisely the group who had paid
+to avoid that. The condition is now `access.operatorPays && isGuest`. A guest with no key of
+their own still gets keyword matching — the operator does not fund strangers' grading, the same
+answer `supabase/schema.sql` gives for passages.
+
+`tests/gradeResponse.test.ts` fixes whose key and whether they are signed in independently and
+asserts WHICH GRADER RAN, because the difference is invisible in a status code. The firewall in
+`tests/aiGate.test.ts` adds the general form: any route asking `isAnonymousGuest` must also name
+`operatorPays`, since a bare session check is the shape of this mistake.
 
 An **Ollama** generator was built and measured, then removed. Recording why so it is not
 rediscovered as a good idea: it works (5/5 usable passages from `qwen2.5:3b` on Spanish A1,

@@ -60,8 +60,10 @@ ungated, no sign-in UI.** The whole auth + budget layer is gated on the
   limit for that is **0**: an operator-funded generation is refused with HTTP 402. A learner
   who puts their own Anthropic key in Settings is not metered at all — their key, their bill,
   no limit — and that is the route the empty state actually points at. There is no static
-  fallback passage; a refusal says so rather than serving canned text. Grading falls back to
-  free keyword matching for guests.
+  fallback passage; a refusal says so rather than serving canned text. Answer grading falls
+  back to free keyword matching for a guest **on the operator's key** — a guest using their own
+  key gets AI grading like anyone else, because the rule everywhere here is that a learner
+  spending their own money is never rationed.
 - **Signing in** (email or Google) upgrades the *same* anonymous account to permanent →
   unlimited AI **on the operator's key**, and the local deck is uploaded + synced across
   devices. srsly's own deployment deliberately sets no operator key, so what signing in buys
