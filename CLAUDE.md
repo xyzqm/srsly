@@ -189,6 +189,27 @@ meter at all" until that was fixed — see `lib/server/aiGate.ts`. It was true w
 is exactly how a file like this goes wrong: a defect recorded as a standing fact and then left
 standing after the fix.)*
 
+**THE LIVE DATABASE HELD A SECOND `consume_ai_credit`, AND IT WAS FOUND BY CHECKING RATHER THAN
+TRUSTING.** Setting the limit to zero reported "Success. No rows returned"; reading the value back
+out of `pg_proc` returned TWO ROWS. The repo defines one function, taking no arguments. The
+project also held `consume_ai_credit(p_limit integer)` from an earlier design that counted a table
+called `ai_generations` — neither that name nor `p_limit` appears anywhere in this repository. It
+took the budget AS AN ARGUMENT (`IF cur >= p_limit`), the parameter was NAMED so PostgREST could
+invoke it, and its ACL read `=X/postgres` — an empty grantee means PUBLIC — because
+`revoke all on function public.consume_ai_credit() from public` names ONE SIGNATURE and never
+touched the other. `SECURITY DEFINER` on top of that. Dropped in migration 0006.
+
+**Scoped honestly, because a hole described as worse than it is gets fixed once and then
+distrusted**: it could NOT spend Anthropic tokens. `consumeAiCredit()` passes no arguments and so
+binds to the zero-argument function, and nothing in the codebase ever called the other. The real
+abuse was unauthenticated, RLS-bypassing inserts into a table nothing reads. The lesson is not the
+blast radius, it is that **a `revoke` protects a SIGNATURE, not a name**, and Postgres grants
+EXECUTE to PUBLIC by default — so a function created without one is world-callable from the
+instant it exists. `tests/sync.test.ts` now requires every function the SQL defines to carry a
+matching revoke, and forbids overloads outright, since a second signature is a second lock to
+remember. Neither test could have seen this one: it existed in no file here, which is the same
+drift as the columns that once lived in a code comment.
+
 `lib/userApiKey.ts` (client) and `lib/server/generator.ts` (server) are the two halves. Rules
 that matter:
 

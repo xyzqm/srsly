@@ -41,6 +41,52 @@ describe('the schema can hold every column the code writes', () => {
     .join('\n');
   const source = readFileSync(resolve(root, 'lib/storage/supabase.ts'), 'utf8');
 
+  /**
+   * EVERY FUNCTION THE SQL DEFINES MUST BE REVOKED FROM PUBLIC, AND THIS IS NOT THEORETICAL.
+   *
+   * Postgres grants EXECUTE on a new function to PUBLIC by default, so a `create function` with
+   * no `revoke` is world-callable the moment it exists — and these are SECURITY DEFINER, which
+   * means world-callable AND past RLS. The live database was found holding a second, older
+   * `consume_ai_credit(p_limit integer)` in exactly that state: its ACL read `=X/postgres`, an
+   * empty grantee meaning PUBLIC, because schema.sql's revoke names ONE SIGNATURE and never
+   * touched it. The caller passed their own limit, so the budget check was whatever the request
+   * asked for. See supabase/migrations/0006_drop_legacy_credit_overload.sql.
+   *
+   * Nothing in a repository can see what was applied to a project by hand — that overload
+   * appeared in no file here. What this CAN hold is the rule for functions the repo does define,
+   * so the next one cannot ship unlocked the way that one did.
+   */
+  const sql = schema + '\n' + migrations;
+  const definedFunctions = [...sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)\s*\(([^)]*)\)/gi)]
+    .map(m => ({ name: m[1], args: m[2].trim() }));
+
+  it('finds the functions to check — the control', () => {
+    expect(definedFunctions.length).toBeGreaterThan(0);
+    expect(definedFunctions.map(f => f.name)).toContain('public.consume_ai_credit');
+  });
+
+  it.each([...new Set(definedFunctions.map(f => f.name))])(
+    '%s is revoked from public, so it is not world-executable by default',
+    name => {
+      const escaped = name.replace(/\./g, '\\.');
+      expect(sql).toMatch(new RegExp(`revoke\\s+all\\s+on\\s+function\\s+${escaped}\\s*\\(`, 'i'));
+    },
+  );
+
+  /**
+   * ONE SIGNATURE PER FUNCTION NAME. An overload is how the dropped one hid: a revoke written
+   * for `f()` says nothing about `f(integer)`, so a second signature is a second lock to
+   * remember, and the forgotten one defaults open.
+   */
+  it('defines no overloads, because a revoke only covers the signature it names', () => {
+    const signatures = new Map<string, Set<string>>();
+    for (const f of definedFunctions) {
+      if (!signatures.has(f.name)) signatures.set(f.name, new Set());
+      signatures.get(f.name)!.add(f.args);
+    }
+    for (const [name, args] of signatures) expect([...args], name).toHaveLength(1);
+  });
+
   /** The `interface UserDataRow { ... }` body, which is the list of columns this code uses. */
   const rowBody = /interface UserDataRow \{([\s\S]*?)\n\}/.exec(source)?.[1] ?? '';
   const columns = [...rowBody.matchAll(/^\s{2}(\w+)\??:/gm)].map(m => m[1]);

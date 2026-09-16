@@ -80,6 +80,25 @@ It lives in **two** places that must match, and both ship at **0**:
 - `guest_limit` in `consume_ai_credit()` (`supabase/schema.sql`) — the source of truth.
 - `GUEST_AI_LIMIT` in `lib/aiBudget.ts` — the UI mirror only.
 
+**Verify what is INSTALLED, not what you pasted.** `create or replace function` answers
+"Success. No rows returned" whatever number it put in — and if the signature differs it creates a
+SECOND function rather than replacing the first. Read it back:
+
+```sql
+select p.oid::regprocedure                                     as signature,
+       substring(p.prosrc from 'guest_limit\s+int\s*:=\s*\d+') as declared_limit,
+       coalesce(array_to_string(p.proacl, E'\n'), 'DEFAULT (PUBLIC can execute)') as grants
+from pg_proc p where p.proname = 'consume_ai_credit';
+```
+
+Expect **exactly one row**, reading `consume_ai_credit()` and `guest_limit int     := 0`. Two rows
+means an overload, and an overload is a second lock that nobody revoked: `revoke all on function
+public.consume_ai_credit() from public` names one signature and says nothing about any other. That
+is how a `consume_ai_credit(p_limit integer)` — which let the CALLER pass their own budget —
+survived in the live project, executable by PUBLIC, while this repo defined only the safe one.
+[`migrations/0006_drop_legacy_credit_overload.sql`](./migrations/0006_drop_legacy_credit_overload.sql)
+drops it. In the `grants` column, an entry with an **empty grantee** (`=X/postgres`) means PUBLIC.
+
 **Editing the file does not change a database that already exists.** `create or replace
 function` only does anything when the file is actually run, so after changing the number,
 paste `schema.sql` (or just [`migrations/0005_guest_limit_zero.sql`](./migrations/0005_guest_limit_zero.sql))
