@@ -194,10 +194,75 @@
   }
   /* The grain multiplies, which on a dark background turns it into a black smear. Every dark
      theme needs the inverted blend, so they are listed together rather than dusk being a
-     special case — a new dark theme that forgets this looks dirty rather than textured. */
-  [data-theme="dusk"] body::before,
-  [data-theme="midnight"] body::before,
-  [data-theme="terminal"] body::before { mix-blend-mode: screen; opacity: .18; }
+     special case — a new dark theme that forgets this looks dirty rather than textured.
+
+     `body[data-theme=…]` AND NOT `[data-theme=…] body`, WHICH IS WHY THIS NEVER WORKED.
+     `useTheme` sets the attribute on BODY ITSELF, so the descendant form asked for a body
+     inside an element carrying the attribute — which does not exist, since nothing sets it on
+     <html>. Dusk has therefore been rendering its grain with `multiply` since the theme
+     shipped: a dark smear rather than texture, on the one theme the rule was written for.
+     Found by building the earned papers below on the same selector and measuring the
+     computed style instead of trusting it. */
+  body[data-theme="dusk"]::before,
+  body[data-theme="midnight"]::before,
+  body[data-theme="terminal"]::before { mix-blend-mode: screen; opacity: .18; }
+
+  /* ---- EARNED PAPER ----
+     The rule above is the free `grain`, and stays the default for a body with no
+     `data-texture`. These three replace the layer rather than adding to it: see
+     lib/cosmetics.ts on why unlocking may only ever ADD an option, never lock one.
+
+     `repeating-linear-gradient` rather than another noise SVG, on purpose — a regular rule is
+     what "laid paper" and "graph paper" ARE, and a gradient scales with the viewport instead
+     of tiling a fixed bitmap. They draw in --line so every one of the ten themes tints its
+     own paper, which is also what keeps them legible on the dark ones. */
+  body[data-texture="laid"]::before {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--line) 55%, transparent) 0 1px,
+      transparent 1px 7px
+    );
+    background-size: auto;
+    opacity: .5;
+  }
+  body[data-texture="grid"]::before {
+    background-image:
+      repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 45%, transparent) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(to right,  color-mix(in srgb, var(--line) 45%, transparent) 0 1px, transparent 1px 24px);
+    background-size: auto;
+    opacity: .55;
+  }
+  /* Nothing at all. Kept as a rule rather than by omitting the element, so that switching to
+     it is the same kind of act as switching to any other — and so the dark-theme blend
+     override above cannot resurrect a layer this is meant to remove. */
+  body[data-texture="smooth"]::before { background-image: none; }
+
+  /* ---- CLOZE BLANKS ----
+     `dotted` is the underline that shipped and is the default for a body with no
+     `data-blank`. The styling lives HERE rather than inline on the input because an inline
+     style wins over a stylesheet, so a themeable blank cannot be written in the component —
+     which is why `.cloze-blank` exists at all.
+
+     Every one of these keeps the SAME box: only border and background change, never padding,
+     margin or width. A blank that changed size with its style would reflow the passage under
+     the reader, and the typed-text overlay is centred on this element's box. */
+  .cloze-blank {
+    border: none;
+    border-bottom: 1.5px dotted var(--accent);
+    border-radius: 0;
+    background: transparent;
+  }
+  [data-blank="solid"] .cloze-blank { border-bottom: 1.5px solid var(--accent); }
+  [data-blank="box"] .cloze-blank {
+    border: 1.5px solid color-mix(in srgb, var(--accent) 60%, transparent);
+    border-radius: 4px;
+  }
+  [data-blank="shaded"] .cloze-blank {
+    border: none;
+    border-bottom: 1.5px solid transparent;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 13%, transparent);
+  }
 
   /* ============ RUBY / PINYIN ============ */
   ruby { ruby-position: over; }

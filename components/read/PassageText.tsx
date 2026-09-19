@@ -326,6 +326,7 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
          * `submit`), so autocapitalisation is survivable and autocorrect is not: it produces
          * a wrong answer the learner never gave and cannot appeal.
          */
+        className="cloze-blank"
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
@@ -361,9 +362,16 @@ function ClozeBlank({ token, showHint, accentKeys, contextualMeaning, onGrade, i
           // transparent — otherwise the two would render on top of each other.
           color: 'transparent',
           caretColor: 'var(--ink)',
-          background: 'transparent',
-          border: 'none',
-          borderBottom: '1.5px dotted var(--accent)',
+          /**
+           * THE BORDER AND BACKGROUND LIVE IN `.cloze-blank`, NOT HERE.
+           *
+           * They were `border: none; borderBottom: 1.5px dotted var(--accent)` inline, which
+           * is unthemeable: an inline style beats a stylesheet, so no `[data-blank]` rule
+           * could ever have overridden it. The box is unchanged — only which lines are drawn
+           * around it varies, and every style in globals.css keeps the same padding, margin
+           * and width, because the typed-text overlay is centred on this element's box and a
+           * blank that resized with its style would reflow the passage under the reader.
+           */
           outline: 'none',
           padding: '0 2px',
           /**

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  COSMETICS, FREE_THEMES, FREE_FONTS, canSelect, cosmeticFor, unlockedCosmetics, unlockedCount,
+  COSMETICS, FREE_THEMES, FREE_FONTS, FREE_TEXTURES, FREE_BLANKS,
+  canSelect, cosmeticFor, unlockedCosmetics, unlockedCount, canCustomiseAccent, safeAccent,
 } from '@/lib/cosmetics';
 import { ACHIEVEMENTS } from '@/lib/achievements';
 
@@ -20,10 +21,25 @@ const root = resolve(__dirname, '..');
 const css = readFileSync(resolve(root, 'app/globals.css'), 'utf8');
 const sheet = readFileSync(resolve(root, 'components/ThemeSheet.tsx'), 'utf8');
 
-/** Every `[data-theme="x"]` / `[data-font="x"]` selector the stylesheet defines. */
-function styled(attr: 'data-theme' | 'data-font'): Set<string> {
+/** Every `[data-theme="x"]`-style selector the stylesheet defines, for one attribute. */
+function styled(attr: string): Set<string> {
   return new Set([...css.matchAll(new RegExp(`\\[${attr}="([^"]+)"\\]`, 'g'))].map(m => m[1]));
 }
+
+/**
+ * The `data-` attribute each kind switches on, or null for one that switches on nothing.
+ *
+ * `palette` is the odd one out and deliberately so: it unlocks the colour PICKER rather than a
+ * value, so there is no attribute to set and no swatch to render. Mapping it to null here is
+ * what keeps the CSS firewall below honest instead of quietly exempting a kind.
+ */
+const ATTR: Record<string, string | null> = {
+  theme: 'data-theme',
+  font: 'data-font',
+  texture: 'data-texture',
+  blank: 'data-blank',
+  palette: null,
+};
 
 describe('the catalogue points at milestones that exist', () => {
   const ids = new Set(ACHIEVEMENTS.map(a => a.id));
@@ -66,21 +82,69 @@ describe('the catalogue points at milestones that exist', () => {
 
 describe('the free set stays free', () => {
   /** THE TAKEAWAY TEST. Nothing that shipped free may ever appear in the catalogue. */
-  it('locks none of the six themes or five typefaces', () => {
-    const free = new Set<string>([...FREE_THEMES, ...FREE_FONTS]);
+  it('locks nothing that shipped free — themes, type, paper or blanks', () => {
+    const free = new Set<string>([
+      ...FREE_THEMES, ...FREE_FONTS, ...FREE_TEXTURES, ...FREE_BLANKS,
+    ]);
     const stolen = COSMETICS.filter(c => free.has(c.id)).map(c => c.id);
     expect(stolen).toEqual([]);
   });
 
   it('leaves every free id selectable with nothing unlocked', () => {
     const none = new Set<string>();
-    for (const id of [...FREE_THEMES, ...FREE_FONTS]) {
+    for (const id of [...FREE_THEMES, ...FREE_FONTS, ...FREE_TEXTURES, ...FREE_BLANKS]) {
       expect(canSelect(id, none), `${id} should never be gated`).toBe(true);
     }
   });
 
   it('reports no catalogue entry for a free id', () => {
-    for (const id of [...FREE_THEMES, ...FREE_FONTS]) expect(cosmeticFor(id)).toBeUndefined();
+    for (const id of [...FREE_THEMES, ...FREE_FONTS, ...FREE_TEXTURES, ...FREE_BLANKS]) {
+      expect(cosmeticFor(id)).toBeUndefined();
+    }
+  });
+
+  /**
+   * The default paper and the default blank are what the app draws with NO attribute set, so
+   * they must be exactly the look that shipped. Swapping which one is the default would change
+   * the app for every existing learner without unlocking anything.
+   */
+  it('keeps the shipped look as the default for both new kinds', () => {
+    expect([...FREE_TEXTURES]).toEqual(['grain']);
+    expect([...FREE_BLANKS]).toEqual(['dotted']);
+  });
+});
+
+describe('the custom accent is a control, and its value is validated', () => {
+  it('stays locked until its milestone', () => {
+    expect(canCustomiseAccent(new Set())).toBe(false);
+    expect(canCustomiseAccent(unlockedCosmetics(['mastered-1000']))).toBe(true);
+  });
+
+  /**
+   * IT IS THE HARDEST THING IN THE APP, AND DELIBERATELY NOT THE BIGGEST NUMBER. `deck-1000`
+   * is a thousand words collected, which is an afternoon of importing; `mastered-1000` is a
+   * thousand words each holding a month of stability, which only time can move.
+   */
+  it('hangs off mastery rather than off collecting', () => {
+    const palette = COSMETICS.find(c => c.kind === 'palette')!;
+    expect(palette.requires).toBe('mastered-1000');
+  });
+
+  /**
+   * THE VALUE GOES INTO AN INLINE STYLE AND PREFS SYNC. A value arriving from another device,
+   * or from a hand-edited localStorage blob, must be a literal hex colour before it is written
+   * anywhere near `style` — so this is a validator rather than a formatter.
+   */
+  it('accepts three- and six-digit hex, in either case', () => {
+    for (const v of ['#fff', '#FFF', '#b23a2e', '#B23A2E']) expect(safeAccent(v)).toBe(v);
+    expect(safeAccent('  #fff  ')).toBe('#fff');
+  });
+
+  it('refuses everything else, including things a browser would accept', () => {
+    for (const v of ['red', 'rgb(1,2,3)', 'var(--ink)', '#12345', '#gggggg', '',
+                     'url(x)', '#fff;background:url(x)', null, undefined, 123 as unknown as string]) {
+      expect(safeAccent(v as string), String(v)).toBeNull();
+    }
   });
 });
 
@@ -88,34 +152,62 @@ describe('every id the picker offers is actually styled', () => {
   const themes = styled('data-theme');
   const fonts = styled('data-font');
 
-  it('gives each free theme and typeface a CSS block', () => {
+  it('gives every free option a CSS block', () => {
     for (const t of FREE_THEMES) expect(themes.has(t), `no [data-theme="${t}"]`).toBe(true);
     for (const f of FREE_FONTS) expect(fonts.has(f), `no [data-font="${f}"]`).toBe(true);
+    // `grain` and `dotted` are the DEFAULTS rather than selectable blocks — they are what the
+    // bare `body::before` and `.cloze-blank` rules already draw, which is why neither needs a
+    // `[data-*]` selector and why both are asserted as base rules instead.
+    expect(css).toMatch(/\.cloze-blank\s*\{/);
+    expect(css).toMatch(/body::before\s*\{/);
   });
 
   /**
-   * The failure this catches is a selection that highlights and changes nothing: `data-theme`
-   * is set to a value no rule matches, so the page keeps the previous palette while the
-   * picker insists the new one is active.
+   * The failure this catches is a selection that highlights and changes nothing: the attribute
+   * is set to a value no rule matches, so the page keeps its previous look while the picker
+   * insists the new one is active.
    */
-  it('gives each earned cosmetic a CSS block', () => {
+  it('gives each earned cosmetic a CSS block, or declares it styles nothing', () => {
     for (const c of COSMETICS) {
-      const set = c.kind === 'theme' ? themes : fonts;
-      expect(set.has(c.id), `no [data-${c.kind}="${c.id}"] in globals.css`).toBe(true);
+      const attr = ATTR[c.kind];
+      if (attr === null) continue;   // palette unlocks a control, not a value
+      expect(attr, `no attribute mapped for kind "${c.kind}"`).toBeTruthy();
+      expect(styled(attr!).has(c.id), `no [${attr}="${c.id}"] in globals.css`).toBe(true);
     }
   });
 
-  it('defines no palette or type block nothing can select', () => {
-    const known = new Set<string>([...FREE_THEMES, ...FREE_FONTS, ...COSMETICS.map(c => c.id)]);
-    const orphans = [...themes, ...fonts].filter(id => !known.has(id));
-    expect(orphans).toEqual([]);
+  it('maps every kind in the catalogue', () => {
+    for (const c of COSMETICS) {
+      expect(Object.hasOwn(ATTR, c.kind), `unmapped kind "${c.kind}"`).toBe(true);
+    }
   });
 
-  /** An unlock nothing renders is an unlock nobody can collect. */
+  it('defines no block nothing can select', () => {
+    const known = new Set<string>([
+      ...FREE_THEMES, ...FREE_FONTS, ...FREE_TEXTURES, ...FREE_BLANKS,
+      ...COSMETICS.map(c => c.id),
+    ]);
+    const all = [...themes, ...fonts, ...styled('data-texture'), ...styled('data-blank')];
+    expect(all.filter(id => !known.has(id))).toEqual([]);
+  });
+
+  /**
+   * An unlock nothing renders is an unlock nobody can collect.
+   *
+   * The palette one is checked differently because it has no swatch to name: what proves it is
+   * reachable is the drawer consulting `canCustomiseAccent`, which is the only thing that can
+   * put the colour picker on screen.
+   */
   it('offers every cosmetic in the picker', () => {
     for (const c of COSMETICS) {
+      if (c.kind === 'palette') continue;
       expect(sheet.includes(`'${c.id}'`), `ThemeSheet never mentions ${c.id}`).toBe(true);
     }
+  });
+
+  it('puts the colour picker behind its unlock', () => {
+    expect(sheet).toContain('canCustomiseAccent');
+    expect(sheet).toContain('setAccentColor');
   });
 });
 

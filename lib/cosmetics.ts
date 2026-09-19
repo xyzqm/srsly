@@ -1,4 +1,7 @@
-import type { EarnedFont, EarnedTheme, FreeFont, FreeTheme } from './types';
+import type {
+  EarnedBlankStyle, EarnedFont, EarnedTexture, EarnedTheme,
+  FreeBlankStyle, FreeFont, FreeTexture, FreeTheme,
+} from './types';
 
 /**
  * THEMES AND TYPEFACES YOU EARN, DERIVED FROM MILESTONES THAT ALREADY EXIST.
@@ -55,11 +58,23 @@ export const FREE_THEMES: readonly FreeTheme[] = ['paper', 'ink', 'tea', 'slate'
 export const FREE_FONTS: readonly FreeFont[] = [
   'editorial-warm', 'quiet-serif', 'technical', 'classic', 'sans-modern',
 ];
+/** One each, because one each is what shipped. Both stay free for the same reason as above. */
+export const FREE_TEXTURES: readonly FreeTexture[] = ['grain'];
+export const FREE_BLANKS: readonly FreeBlankStyle[] = ['dotted'];
+
+/**
+ * `palette` is the odd one out: it unlocks a CONTROL rather than a value.
+ *
+ * Everything else here names something to switch to. The custom accent unlocks the colour
+ * picker itself, so its id is not a `data-` value and nothing renders it as a swatch — which
+ * is exactly why it is worth the top of the ladder rather than being a seventh theme.
+ */
+export type CosmeticKind = 'theme' | 'font' | 'texture' | 'blank' | 'palette';
 
 export interface Cosmetic {
-  /** The `data-theme` / `data-font` value, and the id used everywhere else. */
-  readonly id: EarnedTheme | EarnedFont;
-  readonly kind: 'theme' | 'font';
+  /** The `data-*` value this selects, and the id used everywhere else. */
+  readonly id: EarnedTheme | EarnedFont | EarnedTexture | EarnedBlankStyle | 'custom-accent';
+  readonly kind: CosmeticKind;
   /** What the picker calls it. */
   readonly name: string;
   /** The milestone that opens it — an id in `ACHIEVEMENTS`, pinned by a test. */
@@ -100,6 +115,49 @@ export const COSMETICS: readonly Cosmetic[] = [
     id: 'terminal', kind: 'theme', name: 'Terminal',
     requires: 'mastered-500', unlockedBy: 'Hold 500 words for a month',
   },
+
+  // ── Paper ──────────────────────────────────────────────────────────────────
+  // The grain layer under everything. Cheap to add, impossible to miss, and unlike a palette
+  // it is specific to an app whose whole identity is paper.
+  {
+    id: 'laid', kind: 'texture', name: 'Laid paper',
+    requires: 'deck-25', unlockedBy: 'Collect 25 words',
+  },
+  {
+    id: 'grid', kind: 'texture', name: 'Grid',
+    requires: 'sessions-10', unlockedBy: 'Finish 10 review sessions',
+  },
+  {
+    id: 'smooth', kind: 'texture', name: 'Smooth',
+    requires: 'mastered-100', unlockedBy: 'Hold 100 words for a month',
+  },
+
+  // ── Blanks ─────────────────────────────────────────────────────────────────
+  // The thing a learner looks at most: a passage is prose you read once and gaps you stare at.
+  {
+    id: 'solid', kind: 'blank', name: 'Solid rule',
+    requires: 'deck-250', unlockedBy: 'Collect 250 words',
+  },
+  {
+    id: 'box', kind: 'blank', name: 'Boxed',
+    requires: 'leech-10', unlockedBy: 'Rescue 10 stuck words',
+  },
+  {
+    id: 'shaded', kind: 'blank', name: 'Shaded',
+    requires: 'books-3', unlockedBy: 'Finish 3 books',
+  },
+
+  // ── The summit ─────────────────────────────────────────────────────────────
+  /**
+   * THE HARDEST THING IN THE APP, and deliberately not the biggest NUMBER in it. `deck-1000`
+   * is a thousand words collected, which is an afternoon of importing; `mastered-1000` is a
+   * thousand words each holding a month of stability, which cannot be rushed and cannot be
+   * faked, because FSRS is the one measure here that only time can move.
+   */
+  {
+    id: 'custom-accent', kind: 'palette', name: 'Custom colour',
+    requires: 'mastered-1000', unlockedBy: 'Hold 1,000 words for a month',
+  },
 ];
 
 const BY_ID = new Map<string, Cosmetic>(COSMETICS.map(c => [c.id, c]));
@@ -133,7 +191,34 @@ export function canSelect(id: string, unlocked: ReadonlySet<string>, current?: s
   return unlocked.has(id) || id === current;
 }
 
-/** How many earned cosmetics are open, for the "3 of 6 unlocked" line in the picker. */
+/** How many earned cosmetics are open, for the "3 of 13 unlocked" line in the picker. */
 export function unlockedCount(unlocked: ReadonlySet<string>): number {
   return COSMETICS.filter(c => unlocked.has(c.id)).length;
+}
+
+/** The catalogue for one kind, in ladder order. */
+export function cosmeticsOfKind(kind: CosmeticKind): Cosmetic[] {
+  return COSMETICS.filter(c => c.kind === kind);
+}
+
+/** Whether the custom-colour control is available. Its own helper because it gates a CONTROL
+ *  rather than a value, so no swatch list can answer it. */
+export const CUSTOM_ACCENT_ID = 'custom-accent';
+export function canCustomiseAccent(unlocked: ReadonlySet<string>): boolean {
+  return unlocked.has(CUSTOM_ACCENT_ID);
+}
+
+/**
+ * A `#rrggbb` string, or null.
+ *
+ * Validated rather than trusted because it is written straight into an inline style: prefs
+ * sync, and a value arriving from another device — or from a hand-edited localStorage blob —
+ * would otherwise be injected into `style` unchecked. Three- and six-digit hex only, no
+ * `rgb()`, no `var()`, no colour names; anything else is treated as "no custom colour" and
+ * the theme's own accent stands.
+ */
+export function safeAccent(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null;
 }

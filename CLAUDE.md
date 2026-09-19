@@ -1550,7 +1550,7 @@ Ten themes and seven fonts are toggled by setting `data-theme` and `data-font` a
 `--f-display`, `--f-mono`, `--f-han`, etc.) drive all styling. `useTheme` manages this;
 `ThemeSheet` is the drawer UI. Never use hardcoded colors — always use CSS variables.
 
-**Six themes and five fonts are FREE; four themes and two fonts are EARNED**
+**Six themes and five fonts are FREE; four themes, two fonts, three papers, three blank styles and a colour picker are EARNED**
 (`lib/cosmetics.ts`). `Theme` and `Font` are each split into a `Free*` and an `Earned*` union
 in `lib/types.ts`, and the catalogue is typed against the earned half — so a cosmetic
 *cannot name a free one*, and `tests/cosmetics.test.ts` asserts the two sets never intersect.
@@ -1607,6 +1607,44 @@ no rule matches is a selection that highlights and changes nothing.
 **Every dark theme needs the inverted grain blend.** `body::before` multiplies, which on a
 dark background is a black smear rather than texture. `dusk`, `midnight` and `terminal` are
 listed together in one rule for that reason; a new dark theme that forgets it looks dirty.
+
+**AND THAT RULE HAD NEVER FIRED, because it was written `[data-theme="dusk"] body::before`.**
+`useTheme` sets the attribute on BODY ITSELF, so the descendant form asked for a body inside an
+element carrying the attribute — which nothing is, since `data-theme` is never set on `<html>`.
+Dusk had been rendering its grain with `multiply` since the theme shipped. It is
+`body[data-theme="dusk"]::before` now. Found by building the earned papers on the same selector
+and then MEASURING the computed style in a browser rather than trusting that it applied — the
+same lesson this file already records five times over, in a place nobody had thought to look.
+
+#### Three more kinds of cosmetic, and one control
+
+**PAPER (`data-texture`) and BLANKS (`data-blank`) are the two that are specific to this app.**
+Colour and type are what every app offers; the grain under everything and the shape of a cloze
+gap are srsly's own. `grain` and `dotted` are what shipped and stay free — `FREE_TEXTURES` and
+`FREE_BLANKS` exist so the additions-only rule is enforced on them too.
+
+**A blank's styling had to MOVE OUT of the component to be themeable at all.** It was
+`border: none; borderBottom: 1.5px dotted var(--accent)` as an inline style on the input, and
+an inline style beats a stylesheet — so no `[data-blank]` rule could ever have overridden it.
+It is `.cloze-blank` in `globals.css` now. Every style keeps the SAME box and varies only which
+lines are drawn: the typed-text overlay is centred on that element's box, and a blank that
+resized with its style would reflow the passage under the reader.
+
+**The custom accent is the top of the ladder and unlocks a CONTROL rather than a value**, which
+is why its id is not a `data-` value and nothing renders it as a swatch. It sets `--accent`
+only; `--accent-deep` and `--accent-soft` are derived with `color-mix`, and ink, paper, card and
+line stay with the chosen theme — so contrast is always the theme's problem and never the
+learner's. **A full palette editor is a way to produce white-on-white and then file a bug about
+it.**
+
+**It hangs off `mastered-1000`, which is deliberately not the biggest NUMBER in the app.**
+`deck-1000` is a thousand words collected, which is an afternoon of importing; a thousand words
+each holding a month of stability is the one thing here that only time can move.
+
+**`safeAccent` is a VALIDATOR, not a gate.** The value is written into an inline style and prefs
+SYNC, so a colour arriving from another device or a hand-edited blob must be a literal
+three- or six-digit hex before it goes near `style`. Anything else — a colour name, `rgb()`,
+`var()`, a semicolon — is treated as no custom colour, and the theme's own accent stands.
 
 #### Milestones are derived, never stored
 

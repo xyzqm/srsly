@@ -15,6 +15,27 @@ export type FreeFont = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic
 export type EarnedFont = 'grand' | 'typewriter';
 export type Font = FreeFont | EarnedFont;
 
+/**
+ * The paper the app is printed on — the grain layer in `body::before`.
+ *
+ * `grain` is what has always been there and stays free. The others are earned, and they are
+ * the most srsly-specific cosmetic there is: the whole visual identity is paper, so changing
+ * the paper changes everything at once for the cost of one CSS layer.
+ */
+export type FreeTexture = 'grain';
+export type EarnedTexture = 'laid' | 'grid' | 'smooth';
+export type Texture = FreeTexture | EarnedTexture;
+
+/**
+ * How a cloze gap is drawn. `dotted` is the underline that shipped, so it stays free.
+ *
+ * Worth having as a cosmetic at all because it is the single thing a learner looks at most in
+ * this app — a passage is mostly prose you read once and blanks you stare at.
+ */
+export type FreeBlankStyle = 'dotted';
+export type EarnedBlankStyle = 'solid' | 'box' | 'shaded';
+export type BlankStyle = FreeBlankStyle | EarnedBlankStyle;
+
 /** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese,
  *  'es' = Spanish, 'fr' = French. */
 export type LanguageCode = 'zh' | 'ja' | 'es' | 'fr';
@@ -157,6 +178,24 @@ export interface DailyAccuracy { d: string; right: number; total: number }
 export interface UserPrefs {
   theme: Theme;
   font: Font;
+  /**
+   * The earned cosmetics, all optional so an account that has never touched them carries
+   * nothing. Declared HERE and not written straight into the blob — a field the storage layer
+   * does not know about is a field the storage layer discards, which is the bug the
+   * `flashcardMode` note below records at length.
+   */
+  texture?: Texture;
+  blankStyle?: BlankStyle;
+  /**
+   * A custom accent, as `#rrggbb`. The top-tier unlock.
+   *
+   * ONE COLOUR, NOT A PALETTE. `--accent` is the only token a learner can move without being
+   * able to make the app unreadable: `--accent-deep` and `--accent-soft` are derived from it
+   * with `color-mix`, while ink, paper, card and line stay with the chosen theme so contrast
+   * is always the theme's problem and never the learner's. A full palette editor is a way to
+   * produce white-on-white and then file a bug about it.
+   */
+  accentColor?: string;
   /**
    * Flashcard study mode. DECLARED HERE, and that is the whole fix for a real bug.
    *
