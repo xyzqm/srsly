@@ -88,7 +88,9 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
       const actual = providerForKey(v);
       setError(actual && actual.id !== picked
         ? `That key belongs to ${actual.name}. Pick ${actual.name} above, or paste a key from ${provider.name}.`
-        : `That does not look like a key from ${provider.name} — theirs start with “${provider.maskPrefix}”.`);
+        // Every live prefix, not just one: Google issues both `AQ.` and `AIza`, and naming a
+        // single format tells half of them their working key is malformed.
+        : `That does not look like a key from ${provider.name} — theirs start with ${provider.keyPrefixes.map(p => `“${p}”`).join(' or ')}.`);
       return;
     }
     saveUserKey(v, picked);

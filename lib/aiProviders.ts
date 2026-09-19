@@ -72,8 +72,18 @@ export interface AiProvider {
   readonly keyPattern: RegExp;
   /** What an empty field shows. */
   readonly keyPlaceholder: string;
-  /** The leading run kept when a key is masked for display. */
-  readonly maskPrefix: string;
+  /**
+   * Every prefix this provider's keys are known to start with, commonest first.
+   *
+   * A LIST RATHER THAN A STRING, because a provider can have more than one live format at
+   * once. Google issues both `AIza…` and the newer `AQ.…`, and with a single prefix the mask
+   * showed `AIza…7f3a` for a key that begins `AQ.` — a display prefix the key does not have,
+   * which is worse than no mask: the whole job of a mask is telling two keys apart.
+   *
+   * The FIRST entry is the fallback for a key matching none of them, so it should be the one
+   * most learners will hold.
+   */
+  readonly keyPrefixes: readonly string[];
   /** Where to get a key, and what the page is called when you get there. */
   readonly consoleUrl: string;
   readonly consoleLabel: string;
@@ -98,7 +108,7 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     freeTier: false,
     keyPattern: /^sk-ant-[A-Za-z0-9_-]{16,}$/,
     keyPlaceholder: 'sk-ant-…',
-    maskPrefix: 'sk-ant-',
+    keyPrefixes: ['sk-ant-'],
     consoleUrl: 'https://console.anthropic.com/settings/keys',
     consoleLabel: 'console.anthropic.com → API keys',
     blurb: 'Claude Haiku. About a cent a passage, billed to you. What every prompt here was written against.',
@@ -110,9 +120,32 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     maxOutputTokens: 16384,
     freeTier: true,
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    keyPattern: /^AIza[A-Za-z0-9_-]{30,}$/,
-    keyPlaceholder: 'AIza…',
-    maskPrefix: 'AIza',
+    /**
+     * TWO LIVE FORMATS, AND THE OLD ONE IS NOT DROPPED.
+     *
+     * Google issues newer keys beginning `AQ.` where they used to begin `AIza`. Both are
+     * accepted: replacing the pattern rather than widening it would have silently
+     * disconnected every learner already holding an `AIza` key — they would open Settings to
+     * find their working key rejected as malformed, with no way to tell why.
+     *
+     * The `AQ.` arm is deliberately LOOSER than the `AIza` one, because the exact length and
+     * alphabet of that format are not something this codebase can verify. That is an
+     * acceptable trade here and it is worth being precise about WHY: a shape check does two
+     * jobs, and only one of them is weakened. It still cannot collide with `sk-ant-` or
+     * `gsk_`, so the security property — never send a key to a company whose format it does
+     * not have — is untouched, and `tests/aiProviders.test.ts` asserts that directly. What is
+     * weakened is the typo check, so a malformed `AQ.` key reaches Google and comes back as a
+     * 401, which `GenerationError` already reports as "Google Gemini rejected the key".
+     *
+     * THE LENGTH FLOOR IS LOW ON PURPOSE, for the same reason. The two ways to be wrong are
+     * not symmetric: too strict rejects a real key and reads as the app being broken — which
+     * is the bug that prompted this — while too loose costs one round trip and returns a
+     * message naming exactly what happened. Guessing at an unverified format, the floor
+     * belongs on the forgiving side. Tighten both the moment the real format is known.
+     */
+    keyPattern: /^(?:AIza[A-Za-z0-9_-]{30,}|AQ\.[A-Za-z0-9_.-]{10,})$/,
+    keyPlaceholder: 'AQ.… or AIza…',
+    keyPrefixes: ['AQ.', 'AIza'],
     consoleUrl: 'https://aistudio.google.com/apikey',
     consoleLabel: 'aistudio.google.com → Get API key',
     blurb: 'Gemini Flash. Free tier, rate-limited rather than metered — no card, no bill.',
@@ -126,7 +159,7 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     keyPattern: /^gsk_[A-Za-z0-9]{20,}$/,
     keyPlaceholder: 'gsk_…',
-    maskPrefix: 'gsk_',
+    keyPrefixes: ['gsk_'],
     consoleUrl: 'https://console.groq.com/keys',
     consoleLabel: 'console.groq.com → API keys',
     blurb: 'Llama 3.3 on Groq. Free tier, and the fastest of the three by a wide margin.',
@@ -185,15 +218,26 @@ export function looksLikeAnyKey(key: string | null | undefined): boolean {
   return !!providerForKey(key);
 }
 
+/** The prefix a key actually carries, or the provider's commonest as a fallback. */
+export function prefixOf(p: AiProvider, key: string): string {
+  return p.keyPrefixes.find(pre => key.startsWith(pre)) ?? p.keyPrefixes[0];
+}
+
 /**
  * `sk-ant-…7f3a` — enough to tell two keys apart, never enough to use.
  *
  * The whole key is never rendered back to the screen: it is shoulder-surfable, it lands in
  * screenshots and screen shares, and the learner already has a copy of it.
+ *
+ * THE PREFIX COMES FROM THE KEY, NOT FROM THE TABLE. With one hardcoded prefix per provider,
+ * a Google key beginning `AQ.` was masked as `AIza…7f3a` — a display prefix the key does not
+ * have. That is worse than showing nothing: the entire job of a mask is letting someone tell
+ * two of their own keys apart, and one that lies about the first four characters cannot.
  */
 export function maskKeyFor(id: ProviderId, key: string): string {
   const p = providerOrDefault(id);
   const v = key.trim();
-  if (v.length < p.maskPrefix.length + 8) return `${p.maskPrefix}…`;
-  return `${p.maskPrefix}…${v.slice(-4)}`;
+  const prefix = prefixOf(p, v);
+  if (v.length < prefix.length + 8) return `${prefix}…`;
+  return `${prefix}…${v.slice(-4)}`;
 }

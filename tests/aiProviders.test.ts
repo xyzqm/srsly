@@ -30,6 +30,52 @@ describe('the key patterns are disjoint, which is the safety property', () => {
     groq: 'gsk_' + 'C'.repeat(48),
   };
 
+  /**
+   * GOOGLE'S NEWER FORMAT, AND WHY IT GETS ITS OWN BLOCK.
+   *
+   * `AQ.…` keys are issued alongside the older `AIza…` ones. The `AQ.` arm of the pattern is
+   * deliberately looser than the `AIza` arm, because the exact length and alphabet of that
+   * format could not be verified here — so it is worth being explicit about which of the
+   * shape check's two jobs that costs. The TYPO check is weakened: a malformed `AQ.` key now
+   * reaches Google and returns a 401. The SECURITY property is not, and these assertions are
+   * what hold it: a looser pattern is only dangerous if it can swallow another provider's key.
+   */
+  const NEW_GEMINI = 'AQ.Ab8RN6K' + 'x'.repeat(30);
+
+  it('accepts both live Google formats as Gemini', () => {
+    expect(providerForKey(samples.gemini)?.id).toBe('gemini');
+    expect(providerForKey(NEW_GEMINI)?.id).toBe('gemini');
+    expect(looksLikeKeyFor('gemini', NEW_GEMINI)).toBe(true);
+  });
+
+  /**
+   * THE OLD FORMAT IS NOT DROPPED. Replacing the pattern rather than widening it would have
+   * silently disconnected every learner already holding an `AIza` key — they would open
+   * Settings to find a working key rejected as malformed, with nothing to explain it.
+   */
+  it('still accepts the older format, so nobody is disconnected by the change', () => {
+    expect(looksLikeKeyFor('gemini', samples.gemini)).toBe(true);
+  });
+
+  it('lets the new format claim nothing but Gemini', () => {
+    const claiming = AI_PROVIDERS.filter(p => p.keyPattern.test(NEW_GEMINI)).map(p => p.id);
+    expect(claiming).toEqual(['gemini']);
+  });
+
+  /** The reverse direction: the widened pattern must not have started swallowing the others. */
+  it('does not swallow an Anthropic or Groq key', () => {
+    const gem = AI_PROVIDERS.find(p => p.id === 'gemini')!;
+    expect(gem.keyPattern.test(samples.anthropic)).toBe(false);
+    expect(gem.keyPattern.test(samples.groq)).toBe(false);
+  });
+
+  it('is still not a free pass for anything beginning AQ', () => {
+    // The dot is part of the prefix, and there is still a length floor under it.
+    for (const v of ['AQ', 'AQ.', 'AQ.short', 'AQx' + 'y'.repeat(40)]) {
+      expect(looksLikeKeyFor('gemini', v), v).toBe(false);
+    }
+  });
+
   it('has a sample for every provider — the control', () => {
     expect(Object.keys(samples).sort()).toEqual(AI_PROVIDERS.map(p => p.id).sort());
   });
@@ -127,12 +173,32 @@ describe('a masked key is unusable and still tells two keys apart', () => {
     expect(masked).not.toContain('A'.repeat(8));
   });
 
-  it('never returns the key itself, for any provider or length', () => {
+  it('never returns the key itself, for any provider, prefix or length', () => {
     for (const p of AI_PROVIDERS) {
-      for (const key of [p.maskPrefix + 'x'.repeat(40), p.maskPrefix, 'short']) {
-        expect(maskKeyFor(p.id, key)).not.toBe(key);
+      for (const prefix of p.keyPrefixes) {
+        for (const key of [prefix + 'x'.repeat(40), prefix, 'short']) {
+          expect(maskKeyFor(p.id, key)).not.toBe(key);
+        }
       }
     }
+  });
+
+  /**
+   * THE PREFIX COMES FROM THE KEY, NOT THE TABLE.
+   *
+   * With one hardcoded prefix per provider, a Google key beginning `AQ.` masked as
+   * `AIza…7f3a` — a display prefix the key does not have. That is worse than no mask: its
+   * entire job is letting someone tell two of their own keys apart, and one that lies about
+   * the opening characters cannot do it.
+   */
+  it('masks each Google format with its own prefix', () => {
+    expect(maskKeyFor('gemini', 'AIza' + 'B'.repeat(31) + 'cd12')).toBe('AIza…cd12');
+    expect(maskKeyFor('gemini', 'AQ.' + 'B'.repeat(28) + 'ef34')).toBe('AQ.…ef34');
+  });
+
+  it('falls back to the commonest prefix for a key matching none', () => {
+    const p = AI_PROVIDERS.find(x => x.id === 'gemini')!;
+    expect(maskKeyFor('gemini', 'something-else-entirely-abcd')).toBe(`${p.keyPrefixes[0]}…abcd`);
   });
 
   it('degrades to a bare prefix rather than leaking a short key whole', () => {
@@ -323,7 +389,7 @@ describe('who pays survives the second transport', () => {
     for (const p of AI_PROVIDERS) {
       const g = generatorForProvider(p.id, KEYS[p.id], false);
       expect(g.name).not.toContain(KEYS[p.id]);
-      expect(g.name).not.toContain(p.maskPrefix);
+      for (const prefix of p.keyPrefixes) expect(g.name).not.toContain(prefix);
     }
   });
 });
