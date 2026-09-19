@@ -6,7 +6,7 @@ import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { passageTopic, passageForm } from '@/lib/passageTheme';
-import { type Generator } from '@/lib/server/generator';
+import { type Generator, GenerationError } from '@/lib/server/generator';
 import { resolveAiAccess, generatorFor, meterOrRefuse, noKeyRefusal } from '@/lib/server/aiGate';
 
 /**
@@ -151,6 +151,21 @@ async function generateJson(
       if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
       console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} incomplete`);
     } catch (err) {
+      /**
+       * A REJECTED KEY DOES NOT BECOME VALID ON THE SECOND ATTEMPT.
+       *
+       * This caught everything and retried, which is right for a garbled reply and wrong for
+       * every failure the provider has already given a definite answer to. A bad key was
+       * retried `MAX_GEN_ATTEMPTS` times and then reported as a bare 500 "generation failed" —
+       * so a learner whose key was wrong waited through several round trips to be told
+       * nothing. On a rate limit it is worse than useless: retrying is what the 429 was
+       * asking us to stop doing.
+       *
+       * `server` is the only kind still retried, because that is the transient one — a 5xx or
+       * a dropped connection genuinely can succeed the second time. Everything else is rethrown
+       * so the handler can say what happened.
+       */
+      if (err instanceof GenerationError && err.kind !== 'server') throw err;
       console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed:`, String(err));
     }
   }
@@ -753,7 +768,32 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
     return ['convo', { complete: json !== null, out: convo }];
   });
 
-  const results = await Promise.all(jobs);
+  /**
+   * A FAILURE THE LEARNER CAN ACT ON HAS TO REACH THE LEARNER.
+   *
+   * Every generation error used to be swallowed into `{ error: 'generation failed' }` with a
+   * 500, which is what "it just doesn't work" looks like from the outside: a rejected key, a
+   * retired model and a spent rate limit all arrived as the same sentence, and the only one of
+   * the three the learner could do anything about was the one most likely to be happening.
+   * `GenerationError` already carries a message written for exactly this moment.
+   *
+   * `detail` is the field the client reads first (see `hooks/useDailyContent.ts`), and the
+   * status deliberately avoids 402 — that is the one the client LATCHES as a spent budget, and
+   * none of these is that.
+   */
+  let results: Awaited<(typeof jobs)[number]>[];
+  try {
+    results = await Promise.all(jobs);
+  } catch (err) {
+    if (err instanceof GenerationError) {
+      console.error(`[daily-content] ${err.kind} from ${err.provider}:`, err.message);
+      return NextResponse.json(
+        { error: err.kind, message: err.message, detail: err.message },
+        { status: err.kind === 'rate_limit' ? 429 : 502 },
+      );
+    }
+    throw err;
+  }
   const bySection = new Map(results);
 
   // If passage was requested but failed entirely, that's a hard failure.

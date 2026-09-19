@@ -850,7 +850,7 @@ export function useDailyContent(
         } catch (err) {
           if (cancelled) return;
           console.error('[useDailyContent]', section, err);
-          setErrorMsg(String(err));
+          setErrorMsg(err instanceof Error ? err.message : String(err));
           setStatus('error');
         } finally {
           setGenerating(prev => {
@@ -870,6 +870,8 @@ export function useDailyContent(
     if (!dailyContent || loadingMore || hskLevel === 0) return;
 
     setLoadingMore(true);
+    // Clear the last failure before trying again, or a stale notice sits over a working run.
+    setErrorMsg('');
 
     try {
       const today = todayStr();
@@ -953,7 +955,21 @@ export function useDailyContent(
         return updated;
       });
     } catch (err) {
+      /**
+       * THIS SWALLOWED THE FAILURE ENTIRELY, AND IT IS WHAT "NOTHING HAPPENS" WAS.
+       *
+       * It logged to the console and returned. Nothing on screen changed — no error, no status,
+       * no message — so pressing Generate with a rejected key looked exactly like pressing a
+       * dead button, and the only evidence was in a devtools panel the learner has no reason
+       * to open. Reported from a screen recording where the click appears to do nothing at all.
+       *
+       * The status is deliberately NOT set to 'error' here. `loadMore` also fetches the NEXT
+       * passage during a reading session, and swapping the whole tab into an error state would
+       * throw away passages already on screen over a failure to add one more. The message
+       * renders as a notice instead, the way MissedWordReview surfaces its own.
+       */
       console.error('[loadMore]', err);
+      setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingMore(false);
     }

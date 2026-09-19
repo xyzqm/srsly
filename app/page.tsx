@@ -143,14 +143,21 @@ function AppShell() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
   /**
-   * Which Settings group an incoming navigation is asking for, or undefined for "wherever it
-   * normally opens".
+   * Which Settings group to open on — the last one that was LOOKED AT, not a one-shot request.
    *
-   * Held here rather than inside SettingsTab because the REQUEST comes from outside it — the
-   * header chip and the Read tab's no-key button both want Account. Cleared by `changeTab`,
-   * so opening Settings from the tab bar afterwards lands where it always did rather than
-   * inheriting a destination someone asked for ten minutes ago. SettingsTab unmounts when you
-   * leave it, so it re-reads this on every arrival.
+   * Held here rather than inside SettingsTab because that component unmounts the moment you
+   * leave the tab (`{tab === 'settings' && …}` below), taking its `group` state with it. So
+   * every return to Settings dropped you back on "Studying", however deep in Scheduling or
+   * Backup you had been — you would go and check something, come back, and have to find your
+   * place again. That was true long before the group nav had a prop; giving it one just moved
+   * where the fix belongs.
+   *
+   * It is REMEMBERED rather than cleared on navigation, which is the opposite of what it did
+   * at first. The original worry was a stale destination — that one click on the header chip
+   * would pin Settings to Account for the rest of the session — and clearing on every tab
+   * change did prevent that, at the cost of the ordinary case it should have been serving.
+   * Recording what the learner last chose serves both: the chip's request is simply the most
+   * recent choice, and the next one replaces it.
    */
   const [settingsGroup, setSettingsGroup] = useState<SettingsGroup | undefined>(undefined);
 
@@ -187,7 +194,8 @@ function AppShell() {
    */
   const changeTab = useCallback((next: TabId) => {
     setSignIn(s => (s.open ? { open: false } : s));
-    setSettingsGroup(undefined);
+    // Deliberately does NOT reset `settingsGroup` — leaving Settings and coming back should
+    // land where you were, not back at the top. See the declaration.
     setTab(next);
   }, []);
 
@@ -414,6 +422,7 @@ function AppShell() {
             <SettingsTab
               languages={languages ?? []}
               initialGroup={settingsGroup}
+              onGroupChange={setSettingsGroup}
               onAddLanguage={() => setAddingLanguage(true)}
               onLanguagesChanged={(list, active) => {
                 setLanguages(list);

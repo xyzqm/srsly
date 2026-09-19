@@ -210,6 +210,37 @@ key, report it, wait — and on a free tier the rate limit is not an edge case, 
 option stops working for the afternoon. The message carries no key and copies nothing from the
 provider's own error body, which can echo the request back.
 
+**AND FOR A WHILE NONE OF THAT REACHED A SCREEN.** Three separate layers each threw the sentence
+away, which together produced the only bug report that matters: *pressing Generate does nothing*.
+
+- **`generateJson` caught everything and retried.** Right for a garbled reply, wrong for every
+  failure the provider has already answered definitively — a bad key was retried and then
+  reported as a bare 500, and a 429 was retried, which is the one thing a 429 asks you not to
+  do. Only `kind === 'server'` is retried now; the rest are rethrown.
+- **`daily-content` answered `{ error: 'generation failed' }`.** It now returns the real message
+  on `detail`, which is the field the client reads first, at 502 (or 429) — never 402, which is
+  the status the client latches as a spent budget.
+- **`loadMore` logged to the console and returned.** Nothing on screen changed at all, so a
+  rejected key was indistinguishable from a dead button, and the only evidence was in a devtools
+  panel a learner has no reason to open. It sets `errorMsg` now, which `ReadTab` renders under
+  the button. It deliberately does NOT set `status: 'error'` — `loadMore` also fetches the next
+  passage mid-session, and swapping the tab into an error state would throw away passages
+  already on screen over a failure to add one more.
+
+**`errorMsg` was declared, returned from the hook, and never rendered by anything** — half-built
+plumbing that made the failure look like a missing feature rather than a broken one.
+
+**GOOGLE ANSWERS A REJECTED KEY WITH 400, NOT 401**, which is why `classify` reads the message
+body where the status is ambiguous. Measured against the live endpoint: a bad `AIza…` key returns
+`400 INVALID_ARGUMENT "Please pass a valid API key"` and a bad `AQ.…` key returns
+`400 INVALID_ARGUMENT "Invalid Auth key."`. Reading the status alone filed both under "server"
+and told the learner to *try again in a moment* — advice that can never work, for the one failure
+on the list they can actually fix.
+
+**`npm run dev:nokey` is the config that mirrors production**, where neither key is set. It is
+the only way to exercise a learner's own key end to end without the operator's key silently
+answering instead, and it is how the three layers above were found.
+
 **The `openai` SDK was NOT added**, and this file's rule says to state that. Google and Groq both
 expose an OpenAI-compatible chat-completions endpoint, so one `fetch` serves both: one endpoint,
 one request shape, no streaming, no tool use, no pagination. A whole SDK and its dependency tree

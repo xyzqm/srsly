@@ -113,12 +113,27 @@ describe('a route to Settings arrives where the thing it promised is', () => {
   });
 
   /**
-   * Cleared on an ordinary tab change, or Settings would keep re-opening on Account for the
-   * rest of the session because of one click on the header an hour ago.
+   * REMEMBERED ACROSS A TAB CHANGE, WHICH IS THE OPPOSITE OF WHAT THIS ONCE ASSERTED.
+   *
+   * `changeTab` used to clear the group, guarding against a stale destination: one click on the
+   * header chip pinning Settings to Account for the rest of the session. It did prevent that,
+   * and it cost the ordinary case — SettingsTab unmounts when you leave the tab, so with
+   * nothing held above it every return dropped you back on "Studying", however deep in
+   * Scheduling or Backup you had been. Reported from a screen recording.
+   *
+   * Recording the last group LOOKED AT serves both: the chip's request is simply the most
+   * recent choice, and the next choice replaces it. So the assertion inverts.
    */
-  it('forgets the request once the learner navigates normally', () => {
+  it('remembers the group across a tab change instead of resetting it', () => {
     const change = page.slice(page.indexOf('const changeTab = useCallback'));
-    expect(change.slice(0, 300)).toContain('setSettingsGroup(undefined)');
+    expect(change.slice(0, 400), 'clearing this sends every return back to Studying')
+      .not.toContain('setSettingsGroup(undefined)');
+  });
+
+  /** A group nav that does not report upward leaves nothing to come back to. */
+  it('records the group the learner picks', () => {
+    expect(settings).toContain('onGroupChange?.(g.id)');
+    expect(page).toContain('onGroupChange={setSettingsGroup}');
   });
 });
 

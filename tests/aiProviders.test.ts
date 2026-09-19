@@ -330,6 +330,42 @@ describe('a failure says which of the three things went wrong', () => {
     await expect(g.complete('s', 'p')).rejects.toMatchObject({ kind: 'model' });
   });
 
+  /**
+   * GOOGLE ANSWERS A REJECTED KEY WITH 400, NOT 401, AND THESE TWO BODIES ARE VERBATIM FROM
+   * THE LIVE ENDPOINT — a bad `AIza…` key and a bad `AQ.…` key respectively.
+   *
+   * Reading the status alone filed both under "server" and told the learner to try again in a
+   * moment, which can never work: their key is wrong and retrying will not change that. It is
+   * the one failure on this list they can actually fix, reported as the one they cannot.
+   */
+  it.each([
+    ['Please pass a valid API key'],
+    ['Invalid Auth key.'],
+  ])('reads Google\'s 400 "%s" as a key problem', async message => {
+    mockFetch(400, { error: { code: 400, message, status: 'INVALID_ARGUMENT' } });
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await expect(g.complete('s', 'p')).rejects.toMatchObject({ kind: 'auth' });
+  });
+
+  it('tells the learner to check the key rather than to wait', async () => {
+    mockFetch(400, { error: { message: 'Invalid Auth key.' } });
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await g.complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.message).toMatch(/rejected the key/i);
+        expect(e.message).not.toMatch(/try again/i);
+      },
+    );
+  });
+
+  /** Auth is judged first: a bad key never gets far enough to be judged against a model name. */
+  it('calls a 400 naming both a key and a model an auth problem', async () => {
+    mockFetch(400, { error: { message: 'API key not valid for model gemini-2.5-flash' } });
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await expect(g.complete('s', 'p')).rejects.toMatchObject({ kind: 'auth' });
+  });
+
   it('treats an unexplained 400 as the server\'s problem, not the key\'s', async () => {
     mockFetch(400, { error: { message: 'malformed request' } });
     const g = generatorForProvider('groq', KEYS.groq, false);

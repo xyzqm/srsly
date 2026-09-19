@@ -59,6 +59,14 @@ interface Props {
    * (`{tab === 'settings' && …}` in app/page.tsx), so arriving again re-reads it.
    */
   initialGroup?: Group;
+  /**
+   * Reports the group being viewed, so leaving and returning lands back on it.
+   *
+   * This component unmounts when you leave the tab, so `group` cannot be the record of where
+   * you were — it is gone by the time you come back. The parent holds it; this only says what
+   * changed.
+   */
+  onGroupChange?: (group: Group) => void;
   /** Opens the add-a-language flow, which runs the placement test. */
   onAddLanguage: () => void;
   /** Reports a changed list, and the language to switch to when the active one was removed. */
@@ -93,7 +101,7 @@ const RECOMMENDED_MAX_PER_DAY = 500;
 /** Past this share there is no prose left between the gaps. Advisory only. */
 const HIGH_BLANK_DENSITY = 35;
 
-export default function SettingsTab({ languages, initialGroup, onAddLanguage, onLanguagesChanged }: Props) {
+export default function SettingsTab({ languages, initialGroup, onGroupChange, onAddLanguage, onLanguagesChanged }: Props) {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const [signInOpen, setSignInOpen] = useState(false);
@@ -389,7 +397,7 @@ export default function SettingsTab({ languages, initialGroup, onAddLanguage, on
           return (
             <button
               key={g.id}
-              onClick={() => setGroup(g.id)}
+              onClick={() => { setGroup(g.id); onGroupChange?.(g.id); }}
               className="cursor-pointer transition-all duration-150"
               style={{
                 fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.08em',

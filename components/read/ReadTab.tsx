@@ -150,7 +150,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, [language]);
 
   // One deck per language, so passages always draw on the whole due queue.
-  const { dailyContent, status: dailyStatus, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(
+  const { dailyContent, status: dailyStatus, errorMsg, loadMore, loadingMore, guestLimited, generateQuestionsForPassage, loadingQuestions, questionsError, addPastedPassage } = useDailyContent(
     hskLevel, deck, READ_WANT, language, blankDensity,
     // Same split as `passages` below: 'read' draws what the learner brought, 'srs' the rest.
     variant === 'srs' ? 'generated' : 'own',
@@ -1284,6 +1284,24 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 >
                   {loadingMore ? `Generating… ${genEstShort}` : 'Generate passage'}
                 </button>
+              )}
+              {/* ── Why it did not work ──────────────────────────────────────
+                  A failed generation used to change NOTHING on screen: the hook logged to the
+                  console and returned, so pressing Generate with a rejected key was
+                  indistinguishable from pressing a dead button. The server already sends a
+                  sentence naming which of the three things went wrong — a bad key, a retired
+                  model, a spent rate limit — and each needs a different response from the
+                  reader, so it is shown rather than flattened into "try again". */}
+              {!loadingMore && errorMsg && (
+                <p
+                  role="status"
+                  style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 12, lineHeight: 1.55,
+                    color: 'var(--wrong)', maxWidth: '46ch', marginTop: 4,
+                  }}
+                >
+                  {errorMsg}
+                </p>
               )}
             </>
           ) : null}

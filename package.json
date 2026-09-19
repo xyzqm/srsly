@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:stub": "SRSLY_STUB_AI=1 next dev",
+    "dev:nokey": "SRSLY_API_KEY= ANTHROPIC_API_KEY= next dev",
     "start:stub": "SRSLY_STUB_AI=1 next start",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 next build",
     "typecheck": "tsc --noEmit",

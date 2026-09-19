@@ -87,14 +87,36 @@ export class GenerationError extends Error {
   }
 }
 
+/**
+ * WHICH OF THE THREE THINGS WENT WRONG, AND WHY THE STATUS CODE IS NOT ENOUGH.
+ *
+ * **Google answers a rejected key with 400, not 401.** Measured against the live endpoint:
+ * a bad `AIza…` key returns `400 INVALID_ARGUMENT "Please pass a valid API key"`, and a bad
+ * `AQ.…` key returns `400 INVALID_ARGUMENT "Invalid Auth key."`. Reading the status alone
+ * filed both under "server" and told the learner to *try again in a moment* — advice that can
+ * never work, for the one failure they can actually fix. That is precisely the "three failures
+ * need three different actions" mistake this function exists to prevent, so it now reads the
+ * message where the status is ambiguous.
+ *
+ * AUTH IS TESTED BEFORE MODEL because a request with a bad key never gets far enough to be
+ * judged against a model name: auth fails first, so a 400 mentioning both is an auth problem.
+ *
+ * The detail is used to CLASSIFY and is never copied into the thrown message — a provider's
+ * error body can echo the request back, and this message reaches a log and a screen.
+ */
 function classify(status: number, provider: AiProvider, detail: string): GenerationError {
-  if (status === 401 || status === 403) {
-    return new GenerationError('auth', provider.id,
-      `${provider.name} rejected the key. Check it in Settings, or paste a fresh one.`);
-  }
+  const auth = () => new GenerationError('auth', provider.id,
+    `${provider.name} rejected the key. Check it in Settings, or paste a fresh one.`);
+
+  if (status === 401 || status === 403) return auth();
   if (status === 429) {
     return new GenerationError('rate_limit', provider.id,
       `${provider.name}'s free tier is rate-limited and you have hit the limit for now. Wait a few minutes and try again.`);
+  }
+  // A 400 is whatever the provider decided to put there, so it is the one status that has to
+  // be read rather than mapped.
+  if (status === 400 && /\b(api[\s_-]?key|auth|credential|unauthenticated|permission)\b/i.test(detail)) {
+    return auth();
   }
   // A retired or renamed model is a 404 everywhere and a 400 on some gateways, and it is the
   // one failure the learner cannot fix — so it says whose problem it is.
