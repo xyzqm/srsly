@@ -41,6 +41,14 @@ class StorageFacade implements DataService {
    */
   invalidate() { (this.impl as { invalidate?: () => void }).invalidate?.(); }
 
+  /**
+   * Columns still waiting to reach the cloud, or [] when there is nothing queued — which is
+   * also what LocalStorage always answers, because a guest has no cloud to be behind.
+   */
+  pendingColumns(): string[] {
+    return (this.impl as { pendingColumns?: () => string[] }).pendingColumns?.() ?? [];
+  }
+
   getVocabDeck(lang: LanguageCode) { return this.impl.getVocabDeck(lang); }
   saveVocabDeck(lang: LanguageCode, deck: DeckWord[]) { return this.impl.saveVocabDeck(lang, deck); }
   getSRSState() { return this.impl.getSRSState(); }

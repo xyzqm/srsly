@@ -322,6 +322,53 @@ Three flags drive most of the behaviour:
 
 `app/page.tsx` is a single-page client component that renders five tabs — `read`, `practice`, `dash`, `vocab`, `settings` — switching between them with local `useState`. All navigation is tab-switching; there are no Next.js routes beyond the root page.
 
+#### A route to Settings has to arrive where the thing it promised is
+
+Settings is GROUPED (`Account` / `Studying` / `Scheduling` / `Backup`) and opens on `Studying`,
+so "go to Settings" is not an address. `AppShell` holds a `settingsGroup` request that
+`changeTab` clears and `SettingsTab` reads once as `initialGroup` — it unmounts when you leave
+it, so every arrival re-reads it.
+
+**Two bugs of one family, both reported as confusion rather than as failure.**
+
+- **The header's email was a `<span>` dressed as a button.** It carried the same `var(--card)`
+  background, `1px solid var(--line)` border, radius, padding and mono type as the Sign out
+  button an inch away, and differed only in having no `cursor: pointer` and no handler. A
+  control by every visual signal and by none of the behavioural ones — clicked, and nothing
+  happened. Nothing was broken; nothing had ever been wired. It is now a button opening
+  Settings → Account, which is also where the answer to "what is my account doing" now lives.
+  Stripping the border would have fixed the mismatch and left the question unanswered.
+- **`ApiKeyPanel` lives in the `account` group, and "Connect a key in Settings" went to the
+  default one.** That button exists precisely because Generate cannot succeed without a key —
+  so the single route offered to a blocked learner landed them on a screen with no key field
+  anywhere on it. Both callers now ask for `account`.
+
+`tests/accountRoutes.test.ts` pins both against the source, comment-stripped for the reason
+`tests/writingState.test.ts` gives: these files quote the old markup while explaining it. It
+also pins the pairing — the panel's group and the destination callers request are one fact in
+two files, so moving the panel fails the test rather than silently re-breaking the route.
+
+**The Account group now REPORTS rather than reassures** (`components/settings/AccountPanel.tsx`).
+It was one sentence — "Signed in as … — synced across devices" — printed unconditionally, so
+it said exactly the same thing on a device holding a week of writes behind a dead connection.
+That is the one claim on the screen a learner cannot check and has every reason to want to.
+The line now comes from `storage.pendingColumns()`, which reads the offline write queue that
+already exists (`lib/storage/writeQueue.ts`), and names what is stuck in words rather than in
+column names. Everything else on the panel — per-language word counts, how many are in
+circulation, how many are held, the streak and session count, whether a key is connected — is
+derived from data the app already holds, so **nothing was stored to render this screen**.
+
+**There is deliberately no "last synced at".** The storage layer records no such timestamp and
+inventing one would mean writing a new field on every save — a second record of a fact, to
+decorate a screen. "Nothing is waiting" is the honest form of the same reassurance and is
+derived. `pendingColumns()` returning `[]` is also NOT evidence of a successful sync: a write
+that never happened and one that landed are both absent from it. It answers "is anything
+stuck", which is the question someone on this screen is actually asking.
+
+`decks === null` is "not counted yet" and `[]` is "nothing saved", and the panel says so
+differently — the mistake this file names four times over would here tell a learner holding
+500 words that they hold none.
+
 ### Token format
 
 The core data primitive is `PassageToken` (`lib/types.ts`): `{ text, reading?, meaning?, type?, baseForm? }`. The API route emits compact tuple arrays (`RawTok = [text] | [text, reading] | [text, reading, meaning] | [text, reading, meaning, baseForm]`), normalized into `PassageToken`s client-side in `hooks/useDailyContent.ts`. A single-element tuple is punctuation; a 3-or-4-element tuple marks a **vocab** word; the optional 4th element carries the dictionary/base form of an inflected word, resolved server-side (kuromoji for Japanese, `lib/server/spanishLemmatizer.ts` for Spanish). For Spanish the `reading` slot is always `''`.

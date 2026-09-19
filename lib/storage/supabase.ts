@@ -92,6 +92,22 @@ export class SupabaseStorage implements DataService {
 
   private onOnline = () => { void this.flush(); };
 
+  /**
+   * Which columns hold a value this device has written and the cloud has not accepted.
+   *
+   * Exposed so Settings can say what is actually true — "2 changes waiting to sync" — instead
+   * of a reassuring sentence that is right whenever it does not matter. The queue already
+   * exists and is already the authority; this only reads it, and returns column names rather
+   * than the values, which are whole decks.
+   *
+   * Empty is the ordinary state and is NOT evidence of a successful sync: a write that has
+   * never been attempted and a write that landed are both absent from here. It answers "is
+   * anything stuck", which is the question a learner looking at this screen is asking.
+   */
+  pendingColumns(): string[] {
+    return Object.keys(this.pending);
+  }
+
   /** Stop listening. Called when the backend is swapped out on sign-out. */
   dispose(): void {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.onOnline);

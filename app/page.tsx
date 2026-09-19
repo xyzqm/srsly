@@ -27,7 +27,7 @@ import ReadTab from '@/components/read/ReadTab';
 import SrsTab from '@/components/practice/SrsTab';
 import StatsTab from '@/components/stats/StatsTab';
 import VocabTab from '@/components/vocab/VocabTab';
-import SettingsTab from '@/components/settings/SettingsTab';
+import SettingsTab, { type Group as SettingsGroup } from '@/components/settings/SettingsTab';
 import { useSRS } from '@/hooks/useSRS';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import ToastHost from '@/components/shared/ToastHost';
@@ -43,7 +43,22 @@ export default function Home() {
   );
 }
 
-function AccountChip({ onSignIn }: { onSignIn: () => void }) {
+/**
+ * The header account control.
+ *
+ * **THE EMAIL USED TO BE A `<span>` DRESSED AS A BUTTON**, and it was reported as broken by
+ * exactly the person it was aimed at. It carried the same `var(--card)` background, the same
+ * `1px solid var(--line)` border, the same radius, padding and mono type as the Sign out
+ * button beside it, and differed only in having no `cursor: pointer` and no handler — so it
+ * read as a control, was clicked as a control, and did nothing. That is an affordance bug
+ * rather than a dead one: nothing was broken, because nothing had ever been wired.
+ *
+ * Made real rather than made plain. Every app puts the account summary behind the account
+ * chip, and Settings → Account is where the answer to "what is my account doing" now lives,
+ * so the click has somewhere worth going. Stripping the border would also have fixed the
+ * mismatch and would have left the question unanswered.
+ */
+function AccountChip({ onSignIn, onOpenAccount }: { onSignIn: () => void; onOpenAccount: () => void }) {
   const { enabled, signedIn, user, signOut } = useAuth();
   if (!enabled) return null;
   const chip: React.CSSProperties = {
@@ -62,17 +77,21 @@ function AccountChip({ onSignIn }: { onSignIn: () => void }) {
     const email = user?.email ?? 'account';
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-        <span
-          title={`Signed in as ${email}`}
+        <button
+          onClick={onOpenAccount}
+          title={`Signed in as ${email} — open account settings`}
+          className="cursor-pointer transition-colors duration-150"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.02em',
             background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--ink-soft)',
             borderRadius: 7, padding: '8px 12px', maxWidth: 200,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-soft)'; }}
         >
           {email}
-        </span>
+        </button>
         <button onClick={signOut} style={chip} title="Sign out">
           Sign out
         </button>
@@ -123,6 +142,17 @@ function AppShell() {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
+  /**
+   * Which Settings group an incoming navigation is asking for, or undefined for "wherever it
+   * normally opens".
+   *
+   * Held here rather than inside SettingsTab because the REQUEST comes from outside it — the
+   * header chip and the Read tab's no-key button both want Account. Cleared by `changeTab`,
+   * so opening Settings from the tab bar afterwards lands where it always did rather than
+   * inheriting a destination someone asked for ten minutes ago. SettingsTab unmounts when you
+   * leave it, so it re-reads this on every arrival.
+   */
+  const [settingsGroup, setSettingsGroup] = useState<SettingsGroup | undefined>(undefined);
 
   // Active study language. Persisted in prefs; drives deck namespacing, dictionary lookups,
   // proficiency labels and TTS locale via LanguageProvider below. Declared BEFORE useSRS,
@@ -157,7 +187,23 @@ function AppShell() {
    */
   const changeTab = useCallback((next: TabId) => {
     setSignIn(s => (s.open ? { open: false } : s));
+    setSettingsGroup(undefined);
     setTab(next);
+  }, []);
+
+  /**
+   * Settings, opened at the Account group.
+   *
+   * Two callers, and the second is a bug fix rather than a convenience. `ApiKeyPanel` lives
+   * inside that group, so the Read tab's "Connect a key in Settings" button — which exists
+   * precisely because Generate cannot succeed without one — used to land on "Studying", where
+   * there is no key field on the screen at all. A route that arrives somewhere the thing it
+   * promised is not visible is worse than no route.
+   */
+  const openAccount = useCallback(() => {
+    setSignIn(s => (s.open ? { open: false } : s));
+    setSettingsGroup('account');
+    setTab('settings');
   }, []);
 
   /** Languages the learner has added. null until prefs load — distinct from [], which is a
@@ -306,7 +352,7 @@ function AppShell() {
       <div className="relative z-[1]">
         <Header
           onOpenTheme={() => setSheetOpen(true)}
-          accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} />}
+          accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} onOpenAccount={openAccount} />}
           language={language}
           languages={languages ?? []}
           onLanguageChange={handleLanguageChange}
@@ -333,7 +379,7 @@ function AppShell() {
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => changeTab('vocab')}
-              onNavigateSettings={() => changeTab('settings')}
+              onNavigateSettings={openAccount}
               onRequestLanguage={requestLanguage}
             />
           </TabPanel>
@@ -350,7 +396,7 @@ function AppShell() {
               onAnswer={recordAnswer}
               onRequireSignIn={requireSignIn}
               onNavigateVocab={() => changeTab('vocab')}
-              onNavigateSettings={() => changeTab('settings')}
+              onNavigateSettings={openAccount}
             />
           </TabPanel>
           {/* Not kept alive: the lesson list is a static render off local state, so remounting
@@ -367,6 +413,7 @@ function AppShell() {
           {tab === 'settings' && (
             <SettingsTab
               languages={languages ?? []}
+              initialGroup={settingsGroup}
               onAddLanguage={() => setAddingLanguage(true)}
               onLanguagesChanged={(list, active) => {
                 setLanguages(list);

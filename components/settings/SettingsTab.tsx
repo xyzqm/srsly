@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { storage } from '@/lib/storage';
 import { toCsv, downloadFile, parseBackup } from '@/lib/backup';
-import { useAuth } from '@/lib/auth/AuthProvider';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig, levelFor, levelLabel, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { RECOMMENDED_POOL_ACTIVATE, HIGH_POOL_ACTIVATE, DEFAULT_SRS_SETTINGS } from '@/lib/fsrs';
@@ -15,6 +14,7 @@ import { loadLevelTable } from '@/lib/curriculum';
 import { levelStandings, wordsToUnlockNext, gateFor, levelAfter, RETAINED_FRACTION, type LevelStanding } from '@/lib/unlock';
 import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
+import AccountPanel from './AccountPanel';
 import ApiKeyPanel from './ApiKeyPanel';
 import SpeechSettings from './SpeechSettings';
 
@@ -36,7 +36,7 @@ const GROUPS = [
   { id: 'schedule' as const, label: 'Scheduling' },
   { id: 'data'     as const, label: 'Backup' },
 ];
-type Group = (typeof GROUPS)[number]['id'];
+export type Group = (typeof GROUPS)[number]['id'];
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -49,6 +49,16 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 interface Props {
   /** Languages the learner has added. */
   languages: LanguageCode[];
+  /**
+   * Which group to open on, for a caller that is answering a specific question.
+   *
+   * The header's account chip and the Read tab's "connect a key" button both land here
+   * wanting ACCOUNT — the key panel lives in that group, so without this the second one
+   * opened Settings on "Studying" with no key field anywhere on screen, which is a dead end
+   * dressed as a route. Read on mount only; the tab is unmounted when you leave it
+   * (`{tab === 'settings' && …}` in app/page.tsx), so arriving again re-reads it.
+   */
+  initialGroup?: Group;
   /** Opens the add-a-language flow, which runs the placement test. */
   onAddLanguage: () => void;
   /** Reports a changed list, and the language to switch to when the active one was removed. */
@@ -83,8 +93,7 @@ const RECOMMENDED_MAX_PER_DAY = 500;
 /** Past this share there is no prose left between the gaps. Advisory only. */
 const HIGH_BLANK_DENSITY = 35;
 
-export default function SettingsTab({ languages, onAddLanguage, onLanguagesChanged }: Props) {
-  const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
+export default function SettingsTab({ languages, initialGroup, onAddLanguage, onLanguagesChanged }: Props) {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const [signInOpen, setSignInOpen] = useState(false);
@@ -100,7 +109,7 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
   const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
   const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
   const [autoActivate, setAutoActivate] = useState(false);
-  const [group, setGroup] = useState<Group>('study');
+  const [group, setGroup] = useState<Group>(initialGroup ?? 'study');
   const [ttsSpeed, setTtsSpeed] = useState<number | undefined>(undefined);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));
@@ -395,43 +404,16 @@ export default function SettingsTab({ languages, onAddLanguage, onLanguagesChang
       </div>
 
       {group === 'account' && (<>
-      {/* ── Account ───────────────────────────────────────────────────────── */}
-      {authEnabled && (
-        <>
-          <SectionLabel>Account</SectionLabel>
-          {signedIn ? (
-            <div className="flex items-center gap-3 flex-wrap mb-10">
-              <span style={{ fontSize: 14, color: 'var(--ink)' }}>
-                Signed in as <strong>{user?.email ?? 'your account'}</strong> — synced across devices.
-              </span>
-              <button
-                onClick={signOut}
-                className="cursor-pointer transition-all duration-150 rounded-[9px]"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.04em', background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)', padding: '9px 14px' }}
-              >
-                Sign out
-              </button>
-            </div>
-          ) : (
-            <div className="mb-10">
-              <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 12 }}>
-                You&apos;re studying as a guest — your deck lives on this device. Sign in to sync it
-                across devices and unlock unlimited AI-generated content.
-              </p>
-              <button
-                onClick={() => {
-                  setHasDismissed(false); // Reset dismissal condition if intentionally clicked
-                  setSignInOpen(true);
-                }}
-                className="cursor-pointer transition-all duration-150 rounded-[9px]"
-                style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', padding: '11px 18px', boxShadow: '0 2px 0 var(--accent-deep)' }}
-              >
-                Sign in
-              </button>
-            </div>
-          )}
-        </>
-      )}
+      {/* ── Account ─────────────────────────────────────────────────────────
+          Was one sentence claiming "synced across devices" whether or not anything had
+          reached the cloud. See components/settings/AccountPanel.tsx. */}
+      <AccountPanel
+        languages={languages}
+        onSignIn={() => {
+          setHasDismissed(false); // Reset dismissal condition if intentionally clicked
+          setSignInOpen(true);
+        }}
+      />
 
       {/* ── AI passages (bring your own key) ──────────────────────────────── */}
       <ApiKeyPanel />
