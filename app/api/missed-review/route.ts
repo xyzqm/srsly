@@ -22,9 +22,15 @@ export const maxDuration = 60;
  * Anthropic, and `tests/aiGate.test.ts` fails if a fourth one forgets to ask them.
  */
 
-/** Accurate at a guest limit of zero, where "you have used your free generations" is not. */
+/**
+ * Shares the daily budget with passages, so it shares the wording. Both refusals name the
+ * shared key for what it is: a visitor who runs out has spent somebody else's free quota, not
+ * hit a paywall, and connecting their own free key removes the limit entirely.
+ */
 const GUEST_LIMIT_MSG =
-  'Example sentences are written by a model, and generation is not free for guests. Sign in, or connect your own API key in Settings — Google and Groq both have a free tier.';
+  "That's today's free generations on srsly's shared key. Sign in for a few more each day, or connect your own key in Settings — Google and Groq are free.";
+const DAILY_LIMIT_MSG =
+  "That's today's generations on srsly's shared key. It comes back tomorrow, or connect your own key in Settings — Google and Groq both have a free tier.";
 const NO_KEY_MSG =
   'Connect an API key in Settings to generate example sentences — Google and Groq both have a free tier. The words and their character breakdowns need no key.';
 /**
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
   if (access.stub) return noKeyRefusal(STUB_MSG);
   if (!access.usable) return noKeyRefusal(NO_KEY_MSG);
 
-  const { refusal } = await meterOrRefuse(access, GUEST_LIMIT_MSG);
+  const { refusal } = await meterOrRefuse(access, GUEST_LIMIT_MSG, DAILY_LIMIT_MSG);
   if (refusal) return refusal;
 
   const config = getLanguageConfig(language);

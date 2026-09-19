@@ -11,9 +11,11 @@
 --        NEXT_PUBLIC_SUPABASE_URL=...
 --        NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 --
--- NOTE: the guest limit is ZERO, and consume_ai_credit() below is the source of truth for it.
--- Keep it in sync with GUEST_AI_LIMIT in lib/aiBudget.ts (UI mirror only). The reasoning is
--- at the declaration; the short version is that srsly does not fund strangers' generations.
+-- NOTE: consume_ai_credit() below is the source of truth for BOTH daily limits — 3 a day for
+-- an anonymous visitor, 10 for a signed-in account. Keep the guest number in sync with
+-- GUEST_AI_LIMIT in lib/aiBudget.ts (UI mirror only). The reasoning is at the declaration; the
+-- short version is that this deployment runs a shared FREE-TIER key so a visitor can try
+-- generation without signing up for anything, and a free tier cannot produce a bill.
 
 -- ── Per-user data (everything synced, as JSONB blobs) ─────────────────────────
 --
@@ -59,7 +61,10 @@ create policy "user_data own update" on public.user_data
 -- ── Guest AI budget counter ───────────────────────────────────────────────────
 create table if not exists public.ai_usage (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  used    int not null default 0
+  used    int not null default 0,
+  -- The UTC day `used` counts. A row from an earlier day is expired budget, reset on the next
+  -- call rather than by a scheduled job — there is nothing to run and nothing to forget to run.
+  day     date
 );
 
 alter table public.ai_usage enable row level security;
@@ -69,8 +74,9 @@ create policy "ai_usage own select" on public.ai_usage
 -- Writes happen only through the SECURITY DEFINER function below, never directly.
 
 -- ── Server-enforced credit consumption ────────────────────────────────────────
--- Called by the paid API routes. Anonymous (guest) users are capped; real accounts
--- are unlimited. Atomic via row lock so concurrent calls can't overspend.
+-- Called by the paid API routes. BOTH anonymous guests and real accounts are capped, per day;
+-- accounts were unlimited until 0008, which was safe only while no server key existed.
+-- Atomic via row lock so concurrent calls can't overspend.
 create or replace function public.consume_ai_credit()
 returns jsonb
 language plpgsql
@@ -78,46 +84,67 @@ security definer
 set search_path = public
 as $$
 declare
-  uid         uuid    := auth.uid();
-  is_anon     boolean := coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false);
-  -- ZERO, AND IT IS A DEFAULT RATHER THAN A REFUSAL. This began at 5 operator-funded
-  -- generations per guest, which is a stranger's Anthropic bill left open to the internet:
-  -- the budget is per ANONYMOUS SESSION, so clearing site data mints a fresh one, and nothing
-  -- here makes that hard to script. Generation is bring-your-own-key everywhere else in this
-  -- codebase — about a cent a passage, billed to the learner — and this line was the one
-  -- place that quietly contradicted it.
+  uid           uuid    := auth.uid();
+  is_anon       boolean := coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false);
+  -- THESE TWO NUMBERS ARE THE ENTIRE SPEND CONTROL, AND THEY ARE PER DAY.
   --
-  -- IT CLOSES LESS THAN IT LOOKS LIKE, AND SAYING SO IS THE POINT. Only /api/daily-content
-  -- consumes a credit, and only when `generator.operatorPays` — so a learner using their own
-  -- key never reaches this number, which is exactly right. /api/missed-review still falls back
-  -- to the operator's key with no meter at all. What actually keeps a public deployment from
-  -- spending is SRSLY_API_KEY and ANTHROPIC_API_KEY being UNSET there; this is the second lock,
-  -- not the first, and it is the one that survives someone setting a key later.
+  -- The guest limit was ZERO and accounts were UNLIMITED, which was right for the key this
+  -- was written against: an ANTHROPIC key with a card behind it, where funding strangers
+  -- means an open-ended bill. It now serves a shared FREE-TIER key, so a portfolio visitor
+  -- can try generation without signing up for anything. The reasoning changed because the
+  -- risk did — a free tier cannot produce a bill, so the worst case is the shared quota
+  -- running out and the demo saying so, which degrades rather than costs.
   --
-  -- Raise it if you are running your own copy and mean to fund guests.
-  guest_limit int     := 0;
-  cur         int;
+  -- IT IS STILL A SPEED BUMP AND NOT A CAP, which is the part not to forget. The budget is
+  -- per ACCOUNT and an anonymous account is minted by clearing site data — so this stops a
+  -- casual visitor refreshing forever and stops nobody who means it. What actually bounds the
+  -- damage is that a free tier has nothing to drain but itself.
+  --
+  -- ⚠ IF THE KEY'S PROJECT HAS BILLING ENABLED IT IS NOT A FREE TIER. Google AI Studio keys
+  -- on a billing-enabled Cloud project silently use the PAID tier, at which point these
+  -- numbers guard real money and the exposure is 3 a day times however many browsers exist.
+  guest_limit   int     := 3;
+  account_limit int     := 10;
+  today         date    := (now() at time zone 'utc')::date;
+  lim           int;
+  cur           int;
+  cur_day       date;
 begin
   if uid is null then
     return jsonb_build_object('allowed', false, 'reason', 'no_session');
   end if;
 
-  -- Real (non-anonymous) accounts: unlimited; still count for analytics.
-  if not is_anon then
-    insert into public.ai_usage(user_id, used) values (uid, 1)
-      on conflict (user_id) do update set used = public.ai_usage.used + 1;
-    return jsonb_build_object('allowed', true, 'remaining', null);
+  -- A REAL ACCOUNT IS NO LONGER UNLIMITED, and that is the hole 0008 closes. This returned
+  -- `allowed` unconditionally for anyone signed in, which was safe only because no server key
+  -- was set: the moment one is, "sign up and generate forever on the operator's key" is the
+  -- whole protection gone, and signing up is free. The guest cap never covered that path.
+  lim := case when is_anon then guest_limit else account_limit end;
+
+  insert into public.ai_usage(user_id, used, day) values (uid, 0, today)
+    on conflict (user_id) do nothing;
+
+  select used, day into cur, cur_day
+    from public.ai_usage where user_id = uid for update;
+
+  -- A row from an earlier day is budget that has expired.
+  if cur_day is distinct from today then
+    cur := 0;
   end if;
 
-  -- Anonymous guests: enforce the budget.
-  insert into public.ai_usage(user_id, used) values (uid, 0)
-    on conflict (user_id) do nothing;
-  select used into cur from public.ai_usage where user_id = uid for update;
-  if cur >= guest_limit then
-    return jsonb_build_object('allowed', false, 'reason', 'guest_limit', 'remaining', 0);
+  if cur >= lim then
+    -- TWO REASONS, BECAUSE THE TWO NEED DIFFERENT ADVICE. A guest is told to sign in or bring
+    -- a key; someone already signed in can only bring a key or come back tomorrow. Handing an
+    -- account holder the guest's message tells them to do something they have already done.
+    return jsonb_build_object(
+      'allowed', false,
+      'reason', case when is_anon then 'guest_limit' else 'daily_limit' end,
+      'remaining', 0);
   end if;
-  update public.ai_usage set used = used + 1 where user_id = uid;
-  return jsonb_build_object('allowed', true, 'remaining', guest_limit - (cur + 1));
+
+  -- `cur + 1`, not `used + 1`: on a day rollover `cur` was reset above while `used` still
+  -- holds yesterday's total, so incrementing the column would carry expired spend forward.
+  update public.ai_usage set used = cur + 1, day = today where user_id = uid;
+  return jsonb_build_object('allowed', true, 'remaining', lim - (cur + 1));
 end;
 $$;
 

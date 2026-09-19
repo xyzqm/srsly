@@ -227,25 +227,57 @@ resolved by its shape, so nobody re-enters anything.
 retires one. That is one line, and a retired model is reported as "this needs updating in srsly —
 not something you can fix" rather than as a generic failure.
 
-**THE GUEST BUDGET IS ZERO, AND A SMALL NUMBER WAS NEVER THE ALTERNATIVE.** `consume_ai_credit()`
-shipped with `guest_limit := 5` — five operator-funded generations per anonymous visitor — which
-is the previous paragraph contradicted in SQL. The number does not matter, because the budget is
-metered per ANONYMOUS SESSION: clearing site data mints a fresh allowance, so 5 is a speed bump
-rather than a cap, and the honest options were 0 or a per-IP backstop nobody is going to write
-for a bring-your-own-key feature. It is 0 in `supabase/schema.sql`, in the mirror
-`GUEST_AI_LIMIT` (`lib/aiBudget.ts`, which nothing on screen reads), and in
-`supabase/migrations/0005_guest_limit_zero.sql` — because a limit that lives only in the repo is
-a limit nobody has applied, exactly like the columns that once lived in a code comment.
+**THE BUDGET IS 3 A DAY FOR A GUEST AND 10 FOR AN ACCOUNT, AND IT WAS ZERO UNTIL 0008.** The
+history is worth keeping because the REASONING changed rather than being overruled.
+
+`consume_ai_credit()` shipped with `guest_limit := 5` — five operator-funded generations per
+anonymous visitor — which is bring-your-own-key contradicted in SQL. The number did not matter,
+because the budget is metered per ANONYMOUS SESSION: clearing site data mints a fresh allowance,
+so 5 was a speed bump rather than a cap, and against an ANTHROPIC key with a card behind it the
+honest options were 0 or a per-IP backstop nobody was going to write. It went to 0 in `0005`.
+
+**What changed is the key, not the argument.** The deployment now sets a shared FREE-TIER key on
+purpose, so that somebody opening the portfolio site can watch a passage be written without first
+registering with an AI provider. A free tier has no bill to run up — the worst case is the shared
+quota being spent and the app saying so, and `GenerationError` already turns a provider 429 into
+"the free tier is rate-limited, wait a few minutes". Funding strangers' *quota* is a different
+proposition from funding strangers' *invoice*, and the per-session objection survives intact: 3 a
+day still stops a casual visitor refreshing forever and still stops nobody who means it.
+
+**⚠ THE WHOLE ARGUMENT DEPENDS ON THE KEY BEING FREE-TIER.** A Google AI Studio key belonging to
+a Cloud project with BILLING ENABLED silently uses the paid tier. If that is ever true of the
+configured key, these numbers are guarding real money and the exposure is 3 a day times however
+many browsers exist. There is no way for the code to detect it.
+
+**A SIGNED-IN ACCOUNT WAS UNLIMITED, AND THAT WAS THE REAL HOLE.** This file and the schema both
+described the guest cap as the thing standing between a public deployment and its own key. It
+never was: `if not is_anon then ... return allowed` handed every account unlimited
+operator-funded generation, and signing up is free and takes a moment. Capping guests while
+leaving that open is a lock on the window beside an open door. Both are capped now, per day, and
+the counter resets by comparing a stored UTC `day` rather than by a scheduled job.
+
+**`grade-response` NO LONGER SPENDS THE OPERATOR'S KEY AT ALL**, and that is the same hole seen
+from the other side. It tested `operatorPays && isAnonymousGuest()`, so a signed-in account got
+AI grading on the operator's key — and this route never calls `meterOrRefuse`, so that path was
+entirely UNMETERED. Metering it was rejected as the fix: it would put grading and passages in
+contention for one small daily budget, so answering the questions attached to a generated
+passage would spend the budget for the next passage. The shared key funds the thing with no free
+substitute, and grading takes the one it has. The session check is gone entirely, which is this
+file's own rule reached properly: `operatorPays` decides, and being signed in never enters into
+it.
 
 **It is the second lock, not the first, and the difference is worth keeping straight.** A credit
 is consumed only when `operatorPays` — a learner on their own key is never metered, which is the
-whole point. What actually stops a public deployment spending is `SRSLY_API_KEY` /
-`ANTHROPIC_API_KEY` being UNSET there, and with them unset the no-key 503 fires before the meter
-is reached, so this function is never even consulted. Zero is what still holds the day someone
-sets a key. *(This paragraph read "`missed-review` still reaches for the operator's key with no
+whole point, and is now the way to get unlimited generation. Setting `SRSLY_API_KEY` is what
+turns the meter on at all; with it unset the no-key 503 fires first and the function is never
+consulted. *(This paragraph read "`missed-review` still reaches for the operator's key with no
 meter at all" until that was fixed — see `lib/server/aiGate.ts`. It was true when written, which
 is exactly how a file like this goes wrong: a defect recorded as a standing fact and then left
 standing after the fix.)*
+
+**THE ENV VAR NEEDED NO CHANGES TO TAKE A GEMINI KEY.** `resolveAiAccess` reads the operator key's
+own SHAPE to pick a provider, so `SRSLY_API_KEY=AIza…` routes to Gemini with nothing else set.
+The backend work for a shared free key was entirely in the LIMITS; the plumbing already existed.
 
 **THE LIVE DATABASE HELD A SECOND `consume_ai_credit`, AND IT WAS FOUND BY CHECKING RATHER THAN
 TRUSTING.** Setting the limit to zero reported "Success. No rows returned"; reading the value back

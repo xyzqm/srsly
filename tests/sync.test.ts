@@ -87,6 +87,60 @@ describe('the schema can hold every column the code writes', () => {
     for (const [name, args] of signatures) expect([...args], name).toHaveLength(1);
   });
 
+  /**
+   * SCHEMA AND THE LATEST MIGRATION MUST DEFINE THE SAME FUNCTION, BYTE FOR BYTE.
+   *
+   * Every drift this project has actually suffered is this shape: a rule applied to the live
+   * database by hand or by one file, while another file kept describing the old one. The
+   * columns are already covered below; the FUNCTION was not, and it is the one carrying the
+   * spend limits — so `schema.sql` saying 3 a day while the migration that was actually run
+   * says something else is a limit nobody has applied, wearing a limit's clothes.
+   *
+   * Compared to the end of the body rather than to the end of the file, because a migration
+   * legitimately carries its own header and its own idempotent grants around the same
+   * definition.
+   */
+  it('keeps consume_ai_credit identical in schema.sql and its newest migration', () => {
+    const body = (src: string): string | null => {
+      const a = src.indexOf('create or replace function public.consume_ai_credit()');
+      if (a === -1) return null;
+      const b = src.indexOf('$$;', a);
+      return b === -1 ? null : src.slice(a, b + 3);
+    };
+    const fromSchema = body(schema);
+    expect(fromSchema, 'schema.sql no longer defines consume_ai_credit').not.toBeNull();
+
+    // The newest migration that defines it at all — earlier ones are superseded history.
+    // Read per FILE rather than from the joined `migrations` blob above, which cannot tell
+    // one definition from the next.
+    const files = readdirSync(resolve(root, 'supabase/migrations'))
+      .filter(f => f.endsWith('.sql'))
+      .sort();
+    const defining = files
+      .map(f => ({ f, body: body(readFileSync(resolve(root, 'supabase/migrations', f), 'utf8')) }))
+      .filter((v): v is { f: string; body: string } => v.body !== null);
+    expect(defining.length, 'control: some migration should define it').toBeGreaterThan(0);
+
+    const newest = defining[defining.length - 1];
+    expect(newest.body, `${newest.f} and schema.sql disagree about consume_ai_credit`)
+      .toBe(fromSchema);
+  });
+
+  /**
+   * The spend limits are the one thing in that function worth naming out loud, so a change to
+   * either number is a deliberate edit to this line rather than a diff nobody reads.
+   */
+  it('caps both guests and accounts, per day', () => {
+    expect(schema).toMatch(/guest_limit\s+int\s+:=\s*(\d+);/);
+    expect(schema).toMatch(/account_limit\s+int\s+:=\s*(\d+);/);
+    const guest = Number(/guest_limit\s+int\s+:=\s*(\d+);/.exec(schema)![1]);
+    const account = Number(/account_limit\s+int\s+:=\s*(\d+);/.exec(schema)![1]);
+    // An account that is signed in should not be worse off than an anonymous visitor, and
+    // neither number may be the "unlimited" this deliberately stopped being.
+    expect(account).toBeGreaterThanOrEqual(guest);
+    expect(Number.isFinite(account) && account > 0).toBe(true);
+  });
+
   /** The `interface UserDataRow { ... }` body, which is the list of columns this code uses. */
   const rowBody = /interface UserDataRow \{([\s\S]*?)\n\}/.exec(source)?.[1] ?? '';
   const columns = [...rowBody.matchAll(/^\s{2}(\w+)\??:/gm)].map(m => m[1]);

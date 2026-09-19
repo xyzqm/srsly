@@ -96,7 +96,20 @@ describe('a learner on their own key is never rationed', () => {
   });
 });
 
-describe('the operator still does not fund strangers', () => {
+/**
+ * THE OPERATOR'S KEY FUNDS PASSAGES AND NOTHING ELSE, AND THAT CHANGED IN 0008.
+ *
+ * This used to read `operatorPays && isAnonymousGuest()`, so a SIGNED-IN account on the
+ * operator's key was graded by the model — unmetered, because this route never consults the
+ * budget at all. That was harmless only while production had no server key. With a shared
+ * demo key set it becomes "sign up, which is free, and grade without limit on someone else's
+ * quota", and the guest budget never covered it because the guest budget is not read here.
+ *
+ * Metering it instead was rejected: it would put grading and passages in contention for one
+ * small daily budget, so answering the questions attached to a generated passage would spend
+ * the budget for the next passage. Grading has a real free substitute and a passage does not.
+ */
+describe('the operator key funds passages, not grading', () => {
   it('a guest with no key of their own gets keyword matching, not a model call', async () => {
     env({ server: OPERATOR_KEY });
     isAnonymousGuest.mockResolvedValue(true);
@@ -110,16 +123,32 @@ describe('the operator still does not fund strangers', () => {
     expect(body.wordsHit).toEqual(['casa']);
   });
 
-  it('a signed-in account is graded on the operator key, as before', async () => {
+  /** The case that changed. Being signed in no longer buys a model call on somebody else's key. */
+  it('a signed-in account on the operator key also gets keyword matching', async () => {
     env({ server: OPERATOR_KEY });
     isAnonymousGuest.mockResolvedValue(false);
     aiReplies('Nicely put.');
 
     const body = await (await POST(request())).json();
 
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(builtWith).toEqual([OPERATOR_KEY]);
-    expect(body.message).toBe('Nicely put.');
+    expect(create).not.toHaveBeenCalled();
+    expect(builtWith).toEqual([]);
+    expect(body.verdict).toBe('ok');
+    expect(body.message).not.toBe('Nicely put.');
+  });
+
+  /**
+   * The session is not consulted AT ALL any more, which is the codebase's own rule reached
+   * properly rather than patched: `operatorPays` decides, and a Supabase round trip that
+   * cannot change the answer is not made.
+   */
+  it('does not even ask whether the caller is signed in', async () => {
+    env({ server: OPERATOR_KEY });
+    isAnonymousGuest.mockResolvedValue(false);
+
+    await POST(request());
+
+    expect(isAnonymousGuest).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAnonymousGuest } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { resolveAiAccess, generatorFor } from '@/lib/server/aiGate';
@@ -87,7 +86,27 @@ export async function POST(req: NextRequest) {
   if (!access.usable || access.stub) {
     return NextResponse.json(keywordFallback(response, key, langName));
   }
-  if (access.operatorPays && await isAnonymousGuest()) {
+  /**
+   * THE OPERATOR'S KEY FUNDS PASSAGES AND NOTHING ELSE, SIGNED IN OR NOT.
+   *
+   * This asked `access.operatorPays && await isAnonymousGuest()`, so a SIGNED-IN account on the
+   * operator's key got AI grading — unmetered, because this route never calls `meterOrRefuse`
+   * at all. That was harmless only while no server key existed in production. The moment one
+   * is set for a public deployment it becomes: sign up, which is free and takes a moment, and
+   * grade without limit on somebody else's key. The guest budget never covered this path,
+   * because the guest budget is not consulted here.
+   *
+   * Metering it instead would work and was rejected: it puts grading and passages in
+   * contention for one small daily budget, so answering the questions attached to a generated
+   * passage would spend the budget for the next one. The shared key exists so a visitor can
+   * see a passage get WRITTEN, which is the thing with no free substitute. Grading has one —
+   * `keywordFallback` is instant and a real answer — so it takes it.
+   *
+   * The session check is gone entirely, which is the codebase's own rule arrived at properly:
+   * `operatorPays` decides, and whether somebody is signed in never enters into it. A learner
+   * on their own key still gets AI grading, unmetered, exactly as before.
+   */
+  if (access.operatorPays) {
     return NextResponse.json(keywordFallback(response, key, langName));
   }
 

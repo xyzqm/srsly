@@ -5,16 +5,19 @@
  * server-side by the consume_ai_credit() RPC (supabase/schema.sql); keep this number in
  * sync with the `guest_limit` there.
  *
- * IT IS ZERO, WHICH MAKES THIS WHOLE MIRROR VESTIGIAL — deliberately, and harmlessly.
- * srsly does not fund strangers' generations: the feature is bring-your-own-key, so the
- * server refuses an operator-funded guest request outright and there is no allowance left
- * to count down. Nothing on screen reads this number — the limit state the UI renders is
- * `guestLimited` in useDailyContent, set from the 402 itself — so a zero here cannot make a
- * caption wrong. `markGuestAiExhausted()` now writes 0 meaning "none used", which reads as
- * nonsense in isolation and is why this paragraph exists rather than a cleverer constant.
- * Raise BOTH numbers to fund guests again.
+ * THREE A DAY, and it stopped being vestigial with migration 0008. It was ZERO for as long as
+ * the operator's key was an Anthropic one with a card behind it — srsly does not fund
+ * strangers' bills, so the server refused an operator-funded guest outright and there was no
+ * allowance to count down. The deployment now runs a shared FREE-TIER key so that a visitor
+ * can watch a passage be written without first registering with an AI provider, and a free
+ * tier has no bill to run up.
+ *
+ * STILL NOT THE ENFORCEMENT, AND NOT THE THING THE UI READS. The limit state on screen is
+ * `guestLimited` in useDailyContent, set from the server's own 402 — so this number being
+ * stale cannot make a caption wrong, only a hypothetical countdown that nothing renders. The
+ * server is the authority and `syncGuestAiRemaining` writes its answer back here.
  */
-export const GUEST_AI_LIMIT = 0;
+export const GUEST_AI_LIMIT = 3;
 
 const KEY = 'srsly-guest-ai-used';
 

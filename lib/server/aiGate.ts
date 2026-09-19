@@ -189,6 +189,7 @@ export interface MeterResult {
 export async function meterOrRefuse(
   access: AiAccess,
   guestLimitMessage: string,
+  dailyLimitMessage: string = guestLimitMessage,
 ): Promise<MeterResult> {
   if (access.stub || !access.operatorPays) return { refusal: null, remaining: null };
 
@@ -196,7 +197,7 @@ export async function meterOrRefuse(
   if (credit.allowed) return { refusal: null, remaining: credit.remaining };
 
   /**
-   * ONLY `guest_limit` MAY BE A 402, and the default runs the other way deliberately.
+   * ONLY A SPENT BUDGET MAY BE A 402, and the default runs the other way deliberately.
    *
    * This was written as "no_session is 401, everything else is 402", which reads as equivalent
    * and is not: 402 is the status the client LATCHES, writing the budget to spent in
@@ -205,11 +206,26 @@ export async function meterOrRefuse(
    * generation until site data was cleared, over a transient network error. An unrecognised
    * refusal is by definition not a known spent budget, so it takes the status that says
    * "could not determine" rather than the one that says "you have used it all".
+   *
+   * `daily_limit` is the SECOND known one, added with migration 0008, and it is listed here
+   * explicitly rather than by loosening the rule to "anything ending in _limit". The whole
+   * point of the default is that a reason this function has never heard of is not evidence of
+   * a spent budget; a new one earns its 402 by being named.
+   *
+   * The two carry different copy because they need different advice: a guest is told to sign
+   * in or bring a key, while someone already signed in can only bring a key or come back
+   * tomorrow. Handing an account holder the guest's message tells them to do a thing they
+   * have already done.
    */
-  if (credit.reason === 'guest_limit') {
+  if (credit.reason === 'guest_limit' || credit.reason === 'daily_limit') {
     return {
       refusal: NextResponse.json(
-        { error: 'guest_limit', message: guestLimitMessage, aiRemaining: 0 }, { status: 402 },
+        {
+          error: credit.reason,
+          message: credit.reason === 'daily_limit' ? dailyLimitMessage : guestLimitMessage,
+          aiRemaining: 0,
+        },
+        { status: 402 },
       ),
       remaining: 0,
     };

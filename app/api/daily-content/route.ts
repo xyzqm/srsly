@@ -9,7 +9,19 @@ import { passageTopic, passageForm } from '@/lib/passageTheme';
 import { type Generator } from '@/lib/server/generator';
 import { resolveAiAccess, generatorFor, meterOrRefuse, noKeyRefusal } from '@/lib/server/aiGate';
 
-const GUEST_LIMIT_MSG = "You've used your free AI generations. Sign in for unlimited AI content and to sync your progress across devices.";
+/**
+ * TWO MESSAGES, BECAUSE THE TWO REFUSALS NEED DIFFERENT ADVICE.
+ *
+ * This was one line reading "Sign in for unlimited AI content", which migration 0008 made
+ * false in both halves: a signed-in account now has its own daily cap, so the promise was
+ * wrong, and telling someone already signed in to sign in is advice they cannot take.
+ *
+ * Both name the free shared key for what it is. The honest framing matters here — a visitor
+ * who runs out should understand they were being lent someone else's quota, not that the app
+ * has a paywall, because connecting their own free key removes the limit entirely.
+ */
+const GUEST_LIMIT_MSG = "That's today's free passages on srsly's shared key. Sign in for a few more each day, or connect your own key in Settings — Google and Groq are free — for as many as you like.";
+const DAILY_LIMIT_MSG = "That's today's passages on srsly's shared key. It comes back tomorrow, or connect your own key in Settings — Google and Groq both have a free tier — for unlimited generation.";
 
 /** Fallback batch size when the client doesn't specify one. */
 const DEFAULT_BATCH_SIZE = 5;
@@ -202,7 +214,7 @@ export async function POST(req: NextRequest) {
    * nothing at all. Both of those, and the no_session/guest_limit split that a previous pass
    * here got wrong, now live in meterOrRefuse.
    */
-  const credit = await meterOrRefuse(access, GUEST_LIMIT_MSG);
+  const credit = await meterOrRefuse(access, GUEST_LIMIT_MSG, DAILY_LIMIT_MSG);
   if (credit.refusal) return credit.refusal;
 
   // Authoritative pinyin/meaning for the practiced words, keyed by hanzi.

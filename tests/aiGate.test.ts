@@ -51,9 +51,16 @@ const METERED = ['daily-content', 'missed-review'];
 
 /**
  * The one route that DEGRADES instead of metering, and it is a product decision rather than
- * an oversight: `grade-response` has something free to give, so an operator-funded request it
- * may not make falls back to keyword matching instead of returning 402. A learner never loses
- * their grade over who is paying.
+ * an oversight: `grade-response` has something free to give, so an operator-funded request
+ * falls back to keyword matching instead of returning 402. A learner never loses their grade
+ * over who is paying.
+ *
+ * IT NOW REFUSES THE OPERATOR'S KEY OUTRIGHT rather than only for anonymous guests. It used to
+ * test `operatorPays && isAnonymousGuest()`, which meant a signed-in account was graded by the
+ * model on the operator's key — and this route never calls `meterOrRefuse`, so that path was
+ * UNMETERED. Harmless while production set no key; with a shared demo key it is "sign up for
+ * free and grade without limit on someone else's quota". The shared key funds passages, which
+ * have no free substitute, and grading takes the one it has.
  *
  * Listed here rather than exempted silently, because "degrades deliberately" and "forgot to
  * check" look identical from outside. `tests/gradeResponse.test.ts` pins which of the two
@@ -78,10 +85,11 @@ describe('every route that can reach Anthropic says who pays', () => {
     expect(r.src).toContain('resolveAiAccess');
   });
 
-  it.each(DEGRADES_FOR_GUESTS)('%s falls back for guests instead of metering', name => {
+  it.each(DEGRADES_FOR_GUESTS)('%s refuses the operator key instead of metering', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;
-    expect(r.src).toMatch(/isAnonymousGuest\s*\(/);
     expect(r.src).toContain('resolveAiAccess');
+    expect(r.src).toContain('operatorPays');
+    expect(r.src).toMatch(/keywordFallback\s*\(/);
   });
 
   /**
@@ -91,11 +99,28 @@ describe('every route that can reach Anthropic says who pays', () => {
    * grading from a guest paying with their own key — the one place the codebase broke its own
    * "a learner spending their own money is never rationed" rule. A bare guest check is the
    * shape of that mistake, so any route making one must also name who is paying.
+   *
+   * **NOTHING ASKS ANY MORE**, which is why this is conditional rather than carrying a control
+   * that some route should be. `grade-response` was the only caller, and it now decides on
+   * `operatorPays` alone: whether somebody is signed in cannot change the answer, so the
+   * Supabase round trip that asked is not made. The rule is kept because the mistake is
+   * available to the next route that reaches for a session check, not because one exists.
    */
   it('no route decides on the session alone — a guest check is qualified by who pays', () => {
     const asking = reachesAnthropic.filter(r => /isAnonymousGuest\s*\(/.test(r.src));
-    expect(asking.length, 'control: some route should be asking').toBeGreaterThan(0);
     for (const r of asking) expect(r.src, r.name).toContain('operatorPays');
+  });
+
+  /**
+   * The replacement control, and it is the sharper one: the route that DEGRADES must key that
+   * decision on who is paying and on nothing else. A session check reappearing here is the
+   * old bug, and an absent `operatorPays` is the unmetered-account hole 0008 closed.
+   */
+  it('the degrading route keys on who pays and not on the session', () => {
+    const r = reachesAnthropic.find(x => x.name === DEGRADES_FOR_GUESTS[0])!;
+    expect(r.src).toMatch(/access\.operatorPays/);
+    expect(r.src, 'the session check is back — see migration 0008')
+      .not.toMatch(/isAnonymousGuest\s*\(/);
   });
 
   /**
@@ -335,5 +360,42 @@ describe('meterOrRefuse spends a credit only when the operator is paying', () =>
     const { refusal } = await meterOrRefuse(resolveAiAccess(req()), 'BUDGET COPY');
     expect(refusal!.status).toBe(402);
     expect(await refusal!.json()).toMatchObject({ error: 'guest_limit', message: 'BUDGET COPY', aiRemaining: 0 });
+  });
+
+  /**
+   * `daily_limit` IS THE SECOND KNOWN BUDGET, added with migration 0008 when signed-in
+   * accounts stopped being unlimited. It is named explicitly in `meterOrRefuse` rather than
+   * admitted by loosening the rule to "anything ending in _limit" — the whole point of the
+   * 401 default is that an unrecognised reason is not evidence of a spent budget, so a new
+   * one earns its 402 by being listed.
+   */
+  it('a spent DAILY budget is also 402, with its own wording', async () => {
+    env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+    consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'daily_limit', remaining: 0 });
+    const { refusal, remaining } = await meterOrRefuse(
+      resolveAiAccess(req()), 'GUEST COPY', 'DAILY COPY');
+    expect(refusal!.status).toBe(402);
+    expect(remaining).toBe(0);
+    expect(await refusal!.json()).toMatchObject({ error: 'daily_limit', message: 'DAILY COPY' });
+  });
+
+  /**
+   * THE TWO MESSAGES MUST NOT BE SWAPPED. Telling a signed-in learner to "sign in for more"
+   * is advice they have already taken, and it is the kind of wrong that reads as the app
+   * being broken rather than as a limit being reached.
+   */
+  it('never hands an account holder the guest copy', async () => {
+    env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+    consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'daily_limit', remaining: 0 });
+    const { refusal } = await meterOrRefuse(resolveAiAccess(req()), 'GUEST COPY', 'DAILY COPY');
+    expect((await refusal!.json()).message).not.toBe('GUEST COPY');
+  });
+
+  /** A route that has only one thing to say still works, which keeps the parameter optional. */
+  it('falls back to the guest wording when a route gives only one message', async () => {
+    env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+    consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'daily_limit', remaining: 0 });
+    const { refusal } = await meterOrRefuse(resolveAiAccess(req()), 'ONLY COPY');
+    expect((await refusal!.json()).message).toBe('ONLY COPY');
   });
 });
