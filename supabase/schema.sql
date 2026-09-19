@@ -123,3 +123,11 @@ $$;
 
 revoke all on function public.consume_ai_credit() from public;
 grant execute on function public.consume_ai_credit() to authenticated;
+-- And from `anon` explicitly, because `revoke ... from public` does not reach it: Supabase's
+-- bootstrap grants EXECUTE on every public-schema function to anon/authenticated/service_role
+-- by default, so this is a NAMED grant rather than the PUBLIC one. Anonymous sign-ins are not
+-- the `anon` role — they get a real JWT with role `authenticated` and `is_anonymous: true`,
+-- which is why the function tests the JWT claim and not the role — so nothing is metered
+-- differently. See migrations/0007, and note it was only safe once consumeAiCredit stopped
+-- failing open on an error, since a revoked grant IS an error.
+revoke execute on function public.consume_ai_credit() from anon;

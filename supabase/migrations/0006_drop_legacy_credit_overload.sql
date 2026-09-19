@@ -29,6 +29,19 @@
 -- `ai_generations` IS DELIBERATELY LEFT ALONE. Dropping a function removes the reachable
 -- surface; dropping a table destroys whatever is in it, and that is a separate decision made
 -- while looking at the row count rather than folded into a security fix.
+--
+-- CORRECTION, ADDED AFTER THIS MIGRATION WAS APPLIED. `select count(*) from ai_generations`
+-- answers 42P01: THE TABLE DOES NOT EXIST. plpgsql resolves a table reference when the
+-- statement first executes, not when the function is created, which is why the overload could
+-- be created and stored against a table that was never there. So every call to it — by anyone,
+-- with any p_limit — raised undefined_table before reading or writing a row.
+--
+-- The paragraph above therefore OVERSTATES it: there were no RLS-bypassing inserts, because
+-- there was nowhere to insert. The overload was inert, and the honest severity is that a public
+-- role could trigger an error. Dropping it was still right, and every word about WHY remains
+-- true — a revoke protects a signature and not a name, and Postgres grants EXECUTE to PUBLIC by
+-- default. Only the blast radius was wrong, and this file's own rule says a hole described as
+-- worse than it is gets fixed once and then distrusted. That applies to its author.
 
 drop function if exists public.consume_ai_credit(integer);
 

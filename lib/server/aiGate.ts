@@ -46,6 +46,14 @@ export const NO_SESSION_MSG =
   'Could not verify your session, so generation was not attempted. Reload the page and try again.';
 
 /**
+ * The meter could not be READ — the RPC is missing, a grant was revoked, the network blipped.
+ * Distinct from `no_session`, which is a definite answer, because this one is an absence of
+ * one. `consumeAiCredit` fails closed so it arrives here rather than as a free generation.
+ */
+export const UNVERIFIED_MSG =
+  'Could not check your usage allowance, so nothing was generated. Try again in a moment.';
+
+/**
  * Only one header is ever read, so the parameter is narrowed to that rather than to
  * `NextRequest`. A `NextRequest` satisfies it structurally, so no caller changes — and a test
  * can hand over a plain object instead of constructing a framework request. The same move
@@ -152,18 +160,31 @@ export async function meterOrRefuse(
   const credit = await consumeAiCredit();
   if (credit.allowed) return { refusal: null, remaining: credit.remaining };
 
-  if (credit.reason === 'no_session') {
+  /**
+   * ONLY `guest_limit` MAY BE A 402, and the default runs the other way deliberately.
+   *
+   * This was written as "no_session is 401, everything else is 402", which reads as equivalent
+   * and is not: 402 is the status the client LATCHES, writing the budget to spent in
+   * localStorage. So any reason the server grows later — `unverified` did, the moment
+   * consumeAiCredit began failing closed — would have locked a working account out of
+   * generation until site data was cleared, over a transient network error. An unrecognised
+   * refusal is by definition not a known spent budget, so it takes the status that says
+   * "could not determine" rather than the one that says "you have used it all".
+   */
+  if (credit.reason === 'guest_limit') {
     return {
       refusal: NextResponse.json(
-        { error: 'no_session', message: NO_SESSION_MSG, detail: NO_SESSION_MSG }, { status: 401 },
+        { error: 'guest_limit', message: guestLimitMessage, aiRemaining: 0 }, { status: 402 },
       ),
-      remaining: null,
+      remaining: 0,
     };
   }
+  const message = credit.reason === 'no_session' ? NO_SESSION_MSG : UNVERIFIED_MSG;
   return {
     refusal: NextResponse.json(
-      { error: 'guest_limit', message: guestLimitMessage, aiRemaining: 0 }, { status: 402 },
+      // `detail` because the client reads that first when surfacing a non-402 failure.
+      { error: credit.reason ?? 'unverified', message, detail: message }, { status: 401 },
     ),
-    remaining: 0,
+    remaining: null,
   };
 }

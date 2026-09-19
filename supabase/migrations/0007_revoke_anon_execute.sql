@@ -1,0 +1,30 @@
+-- 0007 — the ACL matches what schema.sql intends: anon cannot execute
+--
+-- schema.sql grants EXECUTE to `authenticated` and to nobody else. The live ACL also carried
+-- `anon=X/postgres`, which nothing in this repo asked for: Supabase's bootstrap sets
+-- `alter default privileges in schema public grant all on functions to anon, authenticated,
+-- service_role`, so every function created here starts with it. The file and the database were
+-- describing different rules, and the file is the one people read.
+--
+-- METERING IS UNAFFECTED, and the reason is the part worth knowing. An anonymous SIGN-IN is not
+-- the `anon` role: Supabase issues it a real JWT with `role: authenticated` and
+-- `is_anonymous: true`, which is exactly why consume_ai_credit() tests
+-- `auth.jwt() ->> 'is_anonymous'` rather than testing the role. `anon` is a request carrying
+-- only the publishable key with no user session at all — for which `auth.uid()` is null and the
+-- function returns `no_session` on its very first branch, having done nothing.
+--
+-- SO THIS WAS PURELY COSMETIC, AND DOING IT A DAY EARLIER WOULD HAVE OPENED A HOLE.
+-- `consumeAiCredit` used to return `{ allowed: true }` on ANY error from the RPC. Revoking this
+-- grant makes a sessionless call fail with 42501 permission denied — an error — so the refusal
+-- that reads `no_session` today would have become: permission denied, error, allowed, and an
+-- unmetered generation billed to the operator. The tidy-up would have created the exact hole it
+-- was meant to close, in the one code path nobody exercises.
+--
+-- `lib/supabase/server.ts` now fails CLOSED (`reason: 'unverified'`), and
+-- `tests/consumeAiCredit.test.ts` pins it, so both routes to a sessionless request now end in
+-- the same 401. That fix is the prerequisite for this file, not a side errand.
+--
+-- `service_role` keeps EXECUTE: it is the server-side key, already fully privileged, and
+-- removing it would break nothing visible while making the next admin task fail confusingly.
+
+revoke execute on function public.consume_ai_credit() from anon;

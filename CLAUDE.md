@@ -200,15 +200,36 @@ invoke it, and its ACL read `=X/postgres` — an empty grantee means PUBLIC — 
 touched the other. `SECURITY DEFINER` on top of that. Dropped in migration 0006.
 
 **Scoped honestly, because a hole described as worse than it is gets fixed once and then
-distrusted**: it could NOT spend Anthropic tokens. `consumeAiCredit()` passes no arguments and so
-binds to the zero-argument function, and nothing in the codebase ever called the other. The real
-abuse was unauthenticated, RLS-bypassing inserts into a table nothing reads. The lesson is not the
-blast radius, it is that **a `revoke` protects a SIGNATURE, not a name**, and Postgres grants
-EXECUTE to PUBLIC by default — so a function created without one is world-callable from the
-instant it exists. `tests/sync.test.ts` now requires every function the SQL defines to carry a
-matching revoke, and forbids overloads outright, since a second signature is a second lock to
-remember. Neither test could have seen this one: it existed in no file here, which is the same
-drift as the columns that once lived in a code comment.
+distrusted** — and the first scoping was itself too generous. It could not spend Anthropic
+tokens: `consumeAiCredit()` passes no arguments and binds to the zero-argument function, and
+nothing in the codebase ever called the other. It could not do anything else either. **`select
+count(*) from ai_generations` answers 42P01 — that table never existed**, and plpgsql resolves a
+table reference on first execution rather than at creation, which is how a function could be
+stored against one that was not there. Every call raised undefined_table before touching a row,
+so the overload was INERT and the "RLS-bypassing inserts" first written here were impossible.
+The lesson is not the blast radius, it is that **a `revoke` protects a SIGNATURE, not a name**,
+and Postgres grants EXECUTE to PUBLIC by default — so a function created without one is
+world-callable from the instant it exists. `tests/sync.test.ts` now requires every function the
+SQL defines to carry a matching revoke, and forbids overloads outright, since a second signature
+is a second lock to remember. Neither test could have seen this one: it existed in no file here,
+which is the same drift as the columns that once lived in a code comment.
+
+**THE METER FAILS CLOSED, AND THE TIDY-UP IS WHAT FOUND THE HOLE.** `consumeAiCredit` returned
+`{ allowed: true }` on ANY error from the RPC — the unlimited-for-everyone shape its own
+docstring named three lines above the code doing it. It surfaced while weighing a purely
+cosmetic `revoke execute … from anon` (migration 0007): `anon` is a request with no user session,
+for which the SQL already answers `no_session`, so removing the grant changes nothing — except
+that a revoked grant makes the call ERROR, and an error meant allowed, and allowed meant an
+unmetered generation on the operator's key. **The ACL tidy-up would have opened the hole it was
+meant to close.** So the failure mode is now `reason: 'unverified'` and a refusal;
+`tests/consumeAiCredit.test.ts` pins it, with a control that Supabase being UNCONFIGURED still
+means no metering, because that is an answer rather than a failure.
+
+**Only `guest_limit` may be a 402**, and `meterOrRefuse` defaults the other way for the same
+reason. 402 is the status the client LATCHES into localStorage as a spent budget, so a reason
+the server grows later — `unverified` did, the moment the meter began failing closed — would
+have locked a working account out of generation over a transient network error. An unrecognised
+refusal is by definition not a known spent budget.
 
 `lib/userApiKey.ts` (client) and `lib/server/generator.ts` (server) are the two halves. Rules
 that matter:

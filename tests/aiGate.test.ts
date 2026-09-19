@@ -223,6 +223,33 @@ describe('meterOrRefuse spends a credit only when the operator is paying', () =>
     expect(body.message).not.toBe('BUDGET COPY');
   });
 
+  /**
+   * 402 IS THE ONE THE CLIENT LATCHES, so only a real spent budget may have it.
+   *
+   * These two cases are the reason the branch defaults to 401 rather than to 402. When
+   * `consumeAiCredit` began failing closed it grew a new reason, `unverified`; under the old
+   * "anything that is not no_session is a budget" rule that would have reported a transient
+   * network error as an exhausted allowance AND had the client write it to localStorage,
+   * locking a working account out of generation until site data was cleared.
+   */
+  it('an unreadable meter is 401, never a latched 402', async () => {
+    env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+    consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'unverified', remaining: null });
+    const { refusal, remaining } = await meterOrRefuse(resolveAiAccess(req()), 'BUDGET COPY');
+    expect(refusal!.status).toBe(401);
+    expect(remaining).toBeNull();
+    const body = await refusal!.json();
+    expect(body.message).not.toBe('BUDGET COPY');
+    expect(body.detail).toBeTruthy();  // the client reads `detail` first on a non-402 failure
+  });
+
+  it('a reason nobody has seen before is also 401, not a budget', async () => {
+    env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+    consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'some_future_reason', remaining: null });
+    const { refusal } = await meterOrRefuse(resolveAiAccess(req()), 'BUDGET COPY');
+    expect(refusal!.status).toBe(401);
+  });
+
   it('a spent budget is 402, carrying the route’s own wording', async () => {
     env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
     consumeAiCredit.mockResolvedValue({ allowed: false, reason: 'guest_limit', remaining: 0 });
