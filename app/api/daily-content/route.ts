@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
    */
   const access = resolveAiAccess(req);
   if (!access.usable) {
-    return noKeyRefusal('Add your own Anthropic API key in Settings to generate passages — or read your own text, a book or audio, which needs no key.');
+    return noKeyRefusal('Connect an API key in Settings to generate passages — Google and Groq both have a free tier. Or read your own text, a book or audio, which needs no key at all.');
   }
   const generator = generatorFor(access);
 

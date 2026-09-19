@@ -1257,7 +1257,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                      "needs your API key" badge, so the sentence pointed at a badge saying the
                      opposite — the one place a learner is most likely to be confused about
                      what costs money. Same fact, aimed at where the free half actually is. */
-                  ? `Writing a new passage is the one thing srsly cannot do for free, so it uses your own Anthropic key — about a cent a passage, billed to you and stored only in this browser. Everything else already works without one: ${variant === 'srs' ? 'your own text, a book or audio in the Read tab is' : 'add your own text, a book or audio above and it is'} segmented and blanked against your deck exactly the same way.`
+                  ? `Writing a new passage is the one thing srsly cannot do on its own, so it uses a key you connect — and two of the three services it supports are free, so this need not cost you anything. The key is stored only in this browser. Everything else already works without one: ${variant === 'srs' ? 'your own text, a book or audio in the Read tab is' : 'add your own text, a book or audio above and it is'} segmented and blanked against your deck exactly the same way.`
                   : dailyStatus === 'error'
                     ? 'Something went wrong generating today’s passage. Try again.'
                     : `Written fresh around the words you have due today, at your level. ${variant === 'srs' ? 'Reading your own text in the Read tab is free and needs no key.' : 'Everything above is free and needs no key.'}`}

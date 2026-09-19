@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { consumeAiCredit } from '@/lib/supabase/server';
 import {
-  looksLikeAnthropicKey, USER_KEY_HEADER,
-  userKeyGenerator, serverKeyGenerator, type Generator,
+  looksLikeAnyKey, USER_KEY_HEADER, PROVIDER_HEADER,
+  generatorForProvider, type Generator,
 } from '@/lib/server/generator';
+import { providerById, providerForKey, DEFAULT_PROVIDER, type ProviderId } from '@/lib/aiProviders';
 import { stubEnabled } from '@/lib/server/stubContent';
 
 /**
@@ -76,6 +77,12 @@ export interface AiAccess {
   readonly operatorPays: boolean;
   /** False when there is no usable key and no stub, so the route cannot proceed. */
   readonly usable: boolean;
+  /**
+   * Which service this key reaches. Read for the transport and for error copy, NEVER for a
+   * billing decision — `operatorPays` is about whose key it is, and a free-tier Gemini key is
+   * the learner's own key exactly as an Anthropic one is.
+   */
+  readonly provider: ProviderId;
 }
 
 /**
@@ -94,9 +101,39 @@ export function resolveAiAccess(req: KeyBearingRequest): AiAccess {
   const serverKeyUsable = !!serverKey && serverKey !== 'your-api-key-here';
 
   const userKey = req.headers.get(USER_KEY_HEADER)?.trim() || '';
-  if (looksLikeAnthropicKey(userKey)) return { stub, apiKey: userKey, operatorPays: false, usable: true };
-  if (serverKeyUsable) return { stub, apiKey: serverKey!, operatorPays: true, usable: true };
-  return { stub, apiKey: '', operatorPays: false, usable: stub };
+  if (looksLikeAnyKey(userKey)) {
+    return {
+      stub, apiKey: userKey, operatorPays: false, usable: true,
+      provider: providerFor(userKey, req.headers.get(PROVIDER_HEADER)),
+    };
+  }
+  if (serverKeyUsable) {
+    return {
+      stub, apiKey: serverKey!, operatorPays: true, usable: true,
+      // The operator's key is whatever they configured; its own shape decides where it goes,
+      // so an operator running on a free tier needs no second environment variable.
+      provider: providerForKey(serverKey)?.id ?? DEFAULT_PROVIDER,
+    };
+  }
+  return { stub, apiKey: '', operatorPays: false, usable: stub, provider: DEFAULT_PROVIDER };
+}
+
+/**
+ * WHICH COMPANY THIS CREDENTIAL IS ABOUT TO BE SENT TO, AND WHY THE SHAPE OVERRULES THE CLIENT.
+ *
+ * The client states the learner's choice in `PROVIDER_HEADER`, which is the authoritative
+ * record of what they picked in Settings. The key's own SHAPE still wins when the two
+ * disagree, and that ordering is the one security decision in this function: a key whose
+ * format belongs unmistakably to Anthropic, sent to Google because a header said so, is a
+ * live credential handed to a company that was never meant to see it. Nothing the client says
+ * should be able to cause that, including a client that is simply out of date.
+ *
+ * The header is what is left when the shape says nothing — a key format none of the three
+ * patterns knows yet. `looksLikeAnyKey` gates entry to this function, so today that can only
+ * happen if a pattern is loosened later; it is handled rather than assumed away.
+ */
+function providerFor(key: string, declared: string | null): ProviderId {
+  return providerForKey(key)?.id ?? providerById(declared)?.id ?? DEFAULT_PROVIDER;
 }
 
 /**
@@ -108,9 +145,7 @@ export function resolveAiAccess(req: KeyBearingRequest): AiAccess {
  * placeholder is what lets a stubbed route build the object it never uses.
  */
 export function generatorFor(access: AiAccess): Generator {
-  return access.operatorPays
-    ? serverKeyGenerator(access.apiKey || 'stub')
-    : userKeyGenerator(access.apiKey || 'stub');
+  return generatorForProvider(access.provider, access.apiKey || 'stub', access.operatorPays);
 }
 
 /**

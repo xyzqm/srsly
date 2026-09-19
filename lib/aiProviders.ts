@@ -1,0 +1,199 @@
+/**
+ * WHICH SERVICE WRITES THE PASSAGE, AND WHY THERE IS NOW MORE THAN ONE.
+ *
+ * srsly has always been free to run and free to use, with exactly one exception: having a new
+ * passage WRITTEN costs money, so that feature is bring-your-own-key. The learner pays the
+ * provider directly and the operator pays nothing. That is honest, and it is still a paywall
+ * wearing a different hat — "free, as long as you have a credit card at Anthropic" is not free
+ * to someone who does not.
+ *
+ * **GOOGLE AND GROQ BOTH HAVE A GENUINELY FREE TIER**, rate-limited rather than trial-limited.
+ * A learner signs up, copies a key, pastes it here, and generates at zero cost to themselves
+ * and zero cost to the operator. That is the closest thing to "the app is fully free" that
+ * does not involve somebody quietly paying for strangers' tokens — so the provider is now a
+ * CHOICE, and the free ones are named as free in the picker.
+ *
+ * ── ONE TABLE, READ BY BOTH HALVES ───────────────────────────────────────────
+ *
+ * This module is imported by `lib/userApiKey.ts` (client) and `lib/server/generator.ts`
+ * (server), and holds no secrets, no SDK and no environment access — it is constants and
+ * regexes. That is deliberate: the shape check the Settings field uses to reject a bad paste
+ * and the one the server uses to decide whose money it is were ALREADY two copies of one
+ * regex in two files, which is exactly the drift this codebase keeps finding. Now there is
+ * one.
+ *
+ * ── THE MODELS ARE PINNED, AND THEY WILL GO STALE ────────────────────────────
+ *
+ * Model ids are the part of this table with a shelf life: providers rename and retire them.
+ * They live here, in one place, so a rename is one line rather than a search — and
+ * `lib/server/generator.ts` surfaces a model-not-found as its own message rather than as a
+ * generic failure, because "that model no longer exists" and "your key is wrong" are
+ * different problems and a learner cannot tell them apart from a 400.
+ *
+ * ── WHAT IS NOT CLAIMED ──────────────────────────────────────────────────────
+ *
+ * A free tier is a RATE LIMIT, not an unlimited supply, and the copy says so. The prompt is
+ * tuned for Haiku; a weaker model will sometimes produce a worse passage, and CLAUDE.md
+ * records the precedent — `qwen2.5:3b` returned the literal placeholder `WORDS` as a title
+ * two times in five where Haiku never did, which is what hardened that instruction. A second
+ * provider is a second chance for the prompt to be wrong, so the free ones are offered
+ * plainly rather than recommended over the paid one.
+ */
+
+export type ProviderId = 'anthropic' | 'gemini' | 'groq';
+
+export interface AiProvider {
+  readonly id: ProviderId;
+  /** As the learner would name it. */
+  readonly name: string;
+  /** The model to ask for. Pinned; see the note above about shelf life. */
+  readonly model: string;
+  /**
+   * The largest completion this model will produce, which is NOT the same number for all
+   * three and is not a detail. `daily-content` asks for 16,000 because a passage plus its
+   * fill items plus a conversation is a long JSON document; a provider that silently caps
+   * below what the prompt needs returns TRUNCATED JSON, which arrives as an unparseable reply
+   * rather than as "too long". `generator.ts` clamps to this, so the failure is at worst a
+   * short passage and never a confusing 502 from a limit nobody declared.
+   */
+  readonly maxOutputTokens: number;
+  /**
+   * True when a learner can generate without paying anything — a rate-limited free tier
+   * rather than a trial credit that runs out. This is what the picker badges, so it must
+   * mean "you will not be charged", not "there is a free trial".
+   */
+  readonly freeTier: boolean;
+  /**
+   * OpenAI-compatible chat-completions base URL. Absent for Anthropic, which is called
+   * through its own SDK. The presence of this field is what selects the transport.
+   */
+  readonly baseUrl?: string;
+  /** Shape check for a pasted key — see `looksLikeKeyFor`. */
+  readonly keyPattern: RegExp;
+  /** What an empty field shows. */
+  readonly keyPlaceholder: string;
+  /** The leading run kept when a key is masked for display. */
+  readonly maskPrefix: string;
+  /** Where to get a key, and what the page is called when you get there. */
+  readonly consoleUrl: string;
+  readonly consoleLabel: string;
+  /** One line under the name in the picker. */
+  readonly blurb: string;
+}
+
+/**
+ * ANTHROPIC IS FIRST AND STAYS THE DEFAULT, which is a quality judgement rather than inertia.
+ *
+ * Every prompt in this app was written and measured against Haiku; the other two are offered
+ * because they cost nothing, not because they are better. Someone who already has an Anthropic
+ * key should not be nudged off it, and someone who has none should be able to see, in one
+ * glance, that two of the three will never charge them.
+ */
+export const AI_PROVIDERS: readonly AiProvider[] = [
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    maxOutputTokens: 32000,
+    freeTier: false,
+    keyPattern: /^sk-ant-[A-Za-z0-9_-]{16,}$/,
+    keyPlaceholder: 'sk-ant-…',
+    maskPrefix: 'sk-ant-',
+    consoleUrl: 'https://console.anthropic.com/settings/keys',
+    consoleLabel: 'console.anthropic.com → API keys',
+    blurb: 'Claude Haiku. About a cent a passage, billed to you. What every prompt here was written against.',
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    model: 'gemini-2.5-flash',
+    maxOutputTokens: 16384,
+    freeTier: true,
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    keyPattern: /^AIza[A-Za-z0-9_-]{30,}$/,
+    keyPlaceholder: 'AIza…',
+    maskPrefix: 'AIza',
+    consoleUrl: 'https://aistudio.google.com/apikey',
+    consoleLabel: 'aistudio.google.com → Get API key',
+    blurb: 'Gemini Flash. Free tier, rate-limited rather than metered — no card, no bill.',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    model: 'llama-3.3-70b-versatile',
+    maxOutputTokens: 16384,
+    freeTier: true,
+    baseUrl: 'https://api.groq.com/openai/v1',
+    keyPattern: /^gsk_[A-Za-z0-9]{20,}$/,
+    keyPlaceholder: 'gsk_…',
+    maskPrefix: 'gsk_',
+    consoleUrl: 'https://console.groq.com/keys',
+    consoleLabel: 'console.groq.com → API keys',
+    blurb: 'Llama 3.3 on Groq. Free tier, and the fastest of the three by a wide margin.',
+  },
+];
+
+export const DEFAULT_PROVIDER: ProviderId = 'anthropic';
+
+const BY_ID = new Map<ProviderId, AiProvider>(AI_PROVIDERS.map(p => [p.id, p]));
+
+/** The provider with this id, or undefined. Takes a bare string so a header can be validated. */
+export function providerById(id: string | null | undefined): AiProvider | undefined {
+  return id ? BY_ID.get(id as ProviderId) : undefined;
+}
+
+/** Same, but never undefined — for the many places that just need a table to read from. */
+export function providerOrDefault(id: string | null | undefined): AiProvider {
+  return providerById(id) ?? BY_ID.get(DEFAULT_PROVIDER)!;
+}
+
+/**
+ * Whether a pasted string has the shape of a key for this provider.
+ *
+ * A SHAPE CHECK AND NOTHING MORE. The only real validator is the provider itself, and being
+ * cleverer here means rejecting key formats that do not exist yet. It earns its place by
+ * turning a typo into an immediate, specific message instead of a round trip and an opaque
+ * 401 — and, now that there is a picker, by catching a Groq key pasted into the Gemini field,
+ * which is the new mistake this feature makes possible.
+ */
+export function looksLikeKeyFor(id: ProviderId, key: string | null | undefined): boolean {
+  const p = BY_ID.get(id);
+  return !!p && typeof key === 'string' && p.keyPattern.test(key.trim());
+}
+
+/**
+ * The provider a key's SHAPE says it belongs to, if exactly one claims it.
+ *
+ * The learner's stored choice is authoritative and this is the fallback — it exists for two
+ * real cases: a key stored before the picker existed (there was only Anthropic, and those
+ * keys must keep working untouched), and a request that carries a key but no provider header.
+ *
+ * Returns undefined when nothing matches AND when more than one does. A key two providers
+ * both claim is ambiguous, and guessing at a credential's destination is how a key gets sent
+ * to the wrong company; `tests/aiProviders.test.ts` asserts the patterns stay disjoint so the
+ * second case cannot arise quietly.
+ */
+export function providerForKey(key: string | null | undefined): AiProvider | undefined {
+  if (typeof key !== 'string') return undefined;
+  const k = key.trim();
+  const hits = AI_PROVIDERS.filter(p => p.keyPattern.test(k));
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+/** Any provider at all, for "is this a usable key from someone". */
+export function looksLikeAnyKey(key: string | null | undefined): boolean {
+  return !!providerForKey(key);
+}
+
+/**
+ * `sk-ant-…7f3a` — enough to tell two keys apart, never enough to use.
+ *
+ * The whole key is never rendered back to the screen: it is shoulder-surfable, it lands in
+ * screenshots and screen shares, and the learner already has a copy of it.
+ */
+export function maskKeyFor(id: ProviderId, key: string): string {
+  const p = providerOrDefault(id);
+  const v = key.trim();
+  if (v.length < p.maskPrefix.length + 8) return `${p.maskPrefix}…`;
+  return `${p.maskPrefix}…${v.slice(-4)}`;
+}

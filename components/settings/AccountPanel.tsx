@@ -5,7 +5,8 @@ import { useAuth } from '@/lib/auth/AuthProvider';
 import { SUPPORTED_LANGUAGES, getLanguageConfig } from '@/lib/languageConfig';
 import { isMastered } from '@/lib/achievements';
 import { isActive } from '@/lib/deck';
-import { loadUserKey, maskKey } from '@/lib/userApiKey';
+import { loadUserKey, loadProvider, maskKey, type ProviderId } from '@/lib/userApiKey';
+import { providerOrDefault } from '@/lib/aiProviders';
 import type { LanguageCode } from '@/lib/types';
 
 /**
@@ -26,8 +27,13 @@ import type { LanguageCode } from '@/lib/types';
  * ONE READ SHOWN TWICE IS NOT TWO RECORDS. The key appears here as a status and in
  * `ApiKeyPanel` as a control, both from `loadUserKey()`. An overview that stayed silent about
  * the one setting most likely to be the reason someone opened this screen would be a worse
- * overview; two renders of one source cannot disagree, and a second stored copy is what the
- * rule in CLAUDE.md is actually about.
+ * overview, and a second STORED copy is what the rule in CLAUDE.md is actually about.
+ *
+ * They still had to be told when to look. One source cannot make them disagree about what is
+ * true, but reading it at two different moments can: this panel reads on mount, so connecting
+ * a key in the control below left the summary an inch above it still saying "No key" for the
+ * rest of the visit — which is not distinguishable, from the outside, from a save that failed.
+ * `keySeq` is the nudge, and it is a signal rather than a second copy of the value.
  *
  * WHAT IS DELIBERATELY NOT CLAIMED: there is no "last synced at". The storage layer records
  * no such timestamp, and inventing one would mean writing a new field on every save — a
@@ -80,13 +86,22 @@ interface Props {
   languages: LanguageCode[];
   /** Opens the sign-in modal. Only reachable while signed out. */
   onSignIn: () => void;
+  /**
+   * Bumped by `ApiKeyPanel` whenever the connected key changes, which re-reads this panel.
+   *
+   * The key row here and the control below it read the same `loadUserKey()`, so they cannot
+   * be wrong about different things — but this one reads it on mount, so without a nudge they
+   * disagree for the rest of the visit the moment a key is connected.
+   */
+  keySeq?: number;
 }
 
-export default function AccountPanel({ languages, onSignIn }: Props) {
+export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props) {
   const { enabled: authEnabled, signedIn, user, signOut } = useAuth();
   const [decks, setDecks] = useState<DeckLine[] | null>(null);
   const [streak, setStreak] = useState<{ streak: number; sessions: number } | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [keyProvider, setKeyProvider] = useState<ProviderId>('anthropic');
   const [pending, setPending] = useState<string[]>([]);
   const [flushing, setFlushing] = useState(false);
 
@@ -120,6 +135,7 @@ export default function AccountPanel({ languages, onSignIn }: Props) {
     const srs = await storage.getSRSState();
     setStreak({ streak: srs.streak ?? 0, sessions: srs.sessions ?? 0 });
     setApiKey(loadUserKey());
+    setKeyProvider(loadProvider());
     setPending(storage.pendingColumns());
   }, []);
 
@@ -132,7 +148,7 @@ export default function AccountPanel({ languages, onSignIn }: Props) {
    * holds an expression.
    */
   const languageKey = languages.join(',');
-  useEffect(() => { void load(); }, [load, languageKey]);
+  useEffect(() => { void load(); }, [load, languageKey, keySeq]);
 
   async function retrySync() {
     setFlushing(true);
@@ -195,12 +211,18 @@ export default function AccountPanel({ languages, onSignIn }: Props) {
             <span style={{ color: 'var(--ink-faint)' }}>—</span>
           ) : apiKey ? (
             <>
-              <span style={{ color: 'var(--jade)' }}>Key connected</span>
-              <span style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)', marginLeft: 8 }}>{maskKey(apiKey)}</span>
+              <span style={{ color: 'var(--jade)' }}>
+                {providerOrDefault(keyProvider).name}
+                {providerOrDefault(keyProvider).freeTier ? ' — free tier, no bill' : ' — billed to you'}
+              </span>
+              <span style={{ ...mono, fontSize: 12, color: 'var(--ink-faint)', marginLeft: 8 }}>
+                {maskKey(apiKey, keyProvider)}
+              </span>
             </>
           ) : (
             <span style={{ color: 'var(--ink-soft)' }}>
-              No key — everything except writing a new passage still works. Add one below.
+              No key — everything except writing a new passage still works. Google and Groq
+              both give one out free; add it below.
             </span>
           )}
         </Row>

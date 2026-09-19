@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, levelLabel } from '@/lib/languageConfig';
-import { resolveAiAccess, meterOrRefuse, noKeyRefusal } from '@/lib/server/aiGate';
+import { resolveAiAccess, meterOrRefuse, noKeyRefusal, generatorFor } from '@/lib/server/aiGate';
+import { GenerationError } from '@/lib/server/generator';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -24,9 +24,9 @@ export const maxDuration = 60;
 
 /** Accurate at a guest limit of zero, where "you have used your free generations" is not. */
 const GUEST_LIMIT_MSG =
-  'Example sentences are written by Claude, and generation is not free for guests. Sign in, or add your own Anthropic API key in Settings.';
+  'Example sentences are written by a model, and generation is not free for guests. Sign in, or connect your own API key in Settings — Google and Groq both have a free tier.';
 const NO_KEY_MSG =
-  'Add your own Anthropic API key in Settings to generate example sentences. The words and their character breakdowns need no key.';
+  'Connect an API key in Settings to generate example sentences — Google and Groq both have a free tier. The words and their character breakdowns need no key.';
 /**
  * The stub serves canned PASSAGES and has nothing to say here, so this route refuses rather
  * than generating while stubbed. `meterOrRefuse` skips the meter under `SRSLY_STUB_AI=1` on
@@ -97,19 +97,25 @@ Output format:
 
   try {
     /**
-     * A bare client rather than `generatorFor`, and the reason is `max_tokens`. `Generator`
-     * is built for passages and asks for 16,000; three sentences per word is what 1,500 was
-     * chosen for, and a cap is the only thing standing between a confused reply and a long
-     * one. Billing cannot drift from metering by doing this: the key is `access.apiKey`, the
-     * same object the meter above read `operatorPays` from.
+     * THROUGH THE GENERATOR, WITH ITS OWN CAP.
+     *
+     * This built a bare `Anthropic` client for one reason — `max_tokens`. The interface asked
+     * for 16,000, which is right for a passage and absurd for three sentences a word, and a
+     * cap is the only thing between a confused reply and a very long one. That shortcut also
+     * pinned the route to a single provider: once a learner could connect a Google or Groq
+     * key, this would have sent it to Anthropic and failed every time, while passages worked
+     * fine. `maxTokens` is a parameter now, so the cap survives and the provider comes from
+     * the same `access` the meter above read `operatorPays` from.
+     *
+     * The JSON-only system prompt is new and is for the weaker models: Haiku returns bare JSON
+     * unasked, while a smaller model reaches for a markdown fence. The brace-matching below
+     * already tolerated that; saying so up front means it rarely has to.
      */
-    const client = new Anthropic({ apiKey: access.apiKey });
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '';
+    const raw = await generatorFor(access).complete(
+      'You output only valid JSON. No markdown, no code blocks, no explanations.',
+      prompt,
+      { maxTokens: 1500 },
+    );
     const match = raw.match(/\{[\s\S]*\}/);
     /**
      * 502, not an empty 200. An unparseable reply is a FAILURE, and returning `{}` with a
@@ -125,9 +131,15 @@ Output format:
     return NextResponse.json(JSON.parse(match[0]));
   } catch (e) {
     console.error('missed-review error:', e);
-    return NextResponse.json(
-      { error: 'generation_failed', message: 'Something went wrong generating the sentences. Try again.' },
-      { status: 500 },
-    );
+    /**
+     * A rejected key, a retired model and a spent rate limit need three different actions, and
+     * on a free tier the rate limit is not an edge case — it is how the free option stops
+     * working for the afternoon. `GenerationError` already carries a sentence the learner can
+     * act on, so it is passed through rather than flattened into "something went wrong".
+     */
+    const message = e instanceof GenerationError
+      ? e.message
+      : 'Something went wrong generating the sentences. Try again.';
+    return NextResponse.json({ error: 'generation_failed', message }, { status: 500 });
   }
 }

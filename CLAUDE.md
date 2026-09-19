@@ -165,9 +165,67 @@ Generation uses the learner's own key (above); `SRSLY_API_KEY` / `ANTHROPIC_API_
 shows a no-key state pointing at Settings and at the free reading paths — there is no static
 fallback content.
 
-**Generation is bring-your-own-key.** srsly is free to run and free to use; the ONE thing that
-costs money is having a new passage written, so that feature uses the learner's own Anthropic
-key. They pay Anthropic directly (~1c a passage) and the operator pays nothing.
+**Generation is bring-your-own-key, and TWO OF THE THREE PROVIDERS ARE FREE.** srsly is free to
+run and free to use; the ONE thing that costs money is having a new passage written, so that
+feature uses a key the learner connects. With Anthropic they pay ~1c a passage; with Google AI
+Studio or Groq they pay nothing, because both have a real rate-limited free tier. The operator
+pays nothing either way.
+
+**"Free, as long as you can pay Anthropic" is not free**, which is what the second and third
+providers are for — this is a project for students, and requiring a card on file to use the
+headline feature was a paywall wearing a different hat. `lib/aiProviders.ts` is the one table:
+id, model, output cap, key pattern, base URL and where to get a key, read by BOTH halves
+(`lib/userApiKey.ts` on the client, `lib/server/generator.ts` on the server) so the shape check
+that rejects a bad paste and the one that decides whose money it is cannot drift apart. They
+were already two copies of one regex in two files before this.
+
+**A key's SHAPE overrules the provider the client declares, and that is the one security
+decision in `resolveAiAccess`.** The client sends `x-srsly-ai-provider` alongside the key,
+which is the authoritative record of what the learner picked — except when it disagrees with
+the key's own format. An Anthropic key posted to Google because a header said so is a live
+credential handed to a company that was never meant to see it, and it would surface as a plain
+401, so the learner would be told their key is bad rather than that it had just been shown to
+somebody else. Nothing a client says may cause that, including a client that is merely out of
+date. `tests/aiProviders.test.ts` asserts the three key patterns stay DISJOINT, which is what
+makes shape-resolution safe in the first place.
+
+**`operatorPays` is still about WHOSE KEY and never about which provider.** A free-tier Gemini
+key is the learner's own key exactly as an Anthropic one is, so it is never metered — metering
+it would ration somebody on a budget that costs nobody anything, which is the same rule
+`grade-response` once broke.
+
+**`maxTokens` IS WHY ALL THREE ROUTES COULD BE MADE PROVIDER-AWARE AT ALL.** It was hardcoded
+at 16,000 inside `Generator`, which is right for a passage and absurd for three example
+sentences — so `missed-review` and `grade-response` each built a bare `Anthropic` client to set
+their own cap, and in doing so pinned themselves to one provider. A learner on a Google key
+would have had passages work and their glosses fail every time, while grading silently fell
+through to `keywordFallback` with no error anywhere. Making the cap a parameter let all three
+share one path and one billing answer. The per-provider `maxOutputTokens` clamp exists because
+a provider that quietly caps below what the prompt needs returns TRUNCATED JSON, which arrives
+as "the reply could not be read" rather than as "too long".
+
+**A failure says which of three things went wrong.** `GenerationError` separates a rejected key,
+a retired model and a spent rate limit, because they need three different actions — replace the
+key, report it, wait — and on a free tier the rate limit is not an edge case, it is how the free
+option stops working for the afternoon. The message carries no key and copies nothing from the
+provider's own error body, which can echo the request back.
+
+**The `openai` SDK was NOT added**, and this file's rule says to state that. Google and Groq both
+expose an OpenAI-compatible chat-completions endpoint, so one `fetch` serves both: one endpoint,
+one request shape, no streaming, no tool use, no pagination. A whole SDK and its dependency tree
+is not earned by twenty lines, and the cost of being wrong is a JSON body that is trivial to
+read. Same judgement as `lib/fsrs.ts`.
+
+**The localStorage entry is still `srsly-anthropic-key` and the header is still
+`x-srsly-anthropic-key`.** Both are historically named — they predate there being a choice — and
+renaming either would silently disconnect every learner who has already connected a key, with no
+error and nothing to see. A stale name is a much smaller cost. The provider is a SECOND fact in
+`srsly-ai-provider`; a key stored before the picker existed has no provider recorded and is
+resolved by its shape, so nobody re-enters anything.
+
+**Model ids are the part of that table with a shelf life** and will need updating when a provider
+retires one. That is one line, and a retired model is reported as "this needs updating in srsly —
+not something you can fix" rather than as a generic failure.
 
 **THE GUEST BUDGET IS ZERO, AND A SMALL NUMBER WAS NEVER THE ALTERNATIVE.** `consume_ai_credit()`
 shipped with `guest_limit := 5` — five operator-funded generations per anonymous visitor — which

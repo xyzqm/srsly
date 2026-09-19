@@ -139,6 +139,8 @@ export default function SettingsTab({ languages, initialGroup, onAddLanguage, on
    */
   const [test, setTest] = useState<number | null>(null);
   const [removing, setRemoving] = useState<LanguageCode | null>(null);
+  /** Bumped when the connected API key changes, so the Account summary re-reads it. */
+  const [keySeq, setKeySeq] = useState(0);
 
   async function confirmRemove(lang: LanguageCode) {
     const next = await removeLanguage(lang);
@@ -409,6 +411,7 @@ export default function SettingsTab({ languages, initialGroup, onAddLanguage, on
           reached the cloud. See components/settings/AccountPanel.tsx. */}
       <AccountPanel
         languages={languages}
+        keySeq={keySeq}
         onSignIn={() => {
           setHasDismissed(false); // Reset dismissal condition if intentionally clicked
           setSignInOpen(true);
@@ -416,7 +419,7 @@ export default function SettingsTab({ languages, initialGroup, onAddLanguage, on
       />
 
       {/* ── AI passages (bring your own key) ──────────────────────────────── */}
-      <ApiKeyPanel />
+      <ApiKeyPanel onKeyChange={() => setKeySeq(n => n + 1)} />
 
       {/* ── Languages ─────────────────────────────────────────────────────── */}
       <SectionLabel>Languages</SectionLabel>

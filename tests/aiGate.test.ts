@@ -119,7 +119,23 @@ vi.mock('@/lib/supabase/server', () => ({ consumeAiCredit }));
 const { resolveAiAccess, meterOrRefuse, generatorFor } = await import('@/lib/server/aiGate');
 
 const KEY = 'sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA';
-const req = (userKey?: string) => ({ headers: { get: () => userKey ?? null } });
+const GEMINI_KEY = 'AIza' + 'B'.repeat(35);
+const GROQ_KEY = 'gsk_' + 'C'.repeat(48);
+
+/**
+ * HEADER-AWARE, and it was not always. This returned the same value for every header name,
+ * which was harmless while only one was read and became a lie the moment the provider header
+ * existed — every test would have been declaring its API key as its provider.
+ */
+const req = (userKey?: string, provider?: string) => ({
+  headers: {
+    get: (name: string) => {
+      if (name === 'x-srsly-anthropic-key') return userKey ?? null;
+      if (name === 'x-srsly-ai-provider') return provider ?? null;
+      return null;
+    },
+  },
+});
 
 /** Every case sets all three explicitly — the machine running the suite may have a real key. */
 function env({ server, anthropic, stub }: { server?: string; anthropic?: string; stub?: string }) {
@@ -170,6 +186,61 @@ describe('resolveAiAccess decides whose money it is', () => {
   });
 });
 
+describe('which company the key is about to be sent to', () => {
+  /**
+   * THE ONE SECURITY DECISION IN `resolveAiAccess`.
+   *
+   * The client states the learner's choice in a header, and the key's own SHAPE overrules it
+   * when the two disagree. An Anthropic key posted to Google because a header said `gemini` is
+   * a live credential handed to a company that was never meant to see it — and it would fail
+   * as a plain 401, so the learner would be told their key is bad rather than that it had just
+   * been shown to somebody else. No client claim may be able to cause that, including a client
+   * that is simply out of date.
+   */
+  it('sends a key where its shape says, not where the header claims', () => {
+    env({});
+    expect(resolveAiAccess(req(KEY, 'gemini')).provider).toBe('anthropic');
+    expect(resolveAiAccess(req(GEMINI_KEY, 'anthropic')).provider).toBe('gemini');
+    expect(resolveAiAccess(req(GROQ_KEY, 'gemini')).provider).toBe('groq');
+  });
+
+  it('agrees with the header when the header is right — the control', () => {
+    env({});
+    expect(resolveAiAccess(req(GEMINI_KEY, 'gemini')).provider).toBe('gemini');
+  });
+
+  it('resolves a key stored before the picker existed, with no header at all', () => {
+    env({});
+    expect(resolveAiAccess(req(KEY)).provider).toBe('anthropic');
+  });
+
+  it('ignores a header naming a provider that does not exist', () => {
+    env({});
+    expect(resolveAiAccess(req(GEMINI_KEY, 'openai')).provider).toBe('gemini');
+  });
+
+  /**
+   * A FREE-TIER KEY IS STILL THE LEARNER'S OWN KEY. `operatorPays` is about whose credential
+   * it is and never about which provider — metering a Gemini key would ration somebody on a
+   * budget that costs nobody anything, which is the same rule `grade-response` once broke.
+   */
+  it.each([['gemini', 'AIza' + 'B'.repeat(35)], ['groq', 'gsk_' + 'C'.repeat(48)]])(
+    'never meters a learner on a free %s key', (_id, key) => {
+      env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
+      expect(resolveAiAccess(req(key))).toMatchObject({ operatorPays: false, usable: true, apiKey: key });
+    });
+
+  it("reads the operator's own key shape, so no second env var is needed", () => {
+    env({ server: 'gsk_' + 'D'.repeat(48) });
+    expect(resolveAiAccess(req())).toMatchObject({ provider: 'groq', operatorPays: true });
+  });
+
+  it('falls back to the default provider when there is nothing to resolve', () => {
+    env({});
+    expect(resolveAiAccess(req()).provider).toBe('anthropic');
+  });
+});
+
 describe('generatorFor cannot disagree with the meter', () => {
   it("carries operatorPays across, both ways", () => {
     env({ server: 'sk-ant-operator-key-aaaaaaaaaaaaaaaa' });
@@ -180,6 +251,14 @@ describe('generatorFor cannot disagree with the meter', () => {
   it('builds without throwing when the stub leaves no key to build from', () => {
     env({ stub: '1' });
     expect(() => generatorFor(resolveAiAccess(req()))).not.toThrow();
+  });
+
+  /** The generator must reach the service the key belongs to, or the call is a 401 at best. */
+  it('builds for the provider the access resolved to', () => {
+    env({});
+    expect(generatorFor(resolveAiAccess(req(GEMINI_KEY))).provider).toBe('gemini');
+    expect(generatorFor(resolveAiAccess(req(GROQ_KEY))).provider).toBe('groq');
+    expect(generatorFor(resolveAiAccess(req(KEY))).provider).toBe('anthropic');
   });
 });
 

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { isAnonymousGuest } from '@/lib/supabase/server';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
-import { resolveAiAccess } from '@/lib/server/aiGate';
+import { resolveAiAccess, generatorFor } from '@/lib/server/aiGate';
 
-/** Keyword-match fallback — used when no API key or Claude fails. */
+/** Keyword-match fallback — used when there is no API key, or the model call fails. */
 function keywordFallback(response: string, key: string[], langName: string): {
   verdict: 'ok' | 'partial' | 'miss';
   message: string;
@@ -92,7 +91,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(keywordFallback(response, key, langName));
   }
 
-  const client = new Anthropic({ apiKey: access.apiKey });
+  /**
+   * Through the generator, so this route follows the learner's chosen provider.
+   *
+   * It built a bare `Anthropic` client to set `max_tokens: 300` — a grade is two sentences,
+   * not a passage. That pinned it to one provider, and the failure would have been quiet in
+   * the way this route's failures always are: a learner on a Google key would have had every
+   * grade silently fall through to `keywordFallback`, because the Anthropic call throws and
+   * the catch below answers with the cheap grader. Working, blunt, and no error anywhere.
+   */
+  const generator = generatorFor(access);
 
   // Tier comes off the language config — the level numbering runs in opposite directions
   // per language (HSK 6 and CEFR C2 are hardest; JLPT N1 is hardest).
@@ -128,14 +136,11 @@ message: 1–2 sentences of specific, encouraging English feedback. Lead with wh
 wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] if none — that is fine).`;
 
   try {
-    const aiResponse = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: 'You output only valid JSON. No markdown, no code blocks, no explanations.',
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const raw = aiResponse.content[0].type === 'text' ? aiResponse.content[0].text.trim() : '';
+    const raw = await generator.complete(
+      'You output only valid JSON. No markdown, no code blocks, no explanations.',
+      prompt,
+      { maxTokens: 300 },
+    );
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
     let json: { verdict?: string; message?: string; wordsHit?: unknown };
@@ -156,7 +161,14 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
 
     return NextResponse.json({ verdict, message, wordsHit });
   } catch (err) {
-    console.error('[grade-response] Claude error:', err);
+    /**
+     * STILL A FALLBACK AND NOT AN ERROR, whatever went wrong. A rejected key, a rate limit and
+     * a retired model all land here, and the answer is the same: the learner gets a real grade
+     * from `keywordFallback` rather than losing the answer they just wrote. That is this
+     * route's whole design — it degrades where the other two refuse — and it is why the
+     * provider being misconfigured shows up in the log rather than on the screen.
+     */
+    console.error('[grade-response] generation error:', err);
     return NextResponse.json(keywordFallback(response, key, langName));
   }
 }
