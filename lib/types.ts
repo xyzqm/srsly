@@ -1,5 +1,19 @@
-export type Theme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
-export type Font = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
+/**
+ * THE FIRST SIX ARE FREE AND ALWAYS WERE; THE REST ARE EARNED.
+ *
+ * Splitting the union in two is the whole guarantee. A cosmetic can only be added to
+ * `EarnedTheme`, and `lib/cosmetics.ts` asserts that nothing in `FREE_THEMES` ever appears in
+ * the catalogue — so the unlock system cannot take away a theme a learner already has. That
+ * direction matters: locking something that used to be free is a downgrade dressed as a
+ * reward, and it is the one way this feature could make the app worse for an existing learner.
+ */
+export type FreeTheme = 'paper' | 'ink' | 'tea' | 'slate' | 'bone' | 'dusk';
+export type EarnedTheme = 'vellum' | 'sakura' | 'midnight' | 'terminal';
+export type Theme = FreeTheme | EarnedTheme;
+
+export type FreeFont = 'editorial-warm' | 'quiet-serif' | 'technical' | 'classic' | 'sans-modern';
+export type EarnedFont = 'grand' | 'typewriter';
+export type Font = FreeFont | EarnedFont;
 
 /** Languages srsly can study. 'zh' = Mandarin Chinese, 'ja' = Japanese,
  *  'es' = Spanish, 'fr' = French. */

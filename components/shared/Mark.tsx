@@ -7,10 +7,12 @@
  * of CSS variables, and it cannot be made to sit on the mono baseline the rest of this UI is
  * set on. These are four paths on `currentColor`, so they inherit the theme like text.
  *
- * Deliberately NOT a general icon set. There are four here because four things need marking;
- * a fifth belongs here when a fifth control needs one, not before.
+ * Deliberately NOT a general icon set. There are five here because five things need marking;
+ * a sixth belongs here when a sixth control needs one, not before. `lock` is what that rule
+ * looks like when it fires: the earned themes needed a seal, and a padlock emoji beside a
+ * geometric mark set would have been the exact mismatch the paragraph above describes.
  */
-export type MarkName = 'page' | 'book' | 'key' | 'spark';
+export type MarkName = 'page' | 'book' | 'key' | 'spark' | 'lock';
 
 interface Props {
   name: MarkName;
@@ -79,6 +81,18 @@ export default function Mark({ name, size = 16, inline = false }: Props) {
         <circle cx="6.75" cy="10" r="3.75" />
         <path d="M10.5 10H17" />
         <path d="M14.5 10v3" />
+      </svg>
+    );
+  }
+
+  if (name === 'lock') {
+    // Body and shackle, and the shackle is deliberately narrower than the body. Drawn the
+    // same width they merge into one blob at 12px, which is the size this renders at beside a
+    // sealed theme — the step in the silhouette is the whole thing that says "padlock".
+    return (
+      <svg {...common}>
+        <rect x="4" y="8.75" width="12" height="8.75" rx="1.5" />
+        <path d="M7 8.75V6.5a3 3 0 0 1 6 0v2.25" />
       </svg>
     );
   }

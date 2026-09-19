@@ -59,6 +59,47 @@
   --right: #6FCF97; --wrong: #F0685B;
 }
 
+/* ---- EARNED THEMES ----
+   Unlocked by a milestone rather than offered from the start — see lib/cosmetics.ts. Nothing
+   above this line was ever moved down here: the six free themes stay free, and these are
+   additions. Locking a theme someone already uses would be a takeaway wearing a reward's
+   clothes, which is the one thing the unlock system must never do. */
+[data-theme="vellum"] {
+  --paper: #EDE4D3; --paper-2: #E3D8C2; --card: #F6EFE0;
+  --ink: #33281A; --ink-soft: #6B5A42; --ink-faint: #A4937A;
+  --line: #D6C6A8; --line-soft: #E2D5BB;
+  --accent: #7A3B2E; --accent-deep: #5C2A20; --jade: #5E6B3A; --gold: #A07A25;
+  --accent-soft: rgba(122,59,46,.10); --jade-soft: rgba(94,107,58,.13); --gold-soft: rgba(160,122,37,.13);
+  --pop-bg: #33281A; --pop-fg: #EDE4D3; --pop-pin: #E7BFA4; --pop-mute: #9A8A72; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+}
+[data-theme="sakura"] {
+  --paper: #F7EDF0; --paper-2: #F0E1E7; --card: #FCF6F8;
+  --ink: #2E1F29; --ink-soft: #604A58; --ink-faint: #A08E99;
+  --line: #E4CDD6; --line-soft: #EEDCE3;
+  --accent: #B24A6E; --accent-deep: #8C3352; --jade: #5C7A5E; --gold: #A67C3C;
+  --accent-soft: rgba(178,74,110,.10); --jade-soft: rgba(92,122,94,.13); --gold-soft: rgba(166,124,60,.12);
+  --pop-bg: #2E1F29; --pop-fg: #F7EDF0; --pop-pin: #F0BCD0; --pop-mute: #8F8089; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+}
+[data-theme="midnight"] {
+  --paper: #131824; --paper-2: #1A2130; --card: #202839;
+  --ink: #E6EAF2; --ink-soft: #A3ACC0; --ink-faint: #6E7891;
+  --line: #2F3950; --line-soft: #293246;
+  --accent: #6E9BE0; --accent-deep: #4A76BC; --jade: #6FB093; --gold: #D9B86A;
+  --accent-soft: rgba(110,155,224,.14); --jade-soft: rgba(111,176,147,.14); --gold-soft: rgba(217,184,106,.14);
+  --pop-bg: #0A0E17; --pop-fg: #E6EAF2; --pop-pin: #A8C4EE; --pop-mute: #6E7891; --pop-warn: #E8A89F; --pop-warn-strong: #F4C9C2;
+  /* Same two meanings, lifted for a dark background — see the note on --right/--wrong above. */
+  --right: #6FCF97; --wrong: #F0685B;
+}
+[data-theme="terminal"] {
+  --paper: #0B0F0C; --paper-2: #121813; --card: #161E17;
+  --ink: #D8F2DC; --ink-soft: #8FB596; --ink-faint: #5F7A64;
+  --line: #243226; --line-soft: #1D281F;
+  --accent: #4ADE80; --accent-deep: #22A65A; --jade: #78C98F; --gold: #D9C86A;
+  --accent-soft: rgba(74,222,128,.13); --jade-soft: rgba(120,201,143,.13); --gold-soft: rgba(217,200,106,.13);
+  --pop-bg: #050806; --pop-fg: #D8F2DC; --pop-pin: #9BE9B4; --pop-mute: #5F7A64; --pop-warn: #E8B49F; --pop-warn-strong: #F4D2C2;
+  --right: #6FCF97; --wrong: #F0685B;
+}
+
 /* ============ FONT TOKENS ============ */
 :root, [data-font="editorial-warm"] {
   --f-display: 'Fraunces', serif;
@@ -82,6 +123,16 @@
 [data-font="sans-modern"] {
   --f-display: 'Inter', sans-serif; --f-ui: 'Inter', sans-serif;
   --f-han: 'Noto Sans SC', sans-serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+
+/* ---- EARNED TYPE ---- see lib/cosmetics.ts. Additions, never replacements. */
+[data-font="grand"] {
+  --f-display: 'Playfair Display', serif; --f-ui: 'Inter', sans-serif;
+  --f-han: 'Noto Serif SC', serif; --f-mono: 'Spline Sans Mono', monospace; --han-weight: 500;
+}
+[data-font="typewriter"] {
+  --f-display: 'Courier Prime', monospace; --f-ui: 'IBM Plex Sans', sans-serif;
+  --f-han: 'Noto Serif SC', serif; --f-mono: 'Courier Prime', monospace; --han-weight: 500;
 }
 
 /* ============ TAILWIND THEME OVERRIDES ============ */
@@ -141,7 +192,12 @@
     background-size: cover;
     mix-blend-mode: multiply;
   }
-  [data-theme="dusk"] body::before { mix-blend-mode: screen; opacity: .18; }
+  /* The grain multiplies, which on a dark background turns it into a black smear. Every dark
+     theme needs the inverted blend, so they are listed together rather than dusk being a
+     special case — a new dark theme that forgets this looks dirty rather than textured. */
+  [data-theme="dusk"] body::before,
+  [data-theme="midnight"] body::before,
+  [data-theme="terminal"] body::before { mix-blend-mode: screen; opacity: .18; }
 
   /* ============ RUBY / PINYIN ============ */
   ruby { ruby-position: over; }

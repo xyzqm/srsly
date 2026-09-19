@@ -1455,7 +1455,68 @@ LocalStorage keys:
 
 ### Theming
 
-Six themes (`paper`, `ink`, `tea`, `slate`, `bone`, `dusk`) and five fonts are toggled by setting `data-theme` and `data-font` attributes on `document.body`. CSS variables (`--ink`, `--paper`, `--card`, `--line`, `--accent`, `--f-display`, `--f-mono`, `--f-han`, etc.) drive all styling. `useTheme` manages this; `ThemeSheet` is the drawer UI. Never use hardcoded colors — always use CSS variables.
+Ten themes and seven fonts are toggled by setting `data-theme` and `data-font` attributes on
+`document.body`. CSS variables (`--ink`, `--paper`, `--card`, `--line`, `--accent`,
+`--f-display`, `--f-mono`, `--f-han`, etc.) drive all styling. `useTheme` manages this;
+`ThemeSheet` is the drawer UI. Never use hardcoded colors — always use CSS variables.
+
+**Six themes and five fonts are FREE; four themes and two fonts are EARNED**
+(`lib/cosmetics.ts`). `Theme` and `Font` are each split into a `Free*` and an `Earned*` union
+in `lib/types.ts`, and the catalogue is typed against the earned half — so a cosmetic
+*cannot name a free one*, and `tests/cosmetics.test.ts` asserts the two sets never intersect.
+
+#### An unlock may only ever ADD
+
+The whole feature rests on one rule. Locking something a learner already uses is a downgrade
+wearing a reward's clothes: they open the app one morning and their theme is behind a number.
+It also collides with this file's own position that levels are calibration and a map rather
+than the goal — a cosmetic ladder that TAKES is the gamified treadmill refused everywhere
+else. `vellum`, `sakura`, `midnight`, `terminal`, `grand` and `typewriter` are additions;
+nothing was moved.
+
+**NO STREAK UNLOCKS, AND THAT IS THE INTERESTING CONSTRAINT.** A streak is the obvious unlock
+and is the one axis that cannot be used. Milestones are derived from CURRENT state, so
+`streak-30` stops being earned the instant a day is missed, and a derived gate would then
+confiscate the theme on the first morning someone overslept. "Has this learner EVER held a
+30-day streak" genuinely cannot be derived; it would need a stored high-water mark, which is a
+synced field, a merge rule and a migration bought to hand out a colour scheme. So every
+condition is on a counter that only rises in ordinary use — `sessions` is never decremented,
+`deckSize` and `booksFinished` fall only if the learner deletes something themselves. A test
+asserts no `requires` starts with `streak-`, pinning the reasoning rather than the list.
+
+**THE GATE IS ON CHOOSING, NEVER ON WEARING.** `useTheme` applies whatever prefs say and does
+not import `lib/cosmetics.ts` at all, so a cosmetic in use is never revoked mid-session —
+which covers the axes that CAN still regress (`mastered` falls on a lapse, a book can be
+deleted). `canSelect` takes the currently-applied id for the same reason.
+
+**Nothing is stored.** An unlock is `unlockedCosmetics(earned.map(a => a.id))` over the
+milestones `lib/achievements.ts` already derives on read, and the "31/50" in the drawer is
+the milestone's own `have`/`need` rather than a second count. Progress therefore cannot drift
+from the badge cabinet, because it is the same number.
+
+**`ThemeSheet`'s body is mounted only once the drawer has been opened**, latched with a ref
+during render the way `lib/completionSurface.ts` makes its claim. `useAchievements` loads all
+four decks, the SRS state and the IndexedDB shelf, and `ToastHost` already runs one copy at
+the app root — a second on the landing path would double that for a drawer most sessions never
+open. The latch is read in render rather than set in an effect so the body is in the SAME
+commit as `open`, on screen before the 350ms slide ends.
+
+**The reveal is ADDITIVE, and the sealed list waits where the grids do not.** `unlocked` is
+empty until the milestones land, so an earned cosmetic is simply absent and then appears —
+rather than being offered, tapped and yanked away. The sealed section is the opposite case and
+is gated on `ready`: before the decks load every cosmetic looks unearned, so it would open
+claiming 0/6 to someone who has finished fifty sessions, which is the loading state rendered
+as an answer.
+
+**A sealed cosmetic shows its real colours.** The chips come from the same tokens
+`globals.css` defines, because a mystery box makes the milestone a gamble rather than a goal —
+the point is to want a specific one. `tests/cosmetics.test.ts` asserts every id in the
+catalogue has a CSS block and that no block exists nothing can select: a `data-theme` value
+no rule matches is a selection that highlights and changes nothing.
+
+**Every dark theme needs the inverted grain blend.** `body::before` multiplies, which on a
+dark background is a black smear rather than texture. `dusk`, `midnight` and `terminal` are
+listed together in one rule for that reason; a new dark theme that forgets it looks dirty.
 
 #### Milestones are derived, never stored
 
