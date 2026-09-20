@@ -158,7 +158,7 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
     const raw = await generator.complete(
       'You output only valid JSON. No markdown, no code blocks, no explanations.',
       prompt,
-      { maxTokens: 300 },
+      { maxTokens: 300, json: true },
     );
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 

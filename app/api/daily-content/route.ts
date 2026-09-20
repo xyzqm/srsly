@@ -145,11 +145,22 @@ async function generateJson(
   let best: Record<string, unknown> | null = null;
   for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
     try {
-      const raw = await generator.complete(JSON_ONLY_SYSTEM, prompt);
+      const raw = await generator.complete(JSON_ONLY_SYSTEM, prompt, { json: true });
       const parsed = extractJson(raw);
       best = parsed;
       if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
-      console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} incomplete`);
+      /**
+       * A SAMPLE OF THE REPLY, because "incomplete" on its own is undiagnosable.
+       *
+       * This said only that an attempt failed, so a model whose output the parser cannot use —
+       * the exact failure a prompt tuned for one model hits on another — left no evidence of
+       * WHAT it returned. Truncated hard: this is a log line, not a transcript, and the reply
+       * can be thousands of tokens.
+       */
+      console.error(
+        `[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} incomplete ` +
+        `(${generator.name}) keys=[${Object.keys(parsed).join(',')}] sample=${JSON.stringify(raw.slice(0, 300))}`,
+      );
     } catch (err) {
       /**
        * A REJECTED KEY DOES NOT BECOME VALID ON THE SECOND ATTEMPT.
@@ -796,11 +807,29 @@ Return ONLY the JSON object. No markdown fences, no explanation, no extra text.`
   }
   const bySection = new Map(results);
 
-  // If passage was requested but failed entirely, that's a hard failure.
+  /**
+   * THE MODEL ANSWERED AND THE ANSWER WAS UNUSABLE, WHICH IS NOT "generation failed".
+   *
+   * This is the last path that still returned a bare sentence, and it is a genuinely different
+   * failure from the ones above: nothing threw, so the key is good, the model exists and the
+   * request was accepted — the reply simply could not be turned into a passage after every
+   * retry. Reported as "generation failed", that is indistinguishable from a dead key, and it
+   * sent a learner back to Settings to re-check a key that was working perfectly.
+   *
+   * It is also the failure mode CLAUDE.md predicts for a second provider: the prompts were
+   * written and measured against Haiku, and **a weaker model is a good prompt linter**. So the
+   * message names the model, because which one produced the unusable reply is the first thing
+   * anybody debugging this needs — and the server log now carries a sample of what came back.
+   */
   if (sections.includes('passage')) {
     const p = bySection.get('passage');
     if (!p || (Array.isArray(p.out) && p.out.length === 0)) {
-      return NextResponse.json({ error: 'generation failed' }, { status: 500 });
+      const msg = `${generator.name.split(':')[0]} replied, but the passage could not be read from it. `
+        + 'This usually means the model is not following the format srsly asks for — try another provider in Settings.';
+      console.error(`[daily-content] unusable passage from ${generator.name}`);
+      return NextResponse.json(
+        { error: 'unusable_reply', message: msg, detail: msg }, { status: 502 },
+      );
     }
   }
 

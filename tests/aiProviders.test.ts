@@ -265,6 +265,76 @@ describe('the OpenAI-compatible call is shaped the way Google and Groq expect', 
     ]);
   });
 
+  /**
+   * ASKING FOR JSON IN WORDS IS NOT THE SAME AS REQUIRING IT.
+   *
+   * Every caller in this app wants JSON, and the only thing saying so was a system prompt —
+   * which Haiku honours and a smaller model treats as a suggestion. A learner on a working
+   * Gemini key hit exactly that: the request succeeded, nothing threw, and the reply could not
+   * be turned into a passage. `response_format` makes the provider guarantee it.
+   */
+  it('requires JSON of the provider when a route asks for it', async () => {
+    const fn = mockFetch(200, ok('{}'));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p', { json: true });
+    const body = JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+  });
+
+  /** Opt-in: `complete()` is general, and a future caller wanting prose must not have to opt out. */
+  it('does not ask for JSON when a route has not said so', async () => {
+    const fn = mockFetch(200, ok('hello'));
+    await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p');
+    const body = JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty('response_format');
+  });
+
+  /**
+   * A PROVIDER THAT REJECTS JSON MODE MUST NOT LOSE EVERY GENERATION.
+   *
+   * `response_format` is part of the OpenAI shape, but "implements the shape" is not "accepts
+   * every field of it", and that is not verifiable from here. Without the retry, a provider
+   * rejecting the field fails EVERY request — strictly worse than the unreliable JSON it was
+   * added to fix.
+   */
+  it('retries once without JSON mode when the provider names that parameter', async () => {
+    const fn = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false, status: 400,
+        clone: () => ({ text: async () => JSON.stringify({ error: { message: 'Unknown name "response_format"' } }) }),
+        text: async () => '', json: async () => ({}),
+      })
+      .mockResolvedValueOnce({
+        ok: true, status: 200, json: async () => ok('{"ok":1}'), text: async () => '',
+        clone: () => ({ text: async () => '' }),
+      });
+    vi.stubGlobal('fetch', fn);
+
+    const out = await generatorForProvider('gemini', KEYS.gemini, false)
+      .complete('s', 'p', { json: true });
+
+    expect(out).toBe('{"ok":1}');
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string))
+      .toHaveProperty('response_format');
+    expect(JSON.parse((fn.mock.calls[1][1] as RequestInit).body as string))
+      .not.toHaveProperty('response_format');
+  });
+
+  /** Narrow: any other 400 is reported as itself rather than blamed on the parameter. */
+  it('does not retry a 400 that says nothing about JSON mode', async () => {
+    const fn = vi.fn().mockResolvedValue({
+      ok: false, status: 400,
+      clone: () => ({ text: async () => JSON.stringify({ error: { message: 'malformed request' } }) }),
+      text: async () => JSON.stringify({ error: { message: 'malformed request' } }),
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fn);
+
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await expect(g.complete('s', 'p', { json: true })).rejects.toMatchObject({ kind: 'server' });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   /** A blank system turn is still a turn, and some models answer it. */
   it('omits an empty system message rather than sending a blank one', async () => {
     const fn = mockFetch(200, ok('hello'));

@@ -47,6 +47,20 @@ import {
 export interface CompleteOptions {
   /** Upper bound on the reply. Clamped to what the provider will actually produce. */
   readonly maxTokens?: number;
+  /**
+   * Ask the provider to guarantee valid JSON rather than merely requesting it in words.
+   *
+   * EVERY CALLER IN THIS APP WANTS JSON, and until now the only thing saying so was a system
+   * prompt — which Haiku honours and a smaller model treats as a suggestion. The
+   * OpenAI-compatible endpoints accept `response_format: { type: 'json_object' }` and will
+   * then not emit anything else: no prose preamble, no markdown fence, no trailing apology.
+   * That is the difference between a parser that usually works and one that does.
+   *
+   * OPT-IN RATHER THAN ALWAYS-ON, because `complete()` is a general call and a future caller
+   * wanting prose should not have to know to switch this off. Anthropic ignores it — its
+   * SDK has no such field, and Haiku did not need one.
+   */
+  readonly json?: boolean;
 }
 
 export interface Generator {
@@ -192,26 +206,56 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
         ? [{ role: 'system', content: system }, { role: 'user', content: prompt }]
         : [{ role: 'user', content: prompt }];
 
-      let res: Response;
-      try {
-        res = await fetch(`${provider.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            // Bearer, never a query parameter: a key in a URL is logged by every hop.
-            authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: modelFor(provider),
-            max_tokens: capFor(provider, opts),
-            messages,
-          }),
-        });
-      } catch {
-        // DNS, TLS, timeout — the request never reached them, so it is not their error to
-        // report and definitely not a key problem.
-        throw new GenerationError('server', provider.id,
-          `Could not reach ${provider.name}. Check your connection and try again.`);
+      const send = async (withJsonMode: boolean): Promise<Response> => {
+        try {
+          return await fetch(`${provider.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              // Bearer, never a query parameter: a key in a URL is logged by every hop.
+              authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: modelFor(provider),
+              max_tokens: capFor(provider, opts),
+              messages,
+              // Only when asked, and only here: the field is part of the OpenAI shape, which
+              // is what these two implement. See CompleteOptions.json.
+              ...(withJsonMode ? { response_format: { type: 'json_object' } } : {}),
+            }),
+          });
+        } catch {
+          // DNS, TLS, timeout — the request never reached them, so it is not their error to
+          // report and definitely not a key problem.
+          throw new GenerationError('server', provider.id,
+            `Could not reach ${provider.name}. Check your connection and try again.`);
+        }
+      };
+
+      const wantsJson = !!opts?.json;
+      let res = await send(wantsJson);
+
+      /**
+       * ONE RETRY WITHOUT JSON MODE, AND ONLY FOR THE ERROR THAT NAMES IT.
+       *
+       * `response_format` is part of the OpenAI shape and both providers implement that shape,
+       * but "implements the shape" is not the same as "accepts every field of it", and which
+       * fields a given model accepts is not something this codebase can verify from here.
+       * Without this, a provider that rejects the field would fail EVERY generation — strictly
+       * worse than the unreliable-JSON problem the field was added to solve.
+       *
+       * Narrow on purpose: a 400 that explicitly names the parameter, one retry, and a log
+       * line so it is visible rather than silently absorbed. Any other failure is reported as
+       * itself. This is a transport detail being negotiated, not content being substituted —
+       * the learner gets the same passage either way, which is why it is a retry and not a
+       * fallback of the kind this codebase refuses.
+       */
+      if (wantsJson && res.status === 400) {
+        const detail = await res.clone().text().catch(() => '');
+        if (/response_format|json_object/i.test(detail)) {
+          console.warn(`[generator] ${provider.id} rejected JSON mode; retrying without it`);
+          res = await send(false);
+        }
       }
 
       if (!res.ok) {

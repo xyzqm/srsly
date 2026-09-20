@@ -120,7 +120,7 @@ Output format:
     const raw = await generatorFor(access).complete(
       'You output only valid JSON. No markdown, no code blocks, no explanations.',
       prompt,
-      { maxTokens: 1500 },
+      { maxTokens: 1500, json: true },
     );
     const match = raw.match(/\{[\s\S]*\}/);
     /**

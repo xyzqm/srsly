@@ -79,6 +79,20 @@ describe('every route that can reach Anthropic says who pays', () => {
     expect(reachesAnthropic.map(r => r.name).sort()).toEqual([...METERED, ...DEGRADES_FOR_GUESTS].sort());
   });
 
+  /**
+   * EVERY SPENDING ROUTE PARSES JSON, SO EVERY ONE MUST REQUIRE IT.
+   *
+   * Saying "output only valid JSON" in a system prompt is a request, not a constraint: Haiku
+   * honours it and a smaller model does not. A learner on a working Gemini key got a reply
+   * nothing threw on and nothing could parse. `json: true` makes the provider guarantee it, and
+   * a route that forgets is a route that works on Anthropic and fails on the free tiers —
+   * which is exactly the kind of difference nobody notices until somebody reports it.
+   */
+  it.each([...METERED, ...DEGRADES_FOR_GUESTS])('%s asks the provider for JSON', name => {
+    const r = reachesAnthropic.find(x => x.name === name)!;
+    expect(r.src, `${name} parses JSON but never requests it`).toMatch(/json:\s*true/);
+  });
+
   it.each(METERED)('%s meters through the gate', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;
     expect(r.src).toMatch(/meterOrRefuse\s*\(/);
