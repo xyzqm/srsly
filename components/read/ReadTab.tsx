@@ -67,6 +67,26 @@ interface Props {
    * is a passage; the difference is which list it draws from and which controls it offers.
    */
   variant?: 'read' | 'srs';
+  /**
+   * A nav row to draw at the very top, INSIDE this component's card.
+   *
+   * `ReadSections` used to render its section chips above `<ReadTab>`, which put them on the
+   * page background between the tab bar and the card — a second row of tabs, unattached to
+   * either, competing with the real one directly above it. Passing the row down instead means
+   * it sits inside the panel it switches, the way SrsTab's drill chips already do. It is a
+   * node rather than a list of sections because ReadTab has no business knowing what the
+   * sections are; it is being told where to put something, not what it means.
+   */
+  headerNav?: React.ReactNode;
+  /**
+   * Drawn at the very bottom, INSIDE the card, for the same reason `headerNav` exists.
+   *
+   * `ReadSections` puts the reading-accuracy trend and the passage shelf under the generated
+   * section. Rendered as siblings of `<ReadTab>` they landed on the page background below the
+   * card — 431px of panel floating loose under the thing they describe, which is the detached
+   * look the section chips had before they moved inside. Same fix, other end.
+   */
+  footer?: React.ReactNode;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
@@ -86,7 +106,7 @@ function readSavedPassageIdx(contentKey: string): number {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, onRequestLanguage, variant = 'read', active = true }: Props) {
+export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, onRequestLanguage, variant = 'read', active = true, headerNav, footer }: Props) {
   const { signedIn } = useAuth();
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
@@ -515,7 +535,16 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   }, []);
   const [showClozeHints, setShowClozeHints] = useState(true);
   /** The primer is open until the reader starts answering — see the block that renders it. */
-  const [primerOpen, setPrimerOpen] = useState(true);
+  /**
+   * CLOSED UNTIL ASKED FOR.
+   *
+   * It opened by default on the reasoning below — teach, then test — and the cost is that
+   * every passage begins with a wall of vocabulary between the title and the first sentence,
+   * on a tab whose whole argument is that you should be reading. The header still names the
+   * count, so nothing is hidden: "New words to know · 4" is the teaching bit, and the list is
+   * one press away for anyone who wants it before they start rather than when they hit a gap.
+   */
+  const [primerOpen, setPrimerOpen] = useState(false);
   // Word-boundary marks exist because CJK has no spaces. Spanish already delimits its
   // words, so they default off there (the BOUNDARIES toggle still works either way).
   // Set in an effect, not as the useState initial value: `language` starts at the context
@@ -991,6 +1020,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
       className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      {headerNav}
       {showGuestLimit && (
         <div
           className="flex items-center justify-between gap-3 flex-wrap rounded-[11px] px-4 py-3 mb-5"
@@ -1680,6 +1710,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         onAddVocab={titlePopup.handleAddVocab}
         onReleaseFromPool={titlePopup.onReleaseFromPool}
       />
+      {footer}
     </div>
   );
 }

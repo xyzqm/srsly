@@ -36,10 +36,18 @@ export default function Header({ onOpenTheme, accountSlot, language, languages, 
       </div>
 
       <div className="flex gap-2 items-center flex-wrap">
+        {/*
+          THE WORD "Studying" IS GONE AND THE PICKER IS NOT.
+          The select already reads "Español · Spanish", which says what it is and what it is set
+          to; the label in front of it was a caption for a control that captions itself, sitting
+          in the most valuable strip of the screen. It keeps its accessible name through
+          `aria-label`, so nothing is lost to a screen reader — this removes ink, not
+          information.
+        */}
         {languages.length > 0 && (
           <label className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ink-soft)' }}>
-            Studying
             <select
+              aria-label="Language you are studying"
               value={language}
               onChange={e => {
                 const v = e.target.value;

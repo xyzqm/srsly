@@ -117,7 +117,16 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
   const [poolActivate,    setPoolActivate]    = useState(RECOMMENDED_POOL_ACTIVATE);
   const [poolActivateRaw, setPoolActivateRaw] = useState(String(RECOMMENDED_POOL_ACTIVATE));
   const [autoActivate, setAutoActivate] = useState(false);
-  const [group, setGroup] = useState<Group>(initialGroup ?? 'study');
+  /**
+   * ACCOUNT, NOT STUDYING, when nobody has asked for a particular group.
+   *
+   * It defaulted to `study`, which is neither the first tab in the row nor the thing anyone
+   * arrives wanting: a learner opening Settings cold reads left to right, sees Account
+   * highlighted second-from-left, and has to work out why. `GROUPS[0]` rather than a literal,
+   * so the default and the order cannot disagree — reordering the row now moves the default
+   * with it instead of silently leaving it pointing at the middle.
+   */
+  const [group, setGroup] = useState<Group>(initialGroup ?? GROUPS[0].id);
   const [ttsSpeed, setTtsSpeed] = useState<number | undefined>(undefined);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));

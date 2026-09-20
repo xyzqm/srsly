@@ -106,10 +106,25 @@ describe('a route to Settings arrives where the thing it promised is', () => {
     expect(page).toContain('onOpenAccount={openAccount}');
   });
 
-  /** A prop nothing reads is a destination silently ignored. */
+  /**
+   * A prop nothing reads is a destination silently ignored.
+   *
+   * THE FALLBACK IS NO LONGER A LITERAL, and that is the point of the change rather than an
+   * incidental edit. It was `?? 'study'` — neither the first group in the row nor the thing
+   * anyone arrives wanting, so opening Settings cold highlighted the second tab along with no
+   * explanation. It is `GROUPS[0].id` now, so the default and the order cannot disagree: this
+   * asserts the RELATIONSHIP rather than the value, which is what stops a reorder quietly
+   * leaving the default pointing at the middle of the row.
+   */
   it('honours the requested group when Settings opens', () => {
-    expect(settings).toContain("useState<Group>(initialGroup ?? 'study')");
+    expect(settings).toContain('useState<Group>(initialGroup ?? GROUPS[0].id)');
     expect(page).toContain('initialGroup={settingsGroup}');
+  });
+
+  /** And the first group is the one a learner would expect to meet first. */
+  it('opens on Account when nobody has asked for a group', () => {
+    const first = settings.match(/const GROUPS = \[\s*\{\s*id:\s*'(\w+)'/);
+    expect(first?.[1]).toBe('account');
   });
 
   /**

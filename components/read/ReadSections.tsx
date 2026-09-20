@@ -1,6 +1,10 @@
 'use client';
 import { useState } from 'react';
 import ReadTab from './ReadTab';
+import AccuracyTrend from '@/components/stats/AccuracyTrend';
+import PassageShelf from '@/components/stats/PassageShelf';
+import { useSRS } from '@/hooks/useSRS';
+import { useLanguage } from '@/lib/LanguageContext';
 import TabPanel from '@/components/TabPanel';
 import { decodeClip } from '@/lib/webClip';
 import type { FsrsGrade } from '@/lib/fsrs';
@@ -63,6 +67,8 @@ interface Props {
 }
 
 export default function ReadSections({ active, ...rest }: Props) {
+  const language = useLanguage();
+  const { accuracy } = useSRS(language);
   /**
    * Generated is the default, because being unable to find it is what moved it here. The one
    * exception is a URL carrying a clip: that is an article the learner is arriving WITH, and
@@ -71,35 +77,40 @@ export default function ReadSections({ active, ...rest }: Props) {
   const [section, setSection] = useState<Section>(() =>
     typeof window !== 'undefined' && decodeClip(window.location.hash) ? 'library' : 'generated');
 
+  /*
+    THE SWITCH BELONGS INSIDE THE PANEL IT SWITCHES.
+    It rendered here, above <ReadTab>, which drew it on the page background in the gap between
+    the tab bar and the card — a second row of tabs attached to neither, sitting directly under
+    the real one and reading as a broken continuation of it. Reported as "I don't like how the
+    Read thing looks". It is handed to ReadTab as `headerNav` now and drawn inside the card,
+    which is where SrsTab has always put the same control.
+  */
+  const nav = (
+    <div className="flex gap-1.5 mb-5">
+      {SECTIONS.map(({ id, label }) => {
+        const on = section === id;
+        return (
+          <button
+            key={id}
+            onClick={() => setSection(id)}
+            className="cursor-pointer transition-all duration-150"
+            style={{
+              fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.08em',
+              padding: '7px 13px', borderRadius: 8,
+              border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
+              background: on ? 'var(--accent-soft)' : 'var(--card)',
+              color: on ? 'var(--accent)' : 'var(--ink-soft)',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div>
-      {/*
-        The same segmented control SrsTab uses for its drills, deliberately: this is the same
-        kind of choice one level up, and two visual languages for one interaction is how a UI
-        stops being learnable.
-      */}
-      <div className="flex gap-1.5 mb-4">
-        {SECTIONS.map(({ id, label }) => {
-          const on = section === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setSection(id)}
-              className="cursor-pointer"
-              style={{
-                fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em',
-                textTransform: 'uppercase', padding: '6px 12px', borderRadius: 7,
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
-                background: on ? 'var(--accent-soft)' : 'var(--card)',
-                color: on ? 'var(--accent)' : 'var(--ink-soft)',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
       {/*
         KEPT ALIVE, AND TOLD WHEN THEY ARE HIDDEN — both halves matter and for different
         reasons. `TabPanel` stops a section rebuilding from its loading state every time you
@@ -109,10 +120,34 @@ export default function ReadSections({ active, ...rest }: Props) {
         pressed on the Settings tab grading a flashcard nobody could see.
       */}
       <TabPanel active={section === 'generated'}>
-        <ReadTab variant="srs" active={active && section === 'generated'} {...rest} />
+        <ReadTab
+          variant="srs"
+          headerNav={nav}
+          active={active && section === 'generated'}
+          {...rest}
+          footer={<>
+            {/*
+              BOTH OF THESE CAME OUT OF THE STATS TAB, and the argument is the one that moved
+              generation here. "Reading accuracy" is the share of passage BLANKS filled on the
+              first go, and the shelf is every passage finished — neither is about the deck, and
+              both describe the thing directly above them. In Stats they sat seventh and ninth in
+              a column of nine, a long way from any passage, in a tab you open to look at your
+              vocabulary. Here they are the record of the section they are in.
+
+              Under Generated and not under Your library, deliberately: your own reading has no
+              blanks, so it has no accuracy to report and never reaches a finish state to shelve.
+
+              Passed as `footer` rather than rendered beside <ReadTab>, because a sibling lands
+              OUTSIDE the card — measured at 431px of panel floating on the page background
+              under the thing it describes.
+            */}
+            <AccuracyTrend history={accuracy} />
+            <PassageShelf language={language} />
+          </>}
+        />
       </TabPanel>
       <TabPanel active={section === 'library'}>
-        <ReadTab variant="read" active={active && section === 'library'} {...rest} />
+        <ReadTab variant="read" headerNav={nav} active={active && section === 'library'} {...rest} />
       </TabPanel>
     </div>
   );

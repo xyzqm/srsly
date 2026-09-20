@@ -165,8 +165,30 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
 
   return (
     <div className="mb-10" style={{ maxWidth: 560 }}>
-      <div style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
-        Account
+      {/*
+        THE SPACE BESIDE THE HEADING NOW CARRIES THE ACTION.
+        The rows below are a two-column table — label left, value right — and the heading sat
+        above them with the same rule under it and nothing on its right, so it read as a table
+        header with an empty cell. Reported as "how come to the right of Account there's
+        nothing". The sign in / sign out control was at the very BOTTOM of a long panel, which
+        is the other half of the same problem: the one thing anybody comes to this section to
+        do was the last thing they could reach. One move fixes both.
+      */}
+      <div className="flex items-baseline justify-between gap-3" style={{ marginBottom: 12 }}>
+        <span style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+          Account
+        </span>
+        {authEnabled && (
+          <button
+            onClick={signedIn ? signOut : onSignIn}
+            className="cursor-pointer transition-all duration-150 rounded-[9px]"
+            style={signedIn
+              ? { ...mono, fontSize: 11.5, letterSpacing: '.04em', background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)', padding: '7px 12px' }
+              : { ...mono, fontSize: 11.5, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', padding: '8px 14px', boxShadow: '0 2px 0 var(--accent-deep)' }}
+          >
+            {signedIn ? 'Sign out' : 'Sign in'}
+          </button>
+        )}
       </div>
 
       <div style={{ borderTop: '1px solid var(--line-soft)' }}>
@@ -290,30 +312,13 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
         because installed voices differ from device to device.
       </p>
 
-      {authEnabled && (signedIn ? (
-        <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 14 }}>
-          <button
-            onClick={signOut}
-            className="cursor-pointer transition-all duration-150 rounded-[9px]"
-            style={{ ...mono, fontSize: 11.5, letterSpacing: '.04em', background: 'var(--card)', color: 'var(--ink-soft)', border: '1px solid var(--line)', padding: '9px 14px' }}
-          >
-            Sign out
-          </button>
-          <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
-            Your deck stays in the cloud and comes back when you sign in again.
-          </span>
-        </div>
-      ) : (
-        <div style={{ marginTop: 14 }}>
-          <button
-            onClick={onSignIn}
-            className="cursor-pointer transition-all duration-150 rounded-[9px]"
-            style={{ ...mono, fontSize: 12, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500, background: 'var(--accent)', color: '#fff', border: 'none', padding: '11px 18px', boxShadow: '0 2px 0 var(--accent-deep)' }}
-          >
-            Sign in
-          </button>
-        </div>
-      ))}
+      {/* The BUTTON moved to the heading; the reassurance that makes signing out safe to press
+          stays here, where it is read rather than where it would crowd the control. */}
+      {authEnabled && signedIn && (
+        <p style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 14 }}>
+          Signing out leaves your deck in the cloud; it comes back when you sign in again.
+        </p>
+      )}
     </div>
   );
 }
