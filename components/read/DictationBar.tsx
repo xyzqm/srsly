@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Sentence } from '@/lib/types';
 import type { DictationSentence } from '@/lib/dictation';
-import { splitAtBlank } from '@/lib/dictation';
+import { splitAtBlank, becameComplete, type DictationProgress } from '@/lib/dictation';
 import { speak, speakWithBlank, stopAll, primeTTS, prefetchAudio } from '@/lib/speech';
 import Mark from '@/components/shared/Mark';
 
@@ -51,6 +51,25 @@ const btn = (disabled: boolean) => ({
   gap: 6,
 });
 
+/**
+ * How much slower "Slower" is.
+ *
+ * A dictation aid, not a preference: the learner's own speed setting still applies and this
+ * scales it for one replay. 0.65 is where a word you could not catch becomes separable without
+ * the sentence falling apart into disconnected syllables — below about half speed most voices
+ * stop sounding like speech at all, which teaches the wrong thing about how the word sounds.
+ */
+const SLOWER = 0.65;
+
+/**
+ * How long the finished sentence stays on screen before the run moves on.
+ *
+ * A sentence is revealed the moment its last blank is answered, deliberately: seeing the
+ * sentence you just heard is where the learning lands. Advancing instantly would take it away
+ * in the same frame it appeared, which is the reveal cancelling itself.
+ */
+const REVEAL_PAUSE_MS = 1700;
+
 export default function DictationBar({
   sentences, stops, stopIdx, onStepTo, scriptIsUnspaced, unanswered,
 }: Props) {
@@ -66,13 +85,29 @@ export default function DictationBar({
     if (sentence?.plainText) void prefetchAudio(sentence.plainText);
   }, [sentence]);
 
-  const play = useCallback(() => {
+  /**
+   * Has the learner actually asked for audio in this run?
+   *
+   * `/api/tts` is a paid call, so nothing here speaks on mount or on a guess — see the
+   * docstring above and `PassagePlayer`, which learned it expensively. The auto-advance below
+   * plays without a fresh click, and this is what makes that legitimate rather than a
+   * regression: pressing Play starts a RUN, and carrying on through it is the same intent.
+   * Until that first press, finishing a sentence advances silently.
+   */
+  const startedRef = useRef(false);
+  /** Set just before an automatic step, so the effect on `stopIdx` knows to speak. */
+  const autoPlayRef = useRef(false);
+
+  const playAt = useCallback((rateScale: number) => {
     if (!sentence?.plainText) return;
     primeTTS();
     stopAll();
     setSpeaking(true);
-    void speak(sentence.plainText, () => setSpeaking(false));
+    void speak(sentence.plainText, () => setSpeaking(false), rateScale);
   }, [sentence]);
+
+  const play = useCallback(() => { startedRef.current = true; playAt(1); }, [playAt]);
+  const playSlower = useCallback(() => { startedRef.current = true; playAt(SLOWER); }, [playAt]);
 
   /**
    * The fallback hint: the sentence with a deliberate silence where the word goes.
@@ -92,6 +127,45 @@ export default function DictationBar({
     const { before, after } = splitAtBlank(sentence.tokens, unanswered[0], scriptIsUnspaced);
     speakWithBlank(before, after);
   }, [sentence, unanswered, scriptIsUnspaced]);
+
+  /**
+   * ── THE RUN CARRIES ON BY ITSELF ─────────────────────────────────────────
+   *
+   * Reported as "I don't like how the listening thing pauses at every sentence", and it is a
+   * fair description of what it did: every sentence needed two clicks that carried no
+   * information — › then Play — so the learner spent the exercise operating a transport
+   * instead of listening. Filling the last blank in a sentence already SAYS you are done with
+   * it; asking again is a control that can only ever be pressed one way.
+   *
+   * It fires on the TRANSITION to nothing-unanswered, not on the state, which is the part that
+   * is easy to get wrong: reading "no blanks left" as the trigger would also fire when the
+   * learner steps BACK to a sentence they finished earlier, and the run would shunt them
+   * forwards again out of a sentence they had deliberately returned to. So the previous count
+   * is remembered per stop, and a stop that was already complete when arrived at does nothing.
+   *
+   * Manual ‹ › are untouched. This removes a press nobody could disagree with, not the ability
+   * to disagree.
+   */
+  const prevProgressRef = useRef<DictationProgress | null>(null);
+  useEffect(() => {
+    const prev = prevProgressRef.current;
+    const now = { stop: stopIdx, unanswered: unanswered.length };
+    prevProgressRef.current = now;
+    if (!becameComplete(prev, now)) return;
+    if (stopIdx >= stops.length - 1) return;          // the last one simply ends
+    const t = setTimeout(() => {
+      autoPlayRef.current = startedRef.current;
+      onStepTo(stopIdx + 1);
+    }, REVEAL_PAUSE_MS);
+    return () => clearTimeout(t);
+  }, [unanswered.length, stopIdx, stops.length, onStepTo]);
+
+  /** The other half: having stepped automatically, speak the sentence it stepped to. */
+  useEffect(() => {
+    if (!autoPlayRef.current) return;
+    autoPlayRef.current = false;
+    playAt(1);
+  }, [stopIdx, playAt]);
 
   const warmHandlers = { onPointerEnter: warm, onPointerDown: warm, onFocus: warm };
   const prevRef = useRef<HTMLButtonElement>(null);
@@ -118,6 +192,20 @@ export default function DictationBar({
 
       <button onClick={play} style={btn(false)} aria-label="Play this sentence" {...warmHandlers}>
         {speaking ? '❙❙' : '▶'} {speaking ? 'Playing' : 'Play sentence'}
+      </button>
+
+      {/*
+        THE ANSWER TO "it is still way too hard to guess the blank from just listening".
+        The audio is complete and the text is what has gaps, so the word IS spoken — the
+        difficulty is catching it at conversational speed in a language you are learning,
+        which is a different problem from not being able to hear it. Every dictation exercise
+        ever set has answered that the same way, by playing it again more slowly, and this is
+        the one control the bar was missing. "With the gap" beside it answers the other
+        question — WHERE the word goes — which is not the same thing and was doing duty for
+        both.
+      */}
+      <button onClick={playSlower} style={btn(false)} aria-label="Play this sentence more slowly" {...warmHandlers}>
+        ▶ Slower
       </button>
 
       <button

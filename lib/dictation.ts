@@ -97,3 +97,41 @@ export function splitAtBlank(
 export function sentenceRevealed(blankTokenIdxs: number[], answered: (tokenIdx: number) => boolean): boolean {
   return blankTokenIdxs.every(answered);
 }
+
+/** Where a dictation run stands: which stop, and how many blanks are still open on it. */
+export interface DictationProgress {
+  /** Index INTO the stops list, not into the passage's sentences. */
+  stop: number;
+  /** How many blanks on that stop are still unanswered. */
+  unanswered: number;
+}
+
+/**
+ * Has the learner JUST finished the sentence they are on?
+ *
+ * This is the trigger for carrying the run forward on its own, and it is a pure function
+ * rather than a condition inside the effect because the distinction it draws is the one thing
+ * about auto-advance that is easy to get wrong in a way nothing would catch.
+ *
+ * ── WHY A TRANSITION AND NOT A STATE ─────────────────────────────────────────
+ *
+ * The obvious test is "are there no blanks left on this sentence". That is true of a sentence
+ * the learner just completed AND of one they completed ten minutes ago and have deliberately
+ * stepped BACK to — to hear it again, or to read what they got wrong. Reading the state would
+ * shunt them forwards out of it immediately, every time, and the ‹ button would appear broken
+ * for exactly the sentences it is most useful on.
+ *
+ * So the previous count is remembered against the stop it belonged to, and arriving somewhere
+ * (`prev.stop !== now.stop`) is never a completion, however few blanks are open there.
+ *
+ * The run stopping at the end is the caller's business: this answers whether a sentence was
+ * finished, not whether there is another one.
+ */
+export function becameComplete(
+  prev: DictationProgress | null,
+  now: DictationProgress,
+): boolean {
+  if (!prev) return false;             // first observation — nothing has changed yet
+  if (prev.stop !== now.stop) return false; // just arrived, rather than just finished
+  return prev.unanswered > 0 && now.unanswered === 0;
+}

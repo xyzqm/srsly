@@ -297,8 +297,30 @@ export function stopAll(): void {
   }
 }
 
-/** Speak a single text string. Falls back to browser TTS if API is unavailable. */
-export async function speak(text: string, onEnd?: () => void): Promise<void> {
+/**
+ * Speak a single text string. Falls back to browser TTS if API is unavailable.
+ *
+ * `rateScale` is an EXTRA factor on top of the learner's setting, for a caller that needs this
+ * one utterance slower than usual — dictation's "Slower" replay is the only one. It is not a
+ * preference and is never stored: the setting is the learner's normal speed, and this is one
+ * sentence played again more carefully.
+ *
+ * ── THE SPEED SETTING NEVER REACHED API AUDIO ────────────────────────────────
+ *
+ * `audio.playbackRate = 1.0` was hardcoded, so everything in `setSpeechSpeed` applied to the
+ * BROWSER fallback and to nothing else. A learner who set 0.7× to catch a word heard no
+ * difference whenever the API answered — a setting that silently does nothing, which is worse
+ * than not offering it. It went unnoticed because the verification recorded in CLAUDE.md
+ * ("with the setting at 1.4×, a Chinese flashcard spoke at 1.148") was measured on the
+ * fallback path, where it was true.
+ *
+ * Only `speedFactor` is applied here, NOT the per-language `RATE`. That calibration was
+ * measured against `SpeechSynthesisUtterance.rate`, and generated audio is already spoken at a
+ * natural pace by the service rather than at the platform's default gabble — so carrying it
+ * over would slow Chinese by a further fifth on the strength of a number measured somewhere
+ * else. The learner's own multiplier is the part that is unambiguously theirs.
+ */
+export async function speak(text: string, onEnd?: () => void, rateScale = 1): Promise<void> {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   stopAll();
   const gen = currentGen;
@@ -309,19 +331,20 @@ export async function speak(text: string, onEnd?: () => void): Promise<void> {
 
   if (url) {
     const audio = new Audio(url);
-    audio.playbackRate = 1.0;
+    // Clamped: below about 0.5 most browsers stop resampling and the voice turns to mud.
+    audio.playbackRate = Math.min(2, Math.max(0.5, speedFactor * rateScale));
     audio.onended = () => { if (gen === currentGen && onEnd) onEnd(); };
     audio.onerror = () => {
-      if (gen === currentGen) speakBrowser(text, gen, onEnd);
+      if (gen === currentGen) speakBrowser(text, gen, onEnd, rateScale);
     };
     playTracked(audio);
     audio.play().catch(() => {
-      if (gen === currentGen) speakBrowser(text, gen, onEnd);
+      if (gen === currentGen) speakBrowser(text, gen, onEnd, rateScale);
     });
     return;
   }
 
-  speakBrowser(text, gen, onEnd);
+  speakBrowser(text, gen, onEnd, rateScale);
 }
 
 /**
@@ -353,13 +376,16 @@ async function speakBrowser(
   text: string,
   gen: number,
   onEnd?: () => void,
+  rateScale = 1,
 ): Promise<void> {
   const voice = await resolveVoice();
   if (gen !== currentGen) return;
 
   const u = new SpeechSynthesisUtterance(text);
   u.lang = currentLocale;
-  u.rate = currentRate();
+  // Floored at 0.5: several platform voices treat anything lower as 0 and say nothing at all,
+  // which reads as a broken button rather than as a slow one.
+  u.rate = Math.max(0.5, currentRate() * rateScale);
   u.pitch = 1.0;
   // Leaving `voice` unset when none matched is deliberate: the platform then picks from
   // `lang`, which is right. Assigning a wrong-language voice would silently override it.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dictationSentences, splitAtBlank, sentenceRevealed } from '@/lib/dictation';
+import { dictationSentences, splitAtBlank, sentenceRevealed, becameComplete } from '@/lib/dictation';
 import type { Sentence, PassageToken } from '@/lib/types';
 
 /**
@@ -84,5 +84,51 @@ describe('when the text is revealed', () => {
 
   it('treats a sentence with no blanks as revealed', () => {
     expect(sentenceRevealed([], () => false)).toBe(true);
+  });
+});
+
+describe('the run carries on by itself once a sentence is finished', () => {
+  /**
+   * Reported as "I don't like how the listening thing pauses at every sentence": every
+   * sentence needed two clicks that carried no information — › then Play. Filling the last
+   * blank already SAYS you are done with it.
+   *
+   * The whole rule is TRANSITION rather than STATE, and that is what these pin. It is not a
+   * hypothetical distinction: reading "no blanks left" fires on a sentence finished ten
+   * minutes ago that the learner has deliberately stepped BACK to, and shunts them straight
+   * out of it again — so ‹ would look broken on exactly the sentences it is most useful on.
+   */
+  it('fires when the last blank on this sentence is answered', () => {
+    expect(becameComplete({ stop: 0, unanswered: 1 }, { stop: 0, unanswered: 0 })).toBe(true);
+  });
+
+  it('does not fire while blanks are still open', () => {
+    expect(becameComplete({ stop: 0, unanswered: 2 }, { stop: 0, unanswered: 1 })).toBe(false);
+  });
+
+  /** THE ONE THAT MATTERS: stepping back to a finished sentence is an arrival, not a finish. */
+  it('does not fire on arriving at a sentence that was already complete', () => {
+    expect(becameComplete({ stop: 2, unanswered: 1 }, { stop: 1, unanswered: 0 })).toBe(false);
+    expect(becameComplete({ stop: 0, unanswered: 0 }, { stop: 1, unanswered: 0 })).toBe(false);
+  });
+
+  /** Nor on the first observation, where nothing has changed yet by definition. */
+  it('does not fire on the first observation', () => {
+    expect(becameComplete(null, { stop: 0, unanswered: 0 })).toBe(false);
+  });
+
+  /**
+   * Idempotent across re-renders. React re-runs an effect for reasons that have nothing to do
+   * with the learner, and an advance that fired twice would skip a sentence unheard.
+   */
+  it('does not fire twice for one completion', () => {
+    const done = { stop: 0, unanswered: 0 };
+    expect(becameComplete({ stop: 0, unanswered: 1 }, done)).toBe(true);
+    expect(becameComplete(done, done)).toBe(false);
+  });
+
+  /** A sentence whose blanks reopen and close again is a second, real completion. */
+  it('fires again if the sentence goes back to having blanks and is finished once more', () => {
+    expect(becameComplete({ stop: 3, unanswered: 2 }, { stop: 3, unanswered: 0 })).toBe(true);
   });
 });

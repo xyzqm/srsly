@@ -55,23 +55,43 @@ export default function ReadabilityNote({ readability: r, estimated, compact }: 
     );
   }
 
+  /**
+   * ── THE BLOCK IS PLACED RIGHT AND READ LEFT ──────────────────────────────
+   *
+   * It sits in a right-hand column, and the caller used to right-align the TEXT as well. That
+   * is fine for one line and bad for four of very different lengths: "90%…", a list of five
+   * hard words and a count of distinct types have nothing in common at their right edge, so
+   * every line started in a different place and the eye had no column to run down. Reported
+   * as "make this thing formatted better", which is what a ragged left edge looks like from
+   * the outside.
+   *
+   * `inline-block` keeps the BLOCK hugging the right of its column — the placement was never
+   * the problem — while everything inside shares one left edge. `maxWidth` stops the hardest
+   * list, which is the only line whose length the data controls, from stretching the whole
+   * thing across the passage.
+   */
   return (
-    <div style={{ lineHeight: 1.5 }}>
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <span style={{ ...mono, fontSize: 13, color: 'var(--ink)', letterSpacing: 0 }}>
-          {estimated ? 'about ' : ''}{pct}%
+    <div style={{ display: 'inline-block', textAlign: 'left', maxWidth: 320, lineHeight: 1.5 }}>
+      {/*
+        ONE LINE FOR THE ANSWER. The figure, what it is a figure OF, and what it means were
+        three competing type treatments on one row — a mono number, body text and a shouted
+        uppercase tag in a colour. The verdict is the only part that needs emphasis, and it
+        gets it from the colour it already had rather than from capitals as well.
+      */}
+      <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>
+        <span style={{ ...mono, fontSize: 14, color: 'var(--ink)', letterSpacing: 0, fontWeight: 500 }}>
+          {estimated ? '~' : ''}{pct}%
         </span>
-        <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
-          at or below {bandName}
-        </span>
-        <span style={{ ...mono, fontSize: 9.5, textTransform: 'uppercase', color: tone }}>
-          {label}
-        </span>
+        {' '}at or below {bandName}
+        {' · '}
+        <span style={{ color: tone, fontWeight: 500 }}>{label}</span>
       </div>
 
       {r.hardest.length > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 3, lineHeight: 1.5 }}>
-          Hardest here:{' '}
+        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 4, lineHeight: 1.55 }}>
+          <span style={{ ...mono, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.12em', opacity: .75 }}>
+            Hardest
+          </span>{' '}
           {r.hardest.map((h, i) => (
             <span key={h.word}>
               {i > 0 && ', '}
@@ -82,12 +102,14 @@ export default function ReadabilityNote({ readability: r, estimated, compact }: 
         </div>
       )}
 
-      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-faint)', marginTop: 3, opacity: .7 }}>
-        {estimated ? 'estimated from a few excerpts · ' : ''}
-        {r.tokens} words, {r.types} distinct
+      {/* Separators are all `·` now. It read "88 words, 59 distinct · 2 names…", mixing a comma
+          and a middot for the same job, so the three facts looked like two. */}
+      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-faint)', marginTop: 4, opacity: .7, letterSpacing: '.04em' }}>
+        {estimated ? 'estimated from excerpts · ' : ''}
+        {r.tokens} words · {r.types} distinct
         {/* Named rather than hidden: a novel is full of character names, which are filtered out
             of the dictionary at build time and so cannot be graded either way. */}
-        {r.unresolved > 0 && ` · ${r.unresolved} names or unknowns not counted`}
+        {r.unresolved > 0 && ` · ${r.unresolved} not counted`}
       </div>
     </div>
   );

@@ -1072,15 +1072,24 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
         {/* Level sizes a GENERATED passage. Your own reading ignores levels entirely — see
             CLAUDE.md on levels being calibration, not a ladder — so stating one over a book
             chapter claimed a relationship that does not exist. */}
-        <div className="flex flex-col items-end gap-2">
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em' }}>
-            {variant === 'srs'
-              ? <>level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}</>
-              : <>~{charCount} {langConfig.countUnit}</>}
+        {/* ── One block, placed right, read left ────────────────────────────
+            These four lines are one piece of metadata about the text, and they were laid out
+            as two separately right-aligned things: the level line hugged the container's right
+            edge while the readability block hugged its own. Nothing shared a left edge, so a
+            reader had to find the start of every line — which is what "make this thing
+            formatted better" describes. The column still sits at the right of the header; the
+            inner block is what stops being ragged. */}
+        <div className="flex flex-col items-end">
+          <div style={{ display: 'inline-block', textAlign: 'left' }}>
+            <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: 'var(--ink-faint)', letterSpacing: '.05em', marginBottom: 6 }}>
+              {variant === 'srs'
+                ? <>level <span style={{ color: 'var(--jade)', fontWeight: 500 }}>{levelLabel(language, hskLevel)}</span> · ~{charCount} {langConfig.countUnit}</>
+                : <>~{charCount} {langConfig.countUnit}</>}
+            </div>
+            {/* Information, never a gate — see ReadabilityNote. It sits BESIDE the passage
+                rather than in front of it, and nothing is withheld at any figure. */}
+            <ReadabilityNote readability={readability} />
           </div>
-          {/* Information, never a gate — see ReadabilityNote. It sits BESIDE the passage rather
-              than in front of it, and nothing is withheld at any figure. */}
-          <div className="text-right"><ReadabilityNote readability={readability} /></div>
         </div>
       </div>
 
