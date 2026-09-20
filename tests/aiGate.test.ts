@@ -88,33 +88,33 @@ describe('every route that can reach Anthropic says who pays', () => {
    * a route that forgets is a route that works on Anthropic and fails on the free tiers —
    * which is exactly the kind of difference nobody notices until somebody reports it.
    */
+  /**
+   * A ROUTE MAY DELEGATE THE REQUEST, BUT NOT THE GUARANTEE.
+   *
+   * `daily-content` moved its retry loop into `lib/server/generateJson.ts`, so the literal
+   * `json: true` left the route file — and this test failed, which is exactly what it is for.
+   * The property being guarded is "the reply this route parses was required to be JSON", and
+   * that stays true through a helper. So a route satisfies it either directly or by handing
+   * the call to a module that does; what it may NOT do is stop requiring it. A route that
+   * neither asks nor delegates still fails.
+   */
   it.each([...METERED, ...DEGRADES_FOR_GUESTS])('%s asks the provider for JSON', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;
-    expect(r.src, `${name} parses JSON but never requests it`).toMatch(/json:\s*true/);
+    const delegate = r.src.includes('@/lib/server/generateJson')
+      ? code(readFileSync(resolve(ROOT, 'lib/server/generateJson.ts'), 'utf8'))
+      : '';
+    expect(r.src + delegate, `${name} parses JSON but never requests it`).toMatch(/json:\s*true/);
   });
 
   /**
-   * A RETRY THAT GIVES UP MUST SAY WHY IT GAVE UP.
-   *
-   * MEASURED IN PRODUCTION, and it is the reason this test exists rather than a hypothetical:
-   * Google answered `daily-content` with 503 twice — the model was overloaded, which is the
-   * single commonest free-tier failure there is — and the retry loop swallowed both errors and
-   * returned nulls. The route, having nothing left to report, fell through to its own guess:
-   * that the reply could not be read and the model was not following the format. The key was
-   * fine, the model was fine and the prompt was fine.
-   *
-   * `server` is the only kind that gets retried, so it is precisely the kind that can reach the
-   * end of a retry loop still unreported — retrying is what converts a failure with a good
-   * message into one with none. Pinned against the SOURCE because the loop is internal to the
-   * route and the wrong behaviour is a silent omission rather than a wrong value: returning
-   * nulls looks exactly like the degrade-gracefully path it shares an exit with.
+   * "a retry that gives up must say why" WAS ASSERTED HERE, BY GREPPING THE ROUTE FOR
+   * `throw lastError`. It has moved to `tests/generateJson.test.ts`, which drives the real
+   * function against a fake generator and asserts the error that actually comes out — strictly
+   * stronger than checking a token is present, and possible only because the loop was lifted
+   * into `lib/server/generateJson.ts`. Recorded rather than silently dropped, because a test
+   * disappearing from a firewall file is otherwise indistinguishable from one being deleted to
+   * keep CI green.
    */
-  it('daily-content reports the provider error when every attempt failed', () => {
-    const r = reachesAnthropic.find(x => x.name === 'daily-content')!;
-    expect(r.src, 'the last provider error is not kept across retries').toContain('lastError');
-    expect(r.src, 'retries exhausted, the error is dropped rather than rethrown')
-      .toMatch(/throw\s+lastError/);
-  });
 
   it.each(METERED)('%s meters through the gate', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;

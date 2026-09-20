@@ -6,8 +6,22 @@ import { segmentJa, type RawTok } from '@/lib/server/kuromojiSegmenter';
 import { segmentEs } from '@/lib/server/spanishSegmenter';
 import { segmentFr } from '@/lib/server/frenchSegmenter';
 import { passageTopic, passageForm } from '@/lib/passageTheme';
-import { type Generator, GenerationError } from '@/lib/server/generator';
+import { GenerationError } from '@/lib/server/generator';
 import { resolveAiAccess, generatorFor, meterOrRefuse, noKeyRefusal } from '@/lib/server/aiGate';
+import { generateJson } from '@/lib/server/generateJson';
+
+/**
+ * THE LONGEST-RUNNING ROUTE IN THE APP DECLARED NO TIMEOUT AT ALL.
+ *
+ * `missed-review` asks for three example sentences and sets 60 seconds; this one writes a whole
+ * passage — its own button says "15–25s" — and set nothing, so it ran on whatever the platform
+ * default happened to be. Exactly backwards, and invisible while the default was generous:
+ * a platform default that tightens, or a slower model, turns a working feature into a timeout
+ * with no error anyone here wrote. It is also the budget the retries below have to fit inside,
+ * so it needs to be a number this repo chose rather than one it inherited.
+ */
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * TWO MESSAGES, BECAUSE THE TWO REFUSALS NEED DIFFERENT ADVICE.
@@ -29,18 +43,6 @@ const DEFAULT_BATCH_SIZE = 5;
 const MIN_BATCH_SIZE = 2;
 const MAX_BATCH_SIZE = 12;
 
-/** How many times to ask the model before giving up (handles occasional bad JSON). */
-const MAX_GEN_ATTEMPTS = 2;
-
-/**
- * How long to wait before the one retry.
- *
- * The retryable failure is a 5xx, which on a free tier is overwhelmingly "this model is
- * overloaded" — so retrying immediately asks the same congested service the same question a
- * few milliseconds later and gets the same answer. Deliberately small: four sections generate
- * concurrently and each may pause once, so this has to stay far away from the route's timeout.
- */
-const RETRY_PAUSE_MS = 1200;
 
 /** Independently-generated content blocks. */
 type Section = 'passage' | 'fill' | 'convo' | 'questions';
@@ -110,143 +112,6 @@ function parseTokenString(s: unknown, inputMap: Map<string, { p: string; m: stri
   return out;
 }
 
-/** Repair common model JSON mistakes before parsing. */
-function repairJson(s: string): string {
-  let r = s;
-  // Trailing commas before ] or } (most common model mistake)
-  r = r.replace(/,(\s*[}\]])/g, '$1');
-  // Unescaped newlines inside string values
-  r = r.replace(/"([^"\\]*)(\n)([^"\\]*)"/g, (_, a, _nl, b) => `"${a}\\n${b}"`);
-  // Strip any BOM or zero-width characters
-  r = r.replace(/^﻿/, '').replace(/[​-‍﻿]/g, '');
-  return r;
-}
-
-/** Extract and parse the JSON object from a raw model response. Throws if unparseable. */
-function extractJson(raw: string): Record<string, unknown> {
-  // Strip markdown fences if the model wrapped the output
-  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  /**
-   * Narrow to the first `{` … last `}`, WHEREVER the first one is.
-   *
-   * This tested `jStart > 0`, so it only fired when the model prepended something — and a
-   * model that APPENDS instead ("…} Hope this helps!") starts its reply at index 0, skipped
-   * the slice, and failed to parse over text sitting after a perfectly good object. Half the
-   * cases the line exists for were the half it could not see. Pure JSON slices to itself, so
-   * widening it costs nothing.
-   */
-  const jStart = cleaned.indexOf('{');
-  const jEnd = cleaned.lastIndexOf('}');
-  if (jStart >= 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    return JSON.parse(repairJson(cleaned)); // throws if still invalid
-  }
-}
-
-/**
- * Run one generation prompt, retrying when the model returns unparseable JSON OR
- * an output that fails `isComplete` (e.g. missing fill/convo). Returns the first
- * complete result as `json`, plus the last parseable result as `best` so callers
- * can degrade gracefully instead of failing outright.
- */
-const JSON_ONLY_SYSTEM = 'You output only valid JSON. No markdown, no code blocks, no explanations.';
-
-async function generateJson(
-  generator: Generator,
-  prompt: string,
-  isComplete: (j: Record<string, unknown>) => boolean,
-  label: string,
-): Promise<{ json: Record<string, unknown> | null; best: Record<string, unknown> | null }> {
-  let json: Record<string, unknown> | null = null;
-  let best: Record<string, unknown> | null = null;
-  /**
-   * THE LAST THING THE PROVIDER SAID, KEPT SO IT CAN BE SAID AGAIN.
-   *
-   * Retries exhausted, this returned two nulls — and the route then had nothing to report but
-   * its own guess, which is that the reply could not be read. MEASURED IN PRODUCTION: Google
-   * answered 503 twice (the model was overloaded), the loop swallowed both, and the learner was
-   * told the model was not following the format srsly asks for. Their key was fine, the model
-   * was fine, the prompt was fine, and the advice — try another provider — was the only part
-   * that happened to be useful, by accident.
-   *
-   * `server` is the kind that gets retried, so it is precisely the kind that reaches the end of
-   * this loop still unreported. A retry that exhausts itself must hand back WHY, or retrying
-   * converts a known failure into an unknown one.
-   */
-  let lastError: GenerationError | null = null;
-  for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
-    /**
-     * HOISTED SO THE CATCH CAN SEE IT, WHICH IS THE WHOLE POINT.
-     *
-     * The sample below was added to the INCOMPLETE branch and not to this one — and the
-     * throwing branch is the likelier of the two, because a reply that is not JSON fails at
-     * `extractJson` and never reaches a completeness check. So the failure with no evidence
-     * was the failure actually happening, and the log said only `SyntaxError: Unexpected
-     * token`, which names the parser rather than the reply. Instrumentation that misses the
-     * common path is worse than none: it reads like proof the common path did not happen.
-     */
-    let raw = '';
-    try {
-      raw = await generator.complete(JSON_ONLY_SYSTEM, prompt, { json: true });
-      const parsed = extractJson(raw);
-      best = parsed;
-      if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
-      /**
-       * A SAMPLE OF THE REPLY, because "incomplete" on its own is undiagnosable.
-       *
-       * This said only that an attempt failed, so a model whose output the parser cannot use —
-       * the exact failure a prompt tuned for one model hits on another — left no evidence of
-       * WHAT it returned. Truncated hard: this is a log line, not a transcript, and the reply
-       * can be thousands of tokens.
-       */
-      console.error(
-        `[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} incomplete ` +
-        `(${generator.name}) keys=[${Object.keys(parsed).join(',')}] sample=${JSON.stringify(raw.slice(0, 300))}`,
-      );
-    } catch (err) {
-      /**
-       * A REJECTED KEY DOES NOT BECOME VALID ON THE SECOND ATTEMPT.
-       *
-       * This caught everything and retried, which is right for a garbled reply and wrong for
-       * every failure the provider has already given a definite answer to. A bad key was
-       * retried `MAX_GEN_ATTEMPTS` times and then reported as a bare 500 "generation failed" —
-       * so a learner whose key was wrong waited through several round trips to be told
-       * nothing. On a rate limit it is worse than useless: retrying is what the 429 was
-       * asking us to stop doing.
-       *
-       * `server` is the only kind still retried, because that is the transient one — a 5xx or
-       * a dropped connection genuinely can succeed the second time. Everything else is rethrown
-       * so the handler can say what happened.
-       */
-      if (err instanceof GenerationError && err.kind !== 'server') throw err;
-      if (err instanceof GenerationError) lastError = err;
-      console.error(
-        `[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed (${generator.name}): ` +
-        `${String(err)} chars=${raw.length} sample=${JSON.stringify(raw.slice(0, 300))}`,
-      );
-      /**
-       * A BEAT BEFORE TRYING AGAIN, because the retryable failure is congestion.
-       * Two requests a few milliseconds apart are one request as far as an overloaded model is
-       * concerned, so the retry was spending a round trip to ask the same busy service the same
-       * question. Short enough that it cannot push a route near its own timeout.
-       */
-      if (attempt < MAX_GEN_ATTEMPTS) await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
-    }
-  }
-  /**
-   * NOTHING PARSED AND THE PROVIDER SAID WHY, so say that rather than guessing.
-   *
-   * Only when `best` is null: a reply that parsed but came back incomplete is a real partial
-   * answer, and degrading to it is the deliberate behaviour this function was built for. And
-   * only for a `GenerationError` — a parse failure is genuinely "the reply could not be read",
-   * which the route already says accurately, and rethrowing a SyntaxError would turn it into a
-   * bare 500.
-   */
-  if (json === null && best === null && lastError) throw lastError;
-  return { json, best };
-}
 
 export async function POST(req: NextRequest) {
   /**

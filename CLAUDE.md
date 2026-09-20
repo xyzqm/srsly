@@ -264,7 +264,32 @@ back incomplete is a real partial answer and degrading to it is the deliberate b
 
 `RETRY_PAUSE_MS` came from the same log: two requests milliseconds apart are one request as far
 as an overloaded model is concerned, so the retry was spending a round trip to ask the same busy
-service the same question.
+service the same question. It scales with the attempt — congestion that has not cleared in a
+second may clear in three, and hammering is what produces the 429s `GenerationError` then has
+to explain.
+
+**TWO RETRY BUDGETS, BECAUSE THE TWO FAILURES COST COMPLETELY DIFFERENT AMOUNTS.** A reply that
+arrives and cannot be parsed has already been WRITTEN — tokens spent, fifteen seconds waited —
+and asking again costs all of it a second time. A 503 produced nothing at all and comes back in
+about a second. One counter for both rationed the cheap failure by the expensive one, which on a
+free tier is most of them. `MAX_GENERATIONS` stays at 2 and `MAX_TRANSPORT_RETRIES` is separate;
+raising the first is the tempting mistake, since three full generations at fifteen seconds each
+is forty-five, close enough to the route's timeout to turn a bad reply into a dead request.
+
+**`daily-content` DECLARED NO TIMEOUT AT ALL**, while `missed-review` — three example sentences —
+declared 60. Exactly backwards: this is the route whose own button says "15–25s". It ran on
+whatever the platform default happened to be, which is invisible while that default is generous
+and becomes a feature that silently stops working when it is not. It is also the budget the
+retries above have to fit inside, so it has to be a number this repo chose.
+
+**THE LOOP MOVED TO `lib/server/generateJson.ts` SO IT COULD BE TESTED AT ALL.** It was pure
+logic inside an API route, which a test cannot import — so every claim about it was pinned by
+grepping the route's own source for an identifier, which catches a deletion and nothing else. It
+cannot tell whether the error that comes out is the right one, whether a 429 is retried, or
+whether a partial answer survives a later failure. `tests/generateJson.test.ts` drives the real
+function against a scripted fake generator and asserts all three; six controls confirm each
+rule's test fails when that rule is removed. The firewall in `tests/aiGate.test.ts` now follows
+the delegation — a route may hand the call to a helper, but not stop requiring JSON.
 
 **THE LESSON IS THE ONE THIS FILE ALREADY WRITES DOWN, AND IT WAS IGNORED FOR THREE ROUNDS.**
 "The real bugs were found by running the app, not by reading the code." Every hypothesis here —
@@ -635,7 +660,17 @@ want to read; "advance through HSK 1–6" is what a textbook is for. Settings sa
 words, because a learner who thinks the ladder is the point will not open their own book.
 
 **The empty Read tab leads with two reading cards** (`ReadingSources`) — Paste text and Upload
-a book — with AI generation set apart below and badged "needs your API key".
+a book.
+
+*(This sentence continued "— with AI generation set apart below and badged 'needs your API
+key'", and that half was WRONG. The generate block is inside `variant === 'srs'` and the read
+variant's empty state falls through to `null`, so **the Read tab shows nothing about generation
+at all**. The badge, the "Or write one for me" heading and the Generate button are Practice-tab
+only. It misled a session into telling the author to press Generate on the Read tab, and then
+into repeating it — a stale instruction file is confidently wrong about the thing it exists to
+describe, which is the failure this file already records about `ts-fsrs` and the handwriting
+UI. The copy INSIDE that block is correct and says "in the Read tab" where it points at the
+free half; it is this line that drifted.)*
 
 **It used to lead with a STARTER TEXT, and that card was removed on request (2026-09-04).** The
 reasoning for it is kept because it was not wrong and the cost of removing it is real: every
