@@ -23,7 +23,7 @@ import { hasLessons } from '@/lib/lessons';
  * from localStorage.
  */
 const LearnTab = dynamic(() => import('@/components/learn/LearnTab'), { ssr: false });
-import ReadTab from '@/components/read/ReadTab';
+import ReadSections from '@/components/read/ReadSections';
 import SrsTab from '@/components/practice/SrsTab';
 import StatsTab from '@/components/stats/StatsTab';
 import VocabTab from '@/components/vocab/VocabTab';
@@ -380,7 +380,7 @@ function AppShell() {
               mount and unmount as before; nothing there is expensive enough to earn the
               memory, and Practice owns audio and timers that should stop when you leave. */}
           <TabPanel active={tab === 'read'}>
-            <ReadTab
+            <ReadSections
               active={tab === 'read'}
               onScore={recordScore}
               onActivity={recordActivity}
@@ -400,11 +400,6 @@ function AppShell() {
             <SrsTab
               active={tab === 'practice'}
               onScore={recordScore}
-              onActivity={recordActivity}
-              onAnswer={recordAnswer}
-              onRequireSignIn={requireSignIn}
-              onNavigateVocab={() => changeTab('vocab')}
-              onNavigateSettings={openAccount}
             />
           </TabPanel>
           {/* Not kept alive: the lesson list is a static render off local state, so remounting

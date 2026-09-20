@@ -659,18 +659,18 @@ audio ignore levels entirely, and always should. The app is for reading things y
 want to read; "advance through HSK 1–6" is what a textbook is for. Settings says so in as many
 words, because a learner who thinks the ladder is the point will not open their own book.
 
-**The empty Read tab leads with two reading cards** (`ReadingSources`) — Paste text and Upload
-a book.
+**The empty *Your library* section leads with two reading cards** (`ReadingSources`) — Paste
+text and Upload a book. Generation is the *Generated* section beside it, with its own empty
+state: the "Or write one for me" heading, a "needs your API key" badge and the Generate button.
 
-*(This sentence continued "— with AI generation set apart below and badged 'needs your API
-key'", and that half was WRONG. The generate block is inside `variant === 'srs'` and the read
-variant's empty state falls through to `null`, so **the Read tab shows nothing about generation
-at all**. The badge, the "Or write one for me" heading and the Generate button are Practice-tab
-only. It misled a session into telling the author to press Generate on the Read tab, and then
-into repeating it — a stale instruction file is confidently wrong about the thing it exists to
-describe, which is the failure this file already records about `ts-fsrs` and the handwriting
-UI. The copy INSIDE that block is correct and says "in the Read tab" where it points at the
-free half; it is this line that drifted.)*
+*(This line has been wrong twice, in opposite directions, which is worth recording as a
+pattern rather than as two mistakes. It first claimed the empty Read tab carried "AI generation
+set apart below and badged 'needs your API key'" — untrue, because that block was inside
+`variant === 'srs'` and the read variant's empty state fell through to `null`. A session read
+it as current and told the author to press Generate on the Read tab, then repeated the
+instruction after being corrected. It is true again now, for a different reason: the block did
+not move to satisfy the sentence, generation moved tabs. **A description that becomes accurate
+by accident is not evidence the description was being maintained** — check the component.)*
 
 **It used to lead with a STARTER TEXT, and that card was removed on request (2026-09-04).** The
 reasoning for it is kept because it was not wrong and the cost of removing it is real: every
@@ -1920,19 +1920,46 @@ the winner could be the instance nobody could see and the milestone simply never
 results for a while, despite this file and the component's own docstring describing two, so a
 milestone crossed on the last blank of a passage had nowhere to be announced.
 
-### Reading and scheduled practice are separate tabs
+### Reading is one tab; the drills are another
 
 One line down the middle, and it is the app's main organising idea:
 
-- **Read** is your own material — starter texts, pasted articles, web clips, books. No blanks,
-  no grading, no schedule touched. Words enter the deck only when you tap one and press Add to
-  deck. Comprehension questions are available (they check understanding, not recall).
-- **Practice** is what FSRS actually drives: flashcards, handwriting, conjugation, and
-  generated passages, which keep their blanks because a generated passage is written around
-  the words you owe today.
+- **Read** is everything you read, in two sections (`components/read/ReadSections.tsx`).
+  *Generated* is the passage srsly writes around the words you owe today — blanks, grading,
+  dictation, the lot. *Your library* is your own material: pasted articles, web clips, books.
+  No blanks, no grading, no schedule touched; words enter the deck only when you tap one and
+  press Add to deck.
+- **Review** is what FSRS actually drives: flashcards, handwriting, conjugation.
 
-**THE TAB IS LABELLED "Practice" AND THE CODE STILL SAYS SRS, DELIBERATELY.** It read "SRS"
-until 2026-09-12, which is a term of art: precise to someone who already knows what spaced
+**GENERATION USED TO LIVE IN THE DRILL TAB, AND THE REASONING WAS SOUND AND STILL LOST.** A
+generated passage is written around today's due words, carries blanks and writes to the
+schedule — so it is scheduled work, so it belonged with the scheduled work. What that missed is
+the name on the other tab. Somebody wanting "write me something to read" looks under **Read**,
+found two cards about pasting and uploading, and concluded the feature did not exist. Reported
+twice, the second time by the author of the app.
+
+**THE CONTRACT DID NOT MOVE WITH IT, AND THAT IS THE WHOLE REASON THE MOVE IS SAFE.** "Only
+generated passages have blanks" is a rule about the PASSAGE, not about the tab it is displayed
+in: a generated passage still carries blanks, still grades them, still writes FSRS, and pasted
+text still commits with `vocabWords: []` and still touches nothing. `variant` is unchanged and
+still decides which list is drawn and which controls are offered. What changed is that the
+switch between the two is a segmented control inside Read rather than the tab bar.
+
+**TWO SECTIONS RATHER THAN ONE MERGED LIST, and that was a deliberate choice against the
+tidier-looking option.** The two kinds behave differently on screen — one has blanks, a hints
+toggle, a dictation run, a finish row and a results screen, and the other has none of them — so
+a single list would walk "passage 3 of 9" between two kinds of thing whose controls appear and
+disappear as you page. That is the exact tangle that made a book get its own reading space.
+
+**THE CLIP TRAP REAPPEARS ONE LEVEL DOWN, and it is the reason `ReadSections` imports
+`decodeClip`.** `TabPanel` mounts a section only once activated, and the clipper reads the
+location hash in an effect inside the LIBRARY section — so defaulting to Generated with a clip
+in the URL would leave that effect unmounted and the article silently unread. `initialTab()`
+already documents this for the tab bar; adding a level of tabs reintroduced it, and it is
+answered the same way. `tests/readSections.test.ts` pins both halves.
+
+**THE TAB IS LABELLED "Review" AND THE CODE STILL SAYS SRS, DELIBERATELY.** It read "SRS"
+until 2026-09-12 and "Practice" until the passage left it. "SRS" is a term of art: precise to someone who already knows what spaced
 repetition is, and meaningless to everyone else. Nothing underneath was renamed — the `TabId`
 was already `practice`, `ReadTab`'s `variant` is still `'srs'`, and the `srs_state` column
 keeps its name, because those name the SCHEDULER and the scheduler did not change. Renaming a

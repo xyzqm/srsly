@@ -4,24 +4,30 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { hasLessons } from '@/lib/lessons';
 
 /**
- * The visible name is PRACTICE; the id stays `practice` and the code stays SRS.
+ * The visible name is REVIEW; the id stays `practice` and the code stays SRS.
  *
- * "SRS" is a term of art — it means something precise to someone who already knows what
- * spaced repetition is, and nothing at all to anyone else, which is most people meeting the
- * app. The tab holds the scheduled drills (cards, handwriting, conjugation) and the passage
- * written around today's due words, and "Practice" is what a learner would call that.
+ * It was "SRS" until 2026-09-12, then "Practice", and is now "Review" — the moves are worth
+ * keeping straight because each fixed a real thing and the last one was made possible by the
+ * generated passage leaving.
  *
- * Nothing underneath is renamed: the `TabId` is already `practice`, `ReadTab`'s `variant`
+ * "SRS" is a term of art: precise to somebody who already knows what spaced repetition is,
+ * meaningless to everybody else, which is most people meeting the app. "Practice" was the
+ * plain-language fix and was slightly wrong, because the tab also held the generated passage —
+ * reading, not drilling. With that moved to Read, what is left is cards, handwriting and
+ * conjugation: a queue of things the scheduler says are due. That is a review.
+ *
+ * IT ALSO RESOLVES A COLLISION rather than just renaming one. The Learn tab has a "Start
+ * practice" button which deliberately grades NOTHING — a lesson you can fail is a lesson you
+ * avoid — so the app had two things called practice doing opposite things. Only one of them
+ * is a review.
+ *
+ * NOTHING UNDERNEATH IS RENAMED. The `TabId` is already `practice`, `ReadTab`'s `variant`
  * stays `'srs'`, and the `srs_state` column keeps its name. Those name the SCHEDULER, which
- * is still exactly what it was — and renaming a synced column to match a label would be a
- * migration bought with nothing.
- *
- * One collision to know about: the Learn tab's "Start practice" is a different thing with
- * the same word on it — a lesson run that deliberately grades NOTHING, because a lesson you
- * can fail is a lesson you avoid. This tab grades everything it touches.
+ * did not change — and renaming a synced column to match a label is a migration bought with
+ * nothing.
  */
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'practice', label: 'Practice' },
+  { id: 'practice', label: 'Review' },
   { id: 'read',     label: 'Read' },
   { id: 'learn',    label: 'Learn' },
   { id: 'dash',     label: 'Stats' },

@@ -1216,7 +1216,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.6, margin: '10px 0 24px', maxWidth: 400 }}>
                 {deck.length === 0
                   ? variant === 'srs'
-                    ? 'A passage here is written around the words you have due, so it needs a deck first. Open the Read tab and start anything — tap a word you do not know, and saving it schedules a review.'
+                    ? 'A passage here is written around the words you have due, so it needs a deck first. Open Your library and start anything — tap a word you do not know, and saving it schedules a review.'
                     : 'Open any of the readings above and start reading. Tap any word you do not know — you will get its definition, and saving it schedules a review. That is how the deck gets built; you do not have to fill it first.'
                   : totalReviewWordCount > 0
                     ? 'A passage will be written around the words you have due. It takes a few seconds and uses one AI generation, so it happens when you ask rather than the moment you open the app.'
@@ -1266,10 +1266,10 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                      "needs your API key" badge, so the sentence pointed at a badge saying the
                      opposite — the one place a learner is most likely to be confused about
                      what costs money. Same fact, aimed at where the free half actually is. */
-                  ? `Writing a new passage is the one thing srsly cannot do on its own, so it uses a key you connect — and two of the three services it supports are free, so this need not cost you anything. The key is stored only in this browser. Everything else already works without one: ${variant === 'srs' ? 'your own text, a book or audio in the Read tab is' : 'add your own text, a book or audio above and it is'} segmented and blanked against your deck exactly the same way.`
+                  ? `Writing a new passage is the one thing srsly cannot do on its own, so it uses a key you connect — and two of the three services it supports are free, so this need not cost you anything. The key is stored only in this browser. Everything else already works without one: ${variant === 'srs' ? 'your own text, a book or audio under Your library is' : 'add your own text, a book or audio above and it is'} segmented and blanked against your deck exactly the same way.`
                   : dailyStatus === 'error'
                     ? 'Something went wrong generating today’s passage. Try again.'
-                    : `Written fresh around the words you have due today, at your level. ${variant === 'srs' ? 'Reading your own text in the Read tab is free and needs no key.' : 'Everything above is free and needs no key.'}`}
+                    : `Written fresh around the words you have due today, at your level. ${variant === 'srs' ? 'Reading your own text under Your library is free and needs no key.' : 'Everything above is free and needs no key.'}`}
               </p>
               {/* The no-key state gets a route to Settings rather than a Generate button.
                   Generate cannot succeed — the server has already said there is no key — and

@@ -7,7 +7,6 @@ import Flashcards from './Flashcards';
 import WritingPractice from './WritingPractice';
 import ConjugationPractice from './ConjugationPractice';
 import { getLanguageConfig } from '@/lib/languageConfig';
-import ReadTab from '@/components/read/ReadTab';
 import TabPanel from '@/components/TabPanel';
 
 /**
@@ -23,20 +22,26 @@ import TabPanel from '@/components/TabPanel';
  * all, sitting in the tab named after it.
  */
 
+/**
+ * FIVE PROPS LEFT WITH THE PASSAGE, and they are listed here rather than quietly deleted.
+ *
+ * `onActivity`, `onAnswer`, `onRequireSignIn`, `onNavigateVocab` and `onNavigateSettings` all
+ * existed for the ReadTab this tab used to host — a reading session logs activity, a question
+ * reports whether it was answered correctly, a cloud save needs a sign-in, and both empty
+ * states offer a route out to Vocab or Settings. The drills need none of it: they report a
+ * score, and that is the whole of their conversation with the shell.
+ *
+ * Kept as an interface note because a prop that is threaded from `app/page.tsx` and then
+ * ignored is worse than one that was never passed — it reads as wiring somebody forgot to
+ * finish, which is exactly how the header's email chip came to be a span dressed as a button.
+ */
 interface Props {
   onScore: (score: number) => void;
-  onActivity: () => void;
-  onAnswer: (correct: boolean) => void;
-  onRequireSignIn?: (reason?: string) => void;
-  onNavigateVocab?: () => void;
-  onNavigateSettings?: () => void;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
 }
 
-export default function SrsTab({
-  onScore, onActivity, onAnswer, onRequireSignIn, onNavigateVocab, onNavigateSettings, active = true,
-}: Props) {
+export default function SrsTab({ onScore, active = true }: Props) {
   const language = useLanguage();
   /**
    * Which drill is on screen. Session-local on purpose, unlike the flashcard toggles that
@@ -115,24 +120,16 @@ export default function SrsTab({
       className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
-      {/* The generated passage — the other half of the drill. It is written around the words
-          you owe today, which is why it carries blanks and grades them, and why it belongs
-          here rather than beside the book you chose to read. Same component as the Read tab
-          uses: a passage is a passage, and `variant` decides which list it draws from and
-          which controls it offers. */}
-      <ReadTab
-        variant="srs"
-        active={active}
-        onScore={onScore}
-        onActivity={onActivity}
-        onAnswer={onAnswer}
-        onRequireSignIn={onRequireSignIn}
-        onNavigateVocab={onNavigateVocab}
-        onNavigateSettings={onNavigateSettings}
-      />
+      {/* THE GENERATED PASSAGE MOVED TO THE READ TAB, and this note is here because the
+          reasoning for it having been here was sound and is worth not re-deriving. A generated
+          passage is written around the words you owe today, so it carries blanks, grades them
+          and writes to the schedule — which made it scheduled work, which made this the tab.
+          What that missed is the name on the other tab: a learner looking for "write me
+          something to read" looks under Read, and reported the feature as missing.
 
-      <div className="h-px my-8" style={{ background: 'var(--line)' }} />
-
+          The contract did not move with it. Blanks, grading and the FSRS write belong to the
+          PASSAGE, not to the tab it is displayed in — see components/read/ReadSections.tsx.
+          This tab is now the drills alone, which is what "Review" on the tab bar means. */}
       {/* CARDS or WRITE, over the same deck.
           Only offered where stroke data exists — Chinese — via `hasHandwriting` on the config
           rather than a `language === 'zh'` check. Writing keeps its OWN schedule and touches
