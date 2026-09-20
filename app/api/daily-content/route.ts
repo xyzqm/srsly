@@ -116,10 +116,18 @@ function repairJson(s: string): string {
 function extractJson(raw: string): Record<string, unknown> {
   // Strip markdown fences if the model wrapped the output
   let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  // If the model prepended explanation text, narrow to the first { … last }
+  /**
+   * Narrow to the first `{` … last `}`, WHEREVER the first one is.
+   *
+   * This tested `jStart > 0`, so it only fired when the model prepended something — and a
+   * model that APPENDS instead ("…} Hope this helps!") starts its reply at index 0, skipped
+   * the slice, and failed to parse over text sitting after a perfectly good object. Half the
+   * cases the line exists for were the half it could not see. Pure JSON slices to itself, so
+   * widening it costs nothing.
+   */
   const jStart = cleaned.indexOf('{');
   const jEnd = cleaned.lastIndexOf('}');
-  if (jStart > 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
+  if (jStart >= 0 && jEnd > jStart) cleaned = cleaned.slice(jStart, jEnd + 1);
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -144,8 +152,19 @@ async function generateJson(
   let json: Record<string, unknown> | null = null;
   let best: Record<string, unknown> | null = null;
   for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
+    /**
+     * HOISTED SO THE CATCH CAN SEE IT, WHICH IS THE WHOLE POINT.
+     *
+     * The sample below was added to the INCOMPLETE branch and not to this one — and the
+     * throwing branch is the likelier of the two, because a reply that is not JSON fails at
+     * `extractJson` and never reaches a completeness check. So the failure with no evidence
+     * was the failure actually happening, and the log said only `SyntaxError: Unexpected
+     * token`, which names the parser rather than the reply. Instrumentation that misses the
+     * common path is worse than none: it reads like proof the common path did not happen.
+     */
+    let raw = '';
     try {
-      const raw = await generator.complete(JSON_ONLY_SYSTEM, prompt, { json: true });
+      raw = await generator.complete(JSON_ONLY_SYSTEM, prompt, { json: true });
       const parsed = extractJson(raw);
       best = parsed;
       if (isComplete(parsed)) { json = parsed; break; } // parsed AND has required blocks
@@ -177,7 +196,10 @@ async function generateJson(
        * so the handler can say what happened.
        */
       if (err instanceof GenerationError && err.kind !== 'server') throw err;
-      console.error(`[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed:`, String(err));
+      console.error(
+        `[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed (${generator.name}): ` +
+        `${String(err)} chars=${raw.length} sample=${JSON.stringify(raw.slice(0, 300))}`,
+      );
     }
   }
   return { json, best };

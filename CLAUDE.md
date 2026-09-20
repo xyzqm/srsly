@@ -204,11 +204,50 @@ share one path and one billing answer. The per-provider `maxOutputTokens` clamp 
 a provider that quietly caps below what the prompt needs returns TRUNCATED JSON, which arrives
 as "the reply could not be read" rather than as "too long".
 
-**A failure says which of three things went wrong.** `GenerationError` separates a rejected key,
-a retired model and a spent rate limit, because they need three different actions — replace the
-key, report it, wait — and on a free tier the rate limit is not an edge case, it is how the free
-option stops working for the afternoon. The message carries no key and copies nothing from the
-provider's own error body, which can echo the request back.
+**A failure says which of four things went wrong.** `GenerationError` separates a rejected key,
+a retired model, a spent rate limit and a reply cut off at the model's output cap, because they
+need four different actions — replace the key, report it, wait, use a bigger model — and on a
+free tier the rate limit is not an edge case, it is how the free option stops working for the
+afternoon. The message carries no key and copies nothing from the provider's own error body,
+which can echo the request back.
+
+**`truncated` IS THE ONE THE PROVIDER DOES NOT REPORT AS A FAILURE**, and it was added late for
+exactly that reason. The other three arrive as a status code. This one arrives as **200 OK** with
+`finish_reason: "length"` on a body that is valid as far as it goes — and since every caller here
+asks for JSON, "as far as it goes" is an unterminated object, which reaches `extractJson` as a
+syntax error and was reported to the learner as *the model is not following the format srsly asks
+for*. That sentence points at the prompt while the fix is a number in `lib/aiProviders.ts` or
+`SRSLY_MODEL_*`. Retrying is pointless — the same prompt against the same cap truncates again —
+so it is thrown rather than returned empty, and `generateJson` rethrows everything but `server`.
+
+**AN EMPTY REPLY IS A FAILURE, NOT AN EMPTY PASSAGE.** `complete()` ended
+`?.content?.trim() ?? ''`, so a choice carrying no content — which is how Google answers a
+safety-filtered request, with a 200 rather than an error — was handed to a JSON parser and
+surfaced as a syntax error at position 0. A value meaning "nothing came back" rendered as a value
+meaning "it came back empty": the mistake this file already names four times over, in the one
+layer nobody had looked at.
+
+**AND THE LOG LINE THAT SETTLES ALL OF IT.** `[generator] <provider>/<model> finish= chars=
+out_tokens= cap=` is written on every successful call, because a 200 with an unusable reply is the
+hardest failure in this pipeline to diagnose and the route above it can see none of this. The three
+numbers separate the cases outright: a truncated reply has `finish=length`, a filtered one has no
+characters, and a model writing prose instead of JSON has plenty of both. It carries no key, no
+prompt and no reply text. `finish_reason` is shape-checked against `/^[a-z_]{1,32}$/i` before it
+is allowed into a message — it is an enum, but it is an enum from somebody else.
+
+**`generateJson`'s SAMPLE WAS ON THE WRONG BRANCH.** It logged the reply's top-level keys and a
+300-character sample when the parse SUCCEEDED but came back incomplete, and logged nothing but
+`String(err)` when the parse THREW — which is the likelier of the two, because a reply that is not
+JSON fails at `extractJson` and never reaches a completeness check. So the failure actually
+happening was the one leaving no evidence, and `SyntaxError: Unexpected token` names the parser
+rather than the reply. Instrumentation that misses the common path is worse than none: it reads as
+proof the common path did not happen.
+
+**`extractJson` NARROWED TO THE FIRST `{` ONLY WHEN SOMETHING CAME BEFORE IT.** The test was
+`jStart > 0`, so a model that APPENDS ("…} Hope this helps!") starts at index 0, skipped the
+slice, and failed to parse over text sitting after a perfectly good object — half the cases the
+line exists for were the half it could not see. Pure JSON slices to itself, so `>= 0` costs
+nothing.
 
 **AND FOR A WHILE NONE OF THAT REACHED A SCREEN.** Three separate layers each threw the sentence
 away, which together produced the only bug report that matters: *pressing Generate does nothing*.

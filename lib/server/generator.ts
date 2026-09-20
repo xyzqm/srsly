@@ -106,16 +106,22 @@ function capFor(p: AiProvider, opts?: CompleteOptions): number {
 /**
  * A failure a learner can act on.
  *
- * The three that actually happen are a rejected key, a retired model and a spent rate limit,
- * and they need three different actions — replace the key, tell the developer, wait. A single
- * "generation failed" sends everyone to the same dead end, and on a FREE TIER the rate limit
- * is not an edge case: it is the normal way the free option stops working for the afternoon.
+ * The ones that actually happen are a rejected key, a retired model, a spent rate limit and a
+ * reply cut off at the model's output cap, and they need four different actions — replace the
+ * key, tell the developer, wait, use a bigger model. A single "generation failed" sends
+ * everyone to the same dead end, and on a FREE TIER the rate limit is not an edge case: it is
+ * the normal way the free option stops working for the afternoon.
+ *
+ * `truncated` was the fourth and was added late, which is the interesting one: it is not an
+ * error the provider reports AT ALL. The request succeeds, the status is 200, and the only
+ * sign is `finish_reason` on a reply that is otherwise indistinguishable from a model writing
+ * badly — so it was being reported as a prompt problem for as long as the field went unread.
  *
  * Carries no key, no header and no request body. This message reaches a log and a screen.
  */
 export class GenerationError extends Error {
   constructor(
-    readonly kind: 'auth' | 'model' | 'rate_limit' | 'server',
+    readonly kind: 'auth' | 'model' | 'rate_limit' | 'truncated' | 'server',
     readonly provider: ProviderId,
     message: string,
   ) {
@@ -265,9 +271,68 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
         throw classify(res.status, provider, detail);
       }
 
-      const json = await res.json().catch(() => null) as
-        { choices?: { message?: { content?: string } }[] } | null;
-      return json?.choices?.[0]?.message?.content?.trim() ?? '';
+      const json = await res.json().catch(() => null) as {
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
+        usage?: { completion_tokens?: number };
+      } | null;
+      const choice = json?.choices?.[0];
+      const content = choice?.message?.content?.trim() ?? '';
+      // An enum, not prose — but it arrives from the provider, so it is shape-checked before
+      // it is allowed anywhere near a message or a log line.
+      const finish = /^[a-z_]{1,32}$/i.test(choice?.finish_reason ?? '') ? choice!.finish_reason! : '';
+
+      /**
+       * ONE LINE SAYING WHAT CAME BACK, BECAUSE THE ROUTE ABOVE CANNOT SEE ANY OF THIS.
+       *
+       * A 200 with a reply the parser cannot use is the hardest failure in this pipeline to
+       * diagnose, and until now the only evidence of it was a `SyntaxError` several layers up.
+       * These three numbers separate the cases outright: a truncated reply has
+       * `finish=length`, a filtered one has no content, and a model writing prose instead of
+       * JSON has plenty of both. Carries no key, no prompt and no reply text.
+       */
+      console.info(
+        `[generator] ${provider.id}/${modelFor(provider)} finish=${finish || 'unknown'} ` +
+        `chars=${content.length} out_tokens=${json?.usage?.completion_tokens ?? '?'} cap=${capFor(provider, opts)}`,
+      );
+
+      /**
+       * A REPLY THAT STOPS AT THE CAP IS NOT A REPLY, AND IT IS THE ONE FAILURE THAT LOOKS
+       * EXACTLY LIKE A BAD PROMPT.
+       *
+       * The route asks for JSON, so a reply cut off at the token limit is invalid JSON with an
+       * unterminated string — which arrives at `extractJson` as a parse error and is reported
+       * as "the model is not following the format". That sends whoever is debugging it to
+       * rewrite a prompt that was fine, while the actual problem is a number in
+       * `lib/aiProviders.ts`. CLAUDE.md predicted this exact confusion when the per-provider
+       * clamp went in; `finish_reason` is the field that settles it, and it was being dropped.
+       *
+       * RETRYING IS POINTLESS HERE, which is why it is a `GenerationError` rather than an
+       * empty string: the same prompt against the same cap truncates again, three times, and
+       * then reports the wrong cause anyway. The kinds exist so a failure names the action
+       * that fixes it, and this one's action is a bigger model.
+       */
+      if (finish === 'length') {
+        throw new GenerationError('truncated', provider.id,
+          `${provider.name} hit its output limit before finishing the reply. `
+          + `"${modelFor(provider)}" can only write ${provider.maxOutputTokens} tokens at once, which is not enough for this. `
+          + `Set SRSLY_MODEL_${provider.id.toUpperCase()} to a model with a larger output limit, or use another provider.`);
+      }
+
+      /**
+       * NO CONTENT AT ALL IS A FAILURE, NOT AN EMPTY PASSAGE.
+       *
+       * This returned `''`, which every caller then handed to a JSON parser — so a reply
+       * withheld by a safety filter (Google returns a choice with no content rather than an
+       * error) surfaced as a syntax error about position 0. Same family as the loading state
+       * rendered as an answer: a value meaning "nothing came back" was being used as a value
+       * meaning "it came back empty".
+       */
+      if (!content) {
+        throw new GenerationError('server', provider.id,
+          `${provider.name} returned an empty reply${finish ? ` (${finish})` : ''}. `
+          + 'This is usually temporary — try again, or try another provider in Settings.');
+      }
+      return content;
     },
   };
 }

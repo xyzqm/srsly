@@ -349,10 +349,22 @@ describe('the OpenAI-compatible call is shaped the way Google and Groq expect', 
     expect(out).toBe('a passage');
   });
 
-  /** A reply in an unexpected shape is empty, not a crash — the route turns that into a 502. */
-  it('answers empty rather than throwing on a reply it cannot read', async () => {
+  /**
+   * THIS TEST ASSERTED THE OPPOSITE, AND THE OLD BEHAVIOUR WAS THE BUG.
+   *
+   * It read "answers empty rather than throwing on a reply it cannot read", on the reasoning
+   * that the route turns an empty string into a 502 anyway. It does — but not with anything
+   * anyone can act on: `''` goes to a JSON parser, and the learner is told the model is not
+   * following the format srsly asks for, which is a sentence about a reply that was never
+   * sent. Returning a value meaning "nothing came back" as a value meaning "it came back
+   * empty" is the mistake CLAUDE.md names four times over.
+   *
+   * Kept and inverted rather than deleted, so the change of mind is visible.
+   */
+  it('throws rather than answering empty on a reply it cannot read', async () => {
     mockFetch(200, { unexpected: true });
-    expect(await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p')).toBe('');
+    await expect(generatorForProvider('groq', KEYS.groq, false).complete('s', 'p'))
+      .rejects.toMatchObject({ kind: 'server', provider: 'groq' });
   });
 });
 
@@ -425,7 +437,7 @@ describe('the token cap is honoured and clamped', () => {
   });
 });
 
-describe('a failure says which of the three things went wrong', () => {
+describe('a failure says which of the four things went wrong', () => {
   /**
    * A rejected key, a retired model and a spent rate limit need three different actions from
    * the learner — replace the key, report it, wait. One "generation failed" sends all three to
@@ -497,6 +509,96 @@ describe('a failure says which of the three things went wrong', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const g = generatorForProvider('groq', KEYS.groq, false);
     await expect(g.complete('s', 'p')).rejects.toMatchObject({ kind: 'server' });
+  });
+
+  /**
+   * ── THE FOURTH FAILURE, WHICH THE PROVIDER DOES NOT REPORT AS ONE ──────────
+   *
+   * A reply cut off at the model's output cap comes back 200 OK with a `finish_reason` of
+   * `length` and a body that is valid as far as it goes. Every other failure here announces
+   * itself with a status code; this one announces itself in a field that was being dropped.
+   *
+   * It matters because the callers all ask for JSON, so a truncated reply is an unterminated
+   * object — which reaches `extractJson` as a syntax error and is reported to the learner as
+   * "the model is not following the format srsly asks for". That is the wrong cause, and it
+   * points at the one thing the learner cannot check while the actual fix is a number in
+   * `lib/aiProviders.ts` or a bigger model in the environment.
+   */
+  it('calls a reply cut off at the token cap truncated, not malformed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => '', clone: () => ({ text: async () => '' }),
+      json: async () => ({
+        choices: [{ message: { content: '{"passages": [{"title": "A' }, finish_reason: 'length' }],
+        usage: { completion_tokens: 8192 },
+      }),
+    }));
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await expect(g.complete('s', 'p', { json: true })).rejects.toMatchObject({
+      kind: 'truncated', provider: 'gemini',
+    });
+  });
+
+  /** It names the action that fixes it, which is a bigger model — never the key. */
+  it('points a truncation at the output limit rather than at Settings', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => '', clone: () => ({ text: async () => '' }),
+      json: async () => ({ choices: [{ message: { content: 'cut' }, finish_reason: 'length' }] }),
+    }));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.message).toMatch(/SRSLY_MODEL_GEMINI/);
+        expect(e.message).toMatch(String(providerOrDefault('gemini').maxOutputTokens));
+        expect(e.message).not.toMatch(/key/i);
+      },
+    );
+  });
+
+  /**
+   * CONTROL: a reply that finishes normally is returned, whatever else is on the choice.
+   * Without this, "throw when finish_reason is set" would pass the test above and break
+   * every successful generation in the app.
+   */
+  it('returns a reply that stopped because it was finished', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => '', clone: () => ({ text: async () => '' }),
+      json: async () => ({ choices: [{ message: { content: '{"ok":1}' }, finish_reason: 'stop' }] }),
+    }));
+    await expect(generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p'))
+      .resolves.toBe('{"ok":1}');
+  });
+
+  /**
+   * NOTHING CAME BACK IS NOT THE SAME AS AN EMPTY PASSAGE.
+   *
+   * Google answers a safety-filtered request with a choice carrying no content at all, rather
+   * than with an error status. This returned `''`, which every caller handed to a JSON parser
+   * — so the learner was shown a syntax error about position 0 and the server logged nothing
+   * that named the cause. Same family as the loading state rendered as an answer.
+   */
+  it.each([
+    ['no content field', { choices: [{ message: {}, finish_reason: 'content_filter' }] }],
+    ['no choices at all', { choices: [] }],
+    ['whitespace only', { choices: [{ message: { content: '   ' }, finish_reason: 'stop' }] }],
+  ])('treats a reply with %s as a failure rather than as empty output', async (_label, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => '', clone: () => ({ text: async () => '' }),
+      json: async () => body,
+    }));
+    await expect(generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p'))
+      .rejects.toMatchObject({ kind: 'server', provider: 'gemini' });
+  });
+
+  /** A finish reason is an enum from a third party, so it is shape-checked before it is shown. */
+  it('never echoes a free-text finish reason into the message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => '', clone: () => ({ text: async () => '' }),
+      json: async () => ({ choices: [{ message: { content: '' }, finish_reason: '<script>alert(1)</script>' }] }),
+    }));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => { expect(e.message).not.toMatch(/script/i); },
+    );
   });
 
   /**
