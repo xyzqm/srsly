@@ -505,6 +505,30 @@ describe('a failure says which of the four things went wrong', () => {
     await expect(g.complete('s', 'p')).rejects.toMatchObject({ kind: 'server' });
   });
 
+  /**
+   * BUSY IS NOT BROKEN, AND THIS ONE WAS MEASURED IN PRODUCTION.
+   *
+   * A learner's working key on a working model got 503 twice in a row — Google saying the model
+   * is overloaded. "Google Gemini returned an error (503). Try again in a moment." is true and
+   * says nothing: not whose problem it is, not whether waiting helps, not which model. The
+   * number was the only part of it carrying information.
+   */
+  it.each([502, 503, 504])('calls a %i busy rather than broken, and names the model', async status => {
+    vi.stubEnv('SRSLY_MODEL_GEMINI', 'gemini-preview-x');
+    mockFetch(status, { error: { message: 'The model is overloaded.' } });
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('server');
+        expect(e.message).toMatch(/busy/i);
+        expect(e.message).toContain('gemini-preview-x');
+        // The one thing it must not do is send them to re-check a key that is working.
+        expect(e.message).not.toMatch(/\bkey\b/i);
+      },
+    );
+    vi.unstubAllEnvs();
+  });
+
   it('does not blame the key when the request never arrived', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const g = generatorForProvider('groq', KEYS.groq, false);

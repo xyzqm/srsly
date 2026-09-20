@@ -32,6 +32,16 @@ const MAX_BATCH_SIZE = 12;
 /** How many times to ask the model before giving up (handles occasional bad JSON). */
 const MAX_GEN_ATTEMPTS = 2;
 
+/**
+ * How long to wait before the one retry.
+ *
+ * The retryable failure is a 5xx, which on a free tier is overwhelmingly "this model is
+ * overloaded" — so retrying immediately asks the same congested service the same question a
+ * few milliseconds later and gets the same answer. Deliberately small: four sections generate
+ * concurrently and each may pause once, so this has to stay far away from the route's timeout.
+ */
+const RETRY_PAUSE_MS = 1200;
+
 /** Independently-generated content blocks. */
 type Section = 'passage' | 'fill' | 'convo' | 'questions';
 
@@ -151,6 +161,21 @@ async function generateJson(
 ): Promise<{ json: Record<string, unknown> | null; best: Record<string, unknown> | null }> {
   let json: Record<string, unknown> | null = null;
   let best: Record<string, unknown> | null = null;
+  /**
+   * THE LAST THING THE PROVIDER SAID, KEPT SO IT CAN BE SAID AGAIN.
+   *
+   * Retries exhausted, this returned two nulls — and the route then had nothing to report but
+   * its own guess, which is that the reply could not be read. MEASURED IN PRODUCTION: Google
+   * answered 503 twice (the model was overloaded), the loop swallowed both, and the learner was
+   * told the model was not following the format srsly asks for. Their key was fine, the model
+   * was fine, the prompt was fine, and the advice — try another provider — was the only part
+   * that happened to be useful, by accident.
+   *
+   * `server` is the kind that gets retried, so it is precisely the kind that reaches the end of
+   * this loop still unreported. A retry that exhausts itself must hand back WHY, or retrying
+   * converts a known failure into an unknown one.
+   */
+  let lastError: GenerationError | null = null;
   for (let attempt = 1; attempt <= MAX_GEN_ATTEMPTS; attempt++) {
     /**
      * HOISTED SO THE CATCH CAN SEE IT, WHICH IS THE WHOLE POINT.
@@ -196,12 +221,30 @@ async function generateJson(
        * so the handler can say what happened.
        */
       if (err instanceof GenerationError && err.kind !== 'server') throw err;
+      if (err instanceof GenerationError) lastError = err;
       console.error(
         `[daily-content] ${label} attempt ${attempt}/${MAX_GEN_ATTEMPTS} failed (${generator.name}): ` +
         `${String(err)} chars=${raw.length} sample=${JSON.stringify(raw.slice(0, 300))}`,
       );
+      /**
+       * A BEAT BEFORE TRYING AGAIN, because the retryable failure is congestion.
+       * Two requests a few milliseconds apart are one request as far as an overloaded model is
+       * concerned, so the retry was spending a round trip to ask the same busy service the same
+       * question. Short enough that it cannot push a route near its own timeout.
+       */
+      if (attempt < MAX_GEN_ATTEMPTS) await new Promise(r => setTimeout(r, RETRY_PAUSE_MS));
     }
   }
+  /**
+   * NOTHING PARSED AND THE PROVIDER SAID WHY, so say that rather than guessing.
+   *
+   * Only when `best` is null: a reply that parsed but came back incomplete is a real partial
+   * answer, and degrading to it is the deliberate behaviour this function was built for. And
+   * only for a `GenerationError` — a parse failure is genuinely "the reply could not be read",
+   * which the route already says accurately, and rethrowing a SyntaxError would turn it into a
+   * bare 500.
+   */
+  if (json === null && best === null && lastError) throw lastError;
   return { json, best };
 }
 

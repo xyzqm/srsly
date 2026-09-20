@@ -167,6 +167,24 @@ function classify(status: number, provider: AiProvider, detail: string): Generat
     return new GenerationError('model', provider.id,
       `${provider.name} does not offer "${modelFor(provider)}". Set SRSLY_MODEL_${provider.id.toUpperCase()} to a model your key can use, or report this — it is not something you can fix from Settings.`);
   }
+  /**
+   * BUSY IS NOT BROKEN, AND ON A FREE TIER IT IS THE COMMONEST FAILURE OF ALL.
+   *
+   * Measured in production: a learner's working key on a working model returned **503 twice in
+   * a row**, which is Google saying the model is overloaded — nothing to do with the key, the
+   * request or the prompt. A bare "returned an error (503)" is technically true and tells them
+   * nothing about whose problem it is or whether waiting helps, and the number is the only part
+   * of it with any content.
+   *
+   * It names the model because that is the actionable half for whoever operates the app: a
+   * newly-released or preview model is far likelier to be capacity-constrained than a settled
+   * one, and `SRSLY_MODEL_*` is how that gets swapped without a deploy.
+   */
+  if (status === 502 || status === 503 || status === 504) {
+    return new GenerationError('server', provider.id,
+      `${provider.name} is busy right now — "${modelFor(provider)}" returned ${status}, which means overloaded rather than broken. `
+      + 'Wait a minute and try again, or switch provider in Settings.');
+  }
   return new GenerationError('server', provider.id,
     `${provider.name} returned an error (${status}). Try again in a moment.`);
 }

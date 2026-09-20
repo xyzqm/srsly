@@ -93,6 +93,29 @@ describe('every route that can reach Anthropic says who pays', () => {
     expect(r.src, `${name} parses JSON but never requests it`).toMatch(/json:\s*true/);
   });
 
+  /**
+   * A RETRY THAT GIVES UP MUST SAY WHY IT GAVE UP.
+   *
+   * MEASURED IN PRODUCTION, and it is the reason this test exists rather than a hypothetical:
+   * Google answered `daily-content` with 503 twice — the model was overloaded, which is the
+   * single commonest free-tier failure there is — and the retry loop swallowed both errors and
+   * returned nulls. The route, having nothing left to report, fell through to its own guess:
+   * that the reply could not be read and the model was not following the format. The key was
+   * fine, the model was fine and the prompt was fine.
+   *
+   * `server` is the only kind that gets retried, so it is precisely the kind that can reach the
+   * end of a retry loop still unreported — retrying is what converts a failure with a good
+   * message into one with none. Pinned against the SOURCE because the loop is internal to the
+   * route and the wrong behaviour is a silent omission rather than a wrong value: returning
+   * nulls looks exactly like the degrade-gracefully path it shares an exit with.
+   */
+  it('daily-content reports the provider error when every attempt failed', () => {
+    const r = reachesAnthropic.find(x => x.name === 'daily-content')!;
+    expect(r.src, 'the last provider error is not kept across retries').toContain('lastError');
+    expect(r.src, 'retries exhausted, the error is dropped rather than rethrown')
+      .toMatch(/throw\s+lastError/);
+  });
+
   it.each(METERED)('%s meters through the gate', name => {
     const r = reachesAnthropic.find(x => x.name === name)!;
     expect(r.src).toMatch(/meterOrRefuse\s*\(/);

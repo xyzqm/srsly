@@ -243,6 +243,36 @@ happening was the one leaving no evidence, and `SyntaxError: Unexpected token` n
 rather than the reply. Instrumentation that misses the common path is worse than none: it reads as
 proof the common path did not happen.
 
+**AND THE ONE THAT WAS ACTUALLY HAPPENING WAS NONE OF THOSE: A RETRY THAT SWALLOWED ITS OWN
+REASON.** Read out of the production runtime log rather than reasoned about, after three rounds
+of reasoning about it got the cause wrong every time:
+
+```
+[daily-content] passage attempt 1/2 failed: GenerationError: Google Gemini returned an error (503).
+[daily-content] passage attempt 2/2 failed: GenerationError: Google Gemini returned an error (503).
+[daily-content] unusable passage from gemini:gemini-3.8-flash (user key)
+```
+
+503 is **overloaded**, which on a free tier is the commonest failure there is. `server` is the
+one kind `generateJson` retries — so it is precisely the kind that reaches the end of the loop
+still unreported, and the loop returned two nulls. The route, with nothing left to report, fell
+through to its own guess: *the passage could not be read from it — the model is not following the
+format srsly asks for*. The key was fine, the model was fine, the prompt was fine, and **the
+retry is what converted a failure carrying a good message into one carrying none.** A retry that
+exhausts itself must rethrow, and only when nothing parsed at all — a reply that parsed but came
+back incomplete is a real partial answer and degrading to it is the deliberate behaviour.
+
+`RETRY_PAUSE_MS` came from the same log: two requests milliseconds apart are one request as far
+as an overloaded model is concerned, so the retry was spending a round trip to ask the same busy
+service the same question.
+
+**THE LESSON IS THE ONE THIS FILE ALREADY WRITES DOWN, AND IT WAS IGNORED FOR THREE ROUNDS.**
+"The real bugs were found by running the app, not by reading the code." Every hypothesis here —
+a prompt the model would not follow, a reply truncated at the cap, a safety filter — was
+plausible, was argued from the source, and was wrong. `vercel logs` answered it in one command.
+Note also that `vercel inspect --logs` gives BUILD logs and `vercel logs` gives RUNTIME ones,
+which is an easy half-hour to lose.
+
 **`extractJson` NARROWED TO THE FIRST `{` ONLY WHEN SOMETHING CAME BEFORE IT.** The test was
 `jStart > 0`, so a model that APPENDS ("…} Hope this helps!") starts at index 0, skipped the
 slice, and failed to parse over text sitting after a perfectly good object — half the cases the
