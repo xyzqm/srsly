@@ -78,6 +78,42 @@ describe('the catalogue points at milestones that exist', () => {
       || c.requires.startsWith('lang-streak-'));
     expect(regressible.map(c => c.id)).toEqual([]);
   });
+
+  /**
+   * NOTHING IS GATED ON GOING BADLY, WHICH THE RULE ABOVE DOES NOT COVER.
+   *
+   * `Boxed` required `leech-10` — rescue ten stuck words — which means first HAVING ten cards
+   * failed often enough to trip `LEECH_THRESHOLD`. A learner who studies well may never
+   * produce a single one, so it was not a hard unlock for them but an impossible one, with
+   * nothing on screen to explain why. And the only reliable way to earn it is to forget a lot
+   * of words, which is a reward pointing the wrong way.
+   *
+   * The streak rule is about conditions that can REGRESS. This is about conditions a learner
+   * cannot AIM AT — `leechesFixed` rises monotonically and still fails, which is exactly why
+   * it needed its own assertion rather than a wider version of the one above.
+   */
+  it('hangs nothing off a milestone that only failure can earn', () => {
+    const failureEarned = COSMETICS.filter(c => c.requires.startsWith('leech-'));
+    expect(
+      failureEarned.map(c => c.id),
+      'this can only be earned by forgetting words, and a good learner may never earn it at all',
+    ).toEqual([]);
+  });
+
+  /**
+   * Every condition is something a learner can set out to do: study, collect, hold, or read.
+   * Listed as prefixes rather than as a count so adding a fifth kind of goal is a deliberate
+   * edit here rather than a silent widening.
+   */
+  it('gates every cosmetic on something a learner can aim at', () => {
+    const AIMABLE = ['sessions-', 'deck-', 'mastered-', 'book-', 'books-'];
+    for (const c of COSMETICS) {
+      expect(
+        AIMABLE.some(p => c.requires.startsWith(p)),
+        `${c.id} requires "${c.requires}", which is not a goal anyone can set out to reach`,
+      ).toBe(true);
+    }
+  });
 });
 
 describe('the free set stays free', () => {

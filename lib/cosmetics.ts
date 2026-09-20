@@ -138,9 +138,22 @@ export const COSMETICS: readonly Cosmetic[] = [
     id: 'solid', kind: 'blank', name: 'Solid rule',
     requires: 'deck-250', unlockedBy: 'Collect 250 words',
   },
+  /**
+   * WAS `leech-10`, AND THAT WAS UNREACHABLE BY DESIGN RATHER THAN BY DIFFICULTY.
+   *
+   * "Rescue 10 stuck words" requires first HAVING ten stuck words — ten cards each failed
+   * enough times to trip `LEECH_THRESHOLD`. A learner who studies well may never produce one,
+   * so the cosmetic was not hard for them, it was impossible, and nothing on screen would ever
+   * have explained why. Worse, it is the only condition here that rewards going BADLY: the
+   * one way to guarantee it is to forget a lot of words.
+   *
+   * The rule this adds to the streak rule above: **a condition must be something a learner can
+   * aim at.** A counter that only moves when things go wrong fails that even though it rises
+   * monotonically, which is why the no-streak test could not catch it.
+   */
   {
     id: 'box', kind: 'blank', name: 'Boxed',
-    requires: 'leech-10', unlockedBy: 'Rescue 10 stuck words',
+    requires: 'deck-1000', unlockedBy: 'Collect 1,000 words',
   },
   {
     id: 'shaded', kind: 'blank', name: 'Shaded',

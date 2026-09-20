@@ -254,9 +254,23 @@ error and nothing to see. A stale name is a much smaller cost. The provider is a
 `srsly-ai-provider`; a key stored before the picker existed has no provider recorded and is
 resolved by its shape, so nobody re-enters anything.
 
-**Model ids are the part of that table with a shelf life** and will need updating when a provider
-retires one. That is one line, and a retired model is reported as "this needs updating in srsly —
-not something you can fix" rather than as a generic failure.
+**MODEL IDS ARE THE PART OF THAT TABLE WITH A SHELF LIFE, AND A STALE ONE IS A TOTAL OUTAGE.**
+`gemini-2.5-flash` was pinned and a learner's perfectly good key came back "model not found" —
+every generation failed. The error even said it was "not something you can fix", which was only
+true because there was no way to fix it short of editing a source file and redeploying.
+
+`SRSLY_MODEL_GEMINI` / `_GROQ` / `_ANTHROPIC` override it per provider, in the environment
+rather than in Settings: choosing a model is operating the app, not using it, and a free-text
+model field is a new way for a learner to break generation. It is read in
+`lib/server/generator.ts` and NOT in `lib/aiProviders.ts`, because that module is imported by
+the client, where `process.env` holds only `NEXT_PUBLIC_*` and the lookup would silently read
+undefined.
+
+**A MODEL NAME CANNOT BE VERIFIED WITHOUT A VALID KEY**, which is worth knowing before trying.
+Google checks auth FIRST: a bad key with a nonsense model still answers `Invalid Auth key.`, so
+probing model names with a fake key tells you nothing. The useful corollary is the other
+direction — a "model not found" error PROVES the key authenticated, which is how a learner's
+`AQ.` key was confirmed working while the pinned model was wrong.
 
 **THE BUDGET IS 3 A DAY FOR A GUEST AND 10 FOR AN ACCOUNT, AND IT WAS ZERO UNTIL 0008.** The
 history is worth keeping because the REASONING changed rather than being overruled.
@@ -1594,6 +1608,15 @@ It also collides with this file's own position that levels are calibration and a
 than the goal — a cosmetic ladder that TAKES is the gamified treadmill refused everywhere
 else. `vellum`, `sakura`, `midnight`, `terminal`, `grand` and `typewriter` are additions;
 nothing was moved.
+
+**NOTHING IS GATED ON GOING BADLY, EITHER.** `Boxed` required `leech-10` — rescue ten stuck
+words — which means first HAVING ten cards failed often enough to trip `LEECH_THRESHOLD`. A
+learner who studies well may never produce one, so it was not a hard unlock for them but an
+impossible one, with nothing on screen to explain why; and the only reliable way to earn it is
+to forget a lot of words. The rule is that **a condition must be something a learner can aim
+at**, which the streak rule does not cover: `leechesFixed` rises monotonically and still fails
+it. Both are separately asserted, and a third test pins the whole catalogue to the four things
+anyone can set out to do — study, collect, hold, read.
 
 **NO STREAK UNLOCKS, AND THAT IS THE INTERESTING CONSTRAINT.** A streak is the obvious unlock
 and is the one axis that cannot be used. Milestones are derived from CURRENT state, so

@@ -62,6 +62,29 @@ export interface Generator {
 /** What a route asks for when it says nothing: a whole passage's worth. */
 const DEFAULT_MAX_TOKENS = 16000;
 
+/**
+ * The model to ask for, overridable per provider without a deploy.
+ *
+ * `SRSLY_MODEL_GEMINI`, `SRSLY_MODEL_GROQ`, `SRSLY_MODEL_ANTHROPIC`.
+ *
+ * MODEL IDS ARE THE PART OF THE TABLE WITH A SHELF LIFE, and a stale one is total: every
+ * generation 404s until someone edits a source file and redeploys. That happened —
+ * `gemini-2.5-flash` was pinned and a learner's perfectly good key came back "model not
+ * found" — and the error message said in as many words that it was "not something you can
+ * fix", which was only true because there was no way to fix it. Now there is one, and it is
+ * an environment variable rather than a setting: picking a model is operating the app, not
+ * using it, and offering a learner a free-text model field is offering them a new way to
+ * break generation.
+ *
+ * Server-only on purpose. This never runs in the browser, which is why it lives here and not
+ * in `lib/aiProviders.ts` — that module is imported by the client, where `process.env` holds
+ * only `NEXT_PUBLIC_*` and a lookup like this would silently read undefined.
+ */
+function modelFor(p: AiProvider): string {
+  const override = process.env[`SRSLY_MODEL_${p.id.toUpperCase()}`]?.trim();
+  return override || p.model;
+}
+
 function capFor(p: AiProvider, opts?: CompleteOptions): number {
   return Math.min(opts?.maxTokens ?? DEFAULT_MAX_TOKENS, p.maxOutputTokens);
 }
@@ -122,7 +145,7 @@ function classify(status: number, provider: AiProvider, detail: string): Generat
   // one failure the learner cannot fix — so it says whose problem it is.
   if (status === 404 || (status === 400 && /model/i.test(detail))) {
     return new GenerationError('model', provider.id,
-      `${provider.name} no longer offers "${provider.model}". This needs updating in srsly — it is not something you can fix.`);
+      `${provider.name} does not offer "${modelFor(provider)}". Set SRSLY_MODEL_${provider.id.toUpperCase()} to a model your key can use, or report this — it is not something you can fix from Settings.`);
   }
   return new GenerationError('server', provider.id,
     `${provider.name} returned an error (${status}). Try again in a moment.`);
@@ -131,13 +154,13 @@ function classify(status: number, provider: AiProvider, detail: string): Generat
 function anthropicGenerator(provider: AiProvider, apiKey: string, operatorPays: boolean): Generator {
   const client = new Anthropic({ apiKey });
   return {
-    name: `anthropic:${provider.model}${operatorPays ? '' : ' (user key)'}`,
+    name: `anthropic:${modelFor(provider)}${operatorPays ? '' : ' (user key)'}`,
     operatorPays,
     provider: provider.id,
     async complete(system, prompt, opts) {
       try {
         const res = await client.messages.create({
-          model: provider.model,
+          model: modelFor(provider),
           max_tokens: capFor(provider, opts),
           system,
           messages: [{ role: 'user', content: prompt }],
@@ -161,7 +184,7 @@ function anthropicGenerator(provider: AiProvider, apiKey: string, operatorPays: 
  */
 function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPays: boolean): Generator {
   return {
-    name: `${provider.id}:${provider.model}${operatorPays ? '' : ' (user key)'}`,
+    name: `${provider.id}:${modelFor(provider)}${operatorPays ? '' : ' (user key)'}`,
     operatorPays,
     provider: provider.id,
     async complete(system, prompt, opts) {
@@ -179,7 +202,7 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
             authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: provider.model,
+            model: modelFor(provider),
             max_tokens: capFor(provider, opts),
             messages,
           }),

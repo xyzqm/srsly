@@ -116,8 +116,21 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
   {
     id: 'gemini',
     name: 'Google Gemini',
-    model: 'gemini-2.5-flash',
-    maxOutputTokens: 16384,
+    /**
+     * `gemini-2.0-flash`, NOT 2.5, AND THE SWAP IS A REPORTED 404 RATHER THAN A PREFERENCE.
+     * A learner's key authenticated fine and came back "model not found", so whatever 2.5 is
+     * called for their project, it is not this. 2.0-flash is the longest-established
+     * free-tier Flash model and so the likeliest to answer for everyone. See
+     * `SRSLY_MODEL_GEMINI` in lib/server/generator.ts for overriding it without a deploy.
+     */
+    model: 'gemini-2.0-flash',
+    /**
+     * 8,192 is this model's real ceiling, and it is well clear of what a passage needs. The
+     * route asks for 16,000 as an upper BOUND, not a requirement: for es/fr/ja the model
+     * writes plain prose and for zh it writes pipe-segmented text, so a title, its sentences,
+     * the fill items and a conversation land in the low thousands even at C2.
+     */
+    maxOutputTokens: 8192,
     freeTier: true,
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     /**

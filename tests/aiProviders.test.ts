@@ -126,13 +126,20 @@ describe('the table is internally consistent', () => {
   });
 
   /**
-   * `daily-content` asks for 16,000 and a provider that quietly caps below what the prompt
-   * needs returns TRUNCATED JSON, which surfaces as "the reply could not be read" rather than
-   * as "too long". Every provider has to be able to write a whole passage or it should not be
-   * in the picker.
+   * ENOUGH FOR A PASSAGE, WHICH IS NOT THE SAME AS THE 16,000 THE ROUTE ASKS FOR.
+   *
+   * This required 16,000 — the route's ceiling — which was over-strict and written without
+   * measuring: it would have rejected `gemini-2.0-flash` at its real 8,192 limit even though
+   * that is several times what any passage uses. For es/fr/ja the model writes plain prose and
+   * for zh pipe-segmented text, so a title, its sentences, the fill items and a conversation
+   * land in the low thousands even at C2.
+   *
+   * The floor still matters: a provider capping below what the prompt needs returns TRUNCATED
+   * JSON, which surfaces as "the reply could not be read" rather than as "too long". 8,000 is
+   * generous headroom over the real need and honest about the ceiling being a bound.
    */
   it('can each produce a whole passage', () => {
-    for (const p of AI_PROVIDERS) expect(p.maxOutputTokens, p.id).toBeGreaterThanOrEqual(16000);
+    for (const p of AI_PROVIDERS) expect(p.maxOutputTokens, p.id).toBeGreaterThanOrEqual(8000);
   });
 
   it('gives the OpenAI-compatible ones a base URL and Anthropic none', () => {
@@ -276,6 +283,50 @@ describe('the OpenAI-compatible call is shaped the way Google and Groq expect', 
   it('answers empty rather than throwing on a reply it cannot read', async () => {
     mockFetch(200, { unexpected: true });
     expect(await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p')).toBe('');
+  });
+});
+
+describe('a stale model id is fixable without a deploy', () => {
+  /**
+   * A PINNED MODEL GOING STALE IS A TOTAL OUTAGE. `gemini-2.5-flash` was pinned and a
+   * learner's perfectly good key came back "model not found" — every generation failed, and
+   * the error said it was "not something you can fix", which was only true because there was
+   * no way to fix it short of editing a source file and redeploying.
+   */
+  it('asks for the pinned model by default', async () => {
+    const fn = mockFetch(200, ok('x'));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p');
+    const body = JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe(providerOrDefault('gemini').model);
+  });
+
+  it('prefers SRSLY_MODEL_<PROVIDER> when it is set', async () => {
+    vi.stubEnv('SRSLY_MODEL_GEMINI', 'gemini-something-newer');
+    const fn = mockFetch(200, ok('x'));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p');
+    const body = JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe('gemini-something-newer');
+    vi.unstubAllEnvs();
+  });
+
+  it('ignores an empty or blank override rather than asking for ""', async () => {
+    for (const blank of ['', '   ']) {
+      vi.stubEnv('SRSLY_MODEL_GEMINI', blank);
+      const fn = mockFetch(200, ok('x'));
+      await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p');
+      const body = JSON.parse((fn.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.model, JSON.stringify(blank)).toBe(providerOrDefault('gemini').model);
+      vi.unstubAllEnvs();
+    }
+  });
+
+  /** The override has to reach the message too, or it names a model nobody asked for. */
+  it('names the model actually requested when it is missing', async () => {
+    vi.stubEnv('SRSLY_MODEL_GEMINI', 'gemini-typo-here');
+    mockFetch(404, { error: { message: 'not found' } });
+    const g = generatorForProvider('gemini', KEYS.gemini, false);
+    await expect(g.complete('s', 'p')).rejects.toThrow(/gemini-typo-here/);
+    vi.unstubAllEnvs();
   });
 });
 
