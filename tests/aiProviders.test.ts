@@ -529,6 +529,105 @@ describe('a failure says which of the four things went wrong', () => {
     vi.unstubAllEnvs();
   });
 
+  /**
+   * ── A STALE MODEL ID MUST NOT END THE CONVERSATION ────────────────────────
+   *
+   * It has gone stale twice: `gemini-2.5-flash` retired, then `gemini-2.0-flash` retired behind
+   * it, and both times the error said "report this — it is not something you can fix", which
+   * left guessing names and redeploying as the only way forward. The list is one request away
+   * on a path that has already failed completely.
+   */
+  const modelsResponse = (ids: string[]) => ({
+    ok: true, status: 200, json: async () => ({ data: ids.map(id => ({ id })) }),
+    text: async () => '', clone: () => ({ text: async () => '' }),
+  });
+  const notFound = {
+    ok: false, status: 404, text: async () => JSON.stringify({ error: { message: 'not found' } }),
+    json: async () => ({}), clone: () => ({ text: async () => '' }),
+  };
+
+  it('tells the learner which models their key can actually use', async () => {
+    vi.stubEnv('SRSLY_MODEL_GEMINI', 'gemini-2.0-flash');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse(['models/gemini-3.8-flash', 'models/gemini-3.8-pro'])));
+
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('model');
+        expect(e.message).toContain('gemini-3.8-flash');
+        // The `models/` prefix is not the form the chat endpoint takes.
+        expect(e.message).not.toContain('models/gemini');
+        // And it still says the thing that fixes it.
+        expect(e.message).toContain('SRSLY_MODEL_GEMINI');
+      },
+    );
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * CONTROL: the listing runs ONLY for a missing model. A rejected key must not send the same
+   * key straight back out on a second request, and a rate limit must not be answered with
+   * another call to the service that just asked us to stop.
+   */
+  it.each([
+    [401, 'auth'],
+    [429, 'rate_limit'],
+    [503, 'server'],
+  ])('does not go asking for a model list after a %i', async status => {
+    const fn = vi.fn().mockResolvedValue({
+      ok: false, status, text: async () => JSON.stringify({ error: { message: 'no' } }),
+      json: async () => ({}), clone: () => ({ text: async () => '' }),
+    });
+    vi.stubGlobal('fetch', fn);
+    await expect(generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p')).rejects.toThrow();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  /** A failure fetching the list must never replace the error that matters. */
+  it('still reports the missing model when the list cannot be fetched', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockRejectedValueOnce(new Error('ECONNREFUSED')));
+    await expect(generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p'))
+      .rejects.toMatchObject({ kind: 'model' });
+  });
+
+  /**
+   * These names arrive from a third party and end up in a log line and on a screen.
+   *
+   * THE FIRST VERSION OF THIS TEST WAS TOO WEAK TO CATCH ITS OWN BUG, and the control caught
+   * that: it used `<script>alert(1)</script>`, which never reaches the shape check because the
+   * suggestions are already narrowed to ids sharing the pinned model's family. Weakening
+   * `MODEL_ID` to "not empty" left it passing. The hostile id has to look like it belongs to
+   * the family, or this asserts the family filter and nothing else — exactly the failure
+   * CLAUDE.md records about the lesson-ordering test.
+   */
+  it('drops anything that is not plausibly a model id', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse(['gemini-"><script>alert(1)</script>', 'gemini-9-flash'])));
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.message).not.toMatch(/script/i);
+        expect(e.message).toContain('gemini-9-flash');
+      },
+    );
+  });
+
+  /** It reports; it never silently switches to a model nobody chose. */
+  it('does not retry against a model the learner did not pick', async () => {
+    const fn = vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse(['gemini-3.8-flash']));
+    vi.stubGlobal('fetch', fn);
+    await expect(generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p')).rejects.toThrow();
+    expect(fn).toHaveBeenCalledTimes(2); // the attempt and the listing, and nothing else
+    expect(fn.mock.calls[1][0]).toBe('https://generativelanguage.googleapis.com/v1beta/openai/models');
+  });
+
   it('does not blame the key when the request never arrived', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const g = generatorForProvider('groq', KEYS.groq, false);

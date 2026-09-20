@@ -328,6 +328,31 @@ resolved by its shape, so nobody re-enters anything.
 every generation failed. The error even said it was "not something you can fix", which was only
 true because there was no way to fix it short of editing a source file and redeploying.
 
+**IT THEN WENT STALE A SECOND TIME, AND THE REPLACEMENT WAS A GUESS DRESSED AS A REASON.**
+2.5 was swapped for `gemini-2.0-flash` on the stated grounds that it was "the longest-established
+free-tier Flash model and so the likeliest to answer for everyone". That sounds careful and is a
+guess: nothing asked a live key anything. It 404'd too. **Being long-established is not evidence
+of being current — past a retirement date it is evidence of the opposite.** Measured against one
+live `AQ.` key, September 2026: 2.5-flash 404, 2.0-flash 404, `gemini-3.8-flash` **503**. The 503
+is the informative one, because Google checks auth first and the model next, so *overloaded*
+proves the model exists for that key where *not found* proves it does not. The working model was
+found by accident, on a failure that happened to be the right kind.
+
+**SO `reportAvailableModels` ASKS.** Both providers implement the OpenAI `GET /models`, so when
+a call comes back `model`, the list is one request away on a path that has already failed
+completely — and the names go into the log and onto the end of the error. It is best-effort
+(a failure fetching the list must never replace the error saying a model is missing), it runs
+for `model` and nothing else (a rejected key must not send that key straight back out, and a
+429 must not be answered by calling the service that just said stop), and every id is
+shape-checked against `MODEL_ID` before being shown, because these names come from a third party
+and end up on a screen. **It never picks a model itself**: substituting one nobody chose is a
+silent change to what generation costs and how it reads. It reports; a human sets the env var.
+
+*(The shape-check test initially asserted nothing. It used `<script>alert(1)</script>`, which is
+dropped by the family filter long before `MODEL_ID` sees it — so weakening the check to "not
+empty" left the test green. The hostile id has to look like it belongs to the family. Same
+failure as the lesson-ordering test, caught the same way: by reintroducing the bug.)*
+
 `SRSLY_MODEL_GEMINI` / `_GROQ` / `_ANTHROPIC` override it per provider, in the environment
 rather than in Settings: choosing a model is operating the app, not using it, and a free-text
 model field is a new way for a learner to break generation. It is read in

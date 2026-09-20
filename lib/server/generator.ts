@@ -213,6 +213,68 @@ function anthropicGenerator(provider: AiProvider, apiKey: string, operatorPays: 
 }
 
 /**
+ * ASK THE PROVIDER WHAT IT ACTUALLY OFFERS, AND PUT IT WHERE SOMEBODY WILL SEE IT.
+ *
+ * A pinned model id is the one part of `lib/aiProviders.ts` with a shelf life, and a stale one
+ * is a total outage rather than a degradation. It has now happened twice — `gemini-2.5-flash`
+ * retired, then `gemini-2.0-flash` retired behind it — and both times the only way forward was
+ * to guess a name, redeploy, and read the error again. The model that finally worked was found
+ * by ACCIDENT, because it happened to answer 503 (busy) instead of 404 (absent).
+ *
+ * Both providers implement the OpenAI `GET /models`, so the answer is one request away on a
+ * path that has already failed completely. It costs a round trip on a request that is dead
+ * anyway, and it is the difference between an error that ends the conversation and one that
+ * finishes it.
+ *
+ * ── THREE THINGS IT DELIBERATELY DOES NOT DO ─────────────────────────────────
+ *
+ * It never THROWS: this runs inside a failure path, and a failure here must not replace the
+ * real error — the one saying a model is missing is strictly more useful than one saying the
+ * model list could not be fetched.
+ *
+ * It never picks a model automatically. Substituting a model the learner did not choose is a
+ * silent change to what generation costs and how it reads, which is the class of fallback this
+ * codebase refuses everywhere. It reports; a human sets `SRSLY_MODEL_*`.
+ *
+ * And it SHAPE-CHECKS every id before showing it. These names arrive from a third party and
+ * end up in a log line and on a screen, so anything that is not plausibly a model id is
+ * dropped rather than echoed. `models/` prefixes are stripped because that is the form
+ * `modelFor` emits and the form the chat endpoint takes.
+ */
+const MODEL_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,62}[A-Za-z0-9])?$/;
+
+async function reportAvailableModels(
+  provider: AiProvider, apiKey: string, err: GenerationError,
+): Promise<void> {
+  try {
+    const res = await fetch(`${provider.baseUrl}/models`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) return;
+    const body = await res.json() as { data?: { id?: unknown }[] };
+    const ids = (body?.data ?? [])
+      .map(m => (typeof m?.id === 'string' ? m.id.replace(/^models\//, '') : ''))
+      .filter(id => MODEL_ID.test(id));
+    if (ids.length === 0) return;
+
+    console.error(`[generator] ${provider.id} offers this key: ${ids.join(', ')}`);
+
+    // Names near the one that was asked for, since a pinned id going stale is almost always a
+    // version bump rather than a change of family.
+    const family = modelFor(provider).split(/[-.]/)[0];
+    const near = ids.filter(id => id.startsWith(family));
+    const suggest = (near.length > 0 ? near : ids).slice(0, 4);
+    /**
+     * Appended rather than rebuilt, so this cannot change what KIND of failure was reported or
+     * lose the sentence naming the env var. `Error.message` is an ordinary writable property.
+     */
+    err.message += ` Your key can use: ${suggest.join(', ')}.`;
+  } catch {
+    // Best effort, by design. See above.
+  }
+}
+
+/**
  * Google and Groq, through the chat-completions shape they both implement.
  *
  * The system prompt is a `system` MESSAGE rather than a top-level field, which is the one
@@ -286,7 +348,22 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
         // Read the body for the model-name check, and never put it in the thrown message —
         // a provider error body can echo request fields back.
         const detail = await res.text().catch(() => '');
-        throw classify(res.status, provider, detail);
+        const err = classify(res.status, provider, detail);
+        /**
+         * "NOT SOMETHING YOU CAN FIX" IS ONLY TRUE IF NOBODY SAYS WHAT WOULD FIX IT.
+         *
+         * A stale model id is a TOTAL outage — every generation 404s — and the message for it
+         * has twice now sent somebody off to guess at names one redeploy at a time.
+         * `gemini-2.5-flash` was pinned and retired; `gemini-2.0-flash` replaced it and turned
+         * out to be retired as well; the one model that worked was found by accident, because
+         * it answered 503 instead of 404.
+         *
+         * Both providers expose the OpenAI `GET /models`, so the list is one request away on a
+         * path that has already failed completely. It is BEST-EFFORT — a failure here must
+         * never replace the real error, which is the one that says a model is missing.
+         */
+        if (err.kind === 'model') await reportAvailableModels(provider, apiKey, err);
+        throw err;
       }
 
       const json = await res.json().catch(() => null) as {

@@ -117,18 +117,39 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     id: 'gemini',
     name: 'Google Gemini',
     /**
-     * `gemini-2.0-flash`, NOT 2.5, AND THE SWAP IS A REPORTED 404 RATHER THAN A PREFERENCE.
-     * A learner's key authenticated fine and came back "model not found", so whatever 2.5 is
-     * called for their project, it is not this. 2.0-flash is the longest-established
-     * free-tier Flash model and so the likeliest to answer for everyone. See
-     * `SRSLY_MODEL_GEMINI` in lib/server/generator.ts for overriding it without a deploy.
+     * THIS PIN HAS GONE STALE TWICE, AND BOTH TIMES IT WAS A TOTAL OUTAGE.
+     *
+     * `gemini-2.5-flash` was pinned and 404'd. It was replaced with `gemini-2.0-flash` on the
+     * reasoning that it was "the longest-established free-tier Flash model and so the likeliest
+     * to answer for everyone" — which sounded careful and was a GUESS, made without asking a
+     * live key anything. It 404'd too. Being long-established is not evidence of being current;
+     * past a retirement date it is evidence of the opposite.
+     *
+     * What is measured, against one live `AQ.` key in September 2026:
+     *   gemini-2.5-flash → 404   (absent)
+     *   gemini-2.0-flash → 404   (absent)
+     *   gemini-3.8-flash → 503   (PRESENT — busy, which only a real model can be)
+     *
+     * A 503 is the useful signal there: Google checks auth first and the model next, so being
+     * told a model is overloaded proves it exists for that key. That is one key and one moment,
+     * so this is the best-evidenced name rather than a verified one — and the reason it no
+     * longer has to be guessed is `reportAvailableModels` in lib/server/generator.ts, which
+     * asks the provider for the list when a model comes back missing and puts it in the error.
+     * The next time this goes stale it should say so itself.
+     *
+     * `SRSLY_MODEL_GEMINI` overrides it without a deploy.
      */
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.8-flash',
     /**
-     * 8,192 is this model's real ceiling, and it is well clear of what a passage needs. The
+     * 8,192 is the conservative Flash ceiling and it is well clear of what a passage needs. The
      * route asks for 16,000 as an upper BOUND, not a requirement: for es/fr/ja the model
      * writes plain prose and for zh it writes pipe-segmented text, so a title, its sentences,
      * the fill items and a conversation land in the low thousands even at C2.
+     *
+     * Kept at the lower figure through the model change deliberately. Asking for MORE than a
+     * model will produce is an error on some gateways and a silent truncation on others, and
+     * `finish_reason` now reports a truncation as one — so the cost of this being low is
+     * nothing, while the cost of it being optimistic is a failure that reads as a bad prompt.
      */
     maxOutputTokens: 8192,
     freeTier: true,
