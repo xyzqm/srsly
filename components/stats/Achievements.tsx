@@ -29,6 +29,11 @@ const label = {
   ...mono, fontSize: 11, letterSpacing: '.2em',
   textTransform: 'uppercase' as const, color: 'var(--ink-faint)',
 };
+/** The two sections INSIDE the panel, a step quieter than its heading. */
+const sub = {
+  ...mono, fontSize: 10, letterSpacing: '.16em',
+  textTransform: 'uppercase' as const, color: 'var(--ink-faint)',
+};
 
 /** A milestone already reached: the mark at full strength, its ladder drawn around it. */
 function EarnedBadge({ b }: { b: Badge }) {
@@ -96,17 +101,41 @@ export default function Achievements() {
     <div className="rounded-[14px] px-5 py-5 mt-8" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
       <div style={label}>Milestones</div>
 
+      {/*
+        THE UNLABELLED HALF READ AS THE PANEL'S DEFINITION OF "milestone".
+        The panel is headed "Milestones", these rows had no heading of their own, and the block
+        below is headed "Earned" — so the two looked like two KINDS of thing, and the reported
+        question was literally "what's the difference between milestones and earned". They are
+        not kinds: this is the same ladder, further down. Naming it says so.
+      */}
       {nextBadges.length > 0 && (
-        <div className="flex flex-col gap-4 mt-4">
-          {nextBadges.map(b => <NextRow key={b.family.key} b={b} />)}
-        </div>
+        <>
+          <div style={{ ...sub, marginTop: 16 }}>Closest</div>
+          <div className="flex flex-col gap-4 mt-3">
+            {nextBadges.map(b => <NextRow key={b.family.key} b={b} />)}
+          </div>
+        </>
       )}
 
       {earnedBadges.length > 0 && (
         <div className={nextBadges.length > 0 ? 'mt-5 pt-4' : 'mt-4'}
              style={nextBadges.length > 0 ? { borderTop: '1px solid var(--line-soft)' } : undefined}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
+          {/*
+            THE COUNT AND THE GRID COUNTED DIFFERENT THINGS.
+            `earned.length` is milestones and the grid renders `earnedBadges`, which is one per
+            FAMILY — so a learner who had passed 10, 50, 100, 250 and 1000 words read "Earned 7"
+            above two badges and reasonably asked where the other five went. Collapsing is
+            right and is not the bug (twenty identical grey tags is what it replaced); saying
+            seven and showing two without a word of explanation is. Both numbers are now on
+            screen, so the grid accounts for itself.
+          */}
+          <div style={{ ...sub, marginBottom: 12 }}>
             Earned · {earned.length}
+            {earnedBadges.length !== earned.length && (
+              <span style={{ opacity: .7 }}>
+                {' '}· {earnedBadges.length} {earnedBadges.length === 1 ? 'ladder' : 'ladders'}
+              </span>
+            )}
           </div>
           <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))' }}>
             {earnedBadges.map(b => <EarnedBadge key={b.family.key} b={b} />)}

@@ -126,7 +126,14 @@ describe('every route that can reach Anthropic says who pays', () => {
     const r = reachesAnthropic.find(x => x.name === name)!;
     expect(r.src).toContain('resolveAiAccess');
     expect(r.src).toContain('operatorPays');
-    expect(r.src).toMatch(/keywordFallback\s*\(/);
+    /**
+     * The free grader by whatever name. It was `keywordFallback` inside the route and is now
+     * `keywordGrade` in `lib/keywordGrade.ts`, shared with the client's own offline fallback —
+     * two copies of one rule was how the client's stayed case-sensitive after the server's was
+     * fixed. What this guards is unchanged: the route must have something free to answer with,
+     * or "degrades instead of refusing" is a claim with no implementation behind it.
+     */
+    expect(r.src).toMatch(/keywordGrade|basicGrade/);
   });
 
   /**

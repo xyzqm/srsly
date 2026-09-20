@@ -2,33 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { LanguageCode } from '@/lib/types';
 import { getLanguageConfig, toLanguageCode, levelLabel, difficultyTier } from '@/lib/languageConfig';
 import { resolveAiAccess, generatorFor } from '@/lib/server/aiGate';
-
-/** Keyword-match fallback — used when there is no API key, or the model call fails. */
-function keywordFallback(response: string, key: string[], langName: string): {
-  verdict: 'ok' | 'partial' | 'miss';
-  message: string;
-  wordsHit: string[];
-} {
-  const wordsHit = key.filter(k => response.includes(k));
-  const ratio = wordsHit.length / Math.max(key.length, 1);
-  if (response.trim().length < 4) {
-    return { verdict: 'miss', message: `Too short — write a full sentence in ${langName}.`, wordsHit: [] };
-  }
-  if (ratio >= 0.66) {
-    return { verdict: 'ok', message: `Good — you included the key ideas (${wordsHit.join('、')}).`, wordsHit };
-  }
-  if (ratio >= 0.34) {
-    const missed = key.filter(k => !response.includes(k));
-    return { verdict: 'partial', message: `You used some key words. Try also including: ${missed.slice(0, 2).join('、')}.`, wordsHit };
-  }
-  return { verdict: 'miss', message: `Reread the passage — the answer involves ${key.slice(0, 2).join('、')}.`, wordsHit: [] };
-}
+import { keywordGrade } from '@/lib/keywordGrade';
 
 /**
  * THIS ROUTE DEGRADES WHERE THE OTHER TWO REFUSE, AND THAT IS THE DESIGN.
  *
  * `daily-content` and `missed-review` return 402 when an operator-funded request may not be
- * made, because they have nothing else to offer. Grading does: `keywordFallback` is free,
+ * made, because they have nothing else to offer. Grading does: `keywordGrade` is free,
  * instant and a real answer. So the same question — whose money is this? — routes here to a
  * cheaper grade rather than to a refusal, and a learner never loses their answer over it.
  */
@@ -40,6 +20,7 @@ export async function POST(req: NextRequest) {
   let model: string;
   let key: string[];
   let response: string;
+  let expected: string;
   let hskLevel: number;
   let language: LanguageCode;
 
@@ -49,6 +30,7 @@ export async function POST(req: NextRequest) {
     model     = String(body.model    ?? '');
     key       = Array.isArray(body.key) ? body.key : [];
     response  = String(body.response ?? '');
+    expected  = String(body.expected ?? '');
     language  = toLanguageCode(body.language);
     hskLevel  = Number(body.hskLevel) || 4;
   } catch {
@@ -57,6 +39,10 @@ export async function POST(req: NextRequest) {
 
   const config = getLanguageConfig(language);
   const langName = config.name;
+  /** One place, so the four fallback call sites cannot drift in what they compare against. */
+  const basicGrade = () => keywordGrade({
+    response, key, question, expected, langName, unspaced: config.scriptIsUnspaced,
+  });
   const levelName = levelLabel(language, hskLevel);
 
   if (!question || !response) {
@@ -84,7 +70,7 @@ export async function POST(req: NextRequest) {
    * still depend on it.
    */
   if (!access.usable || access.stub) {
-    return NextResponse.json(keywordFallback(response, key, langName));
+    return NextResponse.json(basicGrade());
   }
   /**
    * THE OPERATOR'S KEY FUNDS PASSAGES AND NOTHING ELSE, SIGNED IN OR NOT.
@@ -100,14 +86,14 @@ export async function POST(req: NextRequest) {
    * contention for one small daily budget, so answering the questions attached to a generated
    * passage would spend the budget for the next one. The shared key exists so a visitor can
    * see a passage get WRITTEN, which is the thing with no free substitute. Grading has one —
-   * `keywordFallback` is instant and a real answer — so it takes it.
+   * `keywordGrade` is instant and a real answer — so it takes it.
    *
    * The session check is gone entirely, which is the codebase's own rule arrived at properly:
    * `operatorPays` decides, and whether somebody is signed in never enters into it. A learner
    * on their own key still gets AI grading, unmetered, exactly as before.
    */
   if (access.operatorPays) {
-    return NextResponse.json(keywordFallback(response, key, langName));
+    return NextResponse.json(basicGrade());
   }
 
   /**
@@ -116,7 +102,7 @@ export async function POST(req: NextRequest) {
    * It built a bare `Anthropic` client to set `max_tokens: 300` — a grade is two sentences,
    * not a passage. That pinned it to one provider, and the failure would have been quiet in
    * the way this route's failures always are: a learner on a Google key would have had every
-   * grade silently fall through to `keywordFallback`, because the Anthropic call throws and
+   * grade silently fall through to `keywordGrade`, because the Anthropic call throws and
    * the catch below answers with the cheap grader. Working, blunt, and no error anywhere.
    */
   const generator = generatorFor(access);
@@ -167,7 +153,7 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
       json = JSON.parse(cleaned);
     } catch {
       console.error('[grade-response] JSON parse failed:', cleaned);
-      return NextResponse.json(keywordFallback(response, key, langName));
+      return NextResponse.json(basicGrade());
     }
 
     const verdict = json.verdict === 'ok' || json.verdict === 'partial' ? json.verdict : 'miss';
@@ -176,18 +162,18 @@ wordsHit: words from KEY VOCABULARY the student used correctly (empty array [] i
       : 'Review the passage and try again.';
     const wordsHit = Array.isArray(json.wordsHit)
       ? (json.wordsHit as unknown[]).filter((w): w is string => typeof w === 'string' && key.includes(w))
-      : keywordFallback(response, key, langName).wordsHit;
+      : basicGrade().wordsHit;
 
     return NextResponse.json({ verdict, message, wordsHit });
   } catch (err) {
     /**
      * STILL A FALLBACK AND NOT AN ERROR, whatever went wrong. A rejected key, a rate limit and
      * a retired model all land here, and the answer is the same: the learner gets a real grade
-     * from `keywordFallback` rather than losing the answer they just wrote. That is this
+     * from `keywordGrade` rather than losing the answer they just wrote. That is this
      * route's whole design — it degrades where the other two refuse — and it is why the
      * provider being misconfigured shows up in the log rather than on the screen.
      */
     console.error('[grade-response] generation error:', err);
-    return NextResponse.json(keywordFallback(response, key, langName));
+    return NextResponse.json(basicGrade());
   }
 }

@@ -123,8 +123,15 @@ function foldKana(s: string): string {
  */
 const cjkExact = (s: string) => s.trim().normalize('NFKC').replace(/\s+/g, '');
 
-/** `ñ` is parked; `ç` is not. See the module docstring. */
-function latinClose(s: string): string {
+/**
+ * `ñ` is parked; `ç` is not. See the module docstring.
+ *
+ * EXPORTED so `lib/keywordGrade.ts` folds an answer exactly the way typed recall does. That
+ * grader compared with a bare `includes`, so "Le gusta…" failed against the key word "le" on a
+ * capital letter alone — and a second private copy of this rule is how the two would come to
+ * disagree about what counts as the same word.
+ */
+export function latinClose(s: string): string {
   // A sentinel written as an escape, not a literal control character.
   const PARK_N = '\u0001';
   let out = s.trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFC');

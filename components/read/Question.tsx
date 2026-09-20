@@ -12,6 +12,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import type { ReadingHint } from '@/lib/readings';
 import type { ClaimsStore } from '@/hooks/useClaims';
 import { aiHeaders } from '@/lib/userApiKey';
+import { keywordGrade } from '@/lib/keywordGrade';
 
 interface Props {
   question: Q;
@@ -44,7 +45,20 @@ interface Props {
 
 export default function QuestionComponent({ question, index, mode, hskLevel = 4, savedResponse, onSave, onAddVocab, deckWords, deckReadings, claimsStore, onMcGrade, savedMcGrade }: Props) {
   const language = useLanguage();
-  const { scriptIsUnspaced } = getLanguageConfig(language);
+  const { scriptIsUnspaced, name: langName } = getLanguageConfig(language);
+  /**
+   * The right answer IN THE TARGET LANGUAGE, which the grader had no way to see.
+   *
+   * `question.model` is an English model answer by the generator's own schema, so it can never
+   * be compared against a Spanish or Japanese sentence. The correct multiple-choice option is
+   * the same answer written in the language being learned — generated already, stored already,
+   * and simply never sent. Without it the free grader can only ask "did they use the key
+   * words", which marked `pelear` correct against a passage that says `nadar`.
+   */
+  const expectedAnswer = tokensToText(
+    (question.options ?? []).find(o => o.correct)?.tokens ?? [],
+    scriptIsUnspaced,
+  );
   // MC state. Seeded from `savedMcGrade` so a restored question redraws as answered.
   // 3 = right first try, 2 = right on the second, 1 = wrong twice; the option actually
   // picked is not recoverable from the grade, so a restored wrong pick is simply not
@@ -127,6 +141,7 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
         body: JSON.stringify({
           question: questionText,
           model: question.model,
+          expected: expectedAnswer,
           key: question.key,
           response: text,
           hskLevel,
@@ -143,18 +158,26 @@ export default function QuestionComponent({ question, index, mode, hskLevel = 4,
       setFrFeedback(result);
       onSave(result);
     } catch {
-      // Network failure — fall back to local keyword match
-      const wordsHit = question.key.filter(k => text.includes(k));
-      const ratio = wordsHit.length / Math.max(question.key.length, 1);
-      const verdict: FRResponse['verdict'] = ratio >= 0.66 ? 'ok' : ratio >= 0.34 ? 'partial' : 'miss';
-      const message = ratio >= 0.66
-        ? `Good — you used the key ideas (${wordsHit.join('、')}).`
-        : ratio >= 0.34
-          ? `Partially there — try also mentioning ${question.key.filter(k => !text.includes(k)).slice(0, 2).join('、')}.`
-          : text.length < 4
-            ? "Too short — write a full sentence."
-            : `Reread the passage — focus on ${question.key.slice(0, 2).join('、')}.`;
-      const result: FRResponse = { text, verdict, message, wordsHit };
+      /**
+       * Network failure — the same grader the server would have used, not a second copy of it.
+       *
+       * This held its OWN keyword match, with its own wording and its own bugs: it compared
+       * with a bare `includes`, so it was case-sensitive and matched inside other words, and it
+       * scored the key vocabulary while ignoring the answer entirely. Two implementations of
+       * one rule, and fixing the server's left this one quietly wrong — which is the drift
+       * `lib/aiProviders.ts` exists to prevent for key shapes and is no different here.
+       */
+      const result: FRResponse = {
+        text,
+        ...keywordGrade({
+          response: text,
+          key: question.key,
+          question: questionText,
+          expected: expectedAnswer,
+          langName,
+          unspaced: scriptIsUnspaced,
+        }),
+      };
       setFrFeedback(result);
       onSave(result);
     } finally {
