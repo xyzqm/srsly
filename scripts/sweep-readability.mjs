@@ -263,6 +263,18 @@ try {
       // Any cached passage for TODAY is kept, so a resumed run costs no extra generations.
       const keep = {};
       for (const k of Object.keys(localStorage)) if (k.startsWith('srsly-daily')) keep[k] = localStorage.getItem(k);
+      /* THE CONNECTED KEY SURVIVES THE WIPE, AND WITHOUT THIS THE SWEEP CANNOT RUN AT ALL.
+         The reset clears every srsly-* entry, which includes srsly-anthropic-key and
+         srsly-ai-provider -- so the very first reload disconnected the learner's key, every
+         generation fell through to the operator's, and guest_limit refused it. The sweep would
+         report nothing generated while the app was working perfectly.
+         It is also the whole mechanism for the thing this script is FOR: comparing providers.
+         You pick Gemini or Groq in Settings and sweep; if the reset ate that choice there would
+         be nothing to compare.
+         (No backticks in here: this string is itself a template literal.) */
+      for (const k of ['srsly-anthropic-key', 'srsly-ai-provider']) {
+        const v = localStorage.getItem(k); if (v !== null) keep[k] = v;
+      }
       for (const k of Object.keys(localStorage)) if (k.startsWith('srsly')) localStorage.removeItem(k);
       for (const [k, v] of Object.entries(keep)) localStorage.setItem(k, v);
       localStorage.setItem('srsly-prefs', JSON.stringify({
