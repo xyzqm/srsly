@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import TabPanel from '@/components/TabPanel';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { isDueToday, todayStr } from '@/lib/deck';
 import { useSRS } from '@/hooks/useSRS';
@@ -105,7 +106,17 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
         })}
       </div>
 
-      {group === 'overview' && (<>
+      {/*
+        ── A CONDITIONAL RENDER IS A REMOUNT, AND A REMOUNT IS A LOADING STATE ──
+        Reported as "the screen flashes when I click into Milestones", and it is this file's own
+        rule broken in a new place: `{group === 'x' && <Panel/>}` tears the whole subtree down on
+        every switch, so `Achievements` re-ran `useAchievements` — four decks, the SRS state and
+        the IndexedDB shelf — and painted empty before it painted badges. `SrsTab` already
+        answers this shape with `TabPanel` for its three drills, and `TabPanel`'s docstring is
+        the long version. Groups still mount on FIRST activation only, so a learner who never
+        opens Schedule never loads it.
+      */}
+      <TabPanel active={group === 'overview'}><>
         {/*
           ── AN EMPTY DECK GETS A SENTENCE, NOT A WALL OF ZEROS ────────────────
           CLAUDE.md's reason for `npm run seed:dev` is that the Stats panel hides itself on a
@@ -234,28 +245,25 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
             <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
               {sessions}
             </div>
-            <div style={statNote}>
-              <span style={{ opacity: 0.75 }}>days you studied at all, ever</span>
-            </div>
           </div>
         </div>
 
         <MilestoneRing deck={deck} language={language} />
         </>)}
-      </>)}
+      </></TabPanel>
 
-      {group === 'milestones' && <Achievements />}
+      <TabPanel active={group === 'milestones'}><Achievements /></TabPanel>
 
-      {group === 'deck' && (<>
+      <TabPanel active={group === 'deck'}><>
         <PieChart deck={deck} />
         <LevelProgress deck={deck} language={language} />
         <WeakWords deck={deck} />
-      </>)}
+      </></TabPanel>
 
-      {group === 'schedule' && (<>
+      <TabPanel active={group === 'schedule'}><>
         <ReviewHeatmap deck={deck} />
         <FutureLoad deck={deck} />
-      </>)}
+      </></TabPanel>
     </div>
   );
 }
