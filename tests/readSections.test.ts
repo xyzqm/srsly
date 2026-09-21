@@ -106,7 +106,47 @@ describe('a clip still reaches the thing that reads it', () => {
   /** And a reload with no clip returns you where you were. */
   it('restores the tab you were on', () => {
     expect(page).toContain("localStorage.setItem(TAB_KEY, next)");
-    expect(page).toMatch(/storedTab\(\)\s*\?\?\s*'practice'/);
+    expect(page).toMatch(/storedTab\(\)\s*\?\?\s*'dash'/);
+  });
+});
+
+describe('Home is the front door', () => {
+  /**
+   * The default was `practice`, which opens straight into a flashcard with no context — fine
+   * once you know the app, a strange first screen for anyone who does not. Home answers what
+   * you owe today and what the two options are.
+   */
+  it('lands a first-time visitor on Home', () => {
+    expect(page).toMatch(/storedTab\(\)\s*\?\?\s*'dash'/);
+  });
+
+  it('puts Home first in the tab bar', () => {
+    const first = tabNav.match(/const TABS[^=]*=\s*\[\s*\{\s*id:\s*'(\w+)',\s*label:\s*'(\w+)'/);
+    expect(first?.[1]).toBe('dash');
+    expect(first?.[2]).toBe('Home');
+  });
+
+  /**
+   * ONE PLACE ANSWERS "what now". Stats offered "Open today's passage", Vocab offered "Study",
+   * and nothing offered Read — three navigation controls grown on three content pages, each
+   * picking whichever destination that page happened to be about. Home offers both real
+   * options; a fourth opinion elsewhere is what this forbids.
+   */
+  it('keeps the two actions on Home and nowhere else', () => {
+    const stats = code(read('components/stats/StatsTab.tsx'));
+    expect(stats).toContain('onNavigateRead');
+    expect(stats).toContain('onNavigateReview');
+    expect(code(read('components/vocab/VocabTab.tsx'))).not.toContain('onStudy');
+  });
+
+  /**
+   * AND IT DOES NOT OPEN ON A WALL OF ZEROS. CLAUDE.md's reason for `seed:dev` is that Stats
+   * hides itself on a new account, "because a wall of empty progress bars is a list of things
+   * you have failed to do" — which making it the landing tab would have walked straight into.
+   */
+  it('gives an empty deck a sentence rather than zeros', () => {
+    const stats = code(read('components/stats/StatsTab.tsx'));
+    expect(stats).toMatch(/deckLoaded && deck\.length === 0/);
   });
 });
 

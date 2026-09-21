@@ -172,7 +172,17 @@ function initialTab(): TabId {
    * remove, reintroduced by remembering too well.
    */
   if (decodeClip(window.location.hash)) return 'read';
-  return storedTab() ?? 'practice';
+  /**
+   * HOME FIRST, not the drill tab.
+   *
+   * The default was `practice`, which opens straight into a flashcard with no context — fine
+   * once you know the app and a strange front door for anyone who does not. Home answers "what
+   * do I owe today and what are my two options", and its deckless state is a single sentence
+   * rather than the wall of zeros CLAUDE.md warns about, so it is safe to be the first screen.
+   *
+   * It only ever applies to a FIRST visit: every later load restores the tab you were on.
+   */
+  return storedTab() ?? 'dash';
 }
 
 function AppShell() {
@@ -393,7 +403,6 @@ function AppShell() {
   }, []);
 
   /** Vocab's "Study" hands off to the SRS tab. */
-  const startStudy = useCallback(() => { changeTab('practice'); }, [changeTab]);
 
   return (
     <LanguageProvider value={language}>
@@ -448,10 +457,10 @@ function AppShell() {
             <LearnTab onNavigateSrs={() => changeTab('practice')} />
           )}
           <TabPanel active={tab === 'dash'}>
-            <StatsTab onNavigateRead={() => changeTab('read')} />
+            <StatsTab onNavigateRead={() => changeTab('read')} onNavigateReview={() => changeTab('practice')} />
           </TabPanel>
           {tab === 'vocab' && (
-            <VocabTab onStudy={startStudy} />
+            <VocabTab />
           )}
           {tab === 'settings' && (
             <SettingsTab

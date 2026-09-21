@@ -27,10 +27,10 @@ import { hasLessons } from '@/lib/lessons';
  * nothing.
  */
 const TABS: { id: TabId; label: string }[] = [
+  { id: 'dash',     label: 'Home' },
   { id: 'practice', label: 'Review' },
   { id: 'read',     label: 'Read' },
   { id: 'learn',    label: 'Learn' },
-  { id: 'dash',     label: 'Stats' },
   { id: 'vocab',    label: 'Vocab' },
   { id: 'settings', label: 'Settings' },
 ];

@@ -504,12 +504,9 @@ function CrossFade({ id, children }: { id: string; children: React.ReactNode }) 
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-interface VocabTabProps {
-  /** Hand off to the SRS tab to review what is due. */
-  onStudy: () => void;
-}
-
-export default function VocabTab({ onStudy }: VocabTabProps) {
+/* Takes nothing. It held one prop, `onStudy`, for a button that has moved to Home — see the
+   comment beside the heading below. */
+export default function VocabTab() {
   const language = useLanguage();
   const langConfig = getLanguageConfig(language);
   const {
@@ -724,23 +721,16 @@ export default function VocabTab({ onStudy }: VocabTabProps) {
       <div className="flex justify-between items-end flex-wrap gap-3 my-2 mb-6">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/*
+              THE "Study" BUTTON MOVED TO HOME, and the reason is that it was one of three.
+              Stats offered "Open today's passage", this offered "Study", and nothing anywhere
+              offered Read — three navigation controls grown on three content pages, each
+              picking whichever destination that page happened to be about. Home answers "what
+              now" in one place and offers BOTH things there are to do, so a shortcut here is a
+              fourth opinion about where to go next rather than a convenience. The tab bar is
+              one click away and always on screen.
+            */}
             <span style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, letterSpacing: '-.01em' }}>Word deck</span>
-            {deck.length > 0 && (
-              <>
-                <button
-                  onClick={onStudy}
-                  className="cursor-pointer transition-all duration-150"
-                  title="Review the cards that are due"
-                  style={{
-                    fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', fontWeight: 500,
-                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7,
-                    padding: '6px 13px', boxShadow: '0 1px 0 var(--accent-deep)',
-                  }}
-                >
-                  ▸ Study
-                </button>
-              </>
-            )}
           </div>
           <p style={{ color: 'var(--ink-soft)', fontSize: 14, marginTop: 4 }}>
             {displayDeck.length} word{displayDeck.length === 1 ? '' : 's'} in your deck

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
+import { isDueToday, todayStr } from '@/lib/deck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
@@ -55,12 +56,25 @@ const statNote: React.CSSProperties = {
   ...mono, fontSize: 10, color: 'var(--ink-faint)', marginTop: 5, lineHeight: 1.4,
 };
 
-interface Props { onNavigateRead: () => void; }
+interface Props {
+  onNavigateRead: () => void;
+  /** Into the drill tab, for the second of the two things a learner can do next. */
+  onNavigateReview: () => void;
+}
 
-export default function StatsTab({ onNavigateRead }: Props) {
+export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
   const language = useLanguage();
-  const { deck } = useVocabDeck(language);
+  const { deck, deckLoaded } = useVocabDeck(language);
   const { streak, langStreak, sessions, forgiven } = useSRS(language);
+  /**
+   * WHAT YOU OWE TODAY — the one number a page like this was missing.
+   *
+   * Everything else here is retrospective: words collected, days studied, a streak already
+   * earned. None of it answers "what do I do now", which is the question somebody opening the
+   * app is actually asking. Counted with the SAME filter `Flashcards` builds its queue from,
+   * because a dashboard promising 4 due and a drill offering 6 is worse than no number.
+   */
+  const dueToday = deckLoaded ? deck.filter(w => isDueToday(w, todayStr())).length : null;
   const [group, setGroup] = useState<Group>(GROUPS[0].id);
 
   return (
@@ -92,14 +106,85 @@ export default function StatsTab({ onNavigateRead }: Props) {
       </div>
 
       {group === 'overview' && (<>
+        {/*
+          ── AN EMPTY DECK GETS A SENTENCE, NOT A WALL OF ZEROS ────────────────
+          CLAUDE.md's reason for `npm run seed:dev` is that the Stats panel hides itself on a
+          new account, "because a wall of empty progress bars is a list of things you have
+          failed to do". Making this the landing tab would have walked straight into that: a
+          first-time learner met by 0 words, 0 days, a 0-day streak and an empty ring. So the
+          deckless state is one line and one route, and the route is READING rather than the
+          word list — reading is what fills the deck, and sending a beginner to Vocab first
+          asks for the boring half before they have seen why it is worth doing.
+        */}
+        {deckLoaded && deck.length === 0 ? (
+          <>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '0 0 4px', lineHeight: 1.15 }}>
+              Start by reading something.
+            </div>
+            <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '46ch', lineHeight: 1.55 }}>
+              Tap any word you do not know and it joins your deck with a review scheduled. That
+              is the whole loop — there is nothing to set up first.
+            </p>
+            <button
+              onClick={onNavigateRead}
+              className="mt-5 cursor-pointer transition-all duration-150"
+              style={{
+                ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+              }}
+            >
+              Read something
+            </button>
+          </>
+        ) : (<>
         <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '0 0 4px', lineHeight: 1.15 }}>
-          <em style={{ fontStyle: 'normal', color: 'var(--accent)' }}>{deck.length}</em> word{deck.length === 1 ? '' : 's'} in your deck.
+          {dueToday === null
+            ? <><em style={{ fontStyle: 'normal', color: 'var(--accent)' }}>{deck.length}</em> word{deck.length === 1 ? '' : 's'} in your deck.</>
+            : dueToday > 0
+              ? <><em style={{ fontStyle: 'normal', color: 'var(--accent)' }}>{dueToday}</em> word{dueToday === 1 ? '' : 's'} due today.</>
+              : <>Nothing due today.</>}
         </div>
         <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '46ch', lineHeight: 1.55 }}>
-          {deck.length === 0
-            ? 'Your deck is empty. Read a passage and click underlined words to start building it.'
-            : 'Your complete vocabulary broken down by SRS mastery phase.'}
+          {dueToday === null
+            ? 'Counting what you owe today\u2026'
+            : dueToday > 0
+              ? `${deck.length} words in your deck. Read a passage built around today\u2019s words, or run them as cards.`
+              : `${deck.length} words in your deck, all ahead of schedule. Reading still counts \u2014 and new words come from it.`}
         </p>
+
+        {/*
+          TWO ACTIONS, WHICH IS THE WHOLE POINT OF THIS BEING THE HOME.
+          The app had three navigation buttons scattered across three content pages, each
+          chosen ad hoc: Stats offered "Open today's passage", Vocab offered "Study", and
+          nothing anywhere offered Read. One place that answers "what now" replaces all of
+          that, and it offers both of the things there are to do rather than whichever one
+          the page happened to be about.
+        */}
+        <div className="flex gap-2.5 flex-wrap" style={{ marginTop: 20 }}>
+          <button
+            onClick={onNavigateRead}
+            className="cursor-pointer transition-all duration-150"
+            style={{
+              ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+              background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+              padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+            }}
+          >
+            Read
+          </button>
+          <button
+            onClick={onNavigateReview}
+            className="cursor-pointer transition-all duration-150"
+            style={{
+              ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+              background: 'var(--card)', color: 'var(--ink)', border: '1px solid var(--line)',
+              borderRadius: 8, padding: '12px 20px',
+            }}
+          >
+            {dueToday && dueToday > 0 ? `Review ${dueToday} card${dueToday === 1 ? '' : 's'}` : 'Review cards'}
+          </button>
+        </div>
 
         {/*
           THE STREAK FIRST, AND THE DECK COUNT NOT REPEATED.
@@ -155,19 +240,8 @@ export default function StatsTab({ onNavigateRead }: Props) {
           </div>
         </div>
 
-        <button
-          onClick={onNavigateRead}
-          className="mt-5 flex items-center gap-2 cursor-pointer transition-all duration-150"
-          style={{
-            ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-            background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-            padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)', display: 'inline-flex',
-          }}
-        >
-          Open today&apos;s passage
-        </button>
-
         <MilestoneRing deck={deck} language={language} />
+        </>)}
       </>)}
 
       {group === 'milestones' && <Achievements />}

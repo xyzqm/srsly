@@ -1920,7 +1920,33 @@ the winner could be the instance nobody could see and the milestone simply never
 results for a while, despite this file and the component's own docstring describing two, so a
 milestone crossed on the last blank of a passage had nowhere to be announced.
 
-### Reading is one tab; the drills are another
+### Home, and one line down the middle
+
+**HOME IS THE STATS TAB DOING A SECOND JOB, WHICH IS WHY THERE IS NO SEVENTH TAB.** The app had
+grown three navigation buttons on three CONTENT pages, each picking whichever destination that
+page happened to be about: Stats offered "Open today's passage", Vocab offered "Study", and
+nothing anywhere offered Read. A home page was proposed to fix that, and a home page whose only
+job is navigation competes with the tab bar, which is already navigation and is always on
+screen. Stats already held the streak, the deck size and the milestone ring; what it lacked was
+the one PROSPECTIVE number — what you owe today — and a pair of actions. With those it answers
+"what now", so it is the landing tab and the label says Home. The id stays `dash`, for the same
+reason `practice` survived becoming Review.
+
+**ITS EMPTY STATE IS THE WHOLE RISK, AND IT IS WHY THIS WAS NOT A FREE CHANGE.** This file's
+reason for `npm run seed:dev` is that the Stats panel hides itself on a new account, *because a
+wall of empty progress bars is a list of things you have failed to do* — and making it the front
+door walks straight into that: 0 words, 0 days, a 0-day streak and an empty ring, as the first
+thing a new learner ever sees. So a deckless Home is ONE sentence and ONE route, and the route is
+READING rather than the word list, because reading is what fills the deck and sending a beginner
+to Vocab first asks for the boring half before they have seen why it is worth doing.
+
+**THE DUE COUNT USES `Flashcards`' OWN FILTER**, not a second one that agrees today. A dashboard
+promising 4 due above a drill that offers 6 is worse than no number at all.
+
+**AND A RELOAD RETURNS YOU WHERE YOU WERE** (`srsly-tab`, device-local), so the landing tab only
+ever decides a FIRST visit. That is what makes it a cheap decision rather than a load-bearing
+one — and it is also why a clip in the URL is still answered before the stored tab is read, or
+an incoming article would be buried under whatever screen you left open.
 
 One line down the middle, and it is the app's main organising idea:
 
