@@ -321,6 +321,14 @@ away, which together produced the only bug report that matters: *pressing Genera
   passage mid-session, and swapping the tab into an error state would throw away passages
   already on screen over a failure to add one more.
 
+**AND IT WAS RENDERED IN THE EMPTY STATE ONLY, WHICH IS HALF A FIX.** The same button exists
+mid-session as "+ New passage", which is where a reader actually presses it, and there the
+failure still changed nothing on screen — so a rate-limited free tier read as a dead button, the
+exact bug above, surviving its own fix in the other half of the component. Found by the
+readability sweep stopping after five passages and reporting no reason, CORRECTLY: there was no
+reason anywhere in the DOM to report. Verified in a browser, with the control — remove the block
+and a failed click produces nothing at all.
+
 **`errorMsg` was declared, returned from the hook, and never rendered by anything** — half-built
 plumbing that made the failure look like a missing feature rather than a broken one.
 

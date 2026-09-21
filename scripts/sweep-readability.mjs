@@ -191,6 +191,10 @@ chrome.on('exit', code => { chromeExit = code; });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/** See the rate-limit note in the passage loop. 65s because the advice is "a minute or two". */
+const RATE_WAIT_MS = 65_000;
+const MAX_RATE_WAITS = 6;
+
 async function target() {
   // A cold profile exposes a page target in about a second; 15 s is slack, not a guess.
   for (let i = 0; i < 60; i++) {
@@ -264,11 +268,34 @@ const ev = (ws, expression) =>
       return typeof v === 'string' ? v : JSON.stringify(v ?? null);
     });
 
-/** Helpers injected into every page-side step. */
-const STEP = `
+/**
+ * Helpers injected into every page-side step, built PER LEVEL — which is the whole point.
+ *
+ * ── THE CACHE LOOKUP WAS `startsWith('srsly-daily')`, AND EVERY LEVEL MEASURED LEVEL 1 ──
+ *
+ * The app keys its cache `srsly-daily-v2-<lang>-<level>-<date>`, and the seed DELIBERATELY
+ * preserves every daily key so a resumed run costs no extra generations — so from level 2
+ * onward there is more than one, and `Object.keys(...).find(...)` took whichever came back
+ * first. Chrome does not promise insertion order there, so it was not even consistently
+ * wrong: within one run the same expression returned level 3's cache once (`{"step":"ok",
+ * "passages":1}`) and level 1's the next time (`before === after`, reported as
+ * "no-new-passage"). Then the dump wrote level 1's five passages to level-1.json,
+ * level-2.json AND level-3.json — three byte-identical files, 40,663 bytes each.
+ *
+ * NOTHING ANNOUNCED THIS. The run reported `wrote 5 passages` three times, the files were the
+ * right shape and full of real passages, and every readability figure computed from them
+ * would have been a number for level 1 wearing three different labels. A measurement tool
+ * that mixes up its conditions does not produce noise, it produces a confident wrong answer —
+ * the same failure as the model list that filtered out the answer, one layer up.
+ *
+ * Matched on `-<lang>-<level>-` rather than on the full key so a bump to `v3` in
+ * `lib/storage/local.ts` finds nothing rather than finding the wrong thing.
+ */
+const STEP = level => `
   const find = re => [...document.querySelectorAll('button')].find(b => re.test((b.textContent||'').trim()));
-  const cache = () => { const k = Object.keys(localStorage).find(x => x.startsWith('srsly-daily'));
-    return k ? JSON.parse(localStorage.getItem(k)) : null; };
+  const DAILY = '-${LANG}-' + ${level} + '-';
+  const dailyKey = () => Object.keys(localStorage).find(x => x.startsWith('srsly-daily') && x.includes(DAILY));
+  const cache = () => { const k = dailyKey(); return k ? JSON.parse(localStorage.getItem(k)) : null; };
   const words = t => (t||'').replace(/[.,:;!?¿¡«»""()]/g, ' ').split(/\\s+/).filter(Boolean);
 `;
 
@@ -364,8 +391,22 @@ try {
     }
     log(`level ${level}: seeded ${deck.length} deck words`);
 
+    /**
+     * A FREE-TIER RATE LIMIT IS A PAUSE, NOT THE END OF THE LEVEL.
+     *
+     * Measured on Groq's free tier: five passages, then "Groq is rate-limiting your key — free
+     * tiers cap how often you can generate. Wait a minute or two and try again." The loop
+     * treated that like any other non-ok step and abandoned the level, so a 10-passage run
+     * returned 5 and the next two levels returned 0 — which looks like a broken generator and
+     * is a working one being asked too fast. Every provider this script is for is free-tier by
+     * design, so this is the NORMAL path, not an edge case.
+     *
+     * The wait is the provider's own advice, taken literally; the cap on waits stops a spent
+     * daily quota (which reports the same way and will not clear) from parking here for hours.
+     */
+    let rateWaits = 0;
     for (let n = 0; n < PER; n++) {
-      const raw = await ev(ws, `(async () => { ${STEP}
+      const raw = await ev(ws, `(async () => { ${STEP(level)}
         const before = cache()?.passages?.length ?? 0;
         const b = find(/^Generate passage$/i) || find(/New passage/i);
         if (!b) return JSON.stringify({
@@ -435,7 +476,17 @@ try {
       log(`  level ${level} passage ${n + 1}/${PER} → ${raw}`);
       let parsed = {};
       try { parsed = JSON.parse(raw || '{}'); } catch { /* keep the raw line in the log */ }
-      if (parsed.step !== 'ok') break;
+      if (parsed.step !== 'ok') {
+        if (/rate.?limit/i.test(parsed.why || '') && rateWaits < MAX_RATE_WAITS) {
+          rateWaits += 1;
+          log(`  level ${level}: rate-limited — waiting ${RATE_WAIT_MS / 1000}s `
+            + `(${rateWaits}/${MAX_RATE_WAITS}), then retrying passage ${n + 1}`);
+          await sleep(RATE_WAIT_MS);
+          n -= 1;
+          continue;
+        }
+        break;
+      }
       await sleep(800);
     }
 
@@ -453,8 +504,8 @@ try {
      * short result, it is a failed level, and it must say so — every level that follows is
      * decided by this line.
      */
-    const dump = await ev(ws, `(() => {
-      const k = Object.keys(localStorage).find(x => x.startsWith('srsly-daily'));
+    const dump = await ev(ws, `(() => { ${STEP(level)}
+      const k = dailyKey();
       return k ? localStorage.getItem(k) : '';
     })()`);
     let dumped = 0;

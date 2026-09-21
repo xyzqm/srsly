@@ -1678,6 +1678,33 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           </div>
           )}
 
+          {/* ── WHY THE NEW PASSAGE DID NOT ARRIVE ───────────────────────────
+              THE SECOND HALF OF A BUG THAT WAS ONLY EVER HALF FIXED. `errorMsg` exists because
+              `loadMore` swallowed its own failure and pressing Generate was indistinguishable
+              from pressing a dead button — and it was then rendered in the EMPTY state alone.
+              The same button is here, mid-session, which is where a reader actually presses it,
+              and here nothing changed on screen at all: a rate-limited free tier read as
+              "+ New passage" being broken.
+
+              Found by the readability sweep, which stopped after five passages reporting no
+              reason — correctly, because there was no reason anywhere in the DOM to report. The
+              provider had said "wait a minute or two" and the sentence had nowhere to go.
+
+              Same shape as `questionsError` above, and deliberately NOT a `status: 'error'`:
+              failing to add one more passage must not throw away the ones already on screen. */}
+          {!loadingMore && errorMsg && (
+            <p
+              role="status"
+              style={{
+                fontFamily: 'var(--f-mono)', fontSize: 11.5, lineHeight: 1.5,
+                color: 'var(--accent)', textAlign: 'center', maxWidth: '46ch',
+                margin: '0 auto 16px',
+              }}
+            >
+              {errorMsg}
+            </p>
+          )}
+
           {showResults && <VocabResults results={vocabResults} />}
           {/* The reward, and only on a screen that says you finished. Shown for a GENERATED
               passage — the SRS drill — because `showResults` only exists where blanks do.
