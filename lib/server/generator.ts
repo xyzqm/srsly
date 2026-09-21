@@ -300,11 +300,24 @@ async function reportAvailableModels(
 
     console.error(`[generator] ${provider.id} offers this key: ${ids.join(', ')}`);
 
+    /**
+     * THE ONE NAME THAT MUST NOT BE SUGGESTED IS THE ONE THAT JUST FAILED.
+     *
+     * Obvious once written down and not obvious at all before: with a namespaced pin the
+     * family filter matches the pinned id itself first, so a list containing it produced
+     * `does not offer "openai/gpt-oss-120b" … Your key can use: openai/gpt-oss-120b.` A
+     * suggestion that is the thing being complained about is not a weak answer, it is an
+     * incoherent one — and it is reachable whenever the provider still LISTS a model it will
+     * not serve. Dropped before the family filter runs, so it cannot crowd out a real sibling.
+     */
+    const asked = modelFor(provider);
+    const others = ids.filter(id => id !== asked);
     // Names near the one that was asked for, since a pinned id going stale is almost always a
     // version bump rather than a change of family.
-    const family = modelFor(provider).split(/[-.]/)[0];
-    const near = ids.filter(id => id.startsWith(family));
-    const suggest = (near.length > 0 ? near : ids).slice(0, 4);
+    const family = asked.split(/[-.]/)[0];
+    const near = others.filter(id => id.startsWith(family));
+    const suggest = (near.length > 0 ? near : others).slice(0, 4);
+    if (suggest.length === 0) return;
     /**
      * Appended rather than rebuilt, so this cannot change what KIND of failure was reported or
      * lose the sentence naming the env var. `Error.message` is an ordinary writable property.

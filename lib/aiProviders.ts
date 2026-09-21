@@ -187,7 +187,59 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
   {
     id: 'groq',
     name: 'Groq',
-    model: 'llama-3.3-70b-versatile',
+    /**
+     * THE THIRD STALE PIN, AND THE FIRST ONE THAT WAS ANSWERED RATHER THAN GUESSED.
+     *
+     * `llama-3.3-70b-versatile` was announced deprecated 2026-06-17 and shut down 2026-08-16,
+     * so every Groq generation returned `model_not_found`. Gemini's two outages above were each
+     * resolved by picking a plausible name and redeploying; this one was resolved by asking the
+     * key, because `reportAvailableModels` now does that on exactly this failure.
+     *
+     * What one live `gsk_` key answered, 2026-09-21 — all thirteen, and the point is how few of
+     * them can write anything:
+     *
+     *   openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b   ← can write prose
+     *   allam-2-7b                                  small Arabic/English chat
+     *   openai/gpt-oss-safeguard-20b                a safety classifier
+     *   meta-llama/llama-prompt-guard-2-22m / -86m  prompt-injection classifiers
+     *   whisper-large-v3 / -turbo                   speech → text
+     *   canopylabs/orpheus-v1-english / -arabic-saudi   text → speech
+     *   groq/compound, groq/compound-mini           agentic runners, decommissioned 2026-09-21
+     *
+     * `openai/gpt-oss-120b` is Groq's OWN named migration target for the model that retired,
+     * it is the largest general model on the list, and it implements JSON object mode, which
+     * `response_format` in `lib/server/generator.ts` asks for. `qwen/qwen3.8-27b` is the named
+     * alternative and `SRSLY_MODEL_GROQ` reaches it without a deploy; `openai/gpt-oss-20b` is
+     * the migration target for the SMALLER retired model, so it is a downgrade rather than a
+     * sibling — a weaker model is a good prompt linter and a bad default.
+     *
+     * ── AND THE LIST IS WHY THE PIN COULD BE CHOSEN AT ALL ──
+     *
+     * Eight of those thirteen names carry a slash, and `MODEL_ID` had no slash in it, so the
+     * reported list was `whisper-large-v3, whisper-large-v3-turbo, allam-2-7b` — two
+     * speech-to-text models and one small chat model, which reads as "this key cannot generate
+     * prose". Every candidate that could have fixed it was filtered out one line before the
+     * list was printed. The diagnostic did not fail quietly; it produced a confident wrong
+     * answer. Fixed in `lib/server/generator.ts`, where the reasoning is written out.
+     *
+     * Note also the churn: Groq's own migration note points at `qwen/qwen3.6-27b`, which was
+     * itself decommissioned 2026-09-14, and `groq/compound` died the day this list was read.
+     * A vendor's documentation is evidence about the past. `GET /models` is the present.
+     */
+    model: 'openai/gpt-oss-120b',
+    /**
+     * 65,536 is this model's true ceiling and this stays at 16,384 anyway, for the reason the
+     * Gemini entry gives: the route asks for 16,000 as an upper BOUND and a passage lands in
+     * the low thousands, so the cost of this being conservative is nothing while the cost of
+     * it being optimistic is a truncation that reads as a bad prompt.
+     *
+     * ONE THING IS NEW WITH THIS MODEL, THOUGH, AND IT IS WORTH KNOWING BEFORE TUNING THIS.
+     * gpt-oss REASONS, and reasoning tokens are spent out of the same completion budget as the
+     * answer — so this number is no longer "how long may the passage be", it is "how long may
+     * the thinking plus the passage be". There is ample room at 16,000 for both. If that ever
+     * stops being true it announces itself precisely: `finish_reason: length`, which arrives
+     * as the `truncated` kind rather than as an unparseable reply.
+     */
     maxOutputTokens: 16384,
     freeTier: true,
     baseUrl: 'https://api.groq.com/openai/v1',
@@ -196,7 +248,7 @@ export const AI_PROVIDERS: readonly AiProvider[] = [
     keyPrefixes: ['gsk_'],
     consoleUrl: 'https://console.groq.com/keys',
     consoleLabel: 'console.groq.com → API keys',
-    blurb: 'Llama 3.3 on Groq. Free tier, and the fastest of the three by a wide margin.',
+    blurb: 'GPT-OSS 120B on Groq. Free tier, and the fastest of the three by a wide margin.',
   },
 ];
 

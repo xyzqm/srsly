@@ -395,6 +395,19 @@ changed; the pattern just admits that `a/b` is a name. **A filter on a list of a
 the answer**, and this one was written to guard a log line without asking what the log line was
 for. `tests/aiProviders.test.ts` pins both halves, with a hostile namespaced id as the control.
 
+`openai/gpt-oss-120b` is pinned now — Groq's own named migration target, present on a live key,
+and the only listed model that is both general-purpose and large. Of the thirteen names that key
+returned, NINE cannot write anything: two speech-to-text, two text-to-speech, three classifiers,
+and two agentic runners decommissioned the same day. `lib/aiProviders.ts` lists them all, because
+"the list is short" and "the list is mostly not generators" are different facts and only the
+second explains why picking from it needs care.
+
+**AND THE TEST THAT FIXED IT FOUND A SECOND DEFECT IN THE SAME FUNCTION.** With a namespaced pin
+the family filter matches the PINNED ID FIRST, so a provider that still lists a model it will not
+serve produced `does not offer "openai/gpt-oss-120b" … Your key can use: openai/gpt-oss-120b.`
+Not a weak suggestion — an incoherent one, and unreachable with the old bare-name pins, which is
+why it had never shown up. The asked-for id is dropped before the family filter runs.
+
 *(Note also how fast this churns: Groq's own migration note points at `qwen/qwen3.6-27b`, which
 was itself decommissioned 2026-09-14. A vendor's documentation is evidence about the past. The
 live `GET /models` for the key in hand is the only current answer, which is the whole reason that

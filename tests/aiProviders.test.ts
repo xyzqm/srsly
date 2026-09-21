@@ -234,7 +234,16 @@ function mockFetch(status: number, body: unknown) {
 
 const ok = (content: string) => ({ choices: [{ message: { content } }] });
 
-afterEach(() => { vi.unstubAllGlobals(); });
+/**
+ * ENVS ARE UNSTUBBED HERE, NOT ONLY WHERE THEY ARE SET.
+ *
+ * `SRSLY_MODEL_*` stubs were cleared by hand inside the tests that set them, which works until
+ * a test sets one and asserts through a rejection — then the cleanup sits after the `await`
+ * that never returns normally, and the pin leaks into the next test. It did: a later case read
+ * a stale `SRSLY_MODEL_GROQ` and was suggested four text-to-speech models. Cheap to make
+ * unconditional, and the existing manual calls stay harmless.
+ */
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('the OpenAI-compatible call is shaped the way Google and Groq expect', () => {
   it('posts to the provider chat-completions URL with a bearer key', async () => {
@@ -630,6 +639,9 @@ describe('a failure says which of the four things went wrong', () => {
    * report less, it reports something misleading with the same confidence.
    */
   it('keeps a namespaced model id, which is how every current one is spelled', async () => {
+    // Standing where this was found: the retired pin, whose family matches none of the list,
+    // so what is asserted is the SHAPE CHECK and not the family filter.
+    vi.stubEnv('SRSLY_MODEL_GROQ', 'llama-3.3-70b-versatile');
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(notFound)
       .mockResolvedValueOnce(modelsResponse(
@@ -647,11 +659,12 @@ describe('a failure says which of the four things went wrong', () => {
 
   /**
    * CONTROL: a slash is admitted as a SEPARATOR, not as a licence. Every segment is still
-   * anchored alphanumeric at both ends, so the hostile id below — which now reaches the
-   * pattern rather than being dropped by the family filter, since Groq's family is `llama`
-   * and none of these start with it — is still refused.
+   * anchored alphanumeric at both ends, so the hostile id below — which reaches the pattern
+   * rather than being dropped by the family filter, since the pin stubbed above is `llama…`
+   * and neither of these starts with it — is still refused.
    */
   it('still drops a hostile id that arrives with a slash in it', async () => {
+    vi.stubEnv('SRSLY_MODEL_GROQ', 'llama-3.3-70b-versatile');
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce(notFound)
       .mockResolvedValueOnce(modelsResponse(
@@ -662,6 +675,48 @@ describe('a failure says which of the four things went wrong', () => {
       (e: GenerationError) => {
         expect(e.message).not.toMatch(/script/i);
         expect(e.message).toContain('openai/gpt-oss-20b');
+      },
+    );
+  });
+
+  /**
+   * THE REAL LIST, AS ONE LIVE KEY ANSWERED IT ON 2026-09-21, USED AS A FIXTURE.
+   *
+   * This is the test that would have been worth having before the pin went stale, because it
+   * asserts the thing the reporter is FOR: that when Groq's pinned model goes missing, what
+   * comes back names models that can write prose. Nine of these thirteen cannot — two are
+   * speech-to-text, two are text-to-speech, three are classifiers, one is an agentic runner
+   * that was decommissioned the same day — so a reporter that simply printed the first four
+   * would send the next person to `allam-2-7b` or to Whisper.
+   *
+   * The family filter is what does that work, and a namespaced pin is what it now has to
+   * derive from: `openai/gpt-oss-120b` splits to `openai/gpt`, which is exactly the set of
+   * siblings worth naming.
+   */
+  it('names the models that can write, from the list a live Groq key returned', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse([
+        'allam-2-7b', 'canopylabs/orpheus-arabic-saudi', 'canopylabs/orpheus-v1-english',
+        'groq/compound', 'groq/compound-mini',
+        'meta-llama/llama-prompt-guard-2-22m', 'meta-llama/llama-prompt-guard-2-86m',
+        'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'openai/gpt-oss-safeguard-20b',
+        'qwen/qwen3.8-27b', 'whisper-large-v3', 'whisper-large-v3-turbo',
+      ])));
+
+    await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('model');
+        const suggested = e.message.split('Your key can use:')[1] ?? '';
+        expect(suggested).toContain('openai/gpt-oss-20b');
+        // Not Whisper, and not the Arabic text-to-speech model: the three that survived the
+        // old slash-less filter were precisely the ones nobody should be sent to.
+        expect(suggested).not.toMatch(/whisper|orpheus|allam/i);
+        // AND NEVER THE MODEL THAT JUST FAILED. Groq still LISTS gpt-oss-120b while refusing
+        // to serve this key's request for it, and the family filter matched it first — so the
+        // sentence read "does not offer X … your key can use X".
+        expect(suggested).not.toContain('openai/gpt-oss-120b');
       },
     );
   });
