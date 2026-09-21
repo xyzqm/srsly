@@ -70,8 +70,32 @@ const PER = Number(process.argv[4] || 10);
 const LEVELS = (process.argv[5] || '1,2,3,4,5').split(',').map(Number);
 const LANG = process.argv[6] || 'es';
 
+/**
+ * THE KEY COMES FROM THE ENVIRONMENT, BECAUSE THIS SCRIPT DRIVES A PROFILE THAT HAS NONE.
+ *
+ * Chrome is launched with a throwaway `--user-data-dir` under OUTDIR, so it shares nothing
+ * with the browser the learner connected their key in. Every generation therefore fell through
+ * to the OPERATOR's key and stopped at `guest_limit` — a run that reads as a generator problem
+ * and is a credentials problem:
+ *
+ *   level 1 passage 4/10 → {"step":"no-new-passage","body":"…You've used your free AI
+ *                           generations. Sign in…"}
+ *
+ * Three passages at level 1 and none at all after that. `SRSLY_SWEEP_KEY` is the learner's own
+ * key, which `Generator.operatorPays` never meters, so a sweep of any length is possible.
+ *
+ * It is read from the environment and never logged or written to disk — the same rule the app
+ * follows, where the key travels on a header and is used for that one request. The provider is
+ * optional: `resolveAiAccess` resolves it from the key's SHAPE, and that shape overrules any
+ * declared value anyway.
+ */
+const SWEEP_KEY = (process.env.SRSLY_SWEEP_KEY || '').trim();
+const SWEEP_PROVIDER = (process.env.SRSLY_SWEEP_PROVIDER || '').trim();
+
 if (!URL_BASE || !OUTDIR) {
   console.error('usage: node scripts/sweep-readability.mjs <url> <outDir> [perLevel] [levels] [lang]');
+  console.error('  env: SRSLY_SWEEP_KEY=<your own API key>   — required for more than 3 passages');
+  console.error('       SRSLY_SWEEP_PROVIDER=gemini|groq|anthropic  — optional; the key shape decides');
   process.exit(1);
 }
 
@@ -136,6 +160,13 @@ const log = m => {
   console.log(s);
   appendFileSync(path.join(OUTDIR, 'sweep.log'), s + '\n');
 };
+
+if (!SWEEP_KEY) {
+  log('NOTE: SRSLY_SWEEP_KEY is not set, so this run uses the OPERATOR key and will stop at the');
+  log('      guest limit (3 passages, total). Export your own key first — it is never metered:');
+  log('        export SRSLY_SWEEP_KEY=…   # the key you connected in Settings');
+}
+
 
 let chromeExit = null;
 const chrome = spawn(CHROME, [
@@ -302,6 +333,8 @@ try {
       localStorage.setItem('srsly-vocab-deck-${LANG}', JSON.stringify(
         ${JSON.stringify(deck)}.map((w, i) => ({ id: 's' + i, h: w.word, p: '', m: w.m }))));
       localStorage.setItem('srsly-achievements-seen', JSON.stringify(['first-word', 'first-steps']));
+      ${SWEEP_KEY ? `localStorage.setItem('srsly-anthropic-key', ${JSON.stringify(SWEEP_KEY)});` : ''}
+      ${SWEEP_PROVIDER ? `localStorage.setItem('srsly-ai-provider', ${JSON.stringify(SWEEP_PROVIDER)});` : ''}
       // THE TAB HAS TO BE ASKED FOR NOW — see note 5 in the header.
       localStorage.setItem('srsly-tab', 'read');
       return 'seeded';

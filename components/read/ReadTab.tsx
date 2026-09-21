@@ -94,7 +94,20 @@ interface Props {
 const READ_WANT: ContentSection[] = ['passage'];
 
 
-const GUEST_LIMIT_PROMPT = "You've used your free AI generations. Sign in for unlimited AI-generated passages and to sync your progress across devices.";
+/**
+ * "SIGN IN FOR UNLIMITED" STOPPED BEING TRUE IN MIGRATION 0008, AND NOBODY TOLD THE CLIENT.
+ *
+ * The shared key used to give a signed-in account unlimited generation — which was the hole
+ * 0008 closed: it is 3 a day for a guest and 10 for an account now, both on somebody else's
+ * quota. `daily-content`'s own refusals were rewritten to say so and these three client copies
+ * were not, so the app promised something it had just stopped doing. The one claim on the
+ * screen a learner cannot check, and it was wrong.
+ *
+ * The honest version is also the more useful one: signing in gets a few more, and a free key
+ * of their own is what actually removes the limit — it is not rationed because it is not the
+ * operator's to ration.
+ */
+const GUEST_LIMIT_PROMPT = "That's today's free generations on srsly's shared key. Sign in for a few more each day, or connect your own free key in Settings — Google and Groq both give one out — for as many as you like.";
 
 // Remembers which passage you were viewing, per day's content, so leaving and returning
 // to the Read tab (or reloading) lands you back on the same passage. Keyed by content
@@ -1561,7 +1574,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               {!loadingQuestions && questionsError && (
                 <p style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: 'var(--accent)', lineHeight: 1.5, textAlign: 'center', maxWidth: '46ch', margin: 0 }}>
                   {showGuestLimit
-                    ? "You've used your free AI generations — sign in for unlimited questions."
+                    ? "That's today's free generations on the shared key — sign in for a few more, or connect your own free key in Settings."
                     : `Couldn't generate questions: ${questionsError}`}
                 </p>
               )}

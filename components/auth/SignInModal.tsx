@@ -46,7 +46,10 @@ export default function SignInModal({ open, onClose, reason }: Props) {
           Sign in to srsly
         </div>
         <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.55, margin: '8px 0 18px' }}>
-          {reason ?? 'Sync your deck and progress across devices and unlock unlimited AI-generated content.'}
+          {/* NOT "unlimited" — see the note on GUEST_LIMIT_PROMPT in ReadTab. Signing in raises
+              the shared key's daily cap from 3 to 10; the thing that removes it is a free key
+              of your own, which nobody has to ration. */}
+          {reason ?? 'Sync your deck and progress across devices, and get a few more AI generations a day on the shared key.'}
         </p>
 
         {!enabled ? (
