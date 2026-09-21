@@ -162,6 +162,20 @@ export function useSRS(language?: LanguageCode) {
    * often not the second — a passage with no comprehension questions has no score to
    * report — and folding them together is exactly why reading used to leave the streak
    * untouched.
+   *
+   * ── AND `sessions` BELONGED WITH THE FIRST QUESTION ALL ALONG ──
+   *
+   * It was incremented only by `recordScore`, so finishing a passage that carried no
+   * comprehension questions advanced the STREAK and not DAYS STUDIED: one action, two
+   * counters, disagreeing about whether it happened. Reported as a discrepancy and it is
+   * one — reading a text and pressing Finish is the work, and whether the generator happened
+   * to attach questions to it is not a fact about the learner.
+   *
+   * ONE TEST FOR "today is already counted", which is the part that makes this safe. The two
+   * paths asked different questions — `lastActive ?? todayScoreDate` here and
+   * `todayScoreDate` there — so adding the increment naively would count twice on a day where
+   * a passage was finished and cards were run. Both read `firstToday` now, captured BEFORE
+   * `applyActivity` sets `lastActive`.
    */
   /**
    * Record today in the active language's streak, if there is one.
@@ -190,7 +204,12 @@ export function useSRS(language?: LanguageCode) {
 
     state = applyActivity(state, today, yest);
     state = await bumpLanguage(state, today, yest);
+    // Getting here AT ALL means today was not counted — the guard above returned otherwise —
+    // so this is the day's first study of any kind. See the docstring.
+    const sessions = (state.sessions ?? 0) + 1;
+    state = { ...state, sessions };
     await storage.saveSRSState(state);
+    setSessions(sessions);
     setStreak(state.streak);
     setForgiven(forgivenInStreak(state, today));
     return state.streak;
@@ -211,10 +230,15 @@ export function useSRS(language?: LanguageCode) {
     // another language, while THIS one has not studied yet.
     state = await bumpLanguage(state, today, yest);
 
-    // Only count a new session if this is the first score recorded today
-    const newSessions = state.todayScoreDate === today
-      ? (state.sessions ?? 0)
-      : (state.sessions ?? 0) + 1;
+    /**
+     * The day is counted once, by whichever of the two paths gets here first.
+     *
+     * This asked `todayScoreDate === today`, which is a different question from the one
+     * `recordActivity` asks — so once activity also counts the day, a learner who finished a
+     * passage and then ran cards would have been credited with two days studied on one day.
+     * `firstToday` is the shared answer, captured above before `applyActivity` moved it.
+     */
+    const newSessions = firstToday ? (state.sessions ?? 0) + 1 : (state.sessions ?? 0);
     const updated = {
       ...state,
       todayScore: score,

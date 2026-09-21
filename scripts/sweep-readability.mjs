@@ -204,6 +204,9 @@ const rpc = (ws, method, params = {}) => new Promise((res, rej) => {
   ws.send(JSON.stringify({ id: mine, method, params }));
 });
 /** Node 24 ships a global WebSocket, so driving CDP needs no dependency at all. */
+/** Prefix on anything `ev` returns because the page THREW. Not valid JSON, deliberately. */
+const EV_THREW = '\u0000threw: ';
+
 /**
  * A PAGE-SIDE THROW USED TO PRINT `[object Object]`, WHICH IS WHY THIS RUN LOOKED MYSTERIOUS.
  *
@@ -220,7 +223,11 @@ const ev = (ws, expression) =>
       const x = r.exceptionDetails;
       if (x) {
         const why = x.exception?.description || x.exception?.value || x.text || 'unknown';
-        return JSON.stringify({ step: 'threw', why: String(why).split('\n')[0].slice(0, 200) });
+        // A SENTINEL, not JSON. The first version returned `{"step":"threw",…}`, which is a
+        // perfectly good string — so the dump step at the bottom saw a truthy value and WROTE
+        // THE ERROR to level-N.json as if it were a passage cache. A marker that cannot be
+        // mistaken for page data is the difference between a failure and a corrupt result.
+        return EV_THREW + String(why).split('\n')[0].slice(0, 200);
       }
       const v = r.result?.value;
       return typeof v === 'string' ? v : JSON.stringify(v ?? null);
@@ -272,6 +279,25 @@ try {
     })()`);
     await rpc(ws, 'Page.reload');
     await sleep(9000);
+
+    /**
+     * IS THIS ACTUALLY THE APP? Asked out loud, because the alternative is a lie.
+     *
+     * With nothing serving the URL, Chrome shows its own error page — an opaque origin where
+     * reading `localStorage` throws `SecurityError: Access is denied for this document`. The
+     * seed step failed exactly that way and the script still logged "seeded 80 deck words",
+     * because that line runs unconditionally, and then reported NOTHING CACHED three times.
+     * Every symptom pointed at generation; nothing pointed at the server being down.
+     */
+    const ready = await ev(ws, `(() => {
+      try { localStorage.getItem('srsly-tab'); } catch { return 'no-storage'; }
+      return document.querySelector('nav button') ? 'ok' : 'no-app';
+    })()`);
+    if (ready !== 'ok') {
+      log(`level ${level}: ${URL_BASE} is not serving srsly (${ready}).`);
+      log(`  Start it first:  npm run dev      — or  npm run dev:stub  to sweep for free.`);
+      break;
+    }
     log(`level ${level}: seeded ${deck.length} deck words`);
 
     for (let n = 0; n < PER; n++) {
@@ -339,8 +365,8 @@ try {
       const k = Object.keys(localStorage).find(x => x.startsWith('srsly-daily'));
       return k ? localStorage.getItem(k) : null;
     })()`);
-    if (dump) { writeFileSync(out, dump); log(`level ${level}: wrote ${out}`); }
-    else log(`level ${level}: NOTHING CACHED — nothing was generated`);
+    if (dump && !dump.startsWith(EV_THREW)) { writeFileSync(out, dump); log(`level ${level}: wrote ${out}`); }
+    else log(`level ${level}: NOTHING CACHED — nothing was generated${dump ? ` (${dump})` : ''}`);
   }
   log('sweep finished');
 } finally {
