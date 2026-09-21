@@ -254,7 +254,24 @@ try {
 
   for (const level of LEVELS) {
     const out = path.join(OUTDIR, `level-${level}.json`);
-    if (existsSync(out)) { log(`level ${level}: already dumped, skipping`); continue; }
+    /**
+     * RESUMING MUST CHECK WHAT IS THERE, NOT JUST THAT SOMETHING IS.
+     *
+     * The skip tested `existsSync` alone, so a file written by a FAILED run counted as a
+     * finished level — and the broken build wrote 133 bytes of
+     * `{"step":"threw","why":"SecurityError: …"}` to each one. Every later run then reported
+     * "already dumped, skipping" for all three levels and exited in half a second, which reads
+     * exactly like success. The person running it had to open the files to find out.
+     *
+     * A real dump is the day's cache and carries a `passages` array. Anything else is
+     * regenerated rather than trusted, and said out loud so a stale directory explains itself.
+     */
+    if (existsSync(out)) {
+      let usable = false;
+      try { usable = Array.isArray(JSON.parse(readFileSync(out, 'utf8'))?.passages); } catch { /* not JSON */ }
+      if (usable) { log(`level ${level}: already dumped, skipping`); continue; }
+      log(`level ${level}: ${out} is not a passage dump — regenerating it`);
+    }
 
     const deck = deckFor(level);
     if (deck.length === 0) { log(`level ${level}: no banded words, skipping`); continue; }
