@@ -444,7 +444,14 @@ try {
         const d = cache();
         const p = d.passages[d.passages.length - 1];
         const inputs = [...document.querySelectorAll('input')].filter(x => x.type === 'text' || !x.type);
-        if (inputs.length === 0) return JSON.stringify({ step: 'no-blanks', passages: after });
+        /* A PASSAGE WITH NO BLANKS IS A RESULT, NOT A DEAD END -- and treating it as one cost
+           six of the ten passages at level 1. The step returned 'no-blanks' and the loop
+           stopped the level, so a four-passage sample went into a metric whose own note says
+           TEN cannot resolve better than ~5 points. Nothing was broken: the passage generated
+           fine and is in the dump, it simply carried no cloze targets, and finishing it still
+           unlocks the next one. Reported as blanks:0 rather than swallowed, because a
+           generator that keeps writing around none of the words it was given is worth seeing
+           in the log. Falls through to the same finish-and-continue path below. */
         let host = inputs[0];
         while (host && !inputs.every(i => host.contains(i))) host = host.parentElement;
         const seen = new Set(words(host ? host.innerText : ''));
