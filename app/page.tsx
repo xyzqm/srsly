@@ -133,9 +133,46 @@ function savedLanguage(): LanguageCode {
  * Decided in a lazy initialiser so the first render is already right, for the same reason
  * `savedLanguage()` reads localStorage synchronously instead of correcting itself a tick later.
  */
+/**
+ * WHERE YOU WERE, NOT WHERE EVERYONE STARTS.
+ *
+ * Reloading dropped you on Review however deep you had been in Read, Vocab or Settings — and a
+ * reload is not a fresh start, it is the same session after a refresh, a crash or a deploy. It
+ * is the same complaint that got Settings remembering its group, one level up: the app had no
+ * memory of what you were doing.
+ *
+ * DEVICE-LOCAL, NOT IN `srsly-prefs`. Which tab is open is a fact about this browser window,
+ * not a preference worth carrying to a phone — the same reasoning that keeps `srsly-tts-voice`
+ * out of the synced blob. Syncing it would mean opening a laptop into whatever screen a phone
+ * was last looking at.
+ *
+ * VALIDATED ON READ rather than trusted. `TabNav` hides Learn for a language with no lesson
+ * tree, so a stored `learn` could restore a tab with no way back to it; and the value is a
+ * string in localStorage that anything could have written. An unrecognised one falls through
+ * to the default rather than rendering nothing.
+ */
+const TAB_KEY = 'srsly-tab';
+const TAB_IDS: readonly TabId[] = ['practice', 'read', 'learn', 'dash', 'vocab', 'settings'];
+
+function storedTab(): TabId | null {
+  try {
+    const v = localStorage.getItem(TAB_KEY);
+    return TAB_IDS.includes(v as TabId) ? (v as TabId) : null;
+  } catch {
+    return null; // private mode, blocked storage — a missing memory, not a failure
+  }
+}
+
 function initialTab(): TabId {
   if (typeof window === 'undefined') return 'practice';
-  return decodeClip(window.location.hash) ? 'read' : 'practice';
+  /**
+   * A CLIP IN THE URL STILL WINS, and it has to. `TabPanel` mounts a tab only once activated
+   * and the clipper reads the hash from an effect inside ReadTab, so restoring Vocab over the
+   * top of an incoming article would leave it unread — the papercut the clipper exists to
+   * remove, reintroduced by remembering too well.
+   */
+  if (decodeClip(window.location.hash)) return 'read';
+  return storedTab() ?? 'practice';
 }
 
 function AppShell() {
@@ -197,6 +234,9 @@ function AppShell() {
     // Deliberately does NOT reset `settingsGroup` — leaving Settings and coming back should
     // land where you were, not back at the top. See the declaration.
     setTab(next);
+    // Remembered so a reload returns here — see initialTab(). Failing to write is a lost
+    // memory and never a lost navigation, so it is swallowed rather than surfaced.
+    try { localStorage.setItem(TAB_KEY, next); } catch { /* storage blocked */ }
   }, []);
 
   /**

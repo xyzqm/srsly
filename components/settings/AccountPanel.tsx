@@ -174,8 +174,17 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
         is the other half of the same problem: the one thing anybody comes to this section to
         do was the last thing they could reach. One move fixes both.
       */}
-      <div className="flex items-baseline justify-between gap-3" style={{ marginBottom: 12 }}>
-        <span style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+      {/*
+        IT LINES UP WITH THE COLUMN BELOW IT, NOT WITH THE RIGHT EDGE.
+        The first pass used `justify-between`, which flung the button to the far side of a
+        560px panel — technically "beside the heading" and visually a lone control adrift from
+        everything it belongs to. The rows underneath are label / value at a fixed 104px
+        gutter, so giving the heading the SAME gutter puts the button at the head of the value
+        column: directly above "a guest", reading down with the answers rather than across an
+        empty gap. `minWidth` is the shared number, matching `Row` exactly.
+      */}
+      <div className="flex items-baseline gap-3" style={{ marginBottom: 12 }}>
+        <span style={{ ...mono, fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', minWidth: 104 }}>
           Account
         </span>
         {authEnabled && (
@@ -289,9 +298,13 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
           {streak === null ? (
             <span style={{ color: 'var(--ink-faint)' }}>—</span>
           ) : (
+            /* "review sessions" was the SECOND copy of a label Stats has already had to fix.
+               `useSRS` bumps this only on the first score of a day, so it counts days studied
+               and never sessions — and a number that means one thing in two places under two
+               names is how a reader stops trusting either. */
             <span style={{ ...mono, fontSize: 12.5 }}>
-              {streak.streak} day streak · {streak.sessions} review session
-              {streak.sessions === 1 ? '' : 's'}
+              {streak.streak} day streak · {streak.sessions} day
+              {streak.sessions === 1 ? '' : 's'} studied
             </span>
           )}
         </Row>

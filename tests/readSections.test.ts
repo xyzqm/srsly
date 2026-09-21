@@ -87,9 +87,26 @@ describe('a clip still reaches the thing that reads it', () => {
     expect(init).toMatch(/decodeClip[\s\S]*?'library'/);
   });
 
-  /** The control: Read still wins the landing tab for a clip, which is what gets us this far. */
-  it('still lands on Read rather than the drill tab', () => {
-    expect(page).toMatch(/decodeClip\([\s\S]{0,40}\)\s*\?\s*'read'\s*:\s*'practice'/);
+  /**
+   * THE CONTROL, AND IT GOT SHARPER WHEN THE TAB BECAME REMEMBERED.
+   *
+   * It used to assert the literal `decodeClip(...) ? 'read' : 'practice'`, which was the whole
+   * of `initialTab`. Now that a reload restores the tab you were on, there is a second thing a
+   * clip has to beat: a stored `vocab` must not be restored over the top of an incoming
+   * article, because ReadTab's effect would never mount and the clip would be silently lost.
+   * So the assertion is about ORDER — the clip is answered before anything is read back — which
+   * is the property, where the old one was the spelling.
+   */
+  it('lets a clip win the landing tab over the remembered one', () => {
+    const fn = page.slice(page.indexOf('function initialTab'), page.indexOf('function AppShell'));
+    expect(fn).toContain("return 'read'");
+    expect(fn.indexOf('decodeClip')).toBeLessThan(fn.indexOf('storedTab'));
+  });
+
+  /** And a reload with no clip returns you where you were. */
+  it('restores the tab you were on', () => {
+    expect(page).toContain("localStorage.setItem(TAB_KEY, next)");
+    expect(page).toMatch(/storedTab\(\)\s*\?\?\s*'practice'/);
   });
 });
 
