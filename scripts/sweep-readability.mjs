@@ -16,7 +16,7 @@
  * the raw tuples would measure a different number from the one on screen, and "the app
  * disagreeing with itself in public" is the thing these sweeps exist to catch.
  *
- * ── FOUR THINGS THAT COST AN AFTERNOON, ALL FIXED HERE ──
+ * ── FIVE THINGS THAT COST AN AFTERNOON, ALL FIXED HERE ──
  *
  * 1. FILLING IS NOT FINISHING. `newPassageDisabled` is
  *      !alreadyFinished || clozeIncomplete || loadingMore || !allPassagesComplete || no due words
@@ -38,6 +38,17 @@
  * 4. HEADLESS CHROME THROTTLES `setTimeout` in a backgrounded page to about one tick a minute.
  *    One passage took 8m44s while the server answered every POST in under 4 seconds. The three
  *    `--disable-*` flags below are not boilerplate.
+ *
+ * 5. IT HAS TO ASK FOR THE READ TAB, because the app now REMEMBERS which tab you were on
+ *    (`srsly-tab`) and lands a first visit on HOME. The seed below wipes every `srsly-*` key,
+ *    which includes that one — so the reload opened Home, `TabPanel` never mounted Read, and
+ *    the "Generate passage" button did not exist in the DOM. The sweep reported
+ *    `NOTHING CACHED` on every level with no other sign of what happened.
+ *
+ *    Worth stating as a standing hazard rather than a one-off fix: this script drives the UI
+ *    rather than the API, deliberately, so that it measures the number a reader actually sees —
+ *    and the cost of that choice is that MOVING A BUTTON BREAKS IT. Generation moved from the
+ *    drill tab into Read → Generated, and nothing failed loudly.
  *
  * ── METERING ──
  * `consume_ai_credit()` rations ANONYMOUS guests only. Signed in is unlimited, and a learner's
@@ -193,9 +204,27 @@ const rpc = (ws, method, params = {}) => new Promise((res, rej) => {
   ws.send(JSON.stringify({ id: mine, method, params }));
 });
 /** Node 24 ships a global WebSocket, so driving CDP needs no dependency at all. */
+/**
+ * A PAGE-SIDE THROW USED TO PRINT `[object Object]`, WHICH IS WHY THIS RUN LOOKED MYSTERIOUS.
+ *
+ * `r.result?.value` is the returned value and says nothing about a REJECTION: CDP reports that
+ * separately in `exceptionDetails`, and the accompanying `result` is a description of the
+ * thrown object rather than a string — so the log line interpolated an object and the only
+ * evidence of what went wrong was the word "Object". Same lesson as `generateJson`'s sample
+ * being on the wrong branch: instrumentation that misses the failing path reads as proof the
+ * failing path did not happen.
+ */
 const ev = (ws, expression) =>
   rpc(ws, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    .then(r => r.result?.value);
+    .then(r => {
+      const x = r.exceptionDetails;
+      if (x) {
+        const why = x.exception?.description || x.exception?.value || x.text || 'unknown';
+        return JSON.stringify({ step: 'threw', why: String(why).split('\n')[0].slice(0, 200) });
+      }
+      const v = r.result?.value;
+      return typeof v === 'string' ? v : JSON.stringify(v ?? null);
+    });
 
 /** Helpers injected into every page-side step. */
 const STEP = `
@@ -237,6 +266,8 @@ try {
       localStorage.setItem('srsly-vocab-deck-${LANG}', JSON.stringify(
         ${JSON.stringify(deck)}.map((w, i) => ({ id: 's' + i, h: w.word, p: '', m: w.m }))));
       localStorage.setItem('srsly-achievements-seen', JSON.stringify(['first-word', 'first-steps']));
+      // THE TAB HAS TO BE ASKED FOR NOW — see note 5 in the header.
+      localStorage.setItem('srsly-tab', 'read');
       return 'seeded';
     })()`);
     await rpc(ws, 'Page.reload');
@@ -247,7 +278,16 @@ try {
       const raw = await ev(ws, `(async () => { ${STEP}
         const before = cache()?.passages?.length ?? 0;
         const b = find(/^Generate passage$/i) || find(/New passage/i);
-        if (!b) return JSON.stringify({ step: 'no-button', body: document.body.innerText.slice(0, 300) });
+        if (!b) return JSON.stringify({
+          step: 'no-button',
+          // Which tab and section are actually open. "no-button" on the wrong tab is a
+          // navigation failure and on the right one is a UI change; the old dump of body text
+          // could not tell them apart.
+          tab: [...document.querySelectorAll('nav button')]
+            .map(x => x.textContent.trim()).join('/') || 'no nav',
+          stored: localStorage.getItem('srsly-tab'),
+          body: document.body.innerText.slice(0, 200),
+        });
         if (b.disabled) return JSON.stringify({ step: 'disabled', title: b.title || '' });
         b.click();
         for (let i = 0; i < 90; i++) { await new Promise(r => setTimeout(r, 1000));
