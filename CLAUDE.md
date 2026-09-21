@@ -378,6 +378,28 @@ dropped by the family filter long before `MODEL_ID` sees it — so weakening the
 empty" left the test green. The hostile id has to look like it belongs to the family. Same
 failure as the lesson-ordering test, caught the same way: by reintroducing the bug.)*
 
+**AND THE THIRD OUTAGE WAS GROQ'S, WHERE THE REPORTER ITSELF FILTERED OUT THE ANSWER.**
+`llama-3.3-70b-versatile` was announced deprecated 2026-06-17 and shut down 2026-08-16, so every
+Groq generation returned `model_not_found` — the third stale pin, and the first one that had
+`reportAvailableModels` running to explain it. It reported: `whisper-large-v3`,
+`whisper-large-v3-turbo`, `allam-2-7b`. Two speech-to-text models and one small bilingual chat
+model, which reads as *this key cannot write prose at all* — and that reading was WRONG.
+`openai/gpt-oss-120b` was in the real list.
+
+**`MODEL_ID` HAD NO `/` IN IT**, and a namespaced id is how every provider now spells anything it
+did not train itself. The three survivors were exactly the three ids that happened not to carry a
+slash, so the list was not merely short, it was **biased toward looking like a dead end** — the
+worst direction for a diagnostic to lean, because it ends the search instead of directing it.
+Every segment is still anchored alphanumeric at both ends, so nothing about the escaping argument
+changed; the pattern just admits that `a/b` is a name. **A filter on a list of answers is part of
+the answer**, and this one was written to guard a log line without asking what the log line was
+for. `tests/aiProviders.test.ts` pins both halves, with a hostile namespaced id as the control.
+
+*(Note also how fast this churns: Groq's own migration note points at `qwen/qwen3.6-27b`, which
+was itself decommissioned 2026-09-14. A vendor's documentation is evidence about the past. The
+live `GET /models` for the key in hand is the only current answer, which is the whole reason that
+function exists.)*
+
 `SRSLY_MODEL_GEMINI` / `_GROQ` / `_ANTHROPIC` override it per provider, in the environment
 rather than in Settings: choosing a model is operating the app, not using it, and a free-text
 model field is a new way for a learner to break generation. It is read in

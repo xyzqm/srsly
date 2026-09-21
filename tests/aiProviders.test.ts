@@ -617,6 +617,55 @@ describe('a failure says which of the four things went wrong', () => {
     );
   });
 
+  /**
+   * ── THE CASE THE SHAPE CHECK USED TO SWALLOW ────────────────────────────────
+   *
+   * Measured against a live Groq key the day `llama-3.3-70b-versatile` was found retired:
+   * the reported list was `whisper-large-v3, whisper-large-v3-turbo, allam-2-7b` — two
+   * speech-to-text models and one small chat model, which reads as "this key cannot write
+   * prose". `openai/gpt-oss-120b` was in the real list and was dropped by `MODEL_ID`, because
+   * a namespaced id carries a slash and the pattern had none.
+   *
+   * A diagnostic whose filter removes the answer is worse than no diagnostic: it does not
+   * report less, it reports something misleading with the same confidence.
+   */
+  it('keeps a namespaced model id, which is how every current one is spelled', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse(
+        ['whisper-large-v3', 'allam-2-7b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b'])));
+
+    await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('model');
+        expect(e.message).toContain('openai/gpt-oss-120b');
+        expect(e.message).toContain('qwen/qwen3.8-27b');
+      },
+    );
+  });
+
+  /**
+   * CONTROL: a slash is admitted as a SEPARATOR, not as a licence. Every segment is still
+   * anchored alphanumeric at both ends, so the hostile id below — which now reaches the
+   * pattern rather than being dropped by the family filter, since Groq's family is `llama`
+   * and none of these start with it — is still refused.
+   */
+  it('still drops a hostile id that arrives with a slash in it', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(notFound)
+      .mockResolvedValueOnce(modelsResponse(
+        ['openai/"><script>alert(1)</script>', 'openai/gpt-oss-20b'])));
+
+    await generatorForProvider('groq', KEYS.groq, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.message).not.toMatch(/script/i);
+        expect(e.message).toContain('openai/gpt-oss-20b');
+      },
+    );
+  });
+
   /** It reports; it never silently switches to a model nobody chose. */
   it('does not retry against a model the learner did not pick', async () => {
     const fn = vi.fn()

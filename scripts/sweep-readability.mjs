@@ -299,7 +299,9 @@ try {
      */
     if (existsSync(out)) {
       let usable = false;
-      try { usable = Array.isArray(JSON.parse(readFileSync(out, 'utf8'))?.passages); } catch { /* not JSON */ }
+      // `.length > 0`, not merely an array: a cache shell with an EMPTY passages list is a
+      // level that generated nothing, and counting it as done skips that level for ever.
+      try { usable = (JSON.parse(readFileSync(out, 'utf8'))?.passages ?? []).length > 0; } catch { /* not JSON */ }
       if (usable) { log(`level ${level}: already dumped, skipping`); continue; }
       log(`level ${level}: ${out} is not a passage dump — regenerating it`);
     }
@@ -381,7 +383,21 @@ try {
         for (let i = 0; i < 90; i++) { await new Promise(r => setTimeout(r, 1000));
           if (!/GENERATING|WRITING/i.test(document.body.innerText)) break; }
         const after = cache()?.passages?.length ?? 0;
-        if (after === before) return JSON.stringify({ step: 'no-new-passage', body: document.body.innerText.slice(0, 300) });
+        if (after === before) {
+          /* THE REASON IS ON SCREEN, AND THIS USED TO DUMP THE MENU INSTEAD.
+             It reported the first 300 characters of body text, which on this tab is the
+             language picker, the theme button and the six tab labels -- so three levels x two
+             providers reported six identical walls of navigation, and the actual cause was one
+             line in the dev server's log: "Google Gemini rejected the key", and for the other
+             provider a retired model id. ReadTab renders errorMsg in a role=status notice
+             under the button, which is exactly the sentence worth carrying back out.
+             (No backticks in here: this string is itself a template literal.) */
+          const why = [...document.querySelectorAll('[role="status"]')]
+            .map(n => (n.innerText || '').trim()).filter(Boolean).join(' | ');
+          return JSON.stringify({
+            step: 'no-new-passage', why, body: document.body.innerText.slice(0, 200),
+          });
+        }
 
         // Fill every blank in the passage just written — see note 2.
         const d = cache();
@@ -423,12 +439,31 @@ try {
       await sleep(800);
     }
 
+    /**
+     * AN ABSENT CACHE CAME BACK AS THE FOUR-CHARACTER STRING `null`, AND WAS WRITTEN AS DATA.
+     *
+     * `ev` JSON-stringifies whatever is not already a string, so a page-side `null` arrives as
+     * `"null"` — which is truthy, so the dump was written and the run logged `wrote level-1.json`
+     * six times across two providers while producing nothing at all. Exactly the failure the
+     * EV_THREW sentinel was added for, in the one path that sentinel does not cover: not an
+     * error dressed as data, but an ABSENCE dressed as data.
+     *
+     * So the page returns an empty string for "no cache", and the passage count is checked here
+     * rather than inferred from the file being non-empty. A dump with no passages is not a
+     * short result, it is a failed level, and it must say so — every level that follows is
+     * decided by this line.
+     */
     const dump = await ev(ws, `(() => {
       const k = Object.keys(localStorage).find(x => x.startsWith('srsly-daily'));
-      return k ? localStorage.getItem(k) : null;
+      return k ? localStorage.getItem(k) : '';
     })()`);
-    if (dump && !dump.startsWith(EV_THREW)) { writeFileSync(out, dump); log(`level ${level}: wrote ${out}`); }
-    else log(`level ${level}: NOTHING CACHED — nothing was generated${dump ? ` (${dump})` : ''}`);
+    let dumped = 0;
+    if (dump && !dump.startsWith(EV_THREW)) {
+      try { dumped = (JSON.parse(dump)?.passages ?? []).length; } catch { dumped = 0; }
+    }
+    if (dumped > 0) { writeFileSync(out, dump); log(`level ${level}: wrote ${dumped} passages to ${out}`); }
+    else log(`level ${level}: NOTHING CACHED — no passage was generated`
+      + (dump.startsWith(EV_THREW) ? ` (${dump.slice(EV_THREW.length)})` : ''));
   }
   log('sweep finished');
 } finally {

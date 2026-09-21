@@ -263,8 +263,26 @@ function anthropicGenerator(provider: AiProvider, apiKey: string, operatorPays: 
  * end up in a log line and on a screen, so anything that is not plausibly a model id is
  * dropped rather than echoed. `models/` prefixes are stripped because that is the form
  * `modelFor` emits and the form the chat endpoint takes.
+ *
+ * ── AND THE SHAPE CHECK ONCE HID THE ANSWER IT EXISTS TO PRODUCE ─────────────
+ *
+ * `MODEL_ID` had no `/` in it, so it matched a bare name and nothing else — and a NAMESPACED
+ * id is how every provider now ships anything it did not train itself. Groq retired
+ * `llama-3.3-70b-versatile` (announced 2026-06-17, shut down 2026-08-16) and the reply came
+ * back naming three models: `whisper-large-v3`, `whisper-large-v3-turbo`, `allam-2-7b`. Two
+ * are speech-to-text and the third is a small bilingual chat model, so the honest reading was
+ * "this key cannot generate prose at all" — and it was WRONG. The key could use
+ * `openai/gpt-oss-120b` and `openai/gpt-oss-20b`; every candidate carrying a slash had been
+ * filtered out one line before the list was printed, and the three survivors were the three
+ * that happened not to have one.
+ *
+ * So the list was not merely short, it was BIASED — and biased toward looking like a dead end,
+ * which is the worst direction for a diagnostic to lean. A filter on a list of answers is part
+ * of the answer. The id is still anchored at an alphanumeric on both ends of every segment, so
+ * nothing about the escaping argument changes; it just admits that `a/b` is a name.
  */
-const MODEL_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,62}[A-Za-z0-9])?$/;
+const MODEL_SEGMENT = '[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,62}[A-Za-z0-9])?';
+const MODEL_ID = new RegExp(`^${MODEL_SEGMENT}(?:/${MODEL_SEGMENT}){0,2}$`);
 
 async function reportAvailableModels(
   provider: AiProvider, apiKey: string, err: GenerationError,
