@@ -628,6 +628,55 @@ describe('a failure says which of the four things went wrong', () => {
     expect(fn.mock.calls[1][0]).toBe('https://generativelanguage.googleapis.com/v1beta/openai/models');
   });
 
+  /**
+   * ── A RATE LIMIT NEEDS DIFFERENT ADVICE DEPENDING ON WHOSE KEY HIT IT ──────
+   *
+   * Both used to read "wait a few minutes and try again". On srsly's SHARED key that is close
+   * to useless — the quota is being spent by everyone else opening the site, so waiting is a
+   * guess, and the thing that actually fixes it (a free key of their own, not throttled by
+   * anybody else's traffic) went unmentioned. On the learner's OWN key the reverse: telling
+   * them to connect a key they have already connected is advice they cannot take, which is the
+   * exact mistake `grade-response` once made about being signed in.
+   */
+  it("tells a visitor on the shared key to get their own", async () => {
+    mockFetch(429, { error: { message: 'quota' } });
+    await generatorForProvider('gemini', KEYS.gemini, true).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('rate_limit');
+        expect(e.message).toMatch(/shared key/i);
+        expect(e.message).toMatch(/your own free key|Settings/i);
+      },
+    );
+  });
+
+  it('tells a learner on their own key to wait, and does not ask for a key they have', async () => {
+    mockFetch(429, { error: { message: 'quota' } });
+    await generatorForProvider('gemini', KEYS.gemini, false).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => {
+        expect(e.kind).toBe('rate_limit');
+        expect(e.message).toMatch(/wait/i);
+        expect(e.message).not.toMatch(/shared key/i);
+        expect(e.message).not.toMatch(/connect your own/i);
+      },
+    );
+  });
+
+  /**
+   * IT MUST NOT SAY "daily". A provider 429 is usually a per-MINUTE throttle and free tiers
+   * carry both caps, with nothing in the response reliably separating them — so naming the
+   * wrong one sends somebody away until tomorrow over a sixty-second wait. srsly's own daily
+   * budget is a different thing, refused as a 402 before any request is made.
+   */
+  it.each([true, false])('never claims a daily limit it cannot see (operatorPays=%s)', async pays => {
+    mockFetch(429, { error: { message: 'quota' } });
+    await generatorForProvider('groq', KEYS.groq, pays).complete('s', 'p').then(
+      () => { throw new Error('should have rejected'); },
+      (e: GenerationError) => { expect(e.message).not.toMatch(/\bdaily\b|\btomorrow\b/i); },
+    );
+  });
+
   it('does not blame the key when the request never arrived', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const g = generatorForProvider('groq', KEYS.groq, false);

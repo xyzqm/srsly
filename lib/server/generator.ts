@@ -147,14 +147,37 @@ export class GenerationError extends Error {
  * The detail is used to CLASSIFY and is never copied into the thrown message — a provider's
  * error body can echo the request back, and this message reaches a log and a screen.
  */
-function classify(status: number, provider: AiProvider, detail: string): GenerationError {
+function classify(
+  status: number, provider: AiProvider, detail: string, operatorPays = false,
+): GenerationError {
   const auth = () => new GenerationError('auth', provider.id,
     `${provider.name} rejected the key. Check it in Settings, or paste a fresh one.`);
 
   if (status === 401 || status === 403) return auth();
+  /**
+   * A RATE LIMIT NEEDS DIFFERENT ADVICE DEPENDING ON WHOSE KEY HIT IT.
+   *
+   * Both cases came out as "wait a few minutes and try again", and for a visitor on srsly's
+   * SHARED key that is close to useless: the quota is being spent by everybody else opening the
+   * portfolio site, so waiting is a guess, and the thing that actually fixes it — a free key of
+   * their own, which is not rate-limited by anyone else's traffic — was never mentioned. On the
+   * learner's OWN key the reverse is true: they already did the thing, and telling them to
+   * connect a key they have connected is advice they cannot take. `lib/server/aiGate.ts` makes
+   * exactly this mistake elsewhere and this file records it; it is the same shape.
+   *
+   * `operatorPays` is the same flag that decides metering, which is the point — whose key it is
+   * is one fact, and both answers read it.
+   *
+   * IT DOES NOT SAY "daily". A provider 429 is usually a per-MINUTE throttle, and free tiers
+   * carry both; nothing in the response reliably separates them. Naming the wrong one sends
+   * somebody away until tomorrow over a sixty-second wait. srsly's own daily budget is a
+   * different thing entirely, refused as a 402 before any request is made — see
+   * `meterOrRefuse`.
+   */
   if (status === 429) {
-    return new GenerationError('rate_limit', provider.id,
-      `${provider.name}'s free tier is rate-limited and you have hit the limit for now. Wait a few minutes and try again.`);
+    return new GenerationError('rate_limit', provider.id, operatorPays
+      ? `srsly's shared key has hit ${provider.name}'s rate limit — it is free, so everyone using the site shares one quota. Connect your own free key in Settings and this stops happening; Google and Groq both give one out free.`
+      : `${provider.name} is rate-limiting your key — free tiers cap how often you can generate. Wait a minute or two and try again.`);
   }
   // A 400 is whatever the provider decided to put there, so it is the one status that has to
   // be read rather than mapped.
@@ -206,7 +229,7 @@ function anthropicGenerator(provider: AiProvider, apiKey: string, operatorPays: 
         return res.content[0]?.type === 'text' ? res.content[0].text.trim() : '';
       } catch (e) {
         const status = (e as { status?: number }).status ?? 0;
-        throw classify(status, provider, String((e as Error)?.message ?? ''));
+        throw classify(status, provider, String((e as Error)?.message ?? ''), operatorPays);
       }
     },
   };
@@ -348,7 +371,7 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
         // Read the body for the model-name check, and never put it in the thrown message —
         // a provider error body can echo request fields back.
         const detail = await res.text().catch(() => '');
-        const err = classify(res.status, provider, detail);
+        const err = classify(res.status, provider, detail, operatorPays);
         /**
          * "NOT SOMETHING YOU CAN FIX" IS ONLY TRUE IF NOBODY SAYS WHAT WOULD FIX IT.
          *
