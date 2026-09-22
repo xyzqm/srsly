@@ -191,7 +191,8 @@
         "yogur",
         "desayuno",
         "almuerzo",
-        "cena"
+        "cena",
+        "tarta"
       ],
       "house": [
         "casa",
@@ -234,7 +235,8 @@
         "abrigo",
         "chaqueta",
         "sombrero",
-        "gorra"
+        "gorra",
+        "pantalones"
       ],
       "school": [
         "escuela",
@@ -262,7 +264,8 @@
         "playa",
         "estación",
         "aeropuerto",
-        "oficina"
+        "oficina",
+        "esquina"
       ],
       "transport": [
         "coche",
@@ -288,7 +291,8 @@
         "caballo",
         "vaca",
         "pájaro",
-        "pez"
+        "pez",
+        "mascota"
       ],
       "routine": [
         "desayunar",
@@ -407,7 +411,9 @@
         "favorito",
         "temprano",
         "fin de semana",
-        "duchar"
+        "duchar",
+        "abrazo",
+        "euro"
       ]
     },
     "fr": {

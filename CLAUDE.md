@@ -1467,6 +1467,27 @@ One trap worth remembering: `apocopic form of` and `clipping of` look metalingui
 
 **`demote` exists because French ranks off narrative fiction.** Lexique's two registers are film subtitles and books, so `mourir`, `tuer`, `guerre` and `sang` are genuinely frequent and reach A1 on merit. The obvious fix — blend in a non-narrative register — was measured and **inverts**: Global Voices and Wikimedia rank `guerre` at 206/72 and `mort` at 144/78, *above* where Lexique puts them, while ranking `bonjour` at 4348/16922 and `merci` at 1223/11506. Conflict and death are core news and encyclopedia vocabulary; greetings are not. Mean, geometric and worst-of blends all left `mourir`/`tuer`/`guerre` in A1 *and* pushed `bonjour` to B1–B2 with `manger` and `chien` to A2. The two signals are anti-correlated with the goal, so no weighting separates them — hence an editorial list, stated as one, rather than a number pretending to be one.
 
+**AND `scripts/repin-levels.mjs` APPLIES A PIN WITHOUT A REBUILD, WHICH IS NOT A SHORTCUT.**
+Adding a word to `pin` or `beginner` has exactly one effect: that word moves to level 1.
+Running the full `build-esdict.mjs` would apply it and ALSO re-download the corpora and
+re-derive every frequency and every anchor swap from whatever those sources say that day —
+and the anchor alone moves 3–4% of the vocabulary. So a six-word fix arrives inside a
+few-hundred-word diff, and any before/after measurement of the six measures the other few
+hundred too. The script calls the SAME `applyCoreOverrides` on the same `Record<band, words[]>`
+at the same point the build calls it — last, after the anchor, immediately before emission —
+so it is the identical operation, and a later full rebuild reproduces it from the same JSON.
+It cannot reach `demote`, `leadSense`, `curatedGloss` or anything decided earlier, and it
+refuses a word absent from `cefr-vocab.json` rather than pinning one with no definition.
+
+**THE FIRST SIX WERE CHOSEN BY MEASUREMENT, NOT BY TASTE**, which is what this paragraph's own
+"keep the list short" rule needs to mean in practice. 28 generated A1 passages were scored and
+the above-level words read out: `euro` (B2) ×7, `pantalones` (B1) ×4, `tarta` (C1) ×3,
+`mascota` (B2) ×3, `esquina` (B1) ×3, `abrazo` (C1) ×2 — trousers, cake, a pet, a corner, a hug
+and the currency, every one of them the "nobody writes fork in an encyclopedia" failure this
+section exists for, and `pantalón` was ALREADY pinned while its everyday plural sat at B1.
+Measured on the same 28 passages with nothing else changed: **19.9% → 18.7% above level.**
+Words that merely *felt* like A1 were left alone; a word earns a pin by turning up.
+
 Keep both lists short; they are not a place to express taste about A1. The one rule it does **not** bypass is the dictionary: a pinned word must be a real headword with a real gloss, and anything else is warned about and skipped, because the emitted tables carry that gloss. Pinned words are prepended in file order, so they are the first thing a learner meets. Band sizes are allowed to drift here (~20 words in 12,000) — honouring a pin by demoting some other real word to keep A1 at exactly 500 would trade one arbitrary call for another.
 
 This is deliberately a tie-breaker, never the ranking. Mapping English → target is one-to-many (96% of CEFR-J's A1 words find a Spanish candidate but 88% find more than one, median 5), and it is blind to vocabulary with no English headword — 6% of Spanish A1 (`los`, `del`, `había`) anchors to nothing. Each build writes `scripts/reports/{lang}-band-adjustments.tsv` (gitignored) listing every word that moved, so the swaps are reviewable before the tables are committed.
