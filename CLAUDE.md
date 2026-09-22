@@ -886,6 +886,25 @@ catch. Its header records the four traps that cost an afternoon (finishing is no
 daily new-card budget, headless timer throttling, and reading blanks from the cache rather than
 guessing them). Metering applies to anonymous guests only, so point it at a signed-in session.
 
+**A RETRY BUDGET THAT NEVER RESETS CANNOT TELL A SLOW PROVIDER FROM A SPENT ONE**, and it ended
+the run it was added to save. A free-tier rate limit is a pause rather than the end of a level —
+that much was already fixed, and so was the 503 that says the same thing in different words. What
+was left is subtler: the cap on how many times to wait was ONE COUNTER FOR THE WHOLE LEVEL. On
+Gemini, a 30-passage run was throttled at passages 2, 5, 5, 7, 7 and 8, **recovered every single
+time**, and then stopped at 8 having spent a budget of 6. Nothing was failing. The sample went
+into a metric whose own note says ten passages cannot resolve better than ~5 points.
+
+The cap exists to tell an exhausted daily quota — which reports identically and will never clear —
+from ordinary throttling, and **the thing that separates those two is whether waiting ever
+WORKS**, which a counter that never resets cannot observe. So the cap is on CONSECUTIVE waits and
+every success resets it. That needs a SECOND number rather than a bigger first one, because two
+different things are being bounded: a quota that is gone shows up as waits in a row, and a
+provider merely slow all evening shows up as wall-clock time. Validated by replaying the real
+14-step log through both versions — the old one gives up at 7 passages, the new one never gives
+up — with two controls: a quota that never recovers still stops after six waits in a row, and a
+provider throttling before every passage is stopped by the 30-minute clock rather than running
+all night.
+
 Proper nouns are filtered out at build time by `scripts/lib/nameFilter.mjs`, shared by every build script: `isNamePos()` rejects a `name`/`proper noun` headword outright, `isNameSense()` drops individual senses that gloss as a surname, given name or place ("a city in…", "a commune in…"). It runs per sense, not per entry, so `jean` keeps "denim" while losing the given name, and `casa`/`perro`/`ville`/`manger` are untouched. Filtering here rather than at lookup time is what keeps `mercado`-style over-lemmatization from being reintroduced — the lemmatizers ask the dictionary whether a candidate is a real word, and a dictionary full of names answers yes too often.
 
 **Transliterated foreign names are APPLIED, not suggested.** `guessChineseNames` looks for a
@@ -1486,6 +1505,26 @@ the above-level words read out: `euro` (B2) ×7, `pantalones` (B1) ×4, `tarta` 
 and the currency, every one of them the "nobody writes fork in an encyclopedia" failure this
 section exists for, and `pantalón` was ALREADY pinned while its everyday plural sat at B1.
 Measured on the same 28 passages with nothing else changed: **19.9% → 18.7% above level.**
+
+**AND THEN BOTH PROVIDERS WERE MEASURED ON THAT SAME TABLE, WHICH IS NOT A RESULT EITHER.**
+Groq 18.7% over 28 A1 passages against Gemini 14.8% over 7, both scored against the post-pin
+table. A 3.6-point gap with a Welch **t = 1.54** (df ≈ 9.5): this design cannot resolve anything
+smaller than **6.7 points**, so it could not have detected the difference in either direction —
+the same verdict, for the same reason, as the second round of topic cuts. Two further confounds
+worth naming rather than burying: the runs are on different DAYS, and `lib/passageTheme.ts` seeds
+topic and form on the date, so the two providers were not asked the same questions; and **1.22 of
+those 3.6 points is `maría` alone**, counted 23 times as B1 in the Groq run and absent from the
+Gemini one, which is a band-table defect showing up in one sample rather than a fact about either
+model's Spanish. Provider comparison needs both runs on one day at n ≈ 30 each, which the free
+tiers make an evening's work rather than a command.
+
+**WHAT BOTH RUNS DO AGREE ON IS THE NEXT DEFECT, AND THEY FOUND IT INDEPENDENTLY.** The
+above-level words are increasingly not words but INFLECTIONS of pinned words: `nado` (C2) and
+`pinto` (C2) of `nadar`/`pintar` in the Gemini run, `limpia` (B1) of `limpiar`, `bebe` (B2) of
+`beber` in the Groq one. 75 of the 328 pinned Spanish words have an inflection banded above A1 —
+`beber`→`bebo` C2, `cerrar`→`cierro` C2, `comer`→`comido` B2, `boca`→`bocas` C1. A pin moves a
+HEADWORD, and `collidesWithLemma()` above is the machinery that decides whether a form is its own
+vocabulary item, so this is one question in two places rather than 75 new pins.
 Words that merely *felt* like A1 were left alone; a word earns a pin by turning up.
 
 Keep both lists short; they are not a place to express taste about A1. The one rule it does **not** bypass is the dictionary: a pinned word must be a real headword with a real gloss, and anything else is warned about and skipped, because the emitted tables carry that gloss. Pinned words are prepended in file order, so they are the first thing a learner meets. Band sizes are allowed to drift here (~20 words in 12,000) — honouring a pin by demoting some other real word to keep A1 at exactly 500 would trade one arbitrary call for another.

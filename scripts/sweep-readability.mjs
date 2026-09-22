@@ -193,7 +193,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** See the "wait and try again" note in the passage loop. 65s, because that is the advice. */
 const RATE_WAIT_MS = 65_000;
-const MAX_RATE_WAITS = 6;
+/** Consecutive waits, RESET BY EVERY SUCCESS — a quota that is gone never clears. */
+const MAX_CONSECUTIVE_WAITS = 6;
+/** And a run still has to end, however patiently the provider keeps saying "shortly". */
+const MAX_TOTAL_WAIT_MS = 30 * 60_000;
 
 /**
  * THE TWO FAILURES THAT MEAN "ASK ME AGAIN SHORTLY", AND 503 IS THE COMMONER ONE.
@@ -419,10 +422,25 @@ try {
      * design, so this is the NORMAL path, not an edge case. `WAIT_AND_RETRY` above covers the
      * other half of it: a 503 says the same thing in different words and is commoner still.
      *
-     * The wait is the provider's own advice, taken literally; the cap on waits stops a spent
-     * daily quota (which reports the same way and will not clear) from parking here for hours.
+     * The wait is the provider's own advice, taken literally.
+     *
+     * ── AND THE BUDGET WAS ONE COUNTER FOR THE WHOLE LEVEL, WHICH ENDED THE RUN IT SAVED. ──
+     * Measured on Gemini's free tier: a 30-passage run was throttled at passages 2, 5, 5, 7, 7
+     * and 8, RECOVERED EVERY TIME, and then stopped at 8 having spent a budget of 6 — so the
+     * sample went into a metric whose own note says ten passages cannot resolve better than
+     * ~5 points. Nothing was failing. The cap exists to tell an exhausted daily quota (which
+     * reports identically and will never clear) from ordinary throttling, and the thing that
+     * separates those two is whether waiting EVER WORKS — which a counter that never resets
+     * cannot see. It conflated "asked too fast six times over twenty minutes" with "the quota
+     * is gone", and those are opposite answers.
+     *
+     * So the cap is on CONSECUTIVE waits and a success resets it. That needs a second number,
+     * because two different things are being bounded: a quota that is gone shows up as waits
+     * in a row, and a provider merely slow all evening shows up as wall-clock time. One
+     * counter cannot answer both, and the run has to end either way.
      */
-    let rateWaits = 0;
+    let waitsInARow = 0;
+    let waitedMs = 0;
     for (let n = 0; n < PER; n++) {
       const raw = await ev(ws, `(async () => { ${STEP(level)}
         const before = cache()?.passages?.length ?? 0;
@@ -502,16 +520,26 @@ try {
       let parsed = {};
       try { parsed = JSON.parse(raw || '{}'); } catch { /* keep the raw line in the log */ }
       if (parsed.step !== 'ok') {
-        if (WAIT_AND_RETRY.test(parsed.why || '') && rateWaits < MAX_RATE_WAITS) {
-          rateWaits += 1;
+        const mayWait = waitsInARow < MAX_CONSECUTIVE_WAITS && waitedMs < MAX_TOTAL_WAIT_MS;
+        if (WAIT_AND_RETRY.test(parsed.why || '') && mayWait) {
+          waitsInARow += 1;
+          waitedMs += RATE_WAIT_MS;
           log(`  level ${level}: provider asked us to wait — pausing ${RATE_WAIT_MS / 1000}s `
-            + `(${rateWaits}/${MAX_RATE_WAITS}), then retrying passage ${n + 1}`);
+            + `(${waitsInARow}/${MAX_CONSECUTIVE_WAITS} in a row, `
+            + `${Math.round(waitedMs / 60_000)}/${MAX_TOTAL_WAIT_MS / 60_000} min waited), `
+            + `then retrying passage ${n + 1}`);
           await sleep(RATE_WAIT_MS);
           n -= 1;
           continue;
         }
+        if (WAIT_AND_RETRY.test(parsed.why || '')) {
+          log(`  level ${level}: still being throttled after `
+            + `${waitsInARow} waits in a row / ${Math.round(waitedMs / 60_000)} min total — `
+            + `treating the quota as spent and keeping the ${n} passages already written.`);
+        }
         break;
       }
+      waitsInARow = 0;   // it worked, so the quota is not gone — see the note above.
       await sleep(800);
     }
 
