@@ -195,8 +195,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const RATE_WAIT_MS = 65_000;
 /** Consecutive waits, RESET BY EVERY SUCCESS — a quota that is gone never clears. */
 const MAX_CONSECUTIVE_WAITS = 6;
-/** And a run still has to end, however patiently the provider keeps saying "shortly". */
-const MAX_TOTAL_WAIT_MS = 30 * 60_000;
+/**
+ * And a run still has to end, however patiently the provider keeps saying "shortly".
+ *
+ * 30 minutes is measured rather than chosen: the observed Gemini rate was 0.86 waits per
+ * passage, so 30 passages costs ~28 minutes of waiting on top of ~14 of generating. That is
+ * deliberately close to the cap, and `SWEEP_MAX_WAIT_MIN` raises it — a sweep cut off at 26 of
+ * 30 is a usable sample, but which number is right depends on the evening and the operator can
+ * see that and this file cannot.
+ */
+const MAX_TOTAL_WAIT_MS = (Number(process.env.SWEEP_MAX_WAIT_MIN) || 30) * 60_000;
 
 /**
  * THE TWO FAILURES THAT MEAN "ASK ME AGAIN SHORTLY", AND 503 IS THE COMMONER ONE.
