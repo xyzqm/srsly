@@ -191,9 +191,26 @@ chrome.on('exit', code => { chromeExit = code; });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** See the rate-limit note in the passage loop. 65s because the advice is "a minute or two". */
+/** See the "wait and try again" note in the passage loop. 65s, because that is the advice. */
 const RATE_WAIT_MS = 65_000;
 const MAX_RATE_WAITS = 6;
+
+/**
+ * THE TWO FAILURES THAT MEAN "ASK ME AGAIN SHORTLY", AND 503 IS THE COMMONER ONE.
+ *
+ * The first version matched a rate limit alone, so the very next run died on its first passage:
+ *
+ *   {"why":"Google Gemini is busy right now — \"gemini-3.8-flash\" returned 503, which means
+ *           overloaded rather than broken. Wait a minute and try again…"}
+ *   level 1: NOTHING CACHED — no passage was generated
+ *
+ * CLAUDE.md names 503 "the commonest failure there is" on a free tier, and the sweep abandoned
+ * the whole level on one. `generateJson` already retries a 503 twice, but those are seconds
+ * apart; this is the longer horizon, where a minute of congestion clears. Matched on the
+ * provider-independent words `GenerationError` actually writes, not on a status code, because
+ * the sweep only ever sees the rendered sentence.
+ */
+const WAIT_AND_RETRY = /rate.?limit|busy right now|overloaded|\b50[234]\b/i;
 
 async function target() {
   // A cold profile exposes a page target in about a second; 15 s is slack, not a guess.
@@ -399,7 +416,8 @@ try {
      * treated that like any other non-ok step and abandoned the level, so a 10-passage run
      * returned 5 and the next two levels returned 0 — which looks like a broken generator and
      * is a working one being asked too fast. Every provider this script is for is free-tier by
-     * design, so this is the NORMAL path, not an edge case.
+     * design, so this is the NORMAL path, not an edge case. `WAIT_AND_RETRY` above covers the
+     * other half of it: a 503 says the same thing in different words and is commoner still.
      *
      * The wait is the provider's own advice, taken literally; the cap on waits stops a spent
      * daily quota (which reports the same way and will not clear) from parking here for hours.
@@ -484,9 +502,9 @@ try {
       let parsed = {};
       try { parsed = JSON.parse(raw || '{}'); } catch { /* keep the raw line in the log */ }
       if (parsed.step !== 'ok') {
-        if (/rate.?limit/i.test(parsed.why || '') && rateWaits < MAX_RATE_WAITS) {
+        if (WAIT_AND_RETRY.test(parsed.why || '') && rateWaits < MAX_RATE_WAITS) {
           rateWaits += 1;
-          log(`  level ${level}: rate-limited — waiting ${RATE_WAIT_MS / 1000}s `
+          log(`  level ${level}: provider asked us to wait — pausing ${RATE_WAIT_MS / 1000}s `
             + `(${rateWaits}/${MAX_RATE_WAITS}), then retrying passage ${n + 1}`);
           await sleep(RATE_WAIT_MS);
           n -= 1;

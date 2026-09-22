@@ -159,6 +159,15 @@ describe('sweep readability', () => {
         .join('  '));
     }
 
+    /**
+     * SILENCE IS NOT A RESULT. With no usable dumps this printed nothing at all and passed,
+     * which reads exactly like a measurement of zero rather than the absence of one — the
+     * mistake CLAUDE.md names four times over, here in the tool that exists to report.
+     */
+    if (out.length === 0) {
+      say(`no passage dumps in ${DIR} for level(s) ${LEVELS.join(', ')}.`);
+      say('The sweep writes level-<n>.json only when it generated something — check its log.');
+    }
     writeFileSync(`${DIR}/readability.txt`, `${out.join('\n')}\n`);
   });
 });
