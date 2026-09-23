@@ -80,6 +80,82 @@ const altKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerC
 /** The generator's own names side-channel. See the diagnostic note above. */
 const glossedAsName = (t: PassageToken) => /^\s*\((?:name|place)\)/i.test(t.meaning ?? '');
 
+/**
+ * THE WHOLE ABOVE-LEVEL DISTRIBUTION, PLUS HOW MUCH OF IT IS MERE CONJUGATION.
+ *
+ * ── WHY THIS DOES NOT USE `Readability.hardest`, WHICH IS WHAT IT LOOKS LIKE IT WANTS ──
+ * It did, and that was a filter on a list of answers being mistaken for the answer — the exact
+ * defect CLAUDE.md records against `MODEL_ID`. `hardest` is capped at `HARDEST_SHOWN = 5` per
+ * text, which is right for a popup (a learner does not want forty words) and wrong for a run
+ * aggregate: 28 A1 passages hold ~351 above-level tokens and the cap could show at most 140 of
+ * them. Worse than incomplete, it was BIASED — ties break on within-passage count, so a word
+ * repeated inside one passage displaced five different words met once each, and the aggregate
+ * leaned toward exactly the words a single passage happened to lean on. The six pins in
+ * `core-overrides.json` were chosen off that truncated list. They still measured an improvement,
+ * so they were not wrong; they were chosen from a shortlist nobody had checked was the list.
+ *
+ * ── AND WHY IT COUNTS RATHER THAN CALLING `calculateReadability` A SECOND TIME ──
+ * The inflection question cannot be asked THROUGH that function: it consults `altKey` only when
+ * the index does not know the surface (`lib/readability.ts`: `index.has(form) ? undefined :
+ * altKey?.(t)`), so a form carrying its own band entry never resolves through its lemma however
+ * much easier the lemma is. `bebo` sits at C2 and `beber` at A1; `manzanas` at B2 and `manzana`
+ * at A1. The branch that would use a lemma-aware `altKey` is the branch not taken.
+ *
+ * So the token filter is repeated here, which is a liability: a filter that drifts from the
+ * app's reports a number the app never shows, the one thing this script exists to avoid. Hence
+ * `assertAgrees` — the walk's own above-level total is checked against the figure
+ * `calculateReadability` produced for the same tokens, so a drift fails loudly instead of
+ * quietly reporting a different metric.
+ *
+ * ── IT IS A MEASUREMENT, NOT A PROPOSED FIX ──
+ * Whether the metric SHOULD fall through to the lemma is a separate argument with a real case on
+ * each side: `lib/readability.ts` already says it measures tokens keyed by LEMMA precisely
+ * because surface matching "would count `parlons` and `maisons` as unknown", which is this bug
+ * described in advance — but a few of these forms carry a genuinely independent sense (`compra`
+ * the purchase, `cuesta` the slope, `canto` the song), and calling those A1 is a generous answer
+ * rather than a correct one. This says how big the question is. It does not answer it.
+ */
+type Above = {
+  tokens: number;
+  byWord: Map<string, { count: number; rank: number }>;
+  inflected: number;
+  inflectedByWord: Map<string, { count: number; lemma: string; rank: number }>;
+};
+
+const emptyAbove = (): Above =>
+  ({ tokens: 0, byWord: new Map(), inflected: 0, inflectedByWord: new Map() });
+
+function walkAbove(tokens: PassageToken[], level: number, acc: Above): number {
+  const learnerRank = ORDER.indexOf(level);
+  let measured = 0;
+  for (const t of tokens) {
+    if (t.type === 'punct') continue;
+    const form = (t.baseForm ?? t.text).trim().toLowerCase();
+    if (!form || !t.meaning) continue;
+    if (/['\u2019]/.test(form) && !index.has(form)) continue;
+    if (ungradeable(form) && !index.has(form)) continue;
+    measured += 1;
+
+    const alt = index.has(form) ? undefined : altKey(t);
+    const rank = index.get(form) ?? (alt !== undefined ? index.get(alt) ?? -1 : -1);
+    // Above level as the app scores it right now — including "in no band at all" (-1).
+    if (rank >= 0 && learnerRank >= 0 && rank <= learnerRank) continue;
+
+    acc.tokens += 1;
+    const seen = acc.byWord.get(form);
+    acc.byWord.set(form, { count: (seen?.count ?? 0) + 1, rank });
+
+    const lemma = forms[form];
+    if (!lemma || lemma === form) continue;
+    const lemmaRank = index.get(lemma);
+    if (lemmaRank === undefined || lemmaRank > learnerRank) continue;
+    acc.inflected += 1;
+    const prev = acc.inflectedByWord.get(form);
+    acc.inflectedByWord.set(form, { count: (prev?.count ?? 0) + 1, lemma, rank });
+  }
+  return measured;
+}
+
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const sd = (xs: number[]) => {
   if (xs.length < 2) return 0;
@@ -101,9 +177,10 @@ describe('sweep readability', () => {
       const above: number[] = [];
       const sizes: number[] = [];
       const perPassage: { title: string; share: number; tokens: number }[] = [];
-      const hardTotals = new Map<string, { count: number; rank: number }>();
       let pooledTokens = 0, pooledAbove = 0, pooledTypes = 0, skipped = 0;
       let nameFreeTokens = 0, nameFreeAbove = 0, namesDropped = 0;
+      const above2 = emptyAbove();
+      let walkedTokens = 0;
 
       for (const raw of dump.passages ?? []) {
         const p = raw as { titleTokens?: PassageToken[]; sentences?: { tokens: PassageToken[] }[] };
@@ -117,13 +194,11 @@ describe('sweep readability', () => {
           share: 1 - r.coverage,
           tokens: r.tokens,
         });
-        for (const h of r.hardest) {
-          const prev = hardTotals.get(h.word);
-          hardTotals.set(h.word, { count: (prev?.count ?? 0) + h.count, rank: h.level });
-        }
         pooledTokens += r.tokens;
         pooledAbove += r.tokens * (1 - r.coverage);
         pooledTypes += r.types;
+
+        walkedTokens += walkAbove(tokens, level, above2);
 
         const withoutNames = tokens.filter(t => !glossedAsName(t));
         namesDropped += tokens.length - withoutNames.length;
@@ -141,10 +216,42 @@ describe('sweep readability', () => {
         + `per-passage ${pct(mean(above))} ± ${pct(sd(above))}  `
         + `range ${pct(Math.min(...above))}–${pct(Math.max(...above))}`);
       say(`   ${(pooledTypes / pooledTokens).toFixed(2)} distinct forms per token`);
+      /**
+       * WHERE THE ABOVE-LEVEL MASS SITS, WHICH IS THE NUMBER THAT SAYS WHAT TO FIX.
+       *
+       * "18.7% above level" is the same figure whether the overflow is A2 words one band up or
+       * C2 words five — and those call for opposite work. A2-heavy is the band table being
+       * mis-cut near its own boundary, which `core-overrides.json` and the anchor address; C-
+       * heavy is the generator reaching for words nobody asked it for, which is the prompt and
+       * the topic pool. Reading it off the top-N word list cannot answer it, because that list
+       * covered 43% of the tokens on the run this was added for.
+       */
+      const spread = [...above2.byWord.values()]
+        .reduce((a, x) => { a[x.rank] = (a[x.rank] ?? 0) + x.count; return a; },
+          {} as Record<number, number>);
+      say('   above-level mass by band: ' + ORDER
+        .map((_, r) => [BAND_NAMES[r] ?? String(r), spread[r] ?? 0] as const)
+        .filter(([, n]) => n > 0)
+        .map(([b, n]) => `${b} ${n} (${pct(n / above2.tokens)})`)
+        .join('  ')
+        + (spread[-1] ? `  in no band at all ${spread[-1]} (${pct(spread[-1] / above2.tokens)})` : ''));
       if (namesDropped > 0) {
         say(`   diagnostic: ${pct(nameFreeAbove / nameFreeTokens)} with the ${namesDropped} `
           + 'tokens the generator glossed as names removed — see the header; this is a bound on '
           + 'measurement error, not the figure to quote');
+      }
+      /* assertAgrees — see the header. The walk and `calculateReadability` run over one
+         array, so their totals are one fact and a disagreement means the filter has drifted. */
+      if (walkedTokens !== pooledTokens || Math.abs(above2.tokens - pooledAbove) > 0.5) {
+        throw new Error(`walkAbove has drifted from calculateReadability: `
+          + `${walkedTokens} vs ${pooledTokens} tokens, `
+          + `${above2.tokens} vs ${pooledAbove.toFixed(1)} above level`);
+      }
+      if (above2.inflected > 0) {
+        say(`   diagnostic: ${above2.inflected} above-level tokens `
+          + `(${pct(above2.inflected / pooledTokens)} of all tokens, `
+          + `${pct(above2.inflected / above2.tokens)} of everything above level) are INFLECTIONS `
+          + 'of a word at or below the level — see the header');
       }
 
       if (!process.env.SWEEP_DETAIL) continue;
@@ -152,9 +259,21 @@ describe('sweep readability', () => {
       for (const x of [...perPassage].sort((a, b) => b.share - a.share).slice(0, 8)) {
         say(`   ${pct(x.share).padStart(6)}  ${String(x.tokens).padStart(4)} tok  ${x.title}`);
       }
-      say('   ── most frequent above-level words ──');
-      const worst = [...hardTotals.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 15);
-      say('   ' + worst
+      if (above2.inflectedByWord.size > 0) {
+        say('   ── above-level words that are merely INFLECTIONS of an in-level word ──');
+        say('   ' + [...above2.inflectedByWord.entries()]
+          .sort((a, b) => b[1].count - a[1].count || (a[0] < b[0] ? -1 : 1))
+          .map(([w, x]) => `${w}(${BAND_NAMES[x.rank] ?? '—'}×${x.count})←${x.lemma}`)
+          .join('  '));
+      }
+      /* THE COMPLETE LIST, not `hardest` — see the header for why that cap biased it. */
+      const worst = [...above2.byWord.entries()]
+        .sort((a, b) => b[1].count - a[1].count || b[1].rank - a[1].rank
+          || (a[0] < b[0] ? -1 : 1));
+      const shown = Number(process.env.SWEEP_WORDS) || 30;
+      say(`   ── most frequent above-level words (${above2.byWord.size} distinct, `
+        + `${above2.tokens} tokens; showing ${Math.min(shown, worst.length)}) ──`);
+      say('   ' + worst.slice(0, shown)
         .map(([w, x]) => `${w}(${BAND_NAMES[x.rank] ?? '—'}×${x.count})`)
         .join('  '));
     }

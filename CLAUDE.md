@@ -1518,13 +1518,47 @@ Gemini one, which is a band-table defect showing up in one sample rather than a 
 model's Spanish. Provider comparison needs both runs on one day at n ≈ 30 each, which the free
 tiers make an evening's work rather than a command.
 
-**WHAT BOTH RUNS DO AGREE ON IS THE NEXT DEFECT, AND THEY FOUND IT INDEPENDENTLY.** The
-above-level words are increasingly not words but INFLECTIONS of pinned words: `nado` (C2) and
-`pinto` (C2) of `nadar`/`pintar` in the Gemini run, `limpia` (B1) of `limpiar`, `bebe` (B2) of
-`beber` in the Groq one. 75 of the 328 pinned Spanish words have an inflection banded above A1 —
-`beber`→`bebo` C2, `cerrar`→`cierro` C2, `comer`→`comido` B2, `boca`→`bocas` C1. A pin moves a
-HEADWORD, and `collidesWithLemma()` above is the machinery that decides whether a form is its own
-vocabulary item, so this is one question in two places rather than 75 new pins.
+**AND THE LIST THOSE SIX PINS WERE CHOSEN FROM WAS 43% OF THE ANSWER.** `Readability.hardest`
+is capped at `HARDEST_SHOWN = 5` per text — right for a popup, wrong for a run aggregate. The 28
+A1 passages hold **352 above-level tokens across 218 distinct words**, and a five-per-passage cap
+could surface at most 140 of them. Worse than incomplete, it was BIASED: ties break on
+within-passage count, so one word repeated inside a single passage displaced five words met once
+each, and the aggregate leaned toward whatever an individual passage leaned on. **A filter on a
+list of answers is part of the answer**, the same defect as `MODEL_ID` and found the same way —
+by asking what the number was for. `scripts/analyse-sweep.ts` now walks the tokens itself and
+reports the complete distribution, with `assertAgrees` checking its own above-level total against
+`calculateReadability`'s on the same array so the repeated token filter cannot drift unnoticed.
+The six pins still measured an improvement, so they were not wrong; they were picked from a
+shortlist nobody had checked was the list.
+
+**AND THE COMPLETE DISTRIBUTION SAYS THE OVERFLOW IS ONE BAND UP, NOT FIVE.** Of those 352
+tokens: **A2 42.9%, B1 29.5%**, B2 11.4%, C1 10.2%, C2 2.8%, no band at all 3.1%. So **72% of
+"above level" is one or two bands up** and only 13% is C-anything — which are opposite findings
+calling for opposite work, and "18.7% above level" is the identical number either way. This is
+not the generator reaching for exotic vocabulary; it is the A1/A2 boundary. The A2 spillover is
+87 distinct words and reads as a list of things nobody would defend as post-beginner: `feliz`,
+`reloj`, `árbol`, `habitación`, `colegio`, `minuto`, `pronto`, `empezar`, `terminar`, `volver`,
+`precio`, `viaje`, `visitar`, `entrar`, `pagar`, `navidad`. That is the `beginner`-section blind
+spot this file already documents — "nobody writes fork in an encyclopedia" — recurring one band
+higher, where the themed sets do not reach because they are concrete nouns and these are verbs,
+time words and abstractions. **`above-level mass by band` is printed on every run for this
+reason**: it is the one figure that says WHICH lever, and no top-N word list can answer it.
+
+**THE INFLECTION DEFECT IS REAL, OBVIOUSLY WRONG, AND WORTH 1.0 POINT.** Measured rather than
+assumed: 18 of the 1879 tokens — 5.1% of everything above level. `manzanas` is banded B2 and
+`naranjas` C1, the bare plurals of A1 `manzana` and `naranja`; `blanca`, `negra`, `roja` and
+`corta` sit at A2 against their A1 masculines. **64 of the 723 A1 words have at least one
+inflection banded above A1, 83 in total** (an earlier note here said "75 of 328", which counted
+pinned words as the denominator and the wrong figure on top). The mechanism is
+`lib/readability.ts:159` — `index.has(form) ? undefined : altKey?.(t)` — so the lemma is
+consulted ONLY when the index does not know the surface, and a form carrying its own band entry
+never resolves through an easier lemma. Identical shape to `maría`, which is itself worth **1.33
+points on its own** (25 tokens, 7.1% of all above-level), more than the whole inflection class.
+Whether the metric should fall through to the easier of form and lemma is a live question with a
+real case each way: this file already says readability measures tokens keyed by LEMMA precisely
+because surface matching "would count `parlons` and `maisons` as unknown", which is this bug
+described in advance — but `compra` the purchase, `cuesta` the slope and `canto` the song carry
+genuinely independent senses, so calling those A1 is generous rather than correct.
 Words that merely *felt* like A1 were left alone; a word earns a pin by turning up.
 
 Keep both lists short; they are not a place to express taste about A1. The one rule it does **not** bypass is the dictionary: a pinned word must be a real headword with a real gloss, and anything else is warned about and skipped, because the emitted tables carry that gloss. Pinned words are prepended in file order, so they are the first thing a learner meets. Band sizes are allowed to drift here (~20 words in 12,000) — honouring a pin by demoting some other real word to keep A1 at exactly 500 would trade one arbitrary call for another.
