@@ -249,7 +249,9 @@
         "lápiz",
         "bolígrafo",
         "papel",
-        "mochila"
+        "mochila",
+        "colegio",
+        "ejercicio"
       ],
       "places": [
         "ciudad",
@@ -265,7 +267,8 @@
         "estación",
         "aeropuerto",
         "oficina",
-        "esquina"
+        "esquina",
+        "barrio"
       ],
       "transport": [
         "coche",
@@ -274,7 +277,8 @@
         "avión",
         "bicicleta",
         "barco",
-        "taxi"
+        "taxi",
+        "viaje"
       ],
       "weather": [
         "sol",
@@ -335,7 +339,10 @@
         "lento",
         "caliente",
         "limpio",
-        "sucio"
+        "sucio",
+        "feliz",
+        "activo",
+        "principal"
       ],
       "basics": [
         "muy",
@@ -363,7 +370,10 @@
         "delante",
         "encima",
         "dentro",
-        "fuera"
+        "fuera",
+        "pronto",
+        "alguno",
+        "minuto"
       ],
       "verbs": [
         "comer",
@@ -395,7 +405,23 @@
         "doler",
         "preferir",
         "necesitar",
-        "costar"
+        "costar",
+        "empezar",
+        "terminar",
+        "volver",
+        "contar",
+        "elegir",
+        "probar",
+        "parecer",
+        "continuar",
+        "regresar",
+        "responder",
+        "sentir",
+        "recordar",
+        "celebrar",
+        "pagar",
+        "entrar",
+        "viajar"
       ],
       "everyday": [
         "cielo",
@@ -413,7 +439,18 @@
         "fin de semana",
         "duchar",
         "abrazo",
-        "euro"
+        "euro",
+        "navidad",
+        "reloj",
+        "precio",
+        "estilo",
+        "servicio",
+        "serie",
+        "periódico",
+        "ambiente",
+        "salida",
+        "vecino",
+        "árbol"
       ]
     },
     "fr": {
