@@ -133,6 +133,32 @@ export function calculateReadability(
    * the level vocab is keyed by it, so the kana is the bridge between the two spellings.
    */
   altKey?: (token: PassageToken) => string | undefined,
+  /**
+   * The LEMMA this surface inflects, whose band CAPS this one.
+   *
+   * ── WHY THIS IS NOT `altKey`, WHICH HAS THE SAME SIGNATURE ──
+   * `altKey` is another spelling of the SAME word and is tried only when the surface misses,
+   * because if the surface hit, that IS the word. A lemma is a DIFFERENT, easier word, and the
+   * claim is about the reader: someone who knows `manzana` can read `manzanas`. So this one is
+   * consulted ALWAYS and takes the easier of the two.
+   *
+   * That distinction is load-bearing and was nearly collapsed into one parameter. Spanish
+   * leaves a surface unlemmatized when it is itself a headword (the `mercado` short-circuit),
+   * and such a surface gets its OWN band — so `manzanas` sat at B2 and `naranjas` at C1 against
+   * an A1 `manzana` and `naranja`, `bebo` at C2 against an A1 `beber`, and the lemma was never
+   * consulted because the index knew the form. Measured: 64 of the 723 Spanish A1 words have at
+   * least one inflection banded above A1, 83 in total.
+   *
+   * ── AND WHY JAPANESE MUST NOT USE IT ──
+   * Japanese supplies `altKey` as the token's READING, to bridge 御飯 against ご飯. Reading a
+   * band off that unconditionally would be catastrophic rather than generous: 353 graded words
+   * have a reading sitting at an EASIER rank than the word itself — 鳴る is N4 and its reading
+   * なる is N5 なる "to become", 変える is N4 and かえる is N5. Those are different words that
+   * happen to sound alike, and capping by them would make every Japanese figure quietly
+   * optimistic. A confidently wrong number is worse than none, which is this file's own rule
+   * about matching surface forms, reached from the other direction.
+   */
+  lemmaKey?: (token: PassageToken) => string | undefined,
 ): Readability {
   // The learner's own position on the easiest → hardest scale. See buildLevelIndex.
   const learnerRank = order.indexOf(level);
@@ -156,8 +182,23 @@ export function calculateReadability(
 
     measured++;
     counts.set(form, (counts.get(form) ?? 0) + 1);
-    const alt = index.has(form) ? undefined : altKey?.(t);
-    const rank = index.get(form) ?? (alt !== undefined ? index.get(alt) ?? -1 : -1);
+    /**
+     * The easiest band any of the three keys resolves to, or -1 for none of them.
+     *
+     * `altKey` keeps its old contract — tried only when the surface misses — and `lemmaKey`
+     * always applies, because knowing the lemma is what makes the inflection readable. `min`
+     * rather than "the lemma wins": Wiktionary lists `casa` as a form of `casar`, so letting a
+     * lemma override an easier surface would push core vocabulary the wrong way.
+     */
+    const own = index.get(form);
+    const alt = own === undefined ? altKey?.(t) : undefined;
+    const lemma = lemmaKey?.(t);
+    const ranks = [
+      own,
+      alt !== undefined ? index.get(alt) : undefined,
+      lemma !== undefined && lemma !== form ? index.get(lemma) : undefined,
+    ].filter((r): r is number => r !== undefined);
+    const rank = ranks.length > 0 ? Math.min(...ranks) : -1;
     ranked.set(form, rank);
     byRank[rank] = (byRank[rank] ?? 0) + 1;
     if (rank >= 0 && learnerRank >= 0 && rank <= learnerRank) known++;

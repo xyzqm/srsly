@@ -75,7 +75,7 @@ const forms = ES_FORMS as Record<string, string>;
 const dict = ESDICT as Record<string, { m?: string } | undefined>;
 const index = buildLevelIndex(BANDS as unknown as LevelBands, ORDER);
 const ungradeable = (form: string) => !dict[form]?.m && !forms[form];
-const altKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
+const lemmaKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
 
 /** The generator's own names side-channel. See the diagnostic note above. */
 const glossedAsName = (t: PassageToken) => /^\s*\((?:name|place)\)/i.test(t.meaning ?? '');
@@ -136,22 +136,27 @@ function walkAbove(tokens: PassageToken[], level: number, acc: Above): number {
     if (ungradeable(form) && !index.has(form)) continue;
     measured += 1;
 
-    const alt = index.has(form) ? undefined : altKey(t);
-    const rank = index.get(form) ?? (alt !== undefined ? index.get(alt) ?? -1 : -1);
-    // Above level as the app scores it right now — including "in no band at all" (-1).
+    // Resolved exactly as `calculateReadability` does for Spanish: the easier of the surface's
+    // own band and its lemma's. `assertAgrees` below is what holds the two in step.
+    const own = index.get(form);
+    const lemma = lemmaKey(t);
+    const viaLemma = lemma !== undefined && lemma !== form ? index.get(lemma) : undefined;
+    const ranks = [own, viaLemma].filter((r): r is number => r !== undefined);
+    const rank = ranks.length > 0 ? Math.min(...ranks) : -1;
+    // Above level as the app scores it — including "in no band at all" (-1).
     if (rank >= 0 && learnerRank >= 0 && rank <= learnerRank) continue;
 
     acc.tokens += 1;
     const seen = acc.byWord.get(form);
     acc.byWord.set(form, { count: (seen?.count ?? 0) + 1, rank });
 
-    const lemma = forms[form];
-    if (!lemma || lemma === form) continue;
-    const lemmaRank = index.get(lemma);
-    if (lemmaRank === undefined || lemmaRank > learnerRank) continue;
-    acc.inflected += 1;
-    const prev = acc.inflectedByWord.get(form);
-    acc.inflectedByWord.set(form, { count: (prev?.count ?? 0) + 1, lemma, rank });
+    /* Anything reaching here whose lemma IS in level means the cap missed it — a regression
+       signal now rather than a finding, since `min` above should have caught it. */
+    if (viaLemma !== undefined && viaLemma <= learnerRank && lemma !== undefined) {
+      acc.inflected += 1;
+      const prev = acc.inflectedByWord.get(form);
+      acc.inflectedByWord.set(form, { count: (prev?.count ?? 0) + 1, lemma, rank });
+    }
   }
   return measured;
 }
@@ -179,13 +184,14 @@ describe('sweep readability', () => {
       const perPassage: { title: string; share: number; tokens: number }[] = [];
       let pooledTokens = 0, pooledAbove = 0, pooledTypes = 0, skipped = 0;
       let nameFreeTokens = 0, nameFreeAbove = 0, namesDropped = 0;
+      let uncappedTokens = 0, uncappedAbove = 0;
       const above2 = emptyAbove();
       let walkedTokens = 0;
 
       for (const raw of dump.passages ?? []) {
         const p = raw as { titleTokens?: PassageToken[]; sentences?: { tokens: PassageToken[] }[] };
         const tokens = [...(p.titleTokens ?? []), ...(p.sentences ?? []).flatMap(s => s.tokens)];
-        const r = calculateReadability(tokens, index, level, ORDER, ungradeable, altKey);
+        const r = calculateReadability(tokens, index, level, ORDER, ungradeable, undefined, lemmaKey);
         if (r.tokens < MIN_TOKENS) { skipped += 1; continue; }
         above.push(1 - r.coverage);
         sizes.push(r.tokens);
@@ -199,10 +205,21 @@ describe('sweep readability', () => {
         pooledTypes += r.types;
 
         walkedTokens += walkAbove(tokens, level, above2);
+        /**
+         * What the figure would be under the OLD behaviour, which is the only honest baseline.
+         *
+         * Passing the lemma lookup in the `altKey` slot reproduces it exactly, because `altKey`
+         * is consulted only when the surface misses the index — so the unbanded half (`una`,
+         * `son`, `hay`) still resolves and only the CAP is removed. Dropping both instead reads
+         * as 23.8%, which measures the loss of a fix nobody proposed reverting.
+         */
+        const ru = calculateReadability(tokens, index, level, ORDER, ungradeable, lemmaKey);
+        uncappedTokens += ru.tokens;
+        uncappedAbove += ru.tokens * (1 - ru.coverage);
 
         const withoutNames = tokens.filter(t => !glossedAsName(t));
         namesDropped += tokens.length - withoutNames.length;
-        const rn = calculateReadability(withoutNames, index, level, ORDER, ungradeable, altKey);
+        const rn = calculateReadability(withoutNames, index, level, ORDER, ungradeable, undefined, lemmaKey);
         nameFreeTokens += rn.tokens;
         nameFreeAbove += rn.tokens * (1 - rn.coverage);
       }
@@ -247,11 +264,12 @@ describe('sweep readability', () => {
           + `${walkedTokens} vs ${pooledTokens} tokens, `
           + `${above2.tokens} vs ${pooledAbove.toFixed(1)} above level`);
       }
+      say(`   the lemma cap is worth ${pct((uncappedAbove - pooledAbove) / pooledTokens)} `
+        + `(${pct(uncappedAbove / uncappedTokens)} under the old "lemma only when the surface `
+        + 'misses") — `manzanas` B2 ← `manzana` A1');
       if (above2.inflected > 0) {
-        say(`   diagnostic: ${above2.inflected} above-level tokens `
-          + `(${pct(above2.inflected / pooledTokens)} of all tokens, `
-          + `${pct(above2.inflected / above2.tokens)} of everything above level) are INFLECTIONS `
-          + 'of a word at or below the level — see the header');
+        say(`   WARNING: ${above2.inflected} above-level tokens are STILL inflections of an `
+          + 'in-level word — the cap should have caught these');
       }
 
       if (!process.env.SWEEP_DETAIL) continue;

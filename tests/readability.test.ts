@@ -262,7 +262,7 @@ describe('a real French text scores sensibly', () => {
 describe('Spanish inflections resolve to a banded lemma', () => {
   const esIndex = buildLevelIndex(ES_LEVELS as unknown as LevelBands, ES_ORDER);
   const forms = ES_FORMS as unknown as Record<string, string>;
-  const altKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
+  const lemmaKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
 
   /**
    * The nine forms that actually turned up in the sweep, with the lemma each has to reach.
@@ -296,7 +296,8 @@ describe('Spanish inflections resolve to a banded lemma', () => {
     const toks = unbanded.map(([form]) => w(form, 'a function word'));
     // Without the altKey every one of them reads as above-level.
     expect(calculateReadability(toks, esIndex, 1, ES_ORDER).coverage).toBe(0);
-    expect(calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, altKey).coverage).toBe(1);
+    expect(calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, undefined, lemmaKey)
+      .coverage).toBe(1);
   });
 
   /**
@@ -309,11 +310,100 @@ describe('Spanish inflections resolve to a banded lemma', () => {
     const ungradeable = (form: string) => !dict[form]?.m && !forms[form];
     const toks = [w('madrid', '(place) Madrid'), w('casa', 'house')];
     const plain = calculateReadability(toks, esIndex, 1, ES_ORDER);
-    const fixed = calculateReadability(toks, esIndex, 1, ES_ORDER, ungradeable, altKey);
+    const fixed = calculateReadability(toks, esIndex, 1, ES_ORDER, ungradeable, undefined, lemmaKey);
     expect(plain.tokens).toBe(2);
     expect(plain.coverage).toBe(0.5);
     expect(fixed.tokens).toBe(1);
     expect(fixed.unresolved).toBe(1);
     expect(fixed.coverage).toBe(1);
+  });
+});
+
+/**
+ * A FORM CARRYING ITS OWN HARDER BAND USED TO IGNORE ITS EASIER LEMMA.
+ *
+ * `calculateReadability` consulted a lemma only when the surface MISSED the index, so the half
+ * of the defect where the surface hits was invisible: `manzanas` is banded B2 and `naranjas` C1
+ * — the bare plurals of an A1 `manzana` and `naranja` — and `bebo` is C2 against an A1 `beber`.
+ * Measured on 28 generated A1 passages, 18 of 1879 tokens were this. These are claims about the
+ * SHIPPED tables, like the suite above: the point is that the real data resolves, not that a
+ * callback is wired.
+ */
+describe('an inflection is capped by its lemma, not by its own band', () => {
+  const esIndex = buildLevelIndex(ES_LEVELS as unknown as LevelBands, ES_ORDER);
+  const forms = ES_FORMS as unknown as Record<string, string>;
+  const lemmaKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
+
+  /** Form, lemma — every one observed above level in the sweep. */
+  const BANDED: [string, string][] = [
+    ['manzanas', 'manzana'], ['naranjas', 'naranja'], ['bebo', 'beber'],
+    ['blanca', 'blanco'], ['negra', 'negro'], ['roja', 'rojo'],
+  ];
+  const stillBanded = BANDED.filter(([f]) => (esIndex.get(f) ?? -1) > 0);
+
+  /** The control first: if a rebuild pulled them all into A1, everything below is vacuous. */
+  it('these forms are still banded ABOVE A1 in their own right', () => {
+    expect(stillBanded.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it.each(stillBanded)('%s is above A1 alone but its lemma %s is in A1', (form, lemma) => {
+    expect(esIndex.get(form)).toBeGreaterThan(0);
+    expect(esIndex.get(lemma)).toBe(0);
+  });
+
+  it('counts them as known once the lemma caps them', () => {
+    const toks = stillBanded.map(([f]) => w(f, 'x'));
+    // The control, and it is the old behaviour: every one reads as above level.
+    expect(calculateReadability(toks, esIndex, 1, ES_ORDER).coverage).toBe(0);
+    expect(calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, undefined, lemmaKey)
+      .coverage).toBe(1);
+  });
+
+  it('keeps them out of `hardest`, since they are no longer hard', () => {
+    const toks = stillBanded.map(([f]) => w(f, 'x'));
+    const r = calculateReadability(toks, esIndex, 1, ES_ORDER, undefined, undefined, lemmaKey);
+    expect(r.hardest).toEqual([]);
+  });
+
+  /**
+   * `min`, NOT "the lemma wins" — Wiktionary lists `casa` as a form of `casar`, so deferring to
+   * the lemma would push A1 vocabulary the wrong way. Asserted on a synthetic index so it is a
+   * claim about the rule rather than about today's bands.
+   */
+  it('takes the EASIER of form and lemma, so an easy form is not dragged up', () => {
+    const i = buildLevelIndex({ 1: ['casa'], 3: ['casar'] }, ES_ORDER);
+    const r = calculateReadability([w('casa', 'house')], i, 1, ES_ORDER, undefined, undefined,
+      () => 'casar');
+    expect(r.coverage).toBe(1);
+  });
+});
+
+/**
+ * AND THE READING BRIDGE MUST NOT CAP, WHICH IS WHY THESE ARE TWO PARAMETERS.
+ *
+ * Japanese supplies `altKey` as the token's READING so ご飯 reaches 御飯. Measured against the
+ * shipped JLPT tables, 353 graded words have a reading sitting at an EASIER rank than the word
+ * itself — 鳴る is N4 and なる is N5 "to become" — so a reading consulted unconditionally would
+ * grade those 353 as easy. `altKey` is therefore still tried ONLY when the surface misses, and
+ * this is the control for that: collapsing the two parameters back into one fails it.
+ */
+describe('a second spelling bridges a miss but never caps a hit', () => {
+  const JA_ORDER = [5, 4, 3, 2, 1];
+  // 鳴る is N4; its reading なる is also N5 なる, a different word.
+  const i = buildLevelIndex({ 5: ['なる'], 4: ['鳴る'] }, JA_ORDER);
+  const ring: PassageToken = { text: '鳴る', reading: 'なる', meaning: 'to ring' };
+
+  it('grades 鳴る as N4 even though its reading is an N5 word', () => {
+    const r = calculateReadability([ring], i, 5, JA_ORDER, undefined, t => t.reading || undefined);
+    expect(r.coverage).toBe(0);
+    expect(r.hardest[0]?.word).toBe('鳴る');
+  });
+
+  it('still bridges a surface the index does not know at all', () => {
+    const r = calculateReadability(
+      [{ text: 'ご飯', reading: 'なる', meaning: 'x' }], i, 5, JA_ORDER,
+      undefined, t => t.reading || undefined,
+    );
+    expect(r.coverage).toBe(1);
   });
 });

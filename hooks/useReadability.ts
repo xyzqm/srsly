@@ -126,19 +126,40 @@ function useUngradeable(
 }
 
 /**
- * A second key to try when the surface misses.
+ * A second SPELLING to try when the surface misses.
  *
  * Japanese only: the JLPT list is written in formal orthography (御飯, 友達) where real text
  * says ご飯 and 友だち, so ordinary N5 words read as unranked. The reading is the bridge.
+ *
+ * It stays "only when the surface misses" and must: 353 graded words have a reading sitting at
+ * an easier rank than the word itself (鳴る is N4, its reading なる is N5 "to become"), so a
+ * reading consulted unconditionally would grade hard words easy. See `lemmaKey` below, which
+ * Spanish moved to for precisely the reason this one cannot be shared.
  */
-function useAltKey(
+function useAltKey(): ((t: PassageToken) => string | undefined) | undefined {
+  const language = useLanguage();
+  return useMemo(() => {
+    if (language === 'ja') return (t: PassageToken) => t.reading || undefined;
+    return undefined;
+  }, [language]);
+}
+
+/**
+ * The LEMMA of an inflection, whose band caps the form's — Spanish only.
+ *
+ * This was `useAltKey` until the two roles were separated, and it covers both halves of the
+ * same defect. The server leaves a surface unlemmatized when it is itself a headword (the
+ * `mercado` short-circuit), so an inflection of an A1 word reaches the metric either UNBANDED
+ * — `una`, `son`, `hay`, measured at 6.9% of all tokens, see lib/spanishForms.ts — or carrying
+ * its OWN harder band, which is `manzanas` at B2 and `bebo` at C2 against an A1 `manzana` and
+ * `beber`. `calculateReadability` consulted a lemma only in the first case; capping covers the
+ * second.
+ */
+function useLemmaKey(
   esForms: Record<string, string> | null,
 ): ((t: PassageToken) => string | undefined) | undefined {
   const language = useLanguage();
   return useMemo(() => {
-    if (language === 'ja') return (t: PassageToken) => t.reading || undefined;
-    // Spanish: the lemma of an inflection the server left alone. Measured at 6.9% of all
-    // tokens before this existed — see lib/spanishForms.ts.
     if (language === 'es' && esForms) {
       return (t: PassageToken) => esForms[(t.baseForm ?? t.text).trim().toLowerCase()];
     }
@@ -177,11 +198,12 @@ export function useReadability(tokens: PassageToken[] | null | undefined): Reada
   const order = useLevelOrder();
   const esForms = useEsForms();
   const ungradeable = useUngradeable(esForms);
-  const altKey = useAltKey(esForms);
+  const altKey = useAltKey();
+  const lemmaKey = useLemmaKey(esForms);
   // A level the scale does not contain means the learner cannot be placed, so there is no
   // question to answer — better silence than a confident "0% · very hard".
   if (!tokens || !index || level === null || !order.includes(level)) return null;
-  const result = calculateReadability(tokens, index, level, order, ungradeable, altKey);
+  const result = calculateReadability(tokens, index, level, order, ungradeable, altKey, lemmaKey);
   return result.tokens >= MIN_TOKENS ? result : null;
 }
 
@@ -199,7 +221,8 @@ export function useTextReadability(samples: string[] | null): Readability | null
   const order = useLevelOrder();
   const esForms = useEsForms();
   const ungradeable = useUngradeable(esForms);
-  const altKey = useAltKey(esForms);
+  const altKey = useAltKey();
+  const lemmaKey = useLemmaKey(esForms);
   const [tokens, setTokens] = useState<PassageToken[] | null>(null);
   const key = samples?.join(' ') ?? '';
 
@@ -235,6 +258,6 @@ export function useTextReadability(samples: string[] | null): Readability | null
   }, [key, language]);
 
   if (!tokens || !index || level === null || !order.includes(level)) return null;
-  const result = calculateReadability(tokens, index, level, order, ungradeable, altKey);
+  const result = calculateReadability(tokens, index, level, order, ungradeable, altKey, lemmaKey);
   return result.tokens >= MIN_TOKENS ? result : null;
 }
