@@ -161,6 +161,27 @@ const log = m => {
   appendFileSync(path.join(OUTDIR, 'sweep.log'), s + '\n');
 };
 
+/**
+ * A DUMP UNDER /tmp HAS A THREE-DAY SHELF LIFE, AND macOS TOOK ONE.
+ *
+ * These runs cost hours of rationed free-tier quota and are the ONLY way to re-measure an old
+ * sample against a new band table — which is how every before/after figure in CLAUDE.md was
+ * produced. 28 Groq A1 passages and three Groq levels were written to /tmp, and macOS's
+ * periodic cleaner deleted every `level-*.json` at 00:00 on the third day. The numbers
+ * survived only because `readability.txt` happened to be written later than the dumps; the
+ * passages did not, so that baseline can never be re-scored against a future table again.
+ *
+ * Warned rather than refused: /tmp is the right place for a throwaway run, and this script
+ * cannot know which kind this is. It says so BEFORE the run, which is the only moment the
+ * choice is still free.
+ */
+if (/^\/(?:tmp|private\/tmp|var\/folders)\//.test(path.resolve(OUTDIR))) {
+  log(`WARNING: ${OUTDIR} is under /tmp, which macOS empties after ~3 days.`);
+  log('         These passages cost provider quota and are the only way to re-measure this');
+  log('         sample against a later band table. A 28-passage baseline was lost this way.');
+  log('         Write somewhere durable instead:  measurements/<name>   (gitignored)');
+}
+
 if (!SWEEP_KEY) {
   log('NOTE: SRSLY_SWEEP_KEY is not set, so this run uses the OPERATOR key and will stop at the');
   log('      guest limit (3 passages, total). Export your own key first — it is never metered:');

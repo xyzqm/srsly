@@ -47,3 +47,6 @@ next-env.d.ts
 scripts/reports/
 .next-verify
 .next-agent
+
+# Readability sweep dumps — provider quota to produce, hundreds of kB each, never committed
+measurements/
