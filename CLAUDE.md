@@ -1129,6 +1129,25 @@ reached from the other direction. `min` rather than "the lemma wins", because Wi
 `casa` as a form of `casar` and deferring would push core vocabulary the wrong way. Both controls
 are in `tests/readability.test.ts`.
 
+**FRENCH HAS IT TOO, AND IT IS WORTH MORE — MEASURED BEFORE IT WAS BUILT.** French is
+structurally worse than Spanish here: **107 of its 677 A1 words carry an inflection banded above
+A1, 150 in total**, against Spanish's 64 and 83, and `est` — the commonest verb form in the
+language — sits at A2 while `être` is A1. But a structural count is an upper bound on a question
+nobody asked; in Spanish 83 structural forms became 18 actual tokens in 1879, and wiring French in
+costs a 266 kB gzipped chunk. There is no French sweep and one costs provider quota and an
+evening, **so it was measured on the French prose this repository already contains** — three
+starter texts plus the Learn tab's 84 practice sentences, through the REAL segmenter, no key and
+no network (`scripts/measure-fr-lemma.ts`, kept so the number can be re-derived). Over 526
+measured tokens: **8.2% → 5.9% above A1, so the cap is worth 2.3 points**, more than double what
+it bought Spanish. `parti` stops being among a beginner text's hardest words; at A2 so do
+`oublie`, `écoute` and `couche`.
+
+`FORM_TABLES` in `hooks/useReadability.ts` keys the loader by language, so a third language is a
+third row rather than a second `language === ` arm — this file's own rule about a difference
+between languages belonging on a table. Verified end to end in a browser: French A1, real text
+through `/api/segment-text` (no model call), and `fr-forms_ts.js` fetched as its own chunk only
+once a French figure renders, so first-load JS is unchanged.
+
 **Words the ranking cannot see were pinned, not worked around.** `au`, `aux`, `des`, `ma`, `ces`
 and `parce` were in NO band — contractions and possessives are excluded from band eligibility by
 construction — so they scored as above-level and turned up among a text's "hardest words". They
@@ -1598,13 +1617,35 @@ section already makes — an external A1 reference list scored our A1 at 49% bef
 existed — and 37 words measured as actually turning up is a different kind of evidence from taste.
 Recorded as an exception rather than folded in as normal.
 
-**AND THE SPREAD FLIPPED, WHICH IS WHERE THE NEXT LOOK BELONGS.** Above-level mass was A2 42.5% /
-B1 29.9% before; it is now **A2 18.6% / B1 42.4%**. So A2 is largely answered and B1 is the
-largest share — but **25 of those 100 B1 tokens are `maría`**, one unfixed band defect now worth
-1.3 points on its own and 10.6% of everything above level. No pin can reach it: it is a real
-Spanish common noun (magpie, Marie biscuit) that the index knows, so the fix is neither a pin nor
-the lemma cap. That is the single biggest remaining item, and it is a naming problem rather than a
-vocabulary one.
+**AND THE SPREAD FLIPPED, WHICH IS WHERE THE NEXT LOOK BELONGED.** Above-level mass was A2 42.5% /
+B1 29.9% before; it became **A2 18.6% / B1 42.4%**. So A2 was largely answered and B1 was the
+largest share — and **25 of those 100 B1 tokens were `maría`**, worth 1.3 points on its own.
+
+**THAT TURNED OUT TO BE A BAND EARNED BY A PERSON, AND `nameCollision` IS THE ANSWER.**
+`collidesWithLemma()` already drops a surface that borrowed an INFLECTION's frequency — `haya`
+ranked on haber's subjunctive and taught as "beech tree", `alta` as "certificate of discharge".
+This is the identical failure with a PROPER NOUN borrowing instead, and nothing caught it: Spanish
+counts raw lowercased surfaces, so every "María" in the news is credited to a common noun spelled
+the same. The result is a band nobody can defend beside a gloss nobody asked for — `maría` B1
+"magpie; Marie biscuit", `jesús` B1 "bless you (after a sneeze)", `carmen` B1 "a type of house in
+Granada".
+
+**A LIST, NOT A RULE**, for the reason `demote` is: "also a person's name" is not the test and
+would delete real vocabulary, since `sol`, `rosa`, `pilar`, `soledad` and `consuelo` are all names
+AND words a learner wants. The test is whether the FREQUENCY is the person's while the GLOSS is a
+leftover sense, and nothing in the data measures that — the corpus never recorded which María it
+counted.
+
+**AND DROPPING THEM FROM THE BANDS WAS HALF THE FIX, WHICH THE MEASUREMENT CAUGHT.** An unbanded
+surface that still has a dictionary entry reads as "in no band at all", and `calculateReadability`
+counts that as above level exactly like a C2 word. Re-measured: `maría` moved from `B1×5` to `—×5`
+and the figure did not shift by a thousandth. So the metric excludes them too, through
+`ungradeable`, the way Japanese particles already are — one fact in one file, `nameCollision` in
+`core-overrides.json` driving both and emitted to `lib/data/es-notvocab.ts` so they cannot drift.
+Bands only: the words stay in `esdict.json` and tapping one still answers "magpie". Measured on
+six fresh A1 passages, **12.2% → 11.1%** — and the "names removed" diagnostic, which existed to
+BOUND this error, now reads 11.1% as well. **The figure converged onto its own bound**, which is
+what it looks like when an error is gone rather than relabelled.
 
 **THE INFLECTION DEFECT IS REAL, OBVIOUSLY WRONG, AND WORTH 1.0 POINT.** Measured rather than
 assumed: 18 of the 1879 tokens — 5.1% of everything above level. `manzanas` is banded B2 and
