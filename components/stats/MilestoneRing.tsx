@@ -80,6 +80,16 @@ export default function MilestoneRing({ deck, language }: Props) {
   // The paler arc: in the deck but not yet held. Drawn beyond the solid arc so the two read
   // as one bar bent into a circle rather than as competing values.
   const startedPct = row.total > 0 ? Math.min(1 - pct, row.started / row.total) : 0;
+  /**
+   * THE BARE TRACK IS A THIRD VALUE, AND NOTHING SAID SO.
+   *
+   * The ring draws three things — retained, in-deck-but-not-yet-held, and whatever is left —
+   * and the caption named only the middle one. So a learner holding 709 of a 760-word band saw
+   * the arc stop 6.7% short and reported the circle as failing to close: real information,
+   * rendered, and accounted for nowhere in the text beside it. A gap a reader has to guess at
+   * is indistinguishable from a rendering fault, which is exactly how it was reported.
+   */
+  const notInDeck = Math.max(0, row.total - row.retained - row.started);
 
   return (
     <div className="mt-8 rounded-[11px] px-6 py-6 flex items-center gap-7 flex-wrap"
@@ -136,9 +146,15 @@ export default function MilestoneRing({ deck, language }: Props) {
         <p style={{ color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.55, maxWidth: '44ch', margin: 0 }}>
           {done
             ? `Every word at this level will hold for ${RETAINED_DAYS} days or more. Move up in Settings.`
-            : row.started > 0
-              ? <>{row.started.toLocaleString()} more {row.started === 1 ? 'is' : 'are'} in your deck but not yet held for {RETAINED_DAYS} days — keep reviewing and they cross over.</>
-              : <>Retained means the scheduler will hold it for {RETAINED_DAYS} days or more. Adding words does not move this; reviewing them does.</>}
+            : <>
+                {row.started > 0
+                  ? <>{row.started.toLocaleString()} more {row.started === 1 ? 'is' : 'are'} in your deck but not yet held for {RETAINED_DAYS} days — keep reviewing and they cross over.</>
+                  : <>Retained means the scheduler will hold it for {RETAINED_DAYS} days or more. Adding words does not move this; reviewing them does.</>}
+                {/* Appended to BOTH branches rather than made a third one: a learner can have
+                    every deck word retained and still not hold the whole band, and that state
+                    falls through to the explanation branch with the widest gap of all. */}
+                {notInDeck > 0 && <> {notInDeck.toLocaleString()} {notInDeck === 1 ? 'is' : 'are'} not in your deck yet.</>}
+              </>}
         </p>
       </div>
     </div>
