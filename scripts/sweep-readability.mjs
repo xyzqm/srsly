@@ -468,6 +468,32 @@ try {
      * in a row, and a provider merely slow all evening shows up as wall-clock time. One
      * counter cannot answer both, and the run has to end either way.
      */
+    /**
+     * SAVE AFTER EVERY PASSAGE, BECAUSE THE RUN THAT MATTERS IS THE ONE THAT DID NOT FINISH.
+     *
+     * The dump used to be written once, after the loop. So any exit that was not the loop
+     * ending normally — Ctrl-C, a crash, closing the laptop — threw away every passage already
+     * generated, while they sat intact in the browser's own localStorage. Measured cost: a
+     * Gemini run reached EIGHT passages, was interrupted during a rate-limit wait, and left a
+     * log proving they existed beside no file at all. On a free tier those eight are most of an
+     * hour of quota, and they are not reproducible on demand.
+     *
+     * One CDP read and one file write per passage, against passages that take 8-30 seconds
+     * each, so the cost is nothing. The file is rewritten whole rather than appended because
+     * the page hands back the entire day's cache, which is already the shape on disk.
+     */
+    const saveDump = async () => {
+      const raw = await ev(ws, `(() => { ${STEP(level)}
+        const k = dailyKey();
+        return k ? localStorage.getItem(k) : '';
+      })()`);
+      if (!raw || raw.startsWith(EV_THREW)) return { count: 0, raw: raw || '' };
+      let count = 0;
+      try { count = (JSON.parse(raw)?.passages ?? []).length; } catch { count = 0; }
+      if (count > 0) writeFileSync(out, raw);
+      return { count, raw };
+    };
+
     let waitsInARow = 0;
     let waitedMs = 0;
     for (let n = 0; n < PER; n++) {
@@ -569,6 +595,7 @@ try {
         break;
       }
       waitsInARow = 0;   // it worked, so the quota is not gone — see the note above.
+      await saveDump();  // crash-safe from here on — see the note above the budget.
       await sleep(800);
     }
 
@@ -586,15 +613,8 @@ try {
      * short result, it is a failed level, and it must say so — every level that follows is
      * decided by this line.
      */
-    const dump = await ev(ws, `(() => { ${STEP(level)}
-      const k = dailyKey();
-      return k ? localStorage.getItem(k) : '';
-    })()`);
-    let dumped = 0;
-    if (dump && !dump.startsWith(EV_THREW)) {
-      try { dumped = (JSON.parse(dump)?.passages ?? []).length; } catch { dumped = 0; }
-    }
-    if (dumped > 0) { writeFileSync(out, dump); log(`level ${level}: wrote ${dumped} passages to ${out}`); }
+    const { count: dumped, raw: dump } = await saveDump();
+    if (dumped > 0) log(`level ${level}: wrote ${dumped} passages to ${out}`);
     else log(`level ${level}: NOTHING CACHED — no passage was generated`
       + (dump.startsWith(EV_THREW) ? ` (${dump.slice(EV_THREW.length)})` : ''));
   }
