@@ -10,6 +10,7 @@ import {
 import { JA_GRAMMAR_WORDS } from '@/lib/japaneseGrammar';
 import { ES_NOT_VOCAB } from '@/lib/data/es-notvocab';
 import { loadEsForms, cachedEsForms } from '@/lib/spanishForms';
+import { loadFrForms, cachedFrForms } from '@/lib/frenchForms';
 import { lookupEs, esdictReady } from '@/lib/data/esdict';
 import type { PassageToken } from '@/lib/types';
 
@@ -75,16 +76,27 @@ function useLevelIndex(): Map<string, number> | null {
  * is itself a common headword, so `una`, `son`, `hay` and `sus` reach the metric unbanded —
  * see lib/spanishForms.ts, which carries the measurement and the argument.
  */
+const FORM_TABLES: Partial<Record<string, {
+  load: () => Promise<Record<string, string> | null>;
+  cached: () => Record<string, string> | null;
+}>> = {
+  es: { load: loadEsForms, cached: cachedEsForms },
+  // French measured at 2.3 points against Spanish's 1.0 — see lib/frenchForms.ts. A THIRD entry
+  // here rather than a second copy of the hook, which is this project's own rule about a
+  // difference between languages belonging in a table and not in a ternary.
+  fr: { load: loadFrForms, cached: cachedFrForms },
+};
+
 function useEsForms(): Record<string, string> | null {
   const language = useLanguage();
-  const [forms, setForms] = useState<Record<string, string> | null>(
-    () => (language === 'es' ? cachedEsForms() : null),
-  );
+  const table = FORM_TABLES[language];
+  const [forms, setForms] = useState<Record<string, string> | null>(() => table?.cached() ?? null);
   useEffect(() => {
-    if (language !== 'es') { setForms(null); return; }
+    const t = FORM_TABLES[language];
+    if (!t) { setForms(null); return; }
     let live = true;
-    setForms(cachedEsForms());
-    void loadEsForms().then(f => { if (live) setForms(f); });
+    setForms(t.cached());
+    void t.load().then(f => { if (live) setForms(f); });
     return () => { live = false; };
   }, [language]);
   return forms;
@@ -172,7 +184,7 @@ function useLemmaKey(
 ): ((t: PassageToken) => string | undefined) | undefined {
   const language = useLanguage();
   return useMemo(() => {
-    if (language === 'es' && esForms) {
+    if (FORM_TABLES[language] && esForms) {
       return (t: PassageToken) => esForms[(t.baseForm ?? t.text).trim().toLowerCase()];
     }
     return undefined;
