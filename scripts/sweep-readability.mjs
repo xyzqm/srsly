@@ -512,9 +512,27 @@ try {
         });
         if (b.disabled) return JSON.stringify({ step: 'disabled', title: b.title || '' });
         b.click();
-        for (let i = 0; i < 90; i++) { await new Promise(r => setTimeout(r, 1000));
-          if (!/GENERATING|WRITING/i.test(document.body.innerText)) break; }
+        /* STILL WORKING IS NOT THE SAME AS FAILED, AND IT REPORTED THE SECOND.
+           The wait was 90s. A first request against a cold dev server compiles the route and
+           loads the dictionaries and segmenters on the way through, and a slower model adds to
+           that -- measured at over 91 seconds for passage 1 of a run, at which point the sweep
+           gave up, found no new passage, scraped the DOM for a reason, found none because
+           nothing had gone wrong, and reported an EMPTY why. An empty reason reads as a silent
+           failure; it was a stopwatch. So the budget is generous enough for a cold start, and
+           running out of it is reported AS ITSELF rather than as an absent error.
+           (maxDuration = 60 on the route is a Vercel limit and next dev does not enforce it,
+           which is why a local request can outlive what production would allow.)
+           (No backticks in here: this string is itself a template literal.) */
+        let stillGenerating = false;
+        for (let i = 0; i < 240; i++) { await new Promise(r => setTimeout(r, 1000));
+          stillGenerating = /GENERATING|WRITING/i.test(document.body.innerText);
+          if (!stillGenerating) break; }
         const after = cache()?.passages?.length ?? 0;
+        if (after === before && stillGenerating) return JSON.stringify({
+          step: 'still-generating',
+          why: 'the app was STILL writing after 240s — not an error, just slower than the wait. '
+             + 'A cold dev server compiles the route on the first request; a slow model adds to it.',
+        });
         if (after === before) {
           /* THE REASON IS ON SCREEN, AND THIS USED TO DUMP THE MENU INSTEAD.
              It reported the first 300 characters of body text, which on this tab is the
