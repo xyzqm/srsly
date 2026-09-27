@@ -94,11 +94,21 @@ export default function MilestoneRing({ deck, language }: Props) {
                     strokeDasharray={`${circ * startedPct} ${circ}`}
                     strokeDashoffset={-circ * pct} />
           )}
-          <circle cx={SIZE/2} cy={SIZE/2} r={r} fill="none"
-                  stroke={done ? 'var(--jade, #4a9d6e)' : 'var(--accent)'} strokeWidth={STROKE}
-                  strokeLinecap="round"
-                  strokeDasharray={`${circ * pct} ${circ}`}
-                  style={{ transition: 'stroke-dasharray .5s ease' }} />
+          {/* A ZERO-LENGTH DASH WITH A ROUND CAP IS NOT NOTHING — IT IS A DOT.
+              At 0% this drew `stroke-dasharray="0 380"`, and SVG renders the round cap of a
+              zero-length dash as a full circle of the stroke's own width. So a learner with
+              nothing retained got a bead of accent colour sitting at twelve o'clock, next to
+              a figure reading 0% — progress drawn for progress that does not exist, and it
+              read as the ring failing to close rather than as a value. The linecap is right
+              everywhere else and must stay, so the arc is simply not rendered when it has no
+              length, the same guard the paler arc above already uses. */}
+          {pct > 0 && (
+            <circle cx={SIZE/2} cy={SIZE/2} r={r} fill="none"
+                    stroke={done ? 'var(--jade, #4a9d6e)' : 'var(--accent)'} strokeWidth={STROKE}
+                    strokeLinecap="round"
+                    strokeDasharray={`${circ * pct} ${circ}`}
+                    style={{ transition: 'stroke-dasharray .5s ease' }} />
+          )}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 27, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1 }}>
