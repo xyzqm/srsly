@@ -6,6 +6,7 @@ import { tokensToText } from '../lib/tokenText';
 import BANDS from '@data/cefr-levels.json';
 import ES_FORMS from '@data/es-forms.json';
 import ESDICT from '@dict/esdict.json';
+import ES_NOT_VOCAB from '@data/es-notvocab.json';
 
 /**
  * What share of a generated passage sits ABOVE the level it was written for.
@@ -74,7 +75,10 @@ const BAND_NAMES = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 const forms = ES_FORMS as Record<string, string>;
 const dict = ESDICT as Record<string, { m?: string } | undefined>;
 const index = buildLevelIndex(BANDS as unknown as LevelBands, ORDER);
-const ungradeable = (form: string) => !dict[form]?.m && !forms[form];
+/* Rebuilt exactly as `hooks/useReadability.ts` builds it, including the name-collision
+   exclusion — diverging here would report a number the app never shows. */
+const notVocab = new Set(ES_NOT_VOCAB as unknown as string[]);
+const ungradeable = (form: string) => notVocab.has(form) || (!dict[form]?.m && !forms[form]);
 const lemmaKey = (t: PassageToken) => forms[(t.baseForm ?? t.text).trim().toLowerCase()];
 
 /** The generator's own names side-channel. See the diagnostic note above. */

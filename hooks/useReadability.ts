@@ -8,6 +8,7 @@ import {
   buildLevelIndex, calculateReadability, MIN_TOKENS, type LevelBands, type Readability,
 } from '@/lib/readability';
 import { JA_GRAMMAR_WORDS } from '@/lib/japaneseGrammar';
+import { ES_NOT_VOCAB } from '@/lib/data/es-notvocab';
 import { loadEsForms, cachedEsForms } from '@/lib/spanishForms';
 import { lookupEs, esdictReady } from '@/lib/data/esdict';
 import type { PassageToken } from '@/lib/types';
@@ -119,7 +120,18 @@ function useUngradeable(
   return useMemo(() => {
     if (language === 'ja') return (form: string) => JA_GRAMMAR_WORDS.has(form);
     if (language === 'es' && esdictReady()) {
-      return (form: string) => !lookupEs(form).meaning && !esForms?.[form];
+      /**
+       * AND A SURFACE WHOSE FREQUENCY BELONGS TO A PERSON. `nameFilter.mjs` strips proper
+       * nouns at build time so a novel's characters resolve to nothing and are excluded —
+       * but `maría`, `jesús` and `carmen` survive it, because each carries one real common
+       * sense (magpie; bless you; a type of house in Granada) alongside the name. Their BAND
+       * came from the person, and they were dropped from it for that reason; dropping them
+       * is only half, because an unbanded surface with a dictionary entry reads as "in no
+       * band at all" and is counted above level just the same. Measured: `maría` went from
+       * `B1×5` to `—×5` and the figure did not move. Same list, from the same file.
+       */
+      const notVocab = new Set(ES_NOT_VOCAB);
+      return (form: string) => notVocab.has(form) || (!lookupEs(form).meaning && !esForms?.[form]);
     }
     return undefined;
   }, [language, esForms]);

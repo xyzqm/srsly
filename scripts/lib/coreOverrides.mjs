@@ -96,6 +96,9 @@ export function coreOverridesFor(lang) {
 /** @returns {string[]} headwords for `lang` that may not sit above DEMOTE_FLOOR */
 export function demotionsFor(lang) { return read('demote', lang); }
 
+/** Words whose BAND was earned by a person, not by the word. See `applyNameCollisions`. */
+export function nameCollisionsFor(lang) { return read('nameCollision', lang); }
+
 /**
  * Push hand-listed words down to DEMOTE_FLOOR.
  *
@@ -139,6 +142,62 @@ export function applyDemotions(lang, levels, inDict) {
     moved.push({ word: w, from });
   }
   return { levels: out, moved, missing };
+}
+
+/**
+ * DROP A WORD WHOSE BAND WAS EARNED BY A PERSON RATHER THAN BY THE WORD.
+ *
+ * `collidesWithLemma()` in `build-esdict.mjs` already handles the case where a surface borrows
+ * an INFLECTION's frequency — `haya` ranked on haber's subjunctive and taught as "beech tree",
+ * `alta` as "certificate of discharge", `partes` as "genitalia". This is the identical failure
+ * with a PROPER NOUN doing the borrowing, and nothing caught it: Spanish counts raw lowercased
+ * surfaces, so every "María" in the news and every "Jesús" in a subtitle is credited to a
+ * common noun that happens to be spelled the same.
+ *
+ * The result is a band nobody can defend beside a gloss nobody asked for: `maría` at B1 meaning
+ * "magpie; Marie biscuit", `jesús` at B1 meaning "bless you (said after a sneeze)", `carmen` at
+ * B1 meaning "a type of house in Granada". Measured in a sweep of 28 generated A1 passages,
+ * `maría` alone was 25 above-level tokens — 7.1% of everything above level and 1.3 points of
+ * the figure — purely because the generator names its characters.
+ *
+ * ── WHY THIS IS A LIST AND NOT A RULE ──
+ * "Also a person's name" is not the test and would delete real vocabulary: `sol`, `rosa`,
+ * `pilar`, `soledad` and `consuelo` are all names AND words a learner wants, and they stay.
+ * The test is whether the FREQUENCY is explained by the person while the GLOSS is some rare
+ * leftover sense — and nothing in the data measures that, because the corpus never recorded
+ * which "maría" it was counting. So it is an editorial list, stated as one, exactly as
+ * `demote` is for the same reason one level up.
+ *
+ * ── BANDS ONLY, NEVER THE DICTIONARY ──
+ * The same rule the register filters follow: the word stays in `esdict.json`, so tapping
+ * `maría` in a passage still answers "magpie". It simply stops being offered as vocabulary to
+ * study and stops being graded as though a reader had to know it.
+ */
+export function applyNameCollisions(lang, levels) {
+  const words = nameCollisionsFor(lang);
+  if (!words.length) return { levels, dropped: [], absent: [] };
+
+  const out = {};
+  for (const [b, ws] of Object.entries(levels)) out[b] = [...ws];
+  const bandOf = new Map();
+  for (const [b, ws] of Object.entries(out)) for (const w of ws) bandOf.set(w, Number(b));
+
+  const dropped = [], absent = [];
+  for (const w of words) {
+    const from = bandOf.get(w);
+    if (from === undefined) { absent.push(w); continue; }
+    out[from] = out[from].filter(x => x !== w);
+    dropped.push({ word: w, from });
+  }
+  return { levels: out, dropped, absent };
+}
+
+/** Summarise a name-collision pass on stdout. */
+export function reportNameCollisions(result) {
+  const { dropped, absent } = result;
+  console.log(`  name collisions: ${dropped.length} word(s) dropped from the bands entirely`);
+  if (dropped.length) console.log('    ' + dropped.map(d => `${d.word} (was ${CODE[d.from]})`).join('  '));
+  if (absent.length) console.log(`    already unbanded, nothing to do: ${absent.join(' ')}`);
 }
 
 /**

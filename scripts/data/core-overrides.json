@@ -1372,6 +1372,14 @@
       "san"
     ]
   },
+  "nameCollision": {
+    "_why": "Banded on a PERSON’s frequency, glossed as a rare homonym. Dropped from the bands entirely (never from the dictionary). See applyNameCollisions in scripts/lib/coreOverrides.mjs. NOT a list of words that are also names — sol, rosa, pilar, soledad and consuelo are names too and are real vocabulary.",
+    "es": [
+      "maría",
+      "jesús",
+      "carmen"
+    ]
+  },
   "leadSense": {
     "_why": "Which of a word's OWN senses should lead, for the few where Wiktionary's order misleads. This invents nothing: the value must match a sense the dictionary already lists, and the only effect is to move it to the front. Needed because Wiktionary glosses an abbreviation's expansion as an ordinary word — `no` carries both 'abbreviation of noroeste' AND 'northwest', so demoting metalinguistic TEXT still left the learner told that `no` means northwest. Confined to high-frequency function words, where the wrong lead is met constantly and is also the answer shown in flashcards, popups and level tests. Only reordering is possible here: `a` is left alone because the extract has no preposition sense for it at all, and inventing one would break the rule that a definition comes from the dictionary or not at all.",
     "es": {
