@@ -1583,6 +1583,15 @@ and it will show less. The same flaw applies to the six pins above (19.9% → 18
 noted there. The full arc on the same 28 passages is **19.9% → 18.7% → 17.8% → 12.6%**, and only
 the middle step — the lemma cap — is free of it, being a rule rather than a word list.
 
+**AND THE FRESH SWEEP SAYS IT HELD: 12.3% AGAINST 12.3%.** Six new Groq A1 passages, same
+provider and same table as the baseline, so the only thing that changed is which passages —
+per-passage **12.3% ± 5.1% (n=6)** against **12.3% ± 4.7% (n=28)**, identical to the decimal.
+The prediction above was 13–16%, and it was wrong in the good direction. **State the limit
+rather than the headline**: n=6 can only rule out an overfit larger than ~6.5 points, so this
+is a point estimate showing no degradation, NOT a proof there is none. A forwarded summary of
+this run called the pins "proven to generalize perfectly", which is three claims too many for
+six passages. What can be said is that the cheapest test of the worry found nothing.
+
 **IT ALSO BREAKS THE BAND-SIZE DRIFT PRECEDENT, DELIBERATELY.** A1 went 723 → 760, which is +5.1%
 against the "~20 words in 12,000" this section allows. The justification is the one the `beginner`
 section already makes — an external A1 reference list scored our A1 at 49% before those sets
@@ -1905,7 +1914,10 @@ LocalStorage keys:
 - `srsly-activity-log` — per-day count of cards graded; the review heatmap's record. **Synced**, merged per-day MAX
 - `srsly-lessons-done` — finished lesson ids. **Synced**, last-writer-wins (the tick toggles)
 - `srsly-writing-{lang}` — handwriting FSRS, keyed by CHARACTER. **Synced**, merged by whole-card ownership
-- `srsly-daily-{lang}-{level}-{YYYY-MM-DD}` — cached daily content
+- `srsly-daily-v2-{lang}-{level}-{YYYY-MM-DD}` — cached daily content. **The `v2` is real**
+  and this line omitted it until a session seeded a passage by hand, got the empty state, and
+  had to read `dailyKey()` in `lib/storage/local.ts` to find out why. The date is the LOCAL
+  calendar day (`todayStr`), which is not today's UTC date for most of the evening
 
 ### Theming
 
@@ -2205,6 +2217,20 @@ Anything gated on `clozeWordCount > 0` is gated on "this passage has blanks", wh
 same distinction expressed in the one place the renderer can see it. That is why the Hints
 toggle and the finish row disappear on your own reading rather than being separately
 suppressed.
+
+**EXCEPT THAT THE FINISH ROW HELD "+ New passage" TOO, AND A BLANK-LESS GENERATION IS A DEAD
+END.** `clozeWordCount > 0` stands in for "this is generated", and the proxy has one hole:
+blanks are a passage's target words INTERSECTED WITH WHAT IS STILL DUE, so by the sixth passage
+of a session a generated passage can have none. The whole row then vanished — no Finish, and no
+"+ New passage" — while `newPassageDisabled` still required `!alreadyFinished`, i.e. pressing a
+button that was no longer on screen. The reader is left on a passage with nothing to do and no
+way to ask for another short of a reload. An empty value meaning "nothing to fill" rendered as
+"nothing to do here": the mistake this file names four times over, in the control that exists to
+escape it. Measured — Groq wrote one in six fresh A1 passages and the sweep died on it, logging
+`{"blanks":0,"unlocked":false}` and then `{"step":"no-button"}`. Each gate now asks its own
+question: the row is `variant === 'srs'`, Finish is `clozeWordCount > 0`. `allPassagesComplete`
+already returned true for a blank-less passage (`needed === 0`), so nothing downstream changed.
+Verified in a browser on the real passage from that sweep, with the control.
 
 **CRAM WAS REMOVED.** It drilled a chosen set while deliberately changing nothing — no
 scheduling, no counts, no streak — which made it the one thing in the SRS tab that was not
