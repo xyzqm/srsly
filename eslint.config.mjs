@@ -32,6 +32,14 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "coverage/**",
+      // THE READABILITY SWEEP'S OUTPUT, AND IT IS HERE BECAUSE /tmp ATE THE LAST BASELINE.
+      // Moving those runs into the repo fixed the three-day shelf life and immediately
+      // reintroduced the defect the note above describes: a sweep spawns Chrome with its own
+      // profile directory, which Google fills with a minified WASM TTS engine, and lint went
+      // from clean to 796 problems across six vendor files nobody wrote. Gitignoring it does
+      // nothing — ESLint 9 flat config does not read .gitignore, which is the whole reason
+      // this list exists. A glob, for the reason stated above.
+      "measurements/**",
       "next-env.d.ts",
     ],
   },

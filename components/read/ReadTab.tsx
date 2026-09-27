@@ -1612,10 +1612,21 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             </>
           ) : null}
 
-          {/* The finish row belongs to BLANKS, so it appears only where there are any.
-              Own reading grades nothing, so "Finish & see vocabulary results" reported on an
-              empty set and the vocabulary results screen behind it had nothing to show. */}
-          {clozeWordCount > 0 && (
+          {/* THE ROW BELONGS TO GENERATED READING; THE *FINISH BUTTON* BELONGS TO BLANKS.
+             Those were one gate, `clozeWordCount > 0`, used as a proxy for "this is a
+             generated passage" — true of own reading, which grades nothing and where
+             "Finish & see vocabulary results" reported on an empty set. The proxy has one
+             hole and a sweep fell straight into it: a GENERATED passage can come back with
+             zero blanks, and then the whole row vanished, taking "+ New passage" with it.
+             No Finish button to press, and `newPassageDisabled` required having pressed it,
+             so the reader was stuck on a passage with nothing to do and no way to ask for
+             another short of a reload. An empty value meaning "nothing to fill" rendered as
+             "nothing to do here" — the mistake this codebase names four times over.
+             Measured: Groq wrote one in six fresh A1 passages, and the run died on it.
+             So the row asks the real question (`variant === 'srs'`) and Finish asks its own
+             (`clozeWordCount > 0`). `allPassagesComplete` already returns true for a
+             blank-less passage (`needed === 0`), so nothing downstream had to change. */}
+          {variant === 'srs' && (
           <div className="flex gap-2.5 justify-center flex-wrap mt-8 pt-6" style={{ borderTop: '1px solid var(--line-soft)' }}>
             {(() => {
               const clozeIncomplete = clozeWordCount > 0 && clozeAnswered < clozeWordCount;
@@ -1634,9 +1645,12 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               // AND the current passage has been explicitly finished via the Finish button.
               // It also requires due words: a passage is always built around due vocab now,
               // never a generic vocab-less one.
-              const newPassageDisabled = !alreadyFinished || clozeIncomplete || loadingMore || !allPassagesComplete || dueDeckWords.size === 0;
+              // `!alreadyFinished` applies only where there was something to finish — see
+              // the note above the row.
+              const newPassageDisabled = (clozeWordCount > 0 && !alreadyFinished) || clozeIncomplete || loadingMore || !allPassagesComplete || dueDeckWords.size === 0;
               return (
                 <>
+                  {clozeWordCount > 0 && (
                   <button
                     onClick={toggleResults}
                     disabled={isDisabled}
@@ -1651,6 +1665,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   >
                     {label}
                   </button>
+                  )}
                   <button
                     onClick={() => generateMore()}
                     disabled={newPassageDisabled}
