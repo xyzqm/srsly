@@ -1547,7 +1547,33 @@ and the currency, every one of them the "nobody writes fork in an encyclopedia" 
 section exists for, and `pantalón` was ALREADY pinned while its everyday plural sat at B1.
 Measured on the same 28 passages with nothing else changed: **19.9% → 18.7% above level.**
 
-**AND THE PROVIDER COMPARISON IS NOT AFFORDABLE ON A FREE TIER, WHICH IS THE ACTUAL FINDING.**
+**⚠ AND THE 11.1% FIGURE WAS n=6 AND TOO LOW — IT IS ~13.1%.** A 25-passage Groq run on the same
+table reads **13.5% pooled / 13.1% ± 6.8% per passage**, against the 11.1% ± 6.2 that six
+passages had suggested the day before. Nothing changed but the sample. The two are consistent
+(the n=6 mean sits well inside its own spread) and the larger one is simply the better estimate,
+so **the honest arc is 19.9% → ~13%, not → 11.1%**. Recorded prominently because the smaller
+number was reported as a headline the day before, and a figure that improves when you measure it
+harder is the one to distrust. Combined across both runs Groq is **n=31, 12.7% ± 6.6**.
+
+**AND THE PROVIDER COMPARISON IS CLOSED: THE GAP IS SMALLER THAN THE COST OF MEASURING IT.**
+With Groq at n=31 and Gemini at n=7 the gap is **2.4 points** (15.1% against 12.7%), **t = 1.38**,
+against a design that resolves 4.9. Note the gap SHRANK as the samples grew — it was 4.0 points
+at n=7 against n=6 — which is what a difference near zero looks like from underneath.
+
+Resolving a 2.4-point gap at these variances needs **~79 passages per provider**. Gemini's
+delivery over five consecutive attempts was: 0 (503 ×6), 0 (interrupted), 0 (quota spent), 7, 0
+(503 ×7) — **one attempt in five produced anything at all**, at 7 passages. That is ~12 successful
+days, which at a 20% success rate is **~56 days of attempts** to answer a question worth 2.4
+points, on a feature where the learner picks the provider anyway. **Stop.** The honest answer is
+that the two providers are indistinguishable at any sample this project can afford, and the
+remaining above-level share is not a provider problem.
+
+*(Gemini's unreliability is itself the more useful finding, and it is not congestion: four
+separate days, two different models — `3.8-flash` and `3.7-flash` — failing on the FIRST request
+and then six consecutive retries. A pattern that never once succeeds intermittently does not look
+like load.)*
+
+**THE EARLIER ROUNDS, KEPT BECAUSE THE REASONING CHANGED RATHER THAN THE ANSWER.**
 Third attempt, best conditions yet — same band table, both providers, one day apart:
 **Gemini `3.7-flash` 15.1% ± 3.3 (n=7)** against **Groq `gpt-oss-120b` 11.1% ± 6.2 (n=6)**. A
 4.0-point gap at **t = 1.42**, against a design that cannot resolve anything under **8.1 points**.
