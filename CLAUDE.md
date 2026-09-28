@@ -1547,7 +1547,35 @@ and the currency, every one of them the "nobody writes fork in an encyclopedia" 
 section exists for, and `pantalón` was ALREADY pinned while its everyday plural sat at B1.
 Measured on the same 28 passages with nothing else changed: **19.9% → 18.7% above level.**
 
-**AND THEN BOTH PROVIDERS WERE MEASURED ON THAT SAME TABLE, WHICH IS NOT A RESULT EITHER.**
+**AND THE PROVIDER COMPARISON IS NOT AFFORDABLE ON A FREE TIER, WHICH IS THE ACTUAL FINDING.**
+Third attempt, best conditions yet — same band table, both providers, one day apart:
+**Gemini `3.7-flash` 15.1% ± 3.3 (n=7)** against **Groq `gpt-oss-120b` 11.1% ± 6.2 (n=6)**. A
+4.0-point gap at **t = 1.42**, against a design that cannot resolve anything under **8.1 points**.
+Not a result, for the third time, and the reason is structural rather than bad luck: **Gemini's
+free tier yields about seven passages before the daily quota is spent**, so n = 30 in one day is
+not purchasable at any amount of patience. Chipping at it one evening at a time will keep
+producing this same paragraph.
+
+The protocol that WOULD settle it is cheap and nobody has run it: **both providers every day for
+a week, paired by day.** That reaches n ≈ 35 each, and pairing on the day cancels the topic
+confound outright rather than apologising for it — `lib/passageTheme.ts` seeds on the date, and
+this run shows exactly why that matters: **7 of Gemini's 78 above-level tokens are `cafetería`**,
+because the day's draw gave it two passages about cafés, with `andén`, `boleto` and `pasajero`
+arriving together from a third about a railway station. Topic, not model.
+
+*(One qualitative difference is worth re-testing under that protocol, because it is less
+topic-bound than the headline: Gemini's overflow is far more C-heavy — **C1+C2 is 20.5% of its
+above-level mass against Groq's 11.4%** — which would mean it reaches for rarer words rather than
+merely more of them. At n=7 that is a hypothesis, not a finding.)*
+
+**AND `gemini-3.7-flash` IS PRODUCTION-VIABLE, WHICH WAS IN GENUINE DOUBT.** It generated in
+12–28 seconds per passage, comfortably inside the route's `maxDuration = 60`. The 91-second first
+request that started this was a COLD `next dev` compiling the route and loading the dictionaries,
+not the model — the very next run did passage 1 in 28 seconds. Worth separating, because
+`maxDuration` is a Vercel limit that `next dev` does not enforce, so a genuinely slow model looks
+fine locally and times out for every real user.
+
+**AND AN EARLIER ROUND WAS MEASURED ON THAT SAME TABLE TOO, WHICH WAS NOT A RESULT EITHER.**
 Groq 18.7% over 28 A1 passages against Gemini 14.8% over 7, both scored against the post-pin
 table. A 3.6-point gap with a Welch **t = 1.54** (df ≈ 9.5): this design cannot resolve anything
 smaller than **6.7 points**, so it could not have detected the difference in either direction —
