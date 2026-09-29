@@ -886,6 +886,15 @@ catch. Its header records the four traps that cost an afternoon (finishing is no
 daily new-card budget, headless timer throttling, and reading blanks from the cache rather than
 guessing them). Metering applies to anonymous guests only, so point it at a signed-in session.
 
+**TWO RUNS ON ONE DAY ARE ONE SAMPLE, NOT TWO.** `passageTopic(date, language, level, offset)`
+is a pure function of the date and the passage's index within the day, and a fresh sweep wipes
+the day's cache and restarts `offset` at 0 — so running again the same afternoon regenerates the
+IDENTICAL topic sequence in the identical order. It is not extra data; it is the same questions
+asked twice, and averaging it would SHRINK the apparent spread while the topic variation that
+spread is mostly made of stayed fixed. The samples in `measurements/paired-log.tsv` are
+independent across DAYS and nowhere else, which is why that log has one row per provider per day
+and why "more data" means tomorrow rather than another run now.
+
 **A RETRY BUDGET THAT NEVER RESETS CANNOT TELL A SLOW PROVIDER FROM A SPENT ONE**, and it ended
 the run it was added to save. A free-tier rate limit is a pause rather than the end of a level —
 that much was already fixed, and so was the 503 that says the same thing in different words. What
@@ -1539,6 +1548,17 @@ so it is the identical operation, and a later full rebuild reproduces it from th
 It cannot reach `demote`, `leadSense`, `curatedGloss` or anything decided earlier, and it
 refuses a word absent from `cefr-vocab.json` rather than pinning one with no definition.
 
+**⚠ AND THAT REPRODUCES-FROM-THE-JSON CLAIM IS TRUE FOR ADDITIONS ONLY: REPIN CANNOT UN-PIN.**
+`applyCoreOverrides` moves listed words INTO level 1 and never moves an unlisted one out, so
+DELETING a word from `pin` or `beginner` and re-running leaves it sitting in the emitted A1 —
+at which point the table holds a pin the JSON does not list and a rebuild would NOT reproduce
+it, which is the whole property. Found by pinning three words, discovering their glosses were
+unusable, removing them, and watching all three stay in A1. The recovery is `git checkout HEAD
+-- lib/data/cefr-levels.json` and then repin: the committed table is the last clean derived
+state, so restoring it and re-applying the corrected JSON gives exactly what a clean run would.
+Hand-editing the emitted table is not the answer — it is generated data, and the rule against
+editing it by hand is what keeps it reproducible at all.
+
 **THE FIRST SIX WERE CHOSEN BY MEASUREMENT, NOT BY TASTE**, which is what this paragraph's own
 "keep the list short" rule needs to mean in practice. 28 generated A1 passages were scored and
 the above-level words read out: `euro` (B2) ×7, `pantalones` (B1) ×4, `tarta` (C1) ×3,
@@ -1546,6 +1566,42 @@ the above-level words read out: `euro` (B2) ×7, `pantalones` (B1) ×4, `tarta` 
 and the currency, every one of them the "nobody writes fork in an encyclopedia" failure this
 section exists for, and `pantalón` was ALREADY pinned while its everyday plural sat at B1.
 Measured on the same 28 passages with nothing else changed: **19.9% → 18.7% above level.**
+
+**AND THE NEXT ROUND WAS CHOSEN BY AN INDEPENDENT REFERENCE RATHER THAN BY TASTE, WHICH IS THE
+METHOD FINALLY CATCHING UP WITH THE RULE.** This section has said twice that these lists are
+"not a place to express taste about A1", and twice the words were picked by reading a sweep and
+deciding which ones *felt* like beginner vocabulary. The 25-passage run offered 27 candidates
+seen 2+ times — and `scripts/lib/cefrjAnchor.mjs` is already vendored, already an independent
+English CEFR list, and already trusted as a tie-breaker everywhere else in this file. So every
+candidate was put to it: **15 of 27 anchor at A1**, and those were pinned. The other twelve were
+left alone, including `recomendación` at ×10 — the single largest contributor in the whole run —
+because an independent reference calls it B2 and it is an abstract noun. Leaving the biggest
+item on the table is what "not taste" has to look like when it bites.
+
+Measured on the same 25 passages: **13.5% → 11.2%**. Overfitted for the reason stated below, so
+the honest test is the next independent day.
+
+**AND THREE OF THE DISAGREEMENTS WERE BAD GLOSSES, NOT WRONG LEVELS — WHICH IS THE BETTER FIND.**
+`maestro` anchored B2, because Wiktionary's gloss reads "master; craftsman, handyman,
+contractor" and **does not contain "teacher" at all**. `pastel` anchored at nothing, leading
+with "pastry" while "cake" sits at sense 1. `mientras` anchored B1 on "meanwhile", with "while"
+at sense 1. Feeding the corrected glosses back through the anchor puts all three at **A1**, so
+the anchor was right and the dictionary was wrong — the `assiette` case for `maestro` (a
+`curatedGloss`, since the sense is absent) and `leadSense` for the other two.
+
+**NONE OF THE THREE IS PINNED, AND THAT IS THE RULE BEING OBEYED RATHER THAN A GAP.** A pinned
+word must ship a gloss a beginner can use, and `repin` cannot reach gloss order — so pinning
+`maestro` today would have put "maestro — master; craftsman, handyman, contractor" in front of a
+beginner, which is `haya` = "beech tree" with the serial numbers filed off. They wait for a
+rebuild. `tests/spanishLemmatizer.test.ts` asserts the curated gloss actually ships, which is
+what caught this within one test run.
+
+**AND ITS SIBLING HAD NO SUCH TEST**, which is how the unapplied entry got declared in the first
+place. `leadSense` now has one, on the `KNOWN_DICTIONARY_GAPS` pattern: every entry must lead
+the shipped gloss, or be NAMED in `PENDING_REBUILD`, and that list is asserted exactly right in
+both directions — so an exemption cannot outlive the rebuild that clears it and a new unapplied
+entry cannot hide inside it. Two controls: marking an applied entry pending fails, and adding an
+unapplied entry fails.
 
 **⚠ AND THE 11.1% FIGURE WAS n=6 AND TOO LOW — IT IS ~13.1%.** A 25-passage Groq run on the same
 table reads **13.5% pooled / 13.1% ± 6.8% per passage**, against the 11.1% ± 6.2 that six

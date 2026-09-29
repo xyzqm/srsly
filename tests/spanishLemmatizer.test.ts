@@ -105,3 +105,47 @@ describe('curated Spanish glosses are applied and none has gone stale', () => {
     expect(g).toMatch(/to taste/);
   });
 });
+
+/**
+ * AND ITS SIBLING `leadSense` HAD NO SUCH CHECK AT ALL, WHICH IS HOW ONE GOT DECLARED AND
+ * NEVER APPLIED.
+ *
+ * CLAUDE.md records two ways a `leadSense` entry silently does nothing — `rouge`, which
+ * matched at index 0 and skipped its own move, and `ci`, which named a sense that no longer
+ * survives filtering — and then the fix for both was verified by reading the build output
+ * once. `curatedGloss` got a standing test above; `leadSense` did not, so nothing noticed
+ * when two entries were added against a table that had not been rebuilt.
+ *
+ * ── THE PENDING LIST IS THE POINT, NOT A GET-OUT ──
+ * `scripts/repin-levels.mjs` deliberately cannot reach `leadSense`: gloss order is decided
+ * BEFORE the anchor, which reads it, so applying one after the fact would give a different
+ * answer from a rebuild and break the property that makes repin safe. So an entry added
+ * without a rebuild is legitimately unapplied for a while — and must be NAMED, exactly as
+ * `KNOWN_DICTIONARY_GAPS` names the lesson words that do not resolve. The list is asserted to
+ * be EXACTLY right in both directions, so it cannot outlive the rebuild that clears it, and a
+ * new unapplied entry cannot hide inside it.
+ */
+describe('every leadSense entry is applied, or is named as awaiting a rebuild', () => {
+  const dict = esdictData as unknown as Record<string, { m?: string }>;
+  const leads = (CORE_OVERRIDES as { leadSense: { es: Record<string, string> } }).leadSense.es;
+
+  /** Added against a table that has not been rebuilt since. Clear these ON the next rebuild. */
+  const PENDING_REBUILD = ['pastel', 'mientras'];
+
+  const applied = (word: string, want: string) => {
+    const lead = (dict[word]?.m ?? '').split(';')[0].trim();
+    // Exact first, substring second — the same order `coreOverrides.mjs` matches in.
+    return lead === want || lead.includes(want);
+  };
+
+  const unapplied = Object.entries(leads).filter(([w, v]) => !applied(w, v)).map(([w]) => w);
+
+  it('names exactly the entries that have not shipped — no more, no fewer', () => {
+    expect(unapplied.sort()).toEqual([...PENDING_REBUILD].sort());
+  });
+
+  it.each(Object.entries(leads).filter(([w]) => !PENDING_REBUILD.includes(w)))(
+    '%s leads the shipped gloss', (word, want) => {
+      expect(applied(word, want)).toBe(true);
+    });
+});

@@ -211,7 +211,8 @@
         "pared",
         "jardín",
         "llave",
-        "piso"
+        "piso",
+        "apartamento"
       ],
       "tableware": [
         "plato",
@@ -268,7 +269,8 @@
         "aeropuerto",
         "oficina",
         "esquina",
-        "barrio"
+        "barrio",
+        "librería"
       ],
       "transport": [
         "coche",
@@ -287,7 +289,8 @@
         "viento",
         "nube",
         "calor",
-        "frío"
+        "frío",
+        "clima"
       ],
       "animals": [
         "perro",
@@ -296,7 +299,8 @@
         "vaca",
         "pájaro",
         "pez",
-        "mascota"
+        "mascota",
+        "pata"
       ],
       "routine": [
         "desayunar",
@@ -317,7 +321,9 @@
         "escuchar",
         "mirar",
         "abrir",
-        "cerrar"
+        "cerrar",
+        "dibujar",
+        "pintar"
       ],
       "adjectives": [
         "grande",
@@ -342,7 +348,9 @@
         "sucio",
         "feliz",
         "activo",
-        "principal"
+        "principal",
+        "ligero",
+        "lleno"
       ],
       "basics": [
         "muy",
@@ -421,7 +429,11 @@
         "celebrar",
         "pagar",
         "entrar",
-        "viajar"
+        "viajar",
+        "ahorrar",
+        "disfrutar",
+        "mostrar",
+        "practicar"
       ],
       "everyday": [
         "cielo",
@@ -450,7 +462,10 @@
         "ambiente",
         "salida",
         "vecino",
-        "árbol"
+        "árbol",
+        "conversación",
+        "flor",
+        "regalo"
       ]
     },
     "fr": {
@@ -1389,7 +1404,9 @@
       "se": "A reflexive or reciprocal pronoun",
       "so": "whoa",
       "u": "or",
-      "y": "and"
+      "y": "and",
+      "pastel": "cake",
+      "mientras": "while, whilst, as (at the same time as)"
     },
     "fr": {
       "ne": "not, no",
