@@ -19,8 +19,38 @@ export interface DayActivity { d: string; n: number }
 
 const KEY = 'srsly-activity-log';
 
-/** Kept a little beyond the 3-month heatmap so the window can grow without losing data. */
-export const ACTIVITY_WINDOW_DAYS = 120;
+/**
+ * How much history the log keeps — AND THIS IS A DELETION POLICY, NOT A DISPLAY WINDOW.
+ *
+ * That distinction is the whole reason this number matters. `cutoff()` filters on READ, and
+ * `logGraded` reads the log, appends to it and writes the result BACK — so a day that falls
+ * outside the window is not hidden from a graph, it is removed from storage on the next review
+ * and cannot be recovered from anything. `lastReview` holds one date per card and so cannot
+ * reconstruct it (see `mergedActivity` below, which stopped trying for exactly that reason).
+ *
+ * It was 120, described as "a little beyond the 3-month heatmap so the window can grow without
+ * losing data" — true of the heatmap, and quietly false of every longer question. A year-level
+ * look-back was impossible by construction: the data to answer it was being thrown away four
+ * months in, whatever the UI later asked for.
+ *
+ * 400 is a year plus five weeks. The slack is deliberate: a review written in late December has
+ * to still reach the previous January, and a window of exactly 365 loses the far end of the year
+ * it is meant to cover, one day at a time, as the year goes on.
+ *
+ * COST, measured rather than estimated: 400 entries of `{"d":"2026-09-29","n":37}` serialize to
+ * ~10 kB, against a 5 MB localStorage budget and a synced `activity_log` column that is already
+ * one JSONB blob. `tests/activityLog.test.ts` pins the figure so widening this again is a
+ * decision rather than a drift.
+ *
+ * NOTHING HAD BEEN LOST WHEN THIS CHANGED (2026-09-29). The log shipped 2026-08-17, so the
+ * oldest possible entry was 43 days old and the first deletion under the old window would have
+ * been 2026-12-15. Recorded because the fix was proposed as an emergency and was not one — the
+ * deadline was real and 77 days away, which is a different thing and worth not overstating.
+ *
+ * The heatmap is UNAFFECTED: it draws its own `WEEKS = 13`, so widening the record does not
+ * widen the graph. They were one number by coincidence, not by design.
+ */
+export const ACTIVITY_WINDOW_DAYS = 400;
 
 function cutoff(): string {
   const x = new Date();
