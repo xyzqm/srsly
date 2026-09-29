@@ -2062,7 +2062,12 @@ LocalStorage keys:
 - `srsly-claimed-words` — words added to deck or previewed
 - `srsly-curriculum-pruned` — per-language marker of the last `CURRICULUM_VERSION` the deck was pruned at (`lib/curriculum.ts`). Device-local on purpose: it records what has been done to this copy of the deck, not a preference worth syncing
 - `srsly-pool-auto-{lang}` — the date the daily pool auto-activation last ran (`lib/poolAutoActivate.ts`). Read on load, not on a timer, and **never used to compute elapsed days**: the catch-up cap is precisely the absence of that arithmetic, so a week away costs one batch rather than seven
-- `srsly-activity-log` — per-day count of cards graded; the review heatmap's record. **Synced**, merged per-day MAX
+- `srsly-activity-log` — per-day count of cards graded; the review heatmap's record. **Synced**, merged per-day MAX.
+  `ACTIVITY_WINDOW_DAYS` is **400**, and it is a DELETION policy rather than a display window: `cutoff()`
+  filters on read and `logGraded` writes the filtered result BACK, so a day outside the window is removed
+  from storage by the next review and is recoverable from nothing (`lastReview` holds one date per card,
+  which is why `mergedActivity` stopped trying). It was 120 — a number chosen for the 13-week heatmap,
+  which silently made every longer question unanswerable. The heatmap keeps its own `WEEKS = 13`
 - `srsly-lessons-done` — finished lesson ids. **Synced**, last-writer-wins (the tick toggles)
 - `srsly-writing-{lang}` — handwriting FSRS, keyed by CHARACTER. **Synced**, merged by whole-card ownership
 - `srsly-daily-v2-{lang}-{level}-{YYYY-MM-DD}` — cached daily content. **The `v2` is real**
@@ -2866,3 +2871,190 @@ Shown one card at a time, and only under the Stuck filter. A list of thirty leec
 thing the learner has already been ignoring; a queue of one asks a question small enough to
 answer.
 
+
+## ⚠ DESIGNED AND NOT YET BUILT (as of 2026-09-29)
+
+**EVERYTHING FROM HERE TO THE END OF THE FILE DESCRIBES CODE THAT DOES NOT EXIST.** It is
+quarantined in one section, under one heading, for a reason this file has already paid for
+twice: the handwriting paragraph said "the foundation only — there is no UI yet" for five
+phases *after* the UI shipped, and the storage section described a column that had been
+renamed, and later sessions read both as current. A file loaded as project instructions is
+worse than useless when it is confidently wrong about the thing it exists to describe.
+
+So the rule for this section is the inverse of the rest of the document: **nothing here may be
+cited as a description of the codebase.** When one of these ships, its section MOVES up into the
+body of the file next to the code it describes, rewritten in the present tense, and the entry
+here is DELETED. A design that has shipped and left a copy behind is the drift this section is
+shaped to prevent.
+
+One thing below is already real and is marked as such: the activity-log retention window.
+
+### Sharing a reading — the clipper pointed the other way
+
+**THE FRAMING COMES OUT OF THE CODEBASE'S OWN COMMENT, NOT FROM A FEATURE LIST.** `ReadTab`
+clears the clip hash as soon as it reads it, and says why: refreshing must not re-import the
+same article, and *"an 8,000-character fragment sitting in the address bar is something the
+reader might copy and share without realising what is in it."* This feature does not contradict
+that sentence, it ANSWERS it — sharing stops being an accident of a URL nobody read and becomes
+a deliberate act with a sentence attached saying what travels.
+
+It is also the one social mechanic that suits this app rather than a different one. Duolingo
+shares a SCORE because a score is all it has; srsly can share the TEXT, and the recipient reads
+it segmented at THEIR level with THEIR deck highlighted — one article, two readers, two
+readability figures, no server.
+
+**`lib/shareLink.ts`, and `#clip=` KEEPS WORKING FOREVER.** A bookmarklet lives in someone's
+bookmark bar and is never updated, so retiring v1 is a break that is invisible to us and
+permanent for them. v2 takes a second prefix and `deflate-raw` → `base64url`.
+
+**THE BROWSER IS NOT THE REASON TO COMPRESS, AND THE FIRST DRAFT OF THIS SECTION SAID IT WAS.**
+The claim was that a full-length Chinese clip is too long to survive a URL. Measured against the
+live site instead of reasoned about: 8,000 Han characters percent-encode to a **72,146-character
+URL**, and all 8,000 **arrive intact** through a real page load in Chromium — the app puts them
+in the paste panel and clears the hash exactly as designed. The clipper has never been broken.
+*(That mistake had a second layer worth recording: the first check read `document.body.innerText`,
+saw nothing, and concluded the clip was lost. `innerText` does not include a `textarea`'s value,
+so the evidence for the bug was an artefact of how it was looked for.)*
+
+What DOES justify compression is the TRANSPORT, which is new in this feature: a bookmarklet's URL
+is machine-generated and seen by nobody, while a share link is pasted into a messenger, an email
+or a chat channel that wraps, truncates and preview-fetches it — and a 72,000-character link is
+not a shareable object whatever Chrome tolerates. Measured on this repo's own authored prose:
+
+| Script | percent-encoded | `deflate-raw` + base64url |
+|---|---|---|
+| CJK | **8.60×** raw | **24%** of the percent-encoded size |
+| Latin | 1.52× raw | 48% |
+
+**Third-party messenger behaviour is NOT measured**, so the size target is a judgement rather
+than a number, and this paragraph says so rather than implying a test was run.
+
+**THE ASYNC SEAM IS THE REAL ARCHITECTURAL COST, AND IT LANDS ON A LOADING STATE.**
+`DecompressionStream` is async, and `decodeClip` is currently called SYNCHRONOUSLY in the two
+places that decide layout — `initialTab()` in `app/page.tsx` (a lazy initialiser) and
+`ReadSections`' default section. Neither can await. So the codec splits in two: a sync
+`sharePrefixPresent(hash)` that reads the PREFIX ONLY and decides the tab and the section, and an
+async `decodeShare(hash)` that does the work inside `ReadTab`. Which means the panel needs three
+states, not two — `undefined` = not decoded yet, `null` = not a share, an object = a share —
+because between mount and resolve, "no clip" must not render as "there is nothing to read". That
+is the mistake this file names four times over, arriving in a new place by way of a codec.
+
+**The `openai`-SDK judgement again: no `fflate`.** A synchronous pure-JS deflate (~8 kB) would
+remove the seam, and the seam is one component that already has to represent "hash present,
+content not parsed yet". Native `CompressionStream`/`DecompressionStream` is free, and twenty
+lines of codec does not earn a dependency.
+
+**AN EPUB SECTION MAY NOT BE SHARED**, and that is the same promise as *"EPUB files never sync"*.
+A book is megabytes of someone else's copyrighted file, and putting a chapter into a chat app is
+that same act by another route. Generated passages and the learner's own pasted text and clips
+are shareable; a book says so in one line rather than hiding the control, because the shelf
+already learned that a silently missing thing reads as a bug.
+
+Tests: v1 links still decode (**the control**), the round trip goes through a real `URL` rather
+than a bare string (the lesson `tests/webClip.test.ts` already paid for), a max-length CJK payload
+stays under the stated cap, a book-sourced passage refuses, and the three loading states are
+distinguished.
+
+### A pact — the first row that two people may both read
+
+**THE SHAPE IS WHAT IS NEW, NOT THE SYNCING.** Every synced column today lives on the caller's own
+`user_data` row behind `auth.uid() = user_id`. A shared goal is the first record in this project
+that two accounts both read, so it is the first place the RLS model has to say something other
+than "mine".
+
+Two tables: `pacts` (id, unique join `code`, `goal_kind`, `target`, `starts`, `ends`, `created_by`)
+and `pact_members` (`pact_id`, `user_id`, self-chosen `label`, `contributed`, `updated_at`).
+
+**THREE TRAPS, ALL OF WHICH FAIL AT RUNTIME RATHER THAN AT REVIEW.**
+
+- **RLS recursion.** A policy on `pact_members` that queries `pact_members` to test membership
+  recurses. It needs a `security definer stable` helper (`is_pact_member(p_pact uuid)`) that
+  bypasses RLS to answer the question its own policy is asking.
+- **The join chicken-and-egg.** A code cannot be looked up before the caller is a member, because
+  the row is invisible to them — so joining is a `security definer` function, `join_pact(p_code)`,
+  never a client insert.
+- **A revoke protects a SIGNATURE, not a name.** `tests/sync.test.ts` already requires every
+  function the SQL defines to carry a matching `revoke all on function <signature> from public`
+  and forbids overloads outright, because Postgres grants EXECUTE to PUBLIC by default and that
+  is exactly how the legacy `consume_ai_credit(p_limit integer)` stayed world-callable. Two new
+  functions is two revokes, in `schema.sql` AND in the migration.
+
+**`join_pact` IS A GUESSING ORACLE, AND IT IS THE FIRST USER-SUPPLIED IDENTIFIER THIS PROJECT HAS
+EVER ACCEPTED.** 8 characters from a 32-symbol alphabet with the look-alikes removed (`O 0 I 1`)
+is 40 bits, plus a per-caller attempt counter inside the function so enumeration is not free.
+
+**CONTRIBUTION IS PUBLISHED, NOT STORED AS TRUTH — `set`, NEVER `increment`.** This is the one
+decision that keeps *store only what cannot be derived* intact in a feature whose entire purpose
+is showing somebody a number they are unable to derive. `contributed` is RECOMPUTED from the
+member's own `activity_log` over the pact's window and written whole. The record is still the log;
+the pact row is a refreshed cache of a derivation. And because the write is idempotent it is
+replay-safe and double-write-safe, which is the identical argument `mergeActivity` makes for
+per-day MAX.
+
+**IT IS THEREFORE NOT QUEUED OFFLINE, DELIBERATELY.** `lib/storage/writeQueue.ts` is a map keyed
+by COLUMN on `user_data`, and a pact is a different table. Skipping the publication offline costs
+nothing, because the next online recompute republishes the truth — the same reasoning that has
+`passage_state` skipped rather than queued.
+
+**THE PRODUCT CONSTRAINTS ARE THIS FILE'S OWN, NOT NEW ONES.** *An unlock may only ever ADD*, so a
+pact is a sum toward a target: no rank, no position, no demotion, and falling behind renders as
+distance remaining rather than as something taken. *NO STREAK UNLOCKS* holds doubly here — a
+shared streak makes a missed morning let someone else down, and a high-water streak is not
+derivable anyway. It writes nothing to FSRS, the streak, the activity log or the AI budget, and a
+firewall test in the `tests/writingState.test.ts` shape asserts the module imports nothing that can
+schedule, comment-stripped for the reason that file gives.
+
+**The other member sees a LABEL and a NUMBER.** `auth.users` is never joined and the email never
+travels; `label` exists so that a display name is a thing the learner chose rather than a
+credential leaking sideways.
+
+**ANONYMOUS ACCOUNTS ARE REFUSED, AND THAT IS A FACT RATHER THAN A POLICY.** `AuthProvider` calls
+`storage.resetToLocal()` for an anonymous user, so there is no cloud row to sync at all — the
+refusal is a description of the storage layer, not a rule bolted onto it.
+
+### A year in reading — and the audit is the feature
+
+**STEP 0 IS ALREADY DONE AND IS THE ONE REAL THING IN THIS SECTION**: `ACTIVITY_WINDOW_DAYS` is
+400, documented at its declaration and pinned by `tests/activityLog.test.ts`. It went first
+because it was the only item on this list with a CALENDAR dependency — the window is a deletion
+policy, so every day it was not raised was a day of history that could not be recovered later.
+
+**NOTHING HAD ACTUALLY BEEN LOST, AND THE FIX WAS PROPOSED AS AN EMERGENCY.** The log shipped
+2026-08-17, so on 2026-09-29 the oldest entry was 43 days old and the first deletion under the old
+window would have been 2026-12-15 — a real deadline, 77 days out. Recorded because the difference
+between "you are losing data now" and "you will start losing data in eleven weeks" is the whole
+difference between a panic and a plan, and the urgent framing came from outside the repo.
+
+**THE FIRST HONEST YEAR IS A YEAR AFTER THAT LANDED.** Until then the page is "your reading so
+far" and states the first day actually on record, the way `ReviewHeatmap`'s legend already does.
+A page that implies a year it does not have is a loading state rendered as an answer.
+
+**WHAT IS DERIVABLE, AND WHAT IS NOT — THE REFUSALS ARE THE POINT.**
+
+| Can say | From |
+|---|---|
+| Days studied, cards graded, busiest day, longest consecutive run, monthly totals | `activity_log` |
+| Passages finished by month / language / level, first-try score, target words, and words actually READ (token counts) | `shelf` |
+| Words held, words mastered (`stability >= MASTERY_STABILITY_DAYS`), leeches rescued | the decks — point-in-time, not a series |
+| Lessons finished | `lessons_done` — a count |
+
+| Cannot say | Why |
+|---|---|
+| Words added per month | `DeckWord` carries no created-at. **Do not add one to enable a decoration** — that is a second record of a fact, bought to fill a chart |
+| Accuracy across the year | `SRSState.accuracy` is trimmed to a 30-day window |
+| When a lesson was finished | `lessons_done` holds ids and nothing else |
+
+**The shelf caps at `MAX_ENTRIES = 200` PER LANGUAGE, oldest dropped**, so a year of more than 200
+passages loses its early months and the page has to say so. Do not raise it: 200 × ~700 B × four
+languages is already ~560 kB of a 5 MB localStorage budget that also holds every deck.
+
+`lib/yearInReading.ts` is a PURE function over (log, shelf, decks, srs_state, lessons_done),
+testable with no network like `lib/proverb.ts` and `lib/passageTheme.ts`. It renders with the
+hand-rolled SVG idiom already in `ReviewHeatmap` / `AccuracyTrend` / `PieChart` / `FutureLoad` —
+**no chart library** — every colour from a CSS variable, and nothing is stored: no column, no
+migration, derived on read like `lib/achievements.ts`.
+
+**THE EMPTY STATE IS THE WHOLE RISK, AND IT IS THE TRAP THAT MADE `npm run seed:dev` EXIST.** A
+wall of empty progress bars is a list of things you have failed to do, and a year page for someone
+holding eleven days of data is exactly that. So the panel is ABSENT below a threshold rather than
+present and zeroed.
