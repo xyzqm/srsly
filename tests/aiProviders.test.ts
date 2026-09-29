@@ -3,7 +3,7 @@ import {
   AI_PROVIDERS, DEFAULT_PROVIDER, looksLikeKeyFor, looksLikeAnyKey, maskKeyFor,
   providerById, providerForKey, providerOrDefault,
 } from '@/lib/aiProviders';
-import { generatorForProvider, GenerationError } from '@/lib/server/generator';
+import { generatorForProvider, GenerationError, logProviderError } from '@/lib/server/generator';
 
 /**
  * THREE PROVIDERS, AND THE ONE THING THAT MUST NEVER HAPPEN.
@@ -926,5 +926,66 @@ describe('who pays survives the second transport', () => {
       expect(g.name).not.toContain(KEYS[p.id]);
       for (const prefix of p.keyPrefixes) expect(g.name).not.toContain(prefix);
     }
+  });
+});
+
+/**
+ * THE PROVIDER'S ERROR ENUM IS LOGGED; ITS MESSAGE IS NOT.
+ *
+ * `logProviderError` exists because four days of Gemini 503s produced no evidence beyond the
+ * number 503 — the body was read for the model-name check and discarded. It logs the
+ * structured `code` and `status`, which are an enum, and never `message`, which is free text
+ * a provider can fill with the request it was sent.
+ *
+ * The hostile value has to LOOK like an enum, for the reason the MODEL_ID test records: a
+ * `<script>` payload is dropped by something else long before the shape check sees it, so
+ * using one leaves the check untested. A newline is the real vector here — a log line is
+ * forged by ending it early — so the fixture is a plausible SCREAMING_CASE status carrying
+ * one.
+ */
+describe('a provider error body reaches the log as an enum or not at all', () => {
+  const lines: string[] = [];
+  const capture = () => {
+    lines.length = 0;
+    vi.spyOn(console, 'warn').mockImplementation((m: unknown) => { lines.push(String(m)); });
+  };
+  const gemini = AI_PROVIDERS.find(p => p.id === 'gemini')!;
+
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('logs the code and the status enum', () => {
+    capture();
+    logProviderError(gemini, 'gemini-3.7-flash', 503,
+      JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'overloaded' } }));
+    expect(lines[0]).toContain('HTTP 503');
+    expect(lines[0]).toContain('code=503');
+    expect(lines[0]).toContain('status=UNAVAILABLE');
+  });
+
+  it('never logs the provider message, which can echo the request back', () => {
+    capture();
+    logProviderError(gemini, 'm', 400, JSON.stringify({
+      error: { code: 400, status: 'INVALID_ARGUMENT', message: 'bad key sk-ant-SECRET in body' },
+    }));
+    expect(lines[0]).not.toContain('SECRET');
+    expect(lines[0]).not.toContain('bad key');
+  });
+
+  it('drops a status that could forge a second log line', () => {
+    capture();
+    logProviderError(gemini, 'm', 503, JSON.stringify({
+      error: { code: 503, status: 'UNAVAILABLE\n[generator] gemini/m HTTP 200 all fine' },
+    }));
+    expect(lines[0]).not.toContain('\n');
+    expect(lines[0]).not.toContain('all fine');
+    expect(lines[0]).toContain('code=503');
+  });
+
+  it('still says something useful when the body is not that shape at all', () => {
+    capture();
+    logProviderError(gemini, 'm', 502, '<html>Bad Gateway</html>');
+    expect(lines[0]).toContain('HTTP 502');
+    expect(lines[0]).toContain('not the structured shape');
+    expect(lines[0]).not.toContain('Bad Gateway');
   });
 });

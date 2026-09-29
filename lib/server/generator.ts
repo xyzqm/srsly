@@ -147,6 +147,44 @@ export class GenerationError extends Error {
  * The detail is used to CLASSIFY and is never copied into the thrown message — a provider's
  * error body can echo the request back, and this message reaches a log and a screen.
  */
+/**
+ * ONE LINE SAYING WHAT THE PROVIDER ACTUALLY OBJECTED TO, BECAUSE A STATUS CODE IS NOT A REASON.
+ *
+ * The error body is already read here — for the model-name check — and then thrown away, and
+ * the thrown message deliberately copies nothing from it, because a provider error body can
+ * echo the request back. That rule is right and stays. What it left is a diagnostic hole:
+ * `gemini-3.7-flash` returned 503 on the FIRST request of four separate days, across two
+ * different models, six consecutive retries each time, never once succeeding — a pattern that
+ * does not look like the overload a 503 claims, and four days of it produced no evidence
+ * beyond the number 503.
+ *
+ * Google answers in a structured shape, `{ error: { code, status, message } }`, where `status`
+ * is an ENUM — UNAVAILABLE, RESOURCE_EXHAUSTED, PERMISSION_DENIED, INVALID_ARGUMENT — and the
+ * enum is the part that distinguishes "the model is busy" from "you are out of quota" from
+ * "this endpoint will not serve you". So the code and the enum are logged and the MESSAGE is
+ * not, shape-checked exactly as `finish_reason` already is one screen down: an enum from
+ * somebody else is still an enum, and a free-text message from somebody else is still free
+ * text. Server-side only; none of this reaches a learner, who gets `GenerationError` as before.
+ */
+export function logProviderError(
+  provider: AiProvider, model: string, httpStatus: number, body: string,
+): void {
+  let code: number | undefined;
+  let status = '';
+  try {
+    const j = JSON.parse(body) as { error?: { code?: unknown; status?: unknown } };
+    if (typeof j?.error?.code === 'number') code = j.error.code;
+    const raw = typeof j?.error?.status === 'string' ? j.error.status : '';
+    if (/^[A-Z_]{1,40}$/.test(raw)) status = raw;
+  } catch { /* not JSON, or not that shape — the HTTP status is still worth the line */ }
+  console.warn(
+    `[generator] ${provider.id}/${model} HTTP ${httpStatus}`
+    + (code !== undefined ? ` code=${code}` : '')
+    + (status ? ` status=${status}` : '')
+    + (!code && !status ? ` (body was not the structured shape; ${body.length} bytes)` : ''),
+  );
+}
+
 function classify(
   status: number, provider: AiProvider, detail: string, operatorPays = false,
 ): GenerationError {
@@ -417,6 +455,7 @@ function openAiCompatGenerator(provider: AiProvider, apiKey: string, operatorPay
          * never replace the real error, which is the one that says a model is missing.
          */
         if (err.kind === 'model') await reportAvailableModels(provider, apiKey, err);
+        logProviderError(provider, modelFor(provider), res.status, detail);
         throw err;
       }
 
