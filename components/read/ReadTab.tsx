@@ -816,17 +816,39 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
             if (blankable.has(clozeKey(t, blankable))) needed++;
           }
         }
+        /**
+         * THE PASSAGE ON SCREEN IS COUNTED BY WHAT WAS ACTUALLY DRAWN, NOT BY A SECOND RULE.
+         *
+         * `needed` above is `vocabWords ∩ dueDeckWords`, which is NOT the rule the renderer
+         * used: `clozeWords` goes through `selectClozeTargets`, which also applies the daily
+         * new-card budget and the blank density. The two disagree, and the disagreement has a
+         * dead end in it — measured on the real passages from the 2026-09-29 Groq sweep, where
+         * every passage scores `needed` of 4, 4 and 6 while two of them RENDERED ZERO BLANKS.
+         * A passage with no blanks and a nonzero `needed` can never be completed, so the button
+         * stays disabled telling the reader to fill blanks that do not exist.
+         *
+         * `clozeWordCount` is the renderer's own number, which is the rule this codebase already
+         * states for the Home tab's due count: use the filter the thing itself uses, never a
+         * second one that happens to agree today.
+         *
+         * ⚠ THIS CLOSES IT FOR THE CURRENT PASSAGE ONLY. An EARLIER passage that rendered no
+         * blanks still scores `needed > 0` here, because nothing records what its renderer
+         * decided and re-deriving it would need that passage's new-card budget at the moment it
+         * was opened. The reason it is not stored is the rule against a second record of a
+         * derived fact. The blocked-reason message below now names this case in its own words,
+         * so the next time it happens it says so instead of issuing an impossible instruction.
+         */
+        const isCurrent = idx === passageIdx;
+        if (isCurrent) return clozeGrades.size >= clozeWordCount;
         if (needed === 0) return true;
-        const graded = idx === passageIdx
-          ? clozeGrades.size
-          : Object.keys((await storage.getPassageState(contentKey, idx)) ?? {}).length;
+        const graded = Object.keys((await storage.getPassageState(contentKey, idx)) ?? {}).length;
         return graded >= needed;
       }));
       if (!cancelled) setAllPassagesComplete(results.every(Boolean));
     }
     check();
     return () => { cancelled = true; };
-  }, [dailyContent, contentKey, passageIdx, clozeGrades, dueDeckWords]);
+  }, [dailyContent, contentKey, passageIdx, clozeGrades, dueDeckWords, clozeWordCount]);
 
   // Restore words added during this session so they survive reloads.
   useEffect(() => {
@@ -1751,7 +1773,35 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
               // never a generic vocab-less one.
               // `!alreadyFinished` applies only where there was something to finish — see
               // the note above the row.
-              const newPassageDisabled = (clozeWordCount > 0 && !alreadyFinished) || clozeIncomplete || loadingMore || !allPassagesComplete || dueDeckWords.size === 0;
+              /**
+               * ONE LIST, NOT TWO. The disabled flag and the tooltip were separate expressions
+               * over the same conditions, and they had already drifted: the flag tested four
+               * things and the tooltip offered two sentences, so THREE different causes all
+               * rendered as "Fill in every blank in every passage to unlock a new one".
+               *
+               * Two of those three cannot be acted on by filling anything. Pressing Finish is a
+               * different action entirely, and a passage that rendered NO blanks gives the
+               * reader nothing to fill anywhere on screen — measured, on the 2026-09-29 sweep,
+               * which stopped after three passages and reported exactly that sentence while
+               * every blank it could see was already filled. An instruction that cannot be
+               * followed is worse than a disabled button with no explanation, because it sends
+               * someone looking for a thing that is not there.
+               *
+               * So the REASON is computed and the flag is derived from it, which is what stops
+               * them drifting again. Ordered most specific first: a reason naming a number the
+               * reader can see beats a general one.
+               */
+              const blockedReason: string | null =
+                dueDeckWords.size === 0
+                  ? 'No words due for review — add more in Vocab to unlock a new passage'
+                  : clozeIncomplete
+                    ? `Fill the remaining ${clozeWordCount - clozeAnswered} blank${clozeWordCount - clozeAnswered === 1 ? '' : 's'} to unlock a new passage`
+                    : clozeWordCount > 0 && !alreadyFinished
+                      ? 'Press Finish on this passage first'
+                      : !allPassagesComplete
+                        ? 'An earlier passage today still has blanks to fill — page back to it'
+                        : null;
+              const newPassageDisabled = loadingMore || blockedReason !== null;
               return (
                 <>
                   {clozeWordCount > 0 && (
@@ -1773,13 +1823,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   <button
                     onClick={() => generateMore()}
                     disabled={newPassageDisabled}
-                    title={
-                      newPassageDisabled && !loadingMore
-                        ? dueDeckWords.size === 0
-                          ? 'No words due for review — add more in Vocab to unlock a new passage'
-                          : 'Fill in every blank in every passage to unlock a new one'
-                        : undefined
-                    }
+                    title={loadingMore ? undefined : blockedReason ?? undefined}
                     className="flex items-center gap-2 transition-all duration-150"
                     style={{
                       fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
