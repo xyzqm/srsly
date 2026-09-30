@@ -401,6 +401,29 @@ export interface ShelfEntry {
    * because that is the answer worth remembering about it.
    */
   results?: { word: string; correct: boolean }[];
+  /**
+   * `own` marks reading the learner BROUGHT — pasted text, a web clip, a shared link, an EPUB
+   * section. Absent means generated, so every entry written before this existed still reads
+   * correctly.
+   *
+   * **AN `own` ENTRY CARRIES NO TEXT AND NO TOKENS, AND THAT IS THE WHOLE POINT.** The shelf
+   * SYNCS, and a pasted article or a book chapter is somebody else's writing — "EPUB files
+   * never sync" and the paste panel's "stays on this device" are promises that uploading the
+   * prose would quietly break. So an own entry is a CITATION: what you read, when, in what
+   * language, and how long it was. `text` is `''` and `sentences` is absent.
+   *
+   * The title does travel, and that is a deliberate, stated trade rather than an oversight: a
+   * title is a reference to a work and not the work, it is what makes the record worth keeping
+   * at all, and without it the shelf would be a list of anonymous word counts.
+   */
+  kind?: 'own';
+  /**
+   * Length in the unit `lengthOf` would have counted, stored ONLY for `own` entries because
+   * their text is not kept and so cannot be re-counted later. A generated entry derives it
+   * from the text it already holds, which is why this stays optional rather than becoming a
+   * second record of something derivable.
+   */
+  words?: number;
 }
 
 export interface ClozeGradeEntry { word: string; grade: number }

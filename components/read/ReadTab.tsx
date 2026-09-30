@@ -17,6 +17,7 @@ import { bumpCount, getTodayCounts } from '@/lib/reviewCounts';
 import { getSrsSettings } from '@/lib/fsrs';
 import { selectClozeTargets, clozeKey } from '@/lib/clozeTargets';
 import { needsSpaceBefore, tokensToText } from '@/lib/tokenText';
+import { ownEntry, mergeShelf } from '@/lib/shelf';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import ReadabilityNote from './ReadabilityNote';
@@ -330,6 +331,56 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    * exactly while a book is open, so the test is the state and not a guess about the content.
    */
   const canShare = !!currentPassage && !bookPassage && shareText.length > 0;
+
+  /**
+   * ── MARKING YOUR OWN READING AS READ, AND WHY IT IS A BUTTON ────────────────
+   *
+   * The shelf only ever recorded passages the app could SEE you finish, because finishing
+   * writes `srsly-done` and only a generated passage has a Finish button to write it. So
+   * every pasted article, web clip, shared link and book chapter was absent from the shelf
+   * and counted for exactly nothing in the year page — in an app whose whole argument is that
+   * you read what you actually want to read.
+   *
+   * The app cannot observe the end of your own reading the way it observes a graded blank, so
+   * it asks. That is not a gap, it is the precedent this codebase already set for the same
+   * situation: "a grammar lesson is read, so finishing it is something the learner says",
+   * while a vocabulary lesson is finished by the act itself and needs no button. Generated
+   * reading is the second kind; your own is the first.
+   *
+   * It UNDERCOUNTS — people forget to press it — which is the posture `mergeActivity` and
+   * `lib/activityLog.ts` already take deliberately. A record that overclaims is worse than one
+   * that is short, because you cannot tell which parts to trust.
+   *
+   * It writes a CITATION and never the prose. See `ownEntry`.
+   */
+  const ownReadable = variant === 'read' && !!currentPassage && shareText.length > 0;
+  const ownCitation = useMemo(() => (
+    ownReadable
+      ? ownEntry({
+          date: dailyContent?.date ?? todayStr(),
+          language, level: hskLevel, title: shareTitle,
+          plainText: shareText, scriptIsUnspaced: langConfig.scriptIsUnspaced,
+        })
+      : null
+  ), [ownReadable, dailyContent?.date, language, hskLevel, shareTitle, shareText, langConfig.scriptIsUnspaced]);
+  const [markedRead, setMarkedRead] = useState(false);
+  useEffect(() => {
+    // The shelf itself is the record, so "have I already marked this" is asked of the shelf
+    // rather than kept as a second flag that would drift from it.
+    let live = true;
+    if (!ownCitation) { setMarkedRead(false); return; }
+    storage.getShelf(language).then(entries => {
+      if (live) setMarkedRead(entries.some(e => e.id === ownCitation.id));
+    });
+    return () => { live = false; };
+  }, [ownCitation, language]);
+  const markAsRead = useCallback(async () => {
+    if (!ownCitation) return;
+    setMarkedRead(true);
+    const entries = await storage.getShelf(language);
+    await storage.saveShelf(language, mergeShelf(entries, [ownCitation]));
+    onActivity();   // reading is studying — the same call finishing a passage makes
+  }, [ownCitation, language, onActivity]);
   const [shareOpen, setShareOpen] = useState(false);
   // Close on a passage change: the panel would rebuild its link correctly, but a share sheet
   // left open over a passage you have since paged away from invites sending the wrong one.
@@ -886,7 +937,6 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
     if (!contentKey || !deckLoaded || !currentPassage || currentPassage.pasted) return;
     try { localStorage.setItem(blanksKey(contentKey, passageIdx), String(clozeWordCount)); }
     catch { /* quota or private mode — the fallback derivation still applies */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKey, deckLoaded, currentPassage, passageIdx, clozeWordCount]);
 
   // Restore words added during this session so they survive reloads.
@@ -1581,6 +1631,20 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   title="Send this reading to someone — the text travels inside the link"
                 >
                   Share
+                </button>
+              )}
+              {/* Own reading only. A generated passage has Finish, which records the same fact
+                  and a great deal more; two controls meaning "done" on one screen is a puzzle. */}
+              {ownReadable && (
+                <button
+                  style={toggleStyle(markedRead)}
+                  onClick={() => void markAsRead()}
+                  disabled={markedRead}
+                  title={markedRead
+                    ? 'On your shelf — the title and length, never the text'
+                    : 'Add this to your reading history. Only the title and how long it was is kept.'}
+                >
+                  {markedRead ? 'Read ✓' : 'Mark as read'}
                 </button>
               )}
             </div>

@@ -1938,6 +1938,47 @@ and "never fold again". `tests/shareArrival.test.ts` pins both halves against th
 the bug reintroduced as the control.
 
 
+#### Your own reading is shelved as a CITATION, never as a copy
+
+**THE SHELF ONLY EVER RECORDED WHAT THE APP COULD SEE YOU FINISH.** Finishing writes
+`srsly-done|…`, and the only thing that writes it is the Finish button, which is gated on
+`clozeWordCount > 0` — so it exists on a generated passage and never on your own reading. Every
+pasted article, web clip, shared link and book chapter was therefore absent from the shelf and
+counted for exactly nothing in the year page. In an app whose whole argument is that you read
+what you actually want to read, the record of what you read counted only what the model wrote.
+
+**AN `own` ENTRY CARRIES NO TEXT AND NO TOKENS, AND THAT CONSTRAINT IS THE DESIGN.** The shelf
+SYNCS. A pasted article or a book chapter is somebody else's writing, and "EPUB files never
+sync" and the paste panel's "stays on this device" are promises that uploading the prose would
+quietly break — by a different route, exactly as sharing a chapter would. So `ownEntry` writes a
+citation: what you read, when, in which language, and how long it was. `text` is `''`, there are
+no `sentences`, and a test asserts the prose appears nowhere in the serialized entry.
+
+**The title does travel, and that is a stated trade rather than an oversight.** A title is a
+reference to a work and not the work; it is also the only thing that makes the record worth
+keeping, since without it the shelf is a list of anonymous word counts.
+
+**IT IS A BUTTON, AND THE PRECEDENT IS THE LESSON TREE.** The app cannot observe the end of your
+own reading the way it observes a graded blank, so it asks. This file already settled that
+question in the same words: *"a grammar lesson is read, so finishing it is something the learner
+says"*, while a vocabulary lesson is finished by the act itself and needs no button. Generated
+reading is the second kind; your own is the first. It UNDERCOUNTS, because people forget to
+press it, which is the posture `mergeActivity` and `lib/activityLog.ts` already take on purpose:
+a record that overclaims is worse than one that is short, because you cannot tell which parts to
+trust.
+
+**`countWords` IS ONE RULE IN ONE PLACE.** A generated entry is measured from the text it holds
+and an own entry from the count stored when it was shelved, and `lengthOf` prefers the stored
+one — so the two kinds cannot come to disagree about what a word is. The count is stored ONLY
+because the text is not kept and therefore cannot be re-counted, which is the same test
+`srsly-lessons-done` passes rather than an exception to it.
+
+**The id is built from day, language, title and length, not from a passage index**, because an
+index shifts as passages are added and a shifting id turns a re-mark into a duplicate row. Two
+different articles of identical title and length in one day collide, which resolves as
+"replaces" rather than as corruption. Whether a passage is already shelved is asked OF THE SHELF
+rather than kept as a second flag beside it.
+
 ### A book has its own reading space
 
 A book section is NOT another entry in the passage list. Sections used to be appended to it, so
@@ -2407,6 +2448,11 @@ obvious chart would need a field nobody keeps:
 - **Accuracy across the year.** `SRSState.accuracy` is trimmed to a 30-day window, so a
   twelve-month line would be one real month and eleven of nothing.
 - **When a lesson was finished.** `lessons_done` holds ids, so lessons are a total, not a timeline.
+
+**AND IT COUNTS YOUR OWN READING, WHICH IT DID NOT AT FIRST.** The shelf recorded only what
+the app could see FINISHED, so pasted articles, clips and book chapters scored zero here —
+in a page about reading, inside an app built for reading what you choose. They are shelved
+as citations now; see the section beside the web clipper for why a citation and not a copy.
 
 **IT LIVES IN STATS, WHICH IS THE OTHER HALF OF THE ARGUMENT THAT MOVED THE SHELF OUT.** The
 passage shelf and the accuracy trend left for Read because they describe the passages directly

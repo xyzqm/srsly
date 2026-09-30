@@ -1,4 +1,4 @@
-import type { DailyContent, ShelfEntry, ClozeOccurrenceMap } from './types';
+import type { DailyContent, ShelfEntry, ClozeOccurrenceMap, LanguageCode } from './types';
 import { getLanguageConfig } from './languageConfig';
 import { tokensToText } from './tokenText';
 
@@ -111,8 +111,49 @@ export function mergeShelf(existing: ShelfEntry[], incoming: ShelfEntry[]): Shel
 }
 
 /** Reading-time estimate. Unspaced scripts are counted in characters, not words. */
-export function lengthOf(entry: ShelfEntry, scriptIsUnspaced: boolean): number {
+export function countWords(text: string, scriptIsUnspaced: boolean): number {
   return scriptIsUnspaced
-    ? [...entry.text.replace(/\s+/g, '')].length
-    : entry.text.split(/\s+/).filter(Boolean).length;
+    ? [...text.replace(/\s+/g, '')].length
+    : text.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * How long an entry is, in that language's own unit.
+ *
+ * An `own` entry keeps no text — see `ShelfEntry.kind` — so it carries the count instead, and
+ * this prefers it. ONE counting rule either way: `countWords` is what measures a generated
+ * entry here and what measured an own entry when it was shelved, so the two can never disagree
+ * about what a word is.
+ */
+export function lengthOf(entry: ShelfEntry, scriptIsUnspaced: boolean): number {
+  if (typeof entry.words === 'number') return entry.words;
+  return countWords(entry.text, scriptIsUnspaced);
+}
+
+/**
+ * A citation for reading the learner brought, carrying NO text and NO tokens.
+ *
+ * `id` is derived from the day, the language, the title and the length rather than from a
+ * passage index, because an index shifts as passages are added and a shifting id turns a
+ * re-mark into a duplicate. Two different articles of identical title and length on one day
+ * collide, which resolves as "replaces" rather than as corruption — an acceptable trade for an
+ * id that is stable across the thing that actually moves.
+ */
+export function ownEntry(opts: {
+  date: string; language: LanguageCode; level: number; title: string;
+  plainText: string; scriptIsUnspaced: boolean;
+}): ShelfEntry {
+  const title = opts.title.trim() || 'Untitled';
+  const words = countWords(opts.plainText, opts.scriptIsUnspaced);
+  return {
+    id: `own|${opts.date}|${opts.language}|${title.slice(0, 60)}|${words}`,
+    date: opts.date,
+    language: opts.language,
+    level: opts.level,
+    title,
+    text: '',            // deliberately empty — see ShelfEntry.kind
+    vocabWords: [],      // own reading carries no contract and no targets
+    kind: 'own',
+    words,
+  };
 }

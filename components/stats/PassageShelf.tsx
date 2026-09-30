@@ -145,7 +145,22 @@ export default function PassageShelf({ language }: Props) {
                       clickable — look one up a month later and add it to your deck from
                       here. Older entries kept only flattened text and fall through to the
                       paragraph below. */}
-                  {e.sentences?.length ? (
+                  {/* YOUR OWN READING IS A CITATION, NOT A COPY, so there is nothing to show
+                      and the panel says why rather than rendering an empty paragraph. The
+                      shelf syncs, and a pasted article or a book chapter is somebody else's
+                      writing — "EPUB files never sync" and the paste panel's "stays on this
+                      device" are promises that uploading the prose would quietly break. What
+                      is kept is what you read, when, and how long it was. */}
+                  {e.kind === 'own' ? (
+                    <p style={{
+                      fontFamily: 'var(--f-mono)', fontSize: 12, lineHeight: 1.6,
+                      color: 'var(--ink-faint)', marginTop: 14, maxWidth: '52ch',
+                    }}>
+                      Your own reading — {lengthOf(e, cfg.scriptIsUnspaced).toLocaleString()}{' '}
+                      {cfg.countUnit}. The text itself stays on the device you read it on, so
+                      only the title and the length are kept here.
+                    </p>
+                  ) : e.sentences?.length ? (
                     <p style={{
                       fontFamily: cfg.scriptIsUnspaced ? 'var(--f-han)' : 'var(--f-display)',
                       fontSize: 16, lineHeight: 1.85, color: 'var(--ink)', marginTop: 14,
