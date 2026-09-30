@@ -171,11 +171,88 @@ describe('the schema can hold every column the code writes', () => {
     expect(missing, `columns with no migration: ${missing.join(', ')}`).toEqual([]);
   });
 
+  /**
+   * A migration must be safe to run twice, because nothing here records which ones a project
+   * has already had — the setup instructions say "run everything in supabase/migrations in
+   * filename order", and somebody re-running the lot is the ordinary case rather than a
+   * mistake.
+   *
+   * THE RULE USED TO BE SPELLED `add column if not exists`, WHICH WAS THE ONLY IDEMPOTENT
+   * ALTER THIS REPO HAD. `0009_pacts.sql` brought a second — `enable row level security` is a
+   * no-op on a table that already has it — and the test failed on SQL that was perfectly
+   * idempotent, because it was checking the spelling rather than the property. Widened to an
+   * explicit allowlist of forms known to be safe on a second run, which keeps it strict: an
+   * `add column` without the guard, a `drop column`, or a `rename` all still fail.
+   */
+  const IDEMPOTENT_ALTER = [/add column if not exists/, /enable row level security/];
+  const isIdempotent = (stmt: string) => IDEMPOTENT_ALTER.some(re => re.test(stmt));
+
   it('keeps every migration idempotent, so re-running is safe', () => {
     const alters = migrations.match(/^alter table.*$/gm) ?? [];
     expect(alters.length).toBeGreaterThan(0);
-    for (const a of alters) expect(a, a).toContain('add column if not exists');
+    for (const a of alters) expect(isIdempotent(a), a).toBe(true);
   });
+
+  /** THE CONTROL. Without it the allowlist could be widened to `/.*!/` and every assertion
+   *  above would still pass, which is how a rule stops being one. */
+  it('still rejects an alter that is not safe to re-run', () => {
+    expect(isIdempotent('alter table public.user_data add column decks jsonb;')).toBe(false);
+    expect(isIdempotent('alter table public.user_data drop column decks;')).toBe(false);
+    expect(isIdempotent('alter table public.pacts rename to pact;')).toBe(false);
+  });
+
+  /**
+   * ── THE PACT SQL HAS EXACTLY ONE VALID ORDER, AND THE FIRST DRAFT DID NOT HAVE IT ─────
+   *
+   * Three things depend on each other: `is_pact_member` READS `pact_members`, every RLS policy
+   * CALLS `is_pact_member`, and the writer functions touch both tables. A `language sql` body is
+   * resolved when the function is created, so the tables must come first; a policy needs its
+   * function to already exist, so the function must come before the policies.
+   *
+   * Written the obvious way — each policy beside the table it protects — the very first run of
+   * the migration fails with `function public.is_pact_member(uuid) does not exist` and aborts
+   * the whole thing. That is a bug no amount of TypeScript testing can see and no reviewer
+   * reliably catches twice, so it is pinned here against both files.
+   *
+   * It is checked in BOTH schema.sql and the migration, because a new project runs one and an
+   * existing project runs the other, and getting it right in only one would be an outage for
+   * exactly half of them.
+   */
+  describe.each([['schema.sql', schema], ['0009_pacts.sql', migrations]])(
+    'the pact objects are defined in dependency order in %s',
+    (_name, src) => {
+      const at = (needle: string) => src.indexOf(needle);
+
+      it('defines the membership test AFTER the table it reads', () => {
+        expect(at('create table if not exists public.pact_members')).toBeGreaterThan(-1);
+        expect(at('create or replace function public.is_pact_member'))
+          .toBeGreaterThan(at('create table if not exists public.pact_members'));
+      });
+
+      it('defines the membership test BEFORE any policy that calls it', () => {
+        const fn = at('create or replace function public.is_pact_member');
+        const firstPolicy = src.indexOf('create policy', src.indexOf('public.pacts'));
+        expect(firstPolicy).toBeGreaterThan(-1);
+        expect(fn).toBeLessThan(firstPolicy);
+      });
+
+      it('defines the writers last, after both tables exist', () => {
+        for (const fn of ['public.create_pact', 'public.join_pact']) {
+          expect(src.indexOf(`create or replace function ${fn}`))
+            .toBeGreaterThan(at('create table if not exists public.pact_members'));
+        }
+      });
+
+      /** No UPDATE policy on `pacts` is the additions-only rule enforced structurally: the
+       *  target cannot be lowered and the window cannot be shortened after somebody has worked
+       *  toward it. A policy appearing here later is a product decision, not a tidy-up. */
+      it('gives pacts no update or delete policy, so a target can never be moved', () => {
+        const block = src.slice(at('alter table public.pacts enable row level security'),
+                                at('alter table public.pact_members enable row level security'));
+        expect(block).not.toMatch(/create policy[^;]*on public\.pacts[\s\S]*?for update/i);
+        expect(block).not.toMatch(/create policy[^;]*on public\.pacts[\s\S]*?for delete/i);
+      });
+    });
 });
 
 describe('activity logs merge per-day MAX, not sum', () => {

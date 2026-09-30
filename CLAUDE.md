@@ -33,6 +33,17 @@ Prioritize **elegance and concision** over volume. Concretely:
 its `Card`, and recommended SvelteKit `load` functions — in a Next.js project. All three were
 template leftovers that contradicted the code they were meant to describe.)*
 
+**A DESIGN THAT IS NOT BUILT YET GETS FENCED, AND THE FENCE GETS DELETED WHEN IT SHIPS.** Three
+features were written up here before any of them existed, quarantined under one heading saying
+in as many words that nothing below it described the codebase. That was not tidiness: this file
+has twice described code that did not match it — the handwriting section said "there is no UI
+yet" for five phases *after* the UI shipped, and the storage section named a column that had
+been renamed — and later sessions read both as current and acted on them. The rule is that such
+a section MOVES into the body beside the code when it lands, rewritten in the present tense, and
+the quarantined copy is DELETED. All three have now shipped and the fence is gone, which is what
+following it looks like; write the fence again the next time a design lands here before its code
+does.
+
 ## Commands
 
 ```bash
@@ -2171,6 +2182,80 @@ LocalStorage keys:
   had to read `dailyKey()` in `lib/storage/local.ts` to find out why. The date is the LOCAL
   calendar day (`todayStr`), which is not today's UTC date for most of the evening
 
+#### A pact is the first row two accounts both read
+
+`lib/pact.ts` (pure), `lib/pactStore.ts` (the round trip), `components/stats/PactPanel.tsx`, and
+`pacts` / `pact_members` / `pact_join_attempts` in `supabase/schema.sql` + migration `0009`.
+
+**THE SHAPE IS WHAT IS NEW, NOT THE SYNCING.** Every other table here is `auth.uid() = user_id`
+and nothing else, so this is the first place the RLS model says something other than "mine" —
+and the first place it could get that wrong in a way that shows somebody else's data rather than
+none.
+
+**⚠ THE ORDER OF THE SQL IS LOAD-BEARING AND THE FIRST DRAFT HAD IT WRONG.** `is_pact_member`
+reads `pact_members`, and a `language sql` body is resolved when the function is CREATED, so the
+tables must exist first. Every RLS policy calls that function, so it must exist before the
+policies. The writers touch both tables, so they come last. Written the obvious way — each
+policy beside the table it protects — the very first run fails with
+`function public.is_pact_member(uuid) does not exist` and aborts the whole migration. Found by
+reading rather than by running, because no Postgres was available to run it against, and pinned
+in `tests/sync.test.ts` against BOTH files: a new project runs one and an existing project runs
+the other, so getting it right in only one is an outage for half of them.
+
+**`is_pact_member` EXISTS TO BREAK A RECURSION.** A policy on `pact_members` that queries
+`pact_members` to decide who may read `pact_members` recurses until Postgres gives up. A
+`security definer` function runs past RLS, so the question can be answered without re-entering
+the policy that asked it; `stable` lets the planner call it once per statement rather than once
+per row.
+
+**THE MISSING UPDATE POLICY ON `pacts` IS THE ADDITIONS-ONLY RULE, ENFORCED BY AN ABSENCE.** With
+no UPDATE and no DELETE policy the target cannot be lowered and the window cannot be shortened
+after somebody has worked toward it. A test asserts neither policy appears, so adding one is a
+product decision rather than a tidy-up.
+
+**`join_pact` IS A GUESSING ORACLE BY CONSTRUCTION**, because it must be callable by somebody who
+cannot yet SELECT the row they are joining. Two things stand in front of it and neither is
+sufficient alone: **~39 bits** of code (8 characters over a 30-symbol alphabet with `O 0 I l 1 U
+V` removed — stated as 39 rather than rounded up to the 40 it resembles), and a per-caller cap of
+20 attempts a day counted BEFORE the lookup, so a wrong code costs an attempt whether or not it
+existed. The counter resets by comparing a stored UTC day, the same way `consume_ai_credit` does,
+because there is then nothing to schedule and nothing to forget to run.
+
+**A CONTRIBUTION IS PUBLISHED, NOT STORED AS TRUTH — `set`, NEVER `increment`.** It is recomputed
+whole from that device's own activity log and shelf. The RECORD is still those; the pact row is a
+refreshed cache of a derivation, published so one other person can see a number they have no way
+to derive. Because the write is idempotent it is replay-safe, double-write-safe, and safe to skip
+entirely when offline — which is why it is deliberately NOT in `lib/storage/writeQueue.ts`, a map
+keyed by COLUMN on `user_data` and the wrong shape for another table. That is `passage_state`'s
+reasoning applied to a case where it is simply true rather than a compromise.
+
+**NOBODY CAN CHEAT AT THIS AND IT IS NOT WORTH DEFENDING.** A learner could publish any number;
+the server could not do better, because the log it would recompute from is written by that same
+device. There is nothing to win — no rank, no prize, and the other person is somebody you chose.
+Guarding it would cost a table, a function and a round trip to protect a number whose only reader
+already trusts you.
+
+**`byMember` IS SORTED BY LABEL, IN `lib/pact.ts`, NOT IN THE RENDERER.** A list sorted by
+contribution IS a leaderboard whatever the column heading says, and it would arrive the first
+time somebody decided the order looked arbitrary. The test's control is a member contributing
+ten times the rest who still sorts last. One progress bar for the whole pact, never one each:
+two bars side by side is a race.
+
+**It writes nothing to FSRS, the streak, the activity log or the AI budget**, and
+`tests/pactFirewall.test.ts` asserts both modules cannot even import what would let them — the
+third copy of the posture `lib/writingState.ts` and `lib/practiceSheet.ts` already take. A shared
+streak is the obvious mechanic and the one that must not exist: it makes a missed morning let
+somebody ELSE down.
+
+**The other member sees a LABEL and a NUMBER.** `auth.users` is never joined and the email never
+travels. Anonymous accounts are refused in SQL, and that is a fact rather than a policy:
+`AuthProvider` calls `storage.resetToLocal()` for one, so there is no cloud row to sync at all.
+
+**⚠ NOTHING IN THIS REPOSITORY CAN TELL WHETHER THE MIGRATION HAS BEEN RUN**, which is the same
+blind spot that let a second `consume_ai_credit` live in the project unseen. Until `0009` is
+applied in the Supabase SQL editor, every call here fails and the panel reports it rather than
+pretending — but no test can know the difference.
+
 ### Theming
 
 Ten themes and seven fonts are toggled by setting `data-theme` and `data-font` attributes on
@@ -3031,81 +3116,3 @@ re-pause the card on its very next lapse under `applyLeech`'s half-threshold rul
 Shown one card at a time, and only under the Stuck filter. A list of thirty leeches is the
 thing the learner has already been ignoring; a queue of one asks a question small enough to
 answer.
-
-
-## ⚠ DESIGNED AND NOT YET BUILT (as of 2026-09-29)
-
-**EVERYTHING FROM HERE TO THE END OF THE FILE DESCRIBES CODE THAT DOES NOT EXIST.** It is
-quarantined in one section, under one heading, for a reason this file has already paid for
-twice: the handwriting paragraph said "the foundation only — there is no UI yet" for five
-phases *after* the UI shipped, and the storage section described a column that had been
-renamed, and later sessions read both as current. A file loaded as project instructions is
-worse than useless when it is confidently wrong about the thing it exists to describe.
-
-So the rule for this section is the inverse of the rest of the document: **nothing here may be
-cited as a description of the codebase.** When one of these ships, its section MOVES up into the
-body of the file next to the code it describes, rewritten in the present tense, and the entry
-here is DELETED. A design that has shipped and left a copy behind is the drift this section is
-shaped to prevent.
-
-Both of the features first drafted here have since SHIPPED and their sections have moved into
-the body of this file — Share beside the web clipper, and the year in reading beside the
-milestones it is derived like. That is the rule above being followed rather than described.
-One design remains unbuilt, below.
-
-### A pact — the first row that two people may both read
-
-**THE SHAPE IS WHAT IS NEW, NOT THE SYNCING.** Every synced column today lives on the caller's own
-`user_data` row behind `auth.uid() = user_id`. A shared goal is the first record in this project
-that two accounts both read, so it is the first place the RLS model has to say something other
-than "mine".
-
-Two tables: `pacts` (id, unique join `code`, `goal_kind`, `target`, `starts`, `ends`, `created_by`)
-and `pact_members` (`pact_id`, `user_id`, self-chosen `label`, `contributed`, `updated_at`).
-
-**THREE TRAPS, ALL OF WHICH FAIL AT RUNTIME RATHER THAN AT REVIEW.**
-
-- **RLS recursion.** A policy on `pact_members` that queries `pact_members` to test membership
-  recurses. It needs a `security definer stable` helper (`is_pact_member(p_pact uuid)`) that
-  bypasses RLS to answer the question its own policy is asking.
-- **The join chicken-and-egg.** A code cannot be looked up before the caller is a member, because
-  the row is invisible to them — so joining is a `security definer` function, `join_pact(p_code)`,
-  never a client insert.
-- **A revoke protects a SIGNATURE, not a name.** `tests/sync.test.ts` already requires every
-  function the SQL defines to carry a matching `revoke all on function <signature> from public`
-  and forbids overloads outright, because Postgres grants EXECUTE to PUBLIC by default and that
-  is exactly how the legacy `consume_ai_credit(p_limit integer)` stayed world-callable. Two new
-  functions is two revokes, in `schema.sql` AND in the migration.
-
-**`join_pact` IS A GUESSING ORACLE, AND IT IS THE FIRST USER-SUPPLIED IDENTIFIER THIS PROJECT HAS
-EVER ACCEPTED.** 8 characters from a 32-symbol alphabet with the look-alikes removed (`O 0 I 1`)
-is 40 bits, plus a per-caller attempt counter inside the function so enumeration is not free.
-
-**CONTRIBUTION IS PUBLISHED, NOT STORED AS TRUTH — `set`, NEVER `increment`.** This is the one
-decision that keeps *store only what cannot be derived* intact in a feature whose entire purpose
-is showing somebody a number they are unable to derive. `contributed` is RECOMPUTED from the
-member's own `activity_log` over the pact's window and written whole. The record is still the log;
-the pact row is a refreshed cache of a derivation. And because the write is idempotent it is
-replay-safe and double-write-safe, which is the identical argument `mergeActivity` makes for
-per-day MAX.
-
-**IT IS THEREFORE NOT QUEUED OFFLINE, DELIBERATELY.** `lib/storage/writeQueue.ts` is a map keyed
-by COLUMN on `user_data`, and a pact is a different table. Skipping the publication offline costs
-nothing, because the next online recompute republishes the truth — the same reasoning that has
-`passage_state` skipped rather than queued.
-
-**THE PRODUCT CONSTRAINTS ARE THIS FILE'S OWN, NOT NEW ONES.** *An unlock may only ever ADD*, so a
-pact is a sum toward a target: no rank, no position, no demotion, and falling behind renders as
-distance remaining rather than as something taken. *NO STREAK UNLOCKS* holds doubly here — a
-shared streak makes a missed morning let someone else down, and a high-water streak is not
-derivable anyway. It writes nothing to FSRS, the streak, the activity log or the AI budget, and a
-firewall test in the `tests/writingState.test.ts` shape asserts the module imports nothing that can
-schedule, comment-stripped for the reason that file gives.
-
-**The other member sees a LABEL and a NUMBER.** `auth.users` is never joined and the email never
-travels; `label` exists so that a display name is a thing the learner chose rather than a
-credential leaking sideways.
-
-**ANONYMOUS ACCOUNTS ARE REFUSED, AND THAT IS A FACT RATHER THAN A POLICY.** `AuthProvider` calls
-`storage.resetToLocal()` for an anonymous user, so there is no cloud row to sync at all — the
-refusal is a description of the storage layer, not a rule bolted onto it.

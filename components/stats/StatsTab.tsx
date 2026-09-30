@@ -14,6 +14,7 @@ import FutureLoad from './FutureLoad';
 import LevelProgress from './LevelProgress';
 import WeakWords from './WeakWords';
 import YearInReading from './YearInReading';
+import PactPanel from './PactPanel';
 
 /**
  * ── NINE PANELS IN ONE COLUMN WAS NOT A PAGE, IT WAS A SCROLL ────────────────
@@ -264,6 +265,7 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
           retrospective of eleven days is the sharpest version of it there is.
         */}
         <YearInReading />
+        <PactPanel />
         </>)}
       </></TabPanel>
 
