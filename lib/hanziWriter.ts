@@ -1,3 +1,4 @@
+import type { LanguageCode } from './types';
 /**
  * `hanzi-writer`, loaded on demand — the stroke-by-stroke drawing surface.
  *
@@ -38,6 +39,21 @@ export async function loadHanziWriter(): Promise<HanziWriterModule | null> {
  * and would break the offline story the rest of the data layer keeps. The 404 for a character
  * outside HSK is meaningful and handled: the session skips it rather than hanging.
  */
-export function strokeDataUrl(char: string): string {
-  return `/strokes/${encodeURIComponent(char)}.json`;
+export function strokeDataUrl(char: string, language: LanguageCode = 'zh'): string {
+  return `${STROKE_DIRS[language] ?? STROKE_DIRS.zh}/${encodeURIComponent(char)}.json`;
 }
+
+/**
+ * ONE DIRECTORY PER LANGUAGE, AND THEY ARE DIFFERENT DATA RATHER THAN A COPY.
+ *
+ * A table rather than a ternary, which is this project's rule about a difference between
+ * languages — a third script is a third row here. The two sets genuinely disagree: 骨 is TEN
+ * strokes in the Japanese data and NINE in the Chinese, and 直, 令 and 画 share a stroke count
+ * while differing in every path. Serving one from the other would teach confidently wrong
+ * stroke order, which is the exact reason handwriting was Chinese-only until the Japanese data
+ * was found. See `scripts/build-strokes-ja.mjs`.
+ */
+const STROKE_DIRS: Partial<Record<LanguageCode, string>> = {
+  zh: '/strokes',
+  ja: '/strokes-ja',
+};

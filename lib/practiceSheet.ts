@@ -73,8 +73,22 @@ export const GLYPH_TRANSFORM = `translate(0, ${GLYPH_BOX}) scale(1, -1)`;
  * The slack is applied symmetrically so the nominal glyph box stays centred in the cell. The
  * side effect is that a character draws at about 82% of the cell, which is roughly where a
  * character sits on real practice paper anyway.
+ *
+ * ── AND THE JAPANESE SET DOES NOT FIT THE CHINESE MEASUREMENT ────────────────
+ *
+ * 110 was measured across `public/strokes/` alone, because that was the only set there was.
+ * `public/strokes-ja/` comes from a different project (animCJK — see
+ * `scripts/build-strokes-ja.mjs`) and reaches FURTHER: **x 12..1118 against 12..1014, and
+ * y -110..894 against -100..888**. After the flip its deepest point lands at 1134, which was
+ * EXACTLY the old viewBox edge — so it fitted by nothing at all, and a filled stroke sitting
+ * on the boundary is a clip waiting for the next data refresh.
+ *
+ * So the number is measured across BOTH sets now, with real margin. It was found by measuring
+ * the new data against the old bound rather than by printing a sheet, which is the only reason
+ * it was caught before somebody printed one: a glyph touching the edge looks perfectly correct
+ * on screen.
  */
-export const GLYPH_SLACK = 110;
+export const GLYPH_SLACK = 130;
 
 export const GLYPH_VIEWBOX_SIZE = GLYPH_BOX + 2 * GLYPH_SLACK;
 

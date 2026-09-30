@@ -138,12 +138,22 @@ describe('pagination', () => {
  * so this over-reserves and can never clip. That is the right direction for the error.
  */
 describe('the glyph box holds every character in the set', () => {
-  const files = fs.existsSync(STROKES)
-    ? fs.readdirSync(STROKES).filter(f => f.endsWith('.json'))
-    : [];
+  /**
+   * BOTH SETS, because they are different data from different projects and only one of them
+   * had ever been measured. `public/strokes-ja/` reaches x 1118 and y -110 where the Chinese
+   * set stops at 1014 and -100, so a slack chosen from the Chinese files alone left the
+   * deepest Japanese stroke sitting EXACTLY on the viewBox edge. A test that walks one
+   * directory cannot see that, and a printed sheet is where it would have surfaced.
+   */
+  const STROKES_JA = path.join(ROOT, 'public', 'strokes-ja');
+  const listing = (dir: string) => (fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => path.join(dir, f))
+    : []);
+  const files = [...listing(STROKES), ...listing(STROKES_JA)];
 
-  it('has stroke data to check', () => {
-    expect(files.length).toBeGreaterThan(2600);
+  it('has stroke data to check, from both build scripts', () => {
+    expect(listing(STROKES).length).toBeGreaterThan(2600);
+    expect(listing(STROKES_JA).length).toBeGreaterThan(1800);
   });
 
   it('clips nothing, control points included', () => {
@@ -152,7 +162,7 @@ describe('the glyph box holds every character in the set', () => {
     const offenders: string[] = [];
 
     for (const file of files) {
-      const raw = fs.readFileSync(path.join(STROKES, file), 'utf8');
+      const raw = fs.readFileSync(file, 'utf8');
       const data = JSON.parse(raw) as { strokes: string[] };
       for (const d of data.strokes) {
         const nums = (d.match(/-?\d+\.?\d*/g) ?? []).map(Number);
@@ -160,7 +170,7 @@ describe('the glyph box holds every character in the set', () => {
           const x = nums[i];
           const y = GLYPH_BOX - nums[i + 1];      // the flip, exactly as rendered
           if (x < lo || x > hi || y < lo || y > hi) {
-            offenders.push(`${file}: (${nums[i]}, ${nums[i + 1]}) -> (${x}, ${y})`);
+            offenders.push(`${path.basename(file)}: (${nums[i]}, ${nums[i + 1]}) -> (${x}, ${y})`);
             break;
           }
         }
@@ -179,7 +189,7 @@ describe('the glyph box holds every character in the set', () => {
     const hi = GLYPH_BOX + GLYPH_SLACK / 2;
     let clipped = false;
     for (const file of files) {
-      const data = JSON.parse(fs.readFileSync(path.join(STROKES, file), 'utf8')) as { strokes: string[] };
+      const data = JSON.parse(fs.readFileSync(file, 'utf8')) as { strokes: string[] };
       for (const d of data.strokes) {
         const nums = (d.match(/-?\d+\.?\d*/g) ?? []).map(Number);
         for (let i = 0; i + 1 < nums.length; i += 2) {

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { strokeDataUrl } from '@/lib/hanziWriter';
+import { useLanguage } from '@/lib/LanguageContext';
 import {
   buildRows, paginate, rowCells, strokeBuildUp,
   CELL_MM, STROKE_BOX_MM, GLYPH_BOX, GLYPH_SLACK, GLYPH_VIEWBOX, GLYPH_TRANSFORM,
@@ -74,6 +75,11 @@ const bandInset = VB_MIN + BAND_FRAME / 2;
 const bandSpan = VB_SIZE - BAND_FRAME;
 
 export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Props) {
+  // Which stroke set to read: zh and ja are DIFFERENT data, not one shared copy — see
+  // `strokeDataUrl`. Taken from context rather than a prop so a caller cannot pass the
+  // wrong one and quietly draw Chinese stroke order in a Japanese session.
+  const language = useLanguage();
+
   const [source, setSource] = useState<'due' | 'all'>(dueChars.length > 0 ? 'due' : 'all');
   const [limit, setLimit] = useState(14);
   const [hideModels, setHideModels] = useState(false);
@@ -99,7 +105,7 @@ export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Pro
     setLoading(true);
     void Promise.all(missing.map(async c => {
       try {
-        const res = await fetch(strokeDataUrl(c));
+        const res = await fetch(strokeDataUrl(c, language));
         if (!res.ok) return [c, [] as string[]] as const;
         const json = await res.json() as { strokes?: string[] };
         return [c, json.strokes ?? []] as const;
@@ -113,7 +119,9 @@ export default function PracticeSheet({ allChars, dueChars, deck, onClose }: Pro
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [chosen, strokeData]);
+    // See WritingCanvas: the two languages serve different strokes for the same character, so
+    // a sheet built before a language switch would print the other script's stroke order.
+  }, [chosen, strokeData, language]);
 
   const { rows, skipped } = useMemo(
     () => buildRows(chosen, strokeData, deck),

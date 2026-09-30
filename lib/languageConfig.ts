@@ -254,7 +254,14 @@ export const JA_CONFIG: LanguageConfig = {
   segmentation: 'server',
   scriptIsUnspaced: true,
   showsCharacterDecomposition: false,
-  hasHandwriting: false,
+  /**
+   * TRUE SINCE THE JAPANESE STROKE DATA EXISTS — and it is a DIFFERENT dataset, not the
+   * Chinese one reused. `public/strokes-ja/` comes from animCJK via
+   * `scripts/build-strokes-ja.mjs`; 骨 is ten strokes there and nine in `public/strokes/`.
+   * Serving one from the other is exactly the confidently-wrong stroke order that kept this
+   * flag false.
+   */
+  hasHandwriting: true,
   hasConjugation: false,
   accentKeys: [],
   wordCharRe: /[一-鿿぀-ヿ]/,

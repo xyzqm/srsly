@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadHanziWriter, strokeDataUrl } from '@/lib/hanziWriter';
+import { useLanguage } from '@/lib/LanguageContext';
 
 /**
  * One character's drawing surface, in two phases: LEARN then QUIZ.
@@ -113,6 +114,11 @@ function themeColors(): Record<string, string> {
 const ANIM = { strokeAnimationSpeed: 1.25, delayBetweenStrokes: 260 } as const;
 
 export default function WritingCanvas({ char, isNew = false, onDone, onUnavailable }: Props) {
+  // Which stroke set to read: zh and ja are DIFFERENT data, not one shared copy — see
+  // `strokeDataUrl`. Taken from context rather than a prop so a caller cannot pass the
+  // wrong one and quietly draw Chinese stroke order in a Japanese session.
+  const language = useLanguage();
+
   const hostRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<WriterHandle | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing'>('loading');
@@ -187,7 +193,7 @@ export default function WritingCanvas({ char, isNew = false, onDone, onUnavailab
          * sitting on a blank square for ever.
          */
         charDataLoader: (c: string, onLoad: (d: StrokeJson) => void, onError: () => void) => {
-          fetch(strokeDataUrl(c))
+          fetch(strokeDataUrl(c, language))
             .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
             .then(onLoad)
             .catch(() => { onError(); if (!cancelled) { setStatus('missing'); cbRef.current.onUnavailable(); } });
@@ -217,7 +223,12 @@ export default function WritingCanvas({ char, isNew = false, onDone, onUnavailab
       // without this every character would stack another one on top of the last.
       if (host) host.innerHTML = '';
     };
-  }, [char, startQuiz]);
+    // `language` is a dependency because zh and ja serve DIFFERENT strokes for the SAME
+    // character — 骨 is nine strokes in one set and ten in the other. Without it, switching
+    // language with the Write panel open keeps drawing the previous language's stroke order,
+    // which is the one failure this whole feature exists to avoid. It used to be safe to omit
+    // only because Chinese was the only language with handwriting at all.
+  }, [char, startQuiz, language]);
 
   /** Keep the drawing square square, and resize without discarding drawn strokes. */
   useEffect(() => {
