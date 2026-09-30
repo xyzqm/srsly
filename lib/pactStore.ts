@@ -54,12 +54,22 @@ function rowToPact(r: PactRow): Pact {
  * gives: telling somebody to wait when the real problem is their code is advice that can never
  * work.
  */
-function classify(message: string): PactError {
+export function classifyPactError(message: string): PactError {
+  // THE TABLES NOT BEING THERE IS NOT A FAILURE THE LEARNER CAN ACT ON, and it is the state
+  // every deployment is in between shipping this code and running migration 0009 — which
+  // nothing in this repository can detect. Reported as `unavailable`, which the panel renders
+  // as NOTHING, rather than as "that did not go through, try again in a moment": advice that
+  // can never work is the one thing `GenerationError` exists to stop this codebase giving.
+  // PostgREST answers a missing table from its schema cache rather than from Postgres, so both
+  // wordings are matched.
+  if (/schema cache|does not exist|relation .* does not exist/i.test(message)) return 'unavailable';
   if (/sign in/i.test(message)) return 'signed-out';
   if (/too many/i.test(message)) return 'rate-limited';
   if (/no pact with that code/i.test(message)) return 'not-found';
   return 'failed';
 }
+
+const classify = classifyPactError;
 
 /** Every pact this account belongs to, with everyone's published number. */
 export async function listPacts(): Promise<PactWithMembers[] | PactError> {

@@ -5,6 +5,7 @@ import {
   contributionFor, pactProgress, daysLeft,
   type PactMemberView,
 } from '@/lib/pact';
+import { classifyPactError } from '@/lib/pactStore';
 
 const day = (d: string, n: number) => ({ d, n });
 
@@ -141,5 +142,24 @@ describe('time left', () => {
 
   it('is zero once it is over', () => {
     expect(daysLeft({ ends: '2026-09-30' }, '2026-10-01')).toBe(0);
+  });
+});
+
+describe('a failure says which of five things went wrong', () => {
+  /**
+   * `unavailable` is the one worth separating, and it is the state EVERY deployment is in
+   * between this code shipping and migration 0009 being run — which nothing in the repository
+   * can detect. Rendering "try again in a moment" then would be advice that can never work,
+   * which is the failure `GenerationError` exists to stop this codebase repeating.
+   */
+  it.each([
+    ['Could not find the table \'public.pacts\' in the schema cache', 'unavailable'],
+    ['relation "public.pact_members" does not exist',                'unavailable'],
+    ['pact: sign in with an account first',                          'signed-out'],
+    ['pact: too many join attempts today',                           'rate-limited'],
+    ['pact: no pact with that code',                                 'not-found'],
+    ['connection reset by peer',                                     'failed'],
+  ])('reads %j as %s', (message, expected) => {
+    expect(classifyPactError(message as string)).toBe(expected);
   });
 });

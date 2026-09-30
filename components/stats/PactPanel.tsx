@@ -82,6 +82,10 @@ export default function PactPanel() {
   useEffect(() => { if (usable) void refresh(); }, [usable, refresh]);
 
   if (!usable) return null;
+  // Migration 0009 not applied yet, or syncing not configured at all. Neither is something a
+  // learner can do anything about, and an inviting panel that errors the moment you touch it is
+  // worse than no panel: the feature simply is not there yet, so it is not offered.
+  if (err === 'unavailable') return null;
   // `null` is "not loaded" and `[]` is "none yet" — two different silences, and rendering the
   // second while the first is true is the mistake this codebase names four times over.
   if (pacts === null) return null;
