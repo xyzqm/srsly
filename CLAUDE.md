@@ -2305,6 +2305,71 @@ holds what it is showing in its OWN state rather than rendering from `fresh`. Th
 the same list and are not — acknowledging empties `fresh`, so rendering from it made the
 milestone vanish a second after it appeared.
 
+#### A year in reading is derived too, and the refusals are the feature
+
+`lib/yearInReading.ts` is a pure function over (activity log, shelves, decks, finished lessons);
+`components/stats/YearInReading.tsx` draws it, in Stats → Overview. **Nothing is stored**: no
+column, no migration, derived on read exactly like the milestones above.
+
+**THE INTERESTING HALF IS WHAT IT REFUSES TO REPORT**, because each refusal is a place where the
+obvious chart would need a field nobody keeps:
+
+- **Words added per month.** `DeckWord` carries no created-at, and adding one to fill a bar chart
+  would be a second record of a fact written on every save to decorate a screen — the rule this
+  file opens with. So the deck contributes a COUNT AT THIS MOMENT (held, holding) and never a
+  series. A test moves the window and asserts those two numbers do not move, which is what stops
+  somebody later "fixing" it with a timestamp.
+- **Accuracy across the year.** `SRSState.accuracy` is trimmed to a 30-day window, so a
+  twelve-month line would be one real month and eleven of nothing.
+- **When a lesson was finished.** `lessons_done` holds ids, so lessons are a total, not a timeline.
+
+**IT LIVES IN STATS, WHICH IS THE OTHER HALF OF THE ARGUMENT THAT MOVED THE SHELF OUT.** The
+passage shelf and the accuracy trend left for Read because they describe the passages directly
+above them. `PassageShelf`'s own docstring draws the line: *the rest of Stats is numbers about the
+work; this is the work.* A year-in-review is numbers about the work, and it spans the decks, the
+lessons and all four languages at once, which is nothing the Read tab is about.
+
+**THE TWO SOURCES HAVE DIFFERENT HORIZONS AND THE PAGE SAYS BOTH.** `activity_log` keeps 400 days
+and kept 120 until 2026-09-29, so it prints the first day actually on record — the precedent
+`ReviewHeatmap`'s legend already sets — and is headed "your reading so far" rather than claiming a
+year it cannot have until 2027. The shelf's limit is different and worse: `MAX_ENTRIES` (200) PER
+LANGUAGE, oldest dropped, so a heavy reader's early passages are genuinely gone. A language
+sitting at the cap is reported in a sentence rather than quietly undercounted, and raising the cap
+is not the fix — 200 × ~700 B × four languages is already ~560 kB of a 5 MB budget holding every
+deck.
+
+**THE LONGEST RUN IS DELIBERATELY NOT THE STREAK.** `SRSState.streak` is the run ending today and
+is allowed to fall to 1; this is the best run anywhere in the window and only ever describes the
+past. It is the one number here a bad week cannot take away, which is most of why a look-back is
+worth reading at all.
+
+**IT RENDERS NOTHING BELOW `MIN_DAYS_TO_SHOW` (14), AND THAT IS THE WHOLE RISK.** `npm run
+seed:dev` exists because a wall of empty progress bars is a list of things you have failed to do,
+and a retrospective of eleven days is the sharpest version of it there is. `null` (not loaded) and
+`sparse` (nothing to look back on) are two different reasons for the same silence and are kept
+apart, because collapsing them is this file's most-repeated bug. Verified in a browser: at five
+recorded days the panel is absent and the rest of Overview is untouched.
+
+**NO CHART LIBRARY**, the same judgement as `lib/fsrs.ts` and the absent `openai` SDK. One
+single-series column chart is a `<path>` per month, and it has to inherit ten themes from CSS
+variables — which is exactly what a charting library's own palette would fight. Checked by
+measuring the computed fill under two themes rather than trusting the variable.
+
+Three things the drawing gets right on purpose, and one of them was wrong first:
+
+- **An empty month keeps its column.** A chart that omits the months with nothing in them draws a
+  different shape from the one the year had — four busy months in a row, when they were four busy
+  months spread over nine. The gap IS the finding, so it renders as a faint foot on the baseline.
+- **The direct label goes on the tallest column in the chart**, and the first version put it on
+  the month containing the busiest DAY. Those are different months, so the number sat on a
+  visibly shorter bar with taller unlabelled ones beside it — a chart that looks mislabelled
+  rather than one showing two facts. **Found by rendering it and looking at it**, which is the
+  lesson this file already records six times over. The busiest day is a separate statistic and is
+  now printed as one, beside the total it belongs to.
+- **One series, so no legend and one hue.** Magnitude is height; a colour ramp on top would
+  encode the same fact twice and then disagree with itself at the rounding.
+
+
 #### A milestone is a seal, and one badge per ladder
 
 `components/stats/BadgeSeal.tsx` draws a milestone as a mark inside a ring. It replaced a row
@@ -2983,9 +3048,10 @@ body of the file next to the code it describes, rewritten in the present tense, 
 here is DELETED. A design that has shipped and left a copy behind is the drift this section is
 shaped to prevent.
 
-Two things are already real and are marked as such: the activity-log retention window, and
-the Share feature, whose section has MOVED into the body of this file beside the web clipper —
-which is the rule above being followed rather than described.
+Both of the features first drafted here have since SHIPPED and their sections have moved into
+the body of this file — Share beside the web clipper, and the year in reading beside the
+milestones it is derived like. That is the rule above being followed rather than described.
+One design remains unbuilt, below.
 
 ### A pact — the first row that two people may both read
 
@@ -3043,50 +3109,3 @@ credential leaking sideways.
 **ANONYMOUS ACCOUNTS ARE REFUSED, AND THAT IS A FACT RATHER THAN A POLICY.** `AuthProvider` calls
 `storage.resetToLocal()` for an anonymous user, so there is no cloud row to sync at all — the
 refusal is a description of the storage layer, not a rule bolted onto it.
-
-### A year in reading — and the audit is the feature
-
-**STEP 0 IS ALREADY DONE AND IS THE ONE REAL THING IN THIS SECTION**: `ACTIVITY_WINDOW_DAYS` is
-400, documented at its declaration and pinned by `tests/activityLog.test.ts`. It went first
-because it was the only item on this list with a CALENDAR dependency — the window is a deletion
-policy, so every day it was not raised was a day of history that could not be recovered later.
-
-**NOTHING HAD ACTUALLY BEEN LOST, AND THE FIX WAS PROPOSED AS AN EMERGENCY.** The log shipped
-2026-08-17, so on 2026-09-29 the oldest entry was 43 days old and the first deletion under the old
-window would have been 2026-12-15 — a real deadline, 77 days out. Recorded because the difference
-between "you are losing data now" and "you will start losing data in eleven weeks" is the whole
-difference between a panic and a plan, and the urgent framing came from outside the repo.
-
-**THE FIRST HONEST YEAR IS A YEAR AFTER THAT LANDED.** Until then the page is "your reading so
-far" and states the first day actually on record, the way `ReviewHeatmap`'s legend already does.
-A page that implies a year it does not have is a loading state rendered as an answer.
-
-**WHAT IS DERIVABLE, AND WHAT IS NOT — THE REFUSALS ARE THE POINT.**
-
-| Can say | From |
-|---|---|
-| Days studied, cards graded, busiest day, longest consecutive run, monthly totals | `activity_log` |
-| Passages finished by month / language / level, first-try score, target words, and words actually READ (token counts) | `shelf` |
-| Words held, words mastered (`stability >= MASTERY_STABILITY_DAYS`), leeches rescued | the decks — point-in-time, not a series |
-| Lessons finished | `lessons_done` — a count |
-
-| Cannot say | Why |
-|---|---|
-| Words added per month | `DeckWord` carries no created-at. **Do not add one to enable a decoration** — that is a second record of a fact, bought to fill a chart |
-| Accuracy across the year | `SRSState.accuracy` is trimmed to a 30-day window |
-| When a lesson was finished | `lessons_done` holds ids and nothing else |
-
-**The shelf caps at `MAX_ENTRIES = 200` PER LANGUAGE, oldest dropped**, so a year of more than 200
-passages loses its early months and the page has to say so. Do not raise it: 200 × ~700 B × four
-languages is already ~560 kB of a 5 MB localStorage budget that also holds every deck.
-
-`lib/yearInReading.ts` is a PURE function over (log, shelf, decks, srs_state, lessons_done),
-testable with no network like `lib/proverb.ts` and `lib/passageTheme.ts`. It renders with the
-hand-rolled SVG idiom already in `ReviewHeatmap` / `AccuracyTrend` / `PieChart` / `FutureLoad` —
-**no chart library** — every colour from a CSS variable, and nothing is stored: no column, no
-migration, derived on read like `lib/achievements.ts`.
-
-**THE EMPTY STATE IS THE WHOLE RISK, AND IT IS THE TRAP THAT MADE `npm run seed:dev` EXIST.** A
-wall of empty progress bars is a list of things you have failed to do, and a year page for someone
-holding eleven days of data is exactly that. So the panel is ABSENT below a threshold rather than
-present and zeroed.

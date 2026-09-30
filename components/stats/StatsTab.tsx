@@ -13,6 +13,7 @@ import ReviewHeatmap from './ReviewHeatmap';
 import FutureLoad from './FutureLoad';
 import LevelProgress from './LevelProgress';
 import WeakWords from './WeakWords';
+import YearInReading from './YearInReading';
 
 /**
  * ── NINE PANELS IN ONE COLUMN WAS NOT A PAGE, IT WAS A SCROLL ────────────────
@@ -249,6 +250,20 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
         </div>
 
         <MilestoneRing deck={deck} language={language} />
+        {/*
+          ── THE LOOK-BACK BELONGS IN STATS, AND THE SHELF LEAVING IS THE REASON ───
+          The passage shelf and the accuracy trend moved OUT of here and under Read on the
+          argument that they describe the passages directly above them. This is the other
+          half of that same argument rather than a contradiction of it: this panel's own
+          docstring says "the rest of Stats is numbers about the work; this is the work",
+          and a year-in-review is numbers about the work. It also spans the decks, the
+          lessons and every language at once, which is nothing the Read tab is about.
+
+          It renders NOTHING until there is enough to look back on — see `sparse`. That is
+          load-bearing directly above this comment's own warning about a wall of zeros: a
+          retrospective of eleven days is the sharpest version of it there is.
+        */}
+        <YearInReading />
         </>)}
       </></TabPanel>
 
