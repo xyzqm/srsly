@@ -82,9 +82,23 @@ describe('a clip still reaches the thing that reads it', () => {
    * `initialTab()` documents one level up, reintroduced by adding a level.
    */
   it('opens the library section when the URL carries one', () => {
-    expect(sections).toContain('decodeClip');
+    expect(sections).toContain('sharePrefixPresent');
     const init = sections.slice(sections.indexOf('useState<Section>'), sections.indexOf('return ('));
-    expect(init).toMatch(/decodeClip[\s\S]*?'library'/);
+    expect(init).toMatch(/sharePrefixPresent[\s\S]*?'library'/);
+  });
+
+  /**
+   * AND IT MUST BE THE SYNCHRONOUS CHECK, NOT A DECODE. Both callers that route on an incoming
+   * hash are lazy `useState` initialisers, and a v2 share is compressed — `DecompressionStream`
+   * is async, so `await` is not available here at all. Reaching for `decodeShare` in either
+   * place would make the route silently stop working for compressed links while continuing to
+   * work for v1, which is the worst shape of regression: half the feature, quietly.
+   */
+  it('routes on the prefix rather than on a decoded payload', () => {
+    for (const src of [sections, page]) {
+      expect(src).not.toContain('decodeShare');
+      expect(src).not.toContain('decodeClip');
+    }
   });
 
   /**
@@ -100,7 +114,7 @@ describe('a clip still reaches the thing that reads it', () => {
   it('lets a clip win the landing tab over the remembered one', () => {
     const fn = page.slice(page.indexOf('function initialTab'), page.indexOf('function AppShell'));
     expect(fn).toContain("return 'read'");
-    expect(fn.indexOf('decodeClip')).toBeLessThan(fn.indexOf('storedTab'));
+    expect(fn.indexOf('sharePrefixPresent')).toBeLessThan(fn.indexOf('storedTab'));
   });
 
   /** And a reload with no clip returns you where you were. */

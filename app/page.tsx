@@ -4,7 +4,7 @@ import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { languageFromTag } from '@/lib/languageMismatch';
-import { decodeClip } from '@/lib/webClip';
+import { sharePrefixPresent } from '@/lib/shareLink';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
 import AddLanguage from '@/components/level/AddLanguage';
 import { setSpeechLang, setSpeechSpeed } from '@/lib/speech';
@@ -166,12 +166,16 @@ function storedTab(): TabId | null {
 function initialTab(): TabId {
   if (typeof window === 'undefined') return 'practice';
   /**
-   * A CLIP IN THE URL STILL WINS, and it has to. `TabPanel` mounts a tab only once activated
-   * and the clipper reads the hash from an effect inside ReadTab, so restoring Vocab over the
-   * top of an incoming article would leave it unread — the papercut the clipper exists to
-   * remove, reintroduced by remembering too well.
+   * A CLIP OR A SHARED READING IN THE URL STILL WINS, and it has to. `TabPanel` mounts a tab
+   * only once activated and the hash is read from an effect inside ReadTab, so restoring Vocab
+   * over the top of an incoming article would leave it unread — the papercut the clipper exists
+   * to remove, reintroduced by remembering too well.
+   *
+   * It tests the PREFIX rather than decoding the payload, and that is now load-bearing: a v2
+   * share is compressed and `DecompressionStream` is async, which a lazy `useState` initialiser
+   * cannot await. Deciding the tab never needed the contents — only whether something is there.
    */
-  if (decodeClip(window.location.hash)) return 'read';
+  if (sharePrefixPresent(window.location.hash)) return 'read';
   /**
    * HOME FIRST, not the drill tab.
    *

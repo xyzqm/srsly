@@ -24,7 +24,7 @@ import { MAX_PASTE_CHARS } from './constants';
  */
 
 /** Marks a hash as ours, so an unrelated `#section` on the page is never parsed as a clip. */
-const CLIP_PREFIX = '#clip=';
+export const CLIP_PREFIX = '#clip=';
 
 export interface WebClip {
   title: string;

@@ -6,7 +6,7 @@ import PassageShelf from '@/components/stats/PassageShelf';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import TabPanel from '@/components/TabPanel';
-import { decodeClip } from '@/lib/webClip';
+import { sharePrefixPresent } from '@/lib/shareLink';
 import type { FsrsGrade } from '@/lib/fsrs';
 
 /**
@@ -71,11 +71,15 @@ export default function ReadSections({ active, ...rest }: Props) {
   const { accuracy } = useSRS(language);
   /**
    * Generated is the default, because being unable to find it is what moved it here. The one
-   * exception is a URL carrying a clip: that is an article the learner is arriving WITH, and
-   * it belongs to the library section, whose effect has to be mounted to read it.
+   * exception is a URL carrying a clip or a shared reading: that is an article the learner is
+   * arriving WITH, and it belongs to the library section, whose effect has to be mounted to
+   * read it.
+   *
+   * The PREFIX is the test, not the payload — a v2 share decompresses asynchronously and this
+   * is a lazy initialiser, which cannot await. See `sharePrefixPresent`.
    */
   const [section, setSection] = useState<Section>(() =>
-    typeof window !== 'undefined' && decodeClip(window.location.hash) ? 'library' : 'generated');
+    typeof window !== 'undefined' && sharePrefixPresent(window.location.hash) ? 'library' : 'generated');
 
   /*
     THE SWITCH BELONGS INSIDE THE PANEL IT SWITCHES.

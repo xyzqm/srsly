@@ -16,7 +16,7 @@ import { buildAnchorMap, type Anchor } from '@/lib/anchors';
 import { bumpCount, getTodayCounts } from '@/lib/reviewCounts';
 import { getSrsSettings } from '@/lib/fsrs';
 import { selectClozeTargets, clozeKey } from '@/lib/clozeTargets';
-import { needsSpaceBefore } from '@/lib/tokenText';
+import { needsSpaceBefore, tokensToText } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from './WordPopup';
 import ReadabilityNote from './ReadabilityNote';
@@ -30,7 +30,9 @@ import Mark from '@/components/shared/Mark';
 import ReadingSources from './ReadingSources';
 import DailyProverb from './DailyProverb';
 import AchievementToast from '@/components/stats/AchievementToast';
-import { decodeClip, type WebClip } from '@/lib/webClip';
+import { type WebClip } from '@/lib/webClip';
+import { sharePrefixPresent, decodeShare } from '@/lib/shareLink';
+import SharePanel from './SharePanel';
 import NextSection from './NextSection';
 import LookupSummary from './LookupSummary';
 import Question from './Question';
@@ -160,18 +162,60 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
    * bar is something the reader might copy and share without realising what is in it.
    */
   const [clip, setClip] = useState<WebClip | null>(null);
+  /**
+   * THREE STATES, BECAUSE READING THE HASH BECAME ASYNCHRONOUS.
+   *
+   * A v2 share is compressed and `DecompressionStream` cannot be awaited in a render, so between
+   * mount and resolve there is a moment where a share is definitely present and its contents are
+   * definitely not known yet. Rendering the reading chooser in that moment would say "pick
+   * something to read" to somebody who has just opened a link to something specific — an absent
+   * value meaning "not here yet" shown as one meaning "there is none", which is the mistake this
+   * codebase names four times over.
+   *
+   * `loading` is decided SYNCHRONOUSLY in the initialiser, from the prefix alone, so the first
+   * committed frame already knows something is coming.
+   */
+  const [shareStatus, setShareStatus] = useState<'none' | 'loading' | 'unreadable'>(() =>
+    typeof window !== 'undefined' && variant === 'read' && sharePrefixPresent(window.location.hash)
+      ? 'loading'
+      : 'none');
+  /**
+   * The captured hash, and IT IS A REF BECAUSE OF STRICTMODE.
+   *
+   * The hash has to be cleared immediately — a refresh must not silently re-import the same
+   * article, and 8,000 characters of somebody's reading must not sit in the address bar. But
+   * React's StrictMode runs every effect mount → cleanup → mount in development, and the decode
+   * now yields to the event loop in between. Clearing the hash and then reading
+   * `window.location.hash` again on the second run finds nothing, so the shared article would
+   * arrive in production and vanish on the developer's own machine. Capturing it here makes the
+   * re-run reuse what the first run took; `decodeShare` is pure, so decoding twice is free.
+   */
+  const shareHash = useRef<string | null>(null);
   useEffect(() => {
     // Read only. Both variants mount at once (TabPanel keeps tabs alive), and a clip is
     // someone's own article — if the SRS instance consumed the hash first it would clear it
     // and the Read instance would find nothing.
     if (variant !== 'read') return;
-    const found = decodeClip(window.location.hash);
-    if (!found) return;
-    setClip(found);
-    // Match the page's language before the text is analysed, so a Spanish article clipped
-    // during a Chinese session is not segmented as Chinese.
-    if (found.lang) onRequestLanguage?.(found.lang);
-    history.replaceState(null, '', window.location.pathname + window.location.search);
+    if (shareHash.current === null) {
+      const hash = window.location.hash;
+      if (!sharePrefixPresent(hash)) { shareHash.current = ''; return; }
+      shareHash.current = hash;
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    if (!shareHash.current) return;
+    void decodeShare(shareHash.current).then(res => {
+      if (res.kind === 'share') {
+        setShareStatus('none');
+        setClip(res.clip);
+        // Match the page's language before the text is analysed, so a Spanish article clipped
+        // during a Chinese session is not segmented as Chinese.
+        if (res.clip.lang) onRequestLanguage?.(res.clip.lang);
+      } else {
+        // `unreadable` is the likely failure and gets its own sentence: the reason this codec
+        // compresses at all is that links travel through apps that wrap and cut them.
+        setShareStatus(res.kind === 'unreadable' ? 'unreadable' : 'none');
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -266,6 +310,31 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const QUESTIONS = useMemo(() => currentPassage?.questions ?? [], [currentPassage]);
   // Passage length: characters for unspaced scripts, words for spaced ones — a Han-character
   // count is the natural measure for zh/ja and always zero for Spanish.
+  /**
+   * What a share of this passage carries — flattened EXACTLY as `lib/shelf.ts` flattens it.
+   *
+   * Same two lines on purpose: the shelf already had to turn a passage into plain text, and two
+   * independent flattenings of one passage is how a shared copy and a shelved copy come to
+   * disagree about spacing. `tokensToText` for the title rather than a join, because a local join
+   * renders "Undíasoleado" in every spaced language.
+   */
+  const shareText = useMemo(() => SENTENCES.map(s => s.plainText).join(' ').trim(), [SENTENCES]);
+  const shareTitle = useMemo(
+    () => tokensToText(TITLE_TOKENS, langConfig.scriptIsUnspaced).trim(),
+    [TITLE_TOKENS, langConfig.scriptIsUnspaced]);
+  /**
+   * A BOOK MAY NOT BE SHARED, and that is the same promise as "EPUB files never sync".
+   *
+   * A book is megabytes of somebody else's copyrighted file, and putting a chapter into a chat
+   * app is that act by another route rather than a different one. `bookPassage` is non-null
+   * exactly while a book is open, so the test is the state and not a guess about the content.
+   */
+  const canShare = !!currentPassage && !bookPassage && shareText.length > 0;
+  const [shareOpen, setShareOpen] = useState(false);
+  // Close on a passage change: the panel would rebuild its link correctly, but a share sheet
+  // left open over a passage you have since paged away from invites sending the wrong one.
+  useEffect(() => { setShareOpen(false); }, [passageIdx, bookPassage]);
+
   const charCount = currentPassage
     ? currentPassage.sentences.flatMap(s => s.tokens).filter(t =>
         langConfig.scriptIsUnspaced ? /[一-鿿]/.test(t.text) : t.type !== 'punct'
@@ -829,6 +898,12 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   const commitPastedPassage = useCallback((passage: DailyPassage) => {
     requestJump();
     addPastedPassage(passage);
+    // CLEARED ON COMMIT, which is what makes `ReadingSources`' fold guard correct rather than
+    // permanent. That component's comment already claimed "the clip is cleared once used" and
+    // nothing ever did it, so a clip stayed live for the rest of the session — harmless while
+    // nothing read the flag, and the difference between "do not fold yet" and "never fold again"
+    // the moment something did.
+    setClip(null);
   }, [requestJump, addPastedPassage]);
   const generateMore = useCallback(() => {
     requestJump();
@@ -1196,6 +1271,18 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           control touch. */}
       {variant === 'read' && hskLevel > 0 && (
         <div className="mb-5">
+        {/* A LINK THAT ARRIVED BROKEN SAYS SO. Silence here would read as "that link did
+            nothing", which is the dead-button report this codebase has already filed once. The
+            likely cause is the transport rather than the sender, so the sentence names it. */}
+        {shareStatus === 'unreadable' && (
+          <p style={{
+            fontFamily: 'var(--f-mono)', fontSize: 11.5, lineHeight: 1.55, margin: '0 0 12px',
+            color: 'var(--ink-soft)', maxWidth: '58ch',
+          }}>
+            That shared link could not be read — it was probably shortened or cut off on its way
+            here. Ask for it again, or paste the text itself below.
+          </p>
+        )}
         <ReadingSources
           language={language}
           deck={deck}
@@ -1205,6 +1292,7 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
           onCommitBook={commitBookSection}
           emptyTab={!currentPassage}
           clip={clip}
+          pendingShare={shareStatus === 'loading'}
         />
         </div>
       )}
@@ -1422,8 +1510,24 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                   Boundaries
                 </button>
               )}
+              {/* Hidden while dictating, for PassagePlayer's reason: the run withholds sentences
+                  the learner has not earned, and a panel printing the whole text into a copyable
+                  field hands them over. */}
+              {canShare && !dictation && (
+                <button
+                  style={toggleStyle(shareOpen)}
+                  onClick={() => setShareOpen(v => !v)}
+                  title="Send this reading to someone — the text travels inside the link"
+                >
+                  Share
+                </button>
+              )}
             </div>
           </div>
+
+          {shareOpen && canShare && (
+            <SharePanel title={shareTitle} text={shareText} lang={language} />
+          )}
 
           {/* Teach, then test — with the emphasis on THEN.
               These are the passage's brand-new words, named before you read rather than

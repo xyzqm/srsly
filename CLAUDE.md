@@ -1831,6 +1831,102 @@ enforced, so a "starter songs" shelf is not available to us at any level of cura
 be given away is knowing what to look for, which is what the listen-along panel's "New to this?"
 block does — what an `.lrc` is, how to find one, and what a working file looks like.
 
+### Sharing a reading — the clipper pointed the other way
+
+`lib/shareLink.ts`, `components/read/SharePanel.tsx`, and a Share control on any open passage
+that is not a book.
+
+**THE FRAMING CAME OUT OF THIS CODEBASE'S OWN COMMENT.** `ReadTab` clears the clip hash as soon
+as it reads it, and says why: refreshing must not re-import the same article, and "an
+8,000-character fragment sitting in the address bar is something the reader might copy and share
+without realising what is in it." This feature does not contradict that sentence, it ANSWERS it —
+sharing stops being an accident of a URL nobody read and becomes a deliberate act, with a
+sentence beside the button saying what travels.
+
+It is also the only social mechanic that suits this app rather than a different one. An app with
+nothing but scores can only share a score; srsly shares the TEXT, and the recipient reads it
+segmented at THEIR level against THEIR deck — one article, two readers, two readability figures,
+and no server in the middle.
+
+**A SHARED PASSAGE ARRIVES AS READING, NEVER AS AN EXERCISE.** What lands on the other side is a
+`WebClip`, which `ReadTab` treats as the learner's own text: no blanks, no grading, no schedule
+touched. That is the "Only GENERATED passages have blanks" contract applied correctly rather than
+a simplification. A generated passage may fairly test you because it was written around the words
+*you* owe today; it carries no such licence over somebody else's deck, and blanking it against
+theirs would ask them to recall words chosen for a stranger.
+
+**THE BROWSER IS NOT WHY IT COMPRESSES, AND THE FIRST DRAFT SAID IT WAS.** The claim was that a
+full-length clip is too long for a URL. Measured against the live site rather than reasoned
+about: 8,000 Han characters percent-encode to a **72,146-character URL and all 8,000 arrive
+intact** through a real page load. The clipper has never been broken and `#clip=` needs nothing
+done to it. *(That mistake had a second layer: the first check read `document.body.innerText`,
+saw nothing, and concluded the clip was lost. `innerText` does not include a `textarea`'s value,
+so the evidence for the bug was an artefact of how it was looked for.)*
+
+What is new is the TRANSPORT. A bookmarklet's URL is machine-generated and seen by nobody; a
+share link is pasted into a messenger that wraps it, truncates it and fetches it for a preview,
+and a 72,000-character link is not a shareable object whatever Chrome tolerates. Measured on
+high-entropy text: 8,000 Han characters give v1 = 72,084 and **v2 = 23,292 (32.3%)**. Third-party
+messenger behaviour is NOT measured, so the target is a judgement and this paragraph says so.
+
+**base64url, so there is nothing left to percent-encode.** Half the saving is structural rather
+than compression: v1 spends its bytes twice, once on UTF-8 and again on `%XX` per byte. An
+all-multibyte script costs 9 characters each under percent-encoding and 4 under base64url, so v2
+wins ~55% before `deflate` contributes anything — which is why `tests/shareLink.test.ts` can
+assert a size bound without the assertion depending on how compressible the sample happened to be.
+
+**`#clip=` IS DECODED FOREVER.** A bookmarklet lives in a bookmark bar and is never updated, so
+retiring v1 is a break that is invisible here and permanent there. `decodeShare` reads both, and
+`encodeShare` falls back to v1 wholesale on a runtime without `CompressionStream` — a longer link
+that works beats a shorter one that cannot be produced. No `fflate`: the seam below is one
+component, and twenty lines of codec does not earn a dependency.
+
+**THE ASYNC SEAM IS THE REAL ARCHITECTURAL COST, AND IT LANDS ON A LOADING STATE.**
+`DecompressionStream` cannot be awaited in a render, and two callers decide LAYOUT before anything
+can be awaited: `initialTab()` in `app/page.tsx` and `ReadSections`' default section are both lazy
+`useState` initialisers. Neither ever needed the payload — only whether one is present — so
+`sharePrefixPresent` answers them synchronously from the prefix and the decode happens inside
+`ReadTab`. Which means three states rather than two: `shareStatus` is `loading` in the first
+committed frame, so the chooser does not say "pick something to read" to somebody who has just
+opened a link to something specific.
+
+**AND `unreadable` IS A THIRD OUTCOME, NOT A NULL.** The reason this compresses at all is that
+links travel through apps that cut them, so a truncated share is the LIKELY failure and it gets
+its own sentence on screen. Folding it into "no share present" would render a damaged link as
+"there is nothing to read" — the mistake this file names four times over.
+
+**STRICTMODE WOULD HAVE EATEN THE ARTICLE ON THE DEVELOPER'S OWN MACHINE.** The hash is cleared
+the moment it is read, and React runs every effect mount → cleanup → mount in development — so
+the second run reads `window.location.hash` and finds nothing. It worked in production and
+vanished locally, which is the worst direction for that asymmetry to point. The captured hash
+lives in a ref so the re-run reuses what the first run took; `decodeShare` is pure, so decoding
+twice is free.
+
+**A BOOK MAY NOT BE SHARED**, and that is the same promise as "EPUB files never sync". A book is
+megabytes of someone else's copyrighted file, and putting a chapter into a chat app is that act
+by another route. `bookPassage` is non-null exactly while a book is open, so the test is the
+state and not a guess about the content. The shared text is flattened EXACTLY as `lib/shelf.ts`
+flattens it, because two independent flattenings of one passage is how a shared copy and a
+shelved copy come to disagree about spacing.
+
+**AND THE FOLD ATE THE FIRST REAL SHARE LINK, WHICH IS WHY IT WAS OPENED IN A BROWSER.**
+`ReadingSources` folds its chooser away once there is something to read — `if (!emptyTab)` — and
+the day's cache is read ASYNCHRONOUSLY. So on a load arriving with a clip: the clip effect opens
+the paste panel, the cache then resolves, `emptyTab` flips true → false, the fold effect re-runs,
+and it closes the panel the article is sitting in. The hash is already consumed and cleared by
+then, so there is no error and no second chance: **the link simply does nothing.** It worked
+perfectly on an empty tab and failed with one passage cached, which is why no test and no amount
+of reading would have found it.
+
+It is NOT new — a v1 clip lost the same race, because the cache always resolves after mount — it
+was merely much rarer to meet before a Share button existed to invite it. The guard is
+`!emptyTab && !clip`, and that only works because `commitPastedPassage` now CLEARS the clip:
+`ReadingSources` had claimed "the clip is cleared once used" in a comment for as long as the
+clipper has existed and nothing ever did it, which is the difference between "do not fold yet"
+and "never fold again". `tests/shareArrival.test.ts` pins both halves against the source, with
+the bug reintroduced as the control.
+
+
 ### A book has its own reading space
 
 A book section is NOT another entry in the passage list. Sections used to be appended to it, so
@@ -2887,73 +2983,9 @@ body of the file next to the code it describes, rewritten in the present tense, 
 here is DELETED. A design that has shipped and left a copy behind is the drift this section is
 shaped to prevent.
 
-One thing below is already real and is marked as such: the activity-log retention window.
-
-### Sharing a reading — the clipper pointed the other way
-
-**THE FRAMING COMES OUT OF THE CODEBASE'S OWN COMMENT, NOT FROM A FEATURE LIST.** `ReadTab`
-clears the clip hash as soon as it reads it, and says why: refreshing must not re-import the
-same article, and *"an 8,000-character fragment sitting in the address bar is something the
-reader might copy and share without realising what is in it."* This feature does not contradict
-that sentence, it ANSWERS it — sharing stops being an accident of a URL nobody read and becomes
-a deliberate act with a sentence attached saying what travels.
-
-It is also the one social mechanic that suits this app rather than a different one. Duolingo
-shares a SCORE because a score is all it has; srsly can share the TEXT, and the recipient reads
-it segmented at THEIR level with THEIR deck highlighted — one article, two readers, two
-readability figures, no server.
-
-**`lib/shareLink.ts`, and `#clip=` KEEPS WORKING FOREVER.** A bookmarklet lives in someone's
-bookmark bar and is never updated, so retiring v1 is a break that is invisible to us and
-permanent for them. v2 takes a second prefix and `deflate-raw` → `base64url`.
-
-**THE BROWSER IS NOT THE REASON TO COMPRESS, AND THE FIRST DRAFT OF THIS SECTION SAID IT WAS.**
-The claim was that a full-length Chinese clip is too long to survive a URL. Measured against the
-live site instead of reasoned about: 8,000 Han characters percent-encode to a **72,146-character
-URL**, and all 8,000 **arrive intact** through a real page load in Chromium — the app puts them
-in the paste panel and clears the hash exactly as designed. The clipper has never been broken.
-*(That mistake had a second layer worth recording: the first check read `document.body.innerText`,
-saw nothing, and concluded the clip was lost. `innerText` does not include a `textarea`'s value,
-so the evidence for the bug was an artefact of how it was looked for.)*
-
-What DOES justify compression is the TRANSPORT, which is new in this feature: a bookmarklet's URL
-is machine-generated and seen by nobody, while a share link is pasted into a messenger, an email
-or a chat channel that wraps, truncates and preview-fetches it — and a 72,000-character link is
-not a shareable object whatever Chrome tolerates. Measured on this repo's own authored prose:
-
-| Script | percent-encoded | `deflate-raw` + base64url |
-|---|---|---|
-| CJK | **8.60×** raw | **24%** of the percent-encoded size |
-| Latin | 1.52× raw | 48% |
-
-**Third-party messenger behaviour is NOT measured**, so the size target is a judgement rather
-than a number, and this paragraph says so rather than implying a test was run.
-
-**THE ASYNC SEAM IS THE REAL ARCHITECTURAL COST, AND IT LANDS ON A LOADING STATE.**
-`DecompressionStream` is async, and `decodeClip` is currently called SYNCHRONOUSLY in the two
-places that decide layout — `initialTab()` in `app/page.tsx` (a lazy initialiser) and
-`ReadSections`' default section. Neither can await. So the codec splits in two: a sync
-`sharePrefixPresent(hash)` that reads the PREFIX ONLY and decides the tab and the section, and an
-async `decodeShare(hash)` that does the work inside `ReadTab`. Which means the panel needs three
-states, not two — `undefined` = not decoded yet, `null` = not a share, an object = a share —
-because between mount and resolve, "no clip" must not render as "there is nothing to read". That
-is the mistake this file names four times over, arriving in a new place by way of a codec.
-
-**The `openai`-SDK judgement again: no `fflate`.** A synchronous pure-JS deflate (~8 kB) would
-remove the seam, and the seam is one component that already has to represent "hash present,
-content not parsed yet". Native `CompressionStream`/`DecompressionStream` is free, and twenty
-lines of codec does not earn a dependency.
-
-**AN EPUB SECTION MAY NOT BE SHARED**, and that is the same promise as *"EPUB files never sync"*.
-A book is megabytes of someone else's copyrighted file, and putting a chapter into a chat app is
-that same act by another route. Generated passages and the learner's own pasted text and clips
-are shareable; a book says so in one line rather than hiding the control, because the shelf
-already learned that a silently missing thing reads as a bug.
-
-Tests: v1 links still decode (**the control**), the round trip goes through a real `URL` rather
-than a bare string (the lesson `tests/webClip.test.ts` already paid for), a max-length CJK payload
-stays under the stated cap, a book-sourced passage refuses, and the three loading states are
-distinguished.
+Two things are already real and are marked as such: the activity-log retention window, and
+the Share feature, whose section has MOVED into the body of this file beside the web clipper —
+which is the rule above being followed rather than described.
 
 ### A pact — the first row that two people may both read
 

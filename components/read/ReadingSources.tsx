@@ -47,6 +47,16 @@ interface Props {
   emptyTab: boolean;
   /** An article sent in by the web clipper — opens the paste source with it loaded. */
   clip?: { title: string; text: string } | null;
+  /**
+   * True while a share in the URL is still being decoded (see ReadTab's `shareStatus`).
+   *
+   * IT OPENS THE PASTE PANEL ON THE FIRST FRAME, BEFORE THE TEXT EXISTS. `clip` arrives a tick
+   * late now that decoding is asynchronous, so without this the learner opening a shared link
+   * sees the reading chooser — "pick something to read" — and then watches it be replaced. The
+   * panel is where the text is going either way, so putting it there immediately means the text
+   * fills in rather than the layout changing its mind.
+   */
+  pendingShare?: boolean;
 }
 
 type Source = 'paste' | 'epub';
@@ -58,13 +68,28 @@ const CARDS: { id: Source; mark: MarkName; label: string; hint: string }[] = [
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, onCommitBook, emptyTab, clip = null }: Props) {
-  const [open, setOpen] = useState(false);
-  const [source, setSource] = useState<Source | null>(null);
+export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, onCommitBook, emptyTab, clip = null, pendingShare = false }: Props) {
+  const [open, setOpen] = useState(pendingShare);
+  const [source, setSource] = useState<Source | null>(pendingShare ? 'paste' : null);
 
-  // Fold away once something arrives to read — otherwise the chooser stays expanded above the
-  // passage it just produced, which is the clutter it exists to remove.
-  useEffect(() => { if (!emptyTab) { setOpen(false); setSource(null); } }, [emptyTab]);
+  /**
+   * Fold away once something arrives to read — otherwise the chooser stays expanded above the
+   * passage it just produced, which is the clutter it exists to remove.
+   *
+   * `!clip` IS LOAD-BEARING AND WAS MISSING, WHICH SILENTLY ATE SHARED ARTICLES. `emptyTab` is
+   * false whenever the day already holds a passage, and the day's cache is read ASYNCHRONOUSLY —
+   * so on a load that arrives with a clip, the sequence is: the clip effect below opens the
+   * panel, then the cache resolves, `emptyTab` flips true → false, this effect re-runs, and it
+   * closes the panel the clip is sitting in. The hash has already been consumed and cleared by
+   * then, so the article is gone with no error anywhere: the link "does nothing", which is the
+   * exact bug report this codebase has already filed once about a dead button.
+   *
+   * Found by opening a real share link with a passage already cached, after the same link worked
+   * perfectly on an empty tab. It is not new — a v1 clip lost the same race, because the cache
+   * always resolves after mount — it was just much rarer to meet before there was a Share button
+   * inviting it.
+   */
+  useEffect(() => { if (!emptyTab && !clip) { setOpen(false); setSource(null); } }, [emptyTab, clip]);
 
   /**
    * A clip is a source already chosen: skip the four cards and open paste with it loaded.
@@ -72,8 +97,8 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
    * Keyed on `language` as well as the clip, because a clip can CAUSE a language switch — it
    * carries the language of the page it came from. The switch re-renders everything beneath
    * it, and without this the panel closed and the clipped text was silently dropped, leaving
-   * the reader to open Paste and paste it again by hand. Re-asserting is safe: the clip is
-   * cleared once used.
+   * the reader to open Paste and paste it again by hand. Re-asserting is safe: ReadTab clears
+   * the clip once it has been committed.
    */
   useEffect(() => { if (clip) { setOpen(true); setSource('paste'); } }, [clip, language]);
 
