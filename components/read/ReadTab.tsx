@@ -797,6 +797,15 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
   // finished earlier passage re-enables the button while a later, unfinished one is left
   // behind, and its due words get wrongly treated as reviewed.
   const [allPassagesComplete, setAllPassagesComplete] = useState(true);
+  /**
+   * How many blanks a passage actually rendered.
+   *
+   * Written when the passage is on screen and the deck has loaded, so it records the
+   * renderer's verdict rather than a value from before the data arrived — `deckLoaded` is the
+   * guard, because `clozeWordCount` is legitimately 0 while the deck is still `[]` and storing
+   * that would mark an unfinished passage complete.
+   */
+  const blanksKey = (ck: string, idx: number) => `srsly-blanks|${ck}|${idx}`;
   useEffect(() => {
     let cancelled = false;
     async function check() {
@@ -840,15 +849,45 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
          */
         const isCurrent = idx === passageIdx;
         if (isCurrent) return clozeGrades.size >= clozeWordCount;
-        if (needed === 0) return true;
+        /**
+         * AND FOR AN EARLIER PASSAGE, WHAT ITS OWN RENDERER DECIDED — recorded, because it
+         * genuinely cannot be re-derived.
+         *
+         * `needed` above is `vocabWords ∩ dueDeckWords`, which is not the rule that drew the
+         * blanks: `selectClozeTargets` also applies the blank density and the daily new-card
+         * budget AS IT STOOD WHEN THAT PASSAGE WAS OPENED. That budget is gone by the time this
+         * runs, so no amount of recomputation can reconstruct the answer — which is exactly the
+         * test "store only what cannot be derived" asks, and the same one that earns
+         * `srsly-lessons-done` its key.
+         *
+         * Without it a passage that rendered ZERO blanks scores `needed > 0` here for ever, and
+         * the button stays disabled telling the reader to fill blanks that were never drawn.
+         * That is not hypothetical: it is what stopped the 2026-09-29 sweep after three
+         * passages, and the reason it went unnoticed is that the passage looks complete on
+         * screen — there is nothing to fill and no Finish button to press.
+         *
+         * The fallback keeps passages written before this key existed working the old way.
+         */
+        const recorded = typeof localStorage === 'undefined'
+          ? null
+          : localStorage.getItem(blanksKey(contentKey, idx));
+        const need = recorded === null ? needed : Number(recorded);
+        if (!Number.isFinite(need) || need <= 0) return true;
         const graded = Object.keys((await storage.getPassageState(contentKey, idx)) ?? {}).length;
-        return graded >= needed;
+        return graded >= need;
       }));
       if (!cancelled) setAllPassagesComplete(results.every(Boolean));
     }
     check();
     return () => { cancelled = true; };
   }, [dailyContent, contentKey, passageIdx, clozeGrades, dueDeckWords, clozeWordCount]);
+
+  useEffect(() => {
+    if (!contentKey || !deckLoaded || !currentPassage || currentPassage.pasted) return;
+    try { localStorage.setItem(blanksKey(contentKey, passageIdx), String(clozeWordCount)); }
+    catch { /* quota or private mode — the fallback derivation still applies */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKey, deckLoaded, currentPassage, passageIdx, clozeWordCount]);
 
   // Restore words added during this session so they survive reloads.
   useEffect(() => {

@@ -587,7 +587,21 @@ try {
           const nb = find(/New passage/i);
           if (nb && !nb.disabled) { unlocked = true; break; }
         }
-        return JSON.stringify({ step: 'ok', passages: after, blanks: inputs.length, filled, unlocked });
+        /* WHY THERE WERE NO BLANKS, RATHER THAN JUST THAT THERE WERE NONE.
+           blanks:0 was reported faithfully and explained nothing, so a run that stopped after
+           three passages left no way to tell a generator writing around the wrong words from a
+           deck that did not contain them from a gate refusing to open. The target words and how
+           many of them this deck actually holds separate all three in one line, and both are
+           already in scope -- the cache carries vocabWords and the deck is the seed we wrote. */
+        let inDeck = 0;
+        try {
+          const held = new Set(JSON.parse(localStorage.getItem('srsly-vocab-deck-${LANG}') || '[]').map(w => w.h));
+          inDeck = (p.vocabWords || []).filter(w => held.has(w)).length;
+        } catch (e) { inDeck = -1; }
+        return JSON.stringify({
+          step: 'ok', passages: after, blanks: inputs.length, filled, unlocked,
+          targets: p.vocabWords || [], inDeck,
+        });
       })()`);
       log(`  level ${level} passage ${n + 1}/${PER} → ${raw}`);
       let parsed = {};

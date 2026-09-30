@@ -98,4 +98,37 @@ describe('the passage on screen is counted by what was drawn', () => {
   it('watches clozeWordCount', () => {
     expect(readTab).toMatch(/\[dailyContent, contentKey, passageIdx, clozeGrades, dueDeckWords, clozeWordCount\]/);
   });
+
+  /**
+   * AND AN EARLIER PASSAGE IS COUNTED BY WHAT **ITS** RENDERER DREW, which has to be RECORDED
+   * because it cannot be re-derived: `selectClozeTargets` applied the daily new-card budget as
+   * it stood when that passage was opened, and that budget is gone. This is the same test
+   * `srsly-lessons-done` passes — "store only what cannot be derived" — and without it a
+   * passage that rendered zero blanks blocks the button for ever while showing nothing to fill.
+   *
+   * It is what stopped the 2026-09-29 sweep after three passages.
+   */
+  it('records how many blanks a passage actually rendered', () => {
+    expect(readTab).toContain('const blanksKey = (ck: string, idx: number) =>');
+    expect(readTab).toContain('localStorage.setItem(blanksKey(contentKey, passageIdx), String(clozeWordCount))');
+  });
+
+  /** `deckLoaded` is the guard, and it is load-bearing: `clozeWordCount` is legitimately 0
+   *  while the deck is still `[]`, and recording THAT marks an unfinished passage complete. */
+  it('only records once the deck has loaded', () => {
+    const writer = readTab.slice(readTab.indexOf('localStorage.setItem(blanksKey') - 320,
+                                 readTab.indexOf('localStorage.setItem(blanksKey'));
+    expect(writer).toContain('deckLoaded');
+  });
+
+  it('prefers the recorded count over the derived one for an earlier passage', () => {
+    expect(readTab).toContain('const need = recorded === null ? needed : Number(recorded);');
+    expect(readTab).toContain('if (!Number.isFinite(need) || need <= 0) return true;');
+  });
+
+  /** The day-pruner has to sweep it too, or it leaks one key per passage per day for ever. */
+  it('is pruned with the rest of the day', () => {
+    const local = readFileSync(resolve(ROOT, 'lib/storage/local.ts'), 'utf8');
+    expect(local).toContain("k.startsWith('srsly-blanks|')");
+  });
 });

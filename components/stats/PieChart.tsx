@@ -11,12 +11,31 @@ function computeSegments(deck: DeckWord[]) {
     else if (r <= 5) proficient++;
     else mastered++;
   }
+  /**
+   * ── THE COLOURS WERE FIVE HARDCODED HEXES, AND THAT WAS WRONG TWICE ──────────
+   *
+   * First against this project's own rule — "never use hardcoded colors, always use CSS
+   * variables" — which made this the one panel that ignored all ten themes. On `midnight` or
+   * `terminal` a slate-grey-to-royal-blue palette sits on a dark page owing nothing to it,
+   * which is the same defect as a hardcoded 空 in a French session: a value that refuses to
+   * take part in the system around it.
+   *
+   * And second against the DATA. Pool → New → Reviewed → Proficient → Mastered is an ORDERED
+   * progression, so five arbitrary hues encode nothing about it: grey, yellow, green and blue
+   * have no order, and the reader has to consult the legend to recover one that the chart
+   * could simply have shown. A sequential ramp — one hue, light to dark — is the right form
+   * for magnitude, and it comes out of the theme's own accent for free.
+   *
+   * Same `color-mix` idiom `ReviewHeatmap` already uses for its five buckets, so the two read
+   * as one system rather than as two charts that happen to share a tab.
+   */
+  const step = (pct: number) => `color-mix(in srgb, var(--accent) ${pct}%, var(--line-soft))`;
   return [
-    { label: 'Pool · waiting',     count: pool,      color: '#94A3B8', cls: 'pool' },
-    { label: 'New',                count: newW,       color: '#CBD5E1', cls: 'new'  },
-    { label: 'Reviewed · 1–2×',    count: reviewed,   color: '#EAB308', cls: 'rev'  },
-    { label: 'Proficient · 3–5×',  count: proficient, color: '#4ADE80', cls: 'pro'  },
-    { label: 'Mastered · 6×+',     count: mastered,   color: '#2563EB', cls: 'mas'  },
+    { label: 'Pool · waiting',     count: pool,       color: step(0),   cls: 'pool' },
+    { label: 'New',                count: newW,       color: step(22),  cls: 'new'  },
+    { label: 'Reviewed · 1–2×',    count: reviewed,   color: step(46),  cls: 'rev'  },
+    { label: 'Proficient · 3–5×',  count: proficient, color: step(72),  cls: 'pro'  },
+    { label: 'Mastered · 6×+',     count: mastered,   color: step(100), cls: 'mas'  },
   ];
 }
 
