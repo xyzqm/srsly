@@ -41,13 +41,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!sb) return;
     let active = true;
     (async () => {
-      let u = (await sb.auth.getUser()).data.user;
+      /**
+       * ⚠ THIS USED TO SIGN PEOPLE OUT OF THEIR OWN ACCOUNT, AND IT IS THIS FILE'S WORST BUG.
+       *
+       * It read `(await sb.auth.getUser()).data.user` and DISCARDED THE ERROR. `getUser()` is
+       * a network call — it asks `/auth/v1/user` to validate the token — so a dropped
+       * connection, a cold start on a slow link, or Supabase being briefly unreachable all
+       * return `user: null`. The branch below then read that as "this visitor has no account"
+       * and called `signInAnonymously()`, which REPLACES the stored session with a throwaway
+       * one. The real session is gone from the device, permanently: reopening the app shows
+       * a signed-out guest, and the account's cloud data is unreachable until they sign in
+       * again from scratch.
+       *
+       * It is this file's most-repeated mistake wearing its most expensive face — a value
+       * meaning "I could not check" rendered as a value meaning "there is none" — and the
+       * service worker made it far easier to reach, because the app now OPENS without a
+       * connection. Before, a failed check happened on a screen that never loaded.
+       *
+       * `getSession()` is the right question and it is answered LOCALLY: supabase-js persists
+       * the session itself, so this says whether the device holds one without asking anybody.
+       * `getUser()` stays correct where it is used for authorization — lib/supabase/server.ts
+       * validates server-side, which is the place a forged token must not be believed. Here
+       * the only decision is "is there an account on this device", and destroying one because
+       * a fetch failed is never the right answer to it.
+       */
+      const { data: { session } } = await sb.auth.getSession();
       if (!active) return;
+      let u = session?.user ?? null;
+
       if (!u) {
-        // No session → create an anonymous one so the server-side guest AI budget
+        // Genuinely no session → create an anonymous one so the server-side guest AI budget
         // (consume_ai_credit) has a user to meter. Without this, guests have no session
         // and generation is effectively unlimited. Requires "Anonymous sign-ins" enabled
         // in the Supabase project (see supabase/schema.sql setup notes).
+        //
+        // NOT attempted while the browser says it is offline. It would fail anyway, and the
+        // point is to keep this path free of anything that could run while the answer to
+        // "is there a session" is unknowable.
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          storage.resetToLocal();
+          setReady(true);
+          return;
+        }
         const { data, error } = await sb.auth.signInAnonymously();
         if (error) console.error('[auth] anonymous sign-in failed', error.message);
         if (!active) return;

@@ -2652,6 +2652,47 @@ holds what it is showing in its OWN state rather than rendering from `fresh`. Th
 the same list and are not — acknowledging empties `fresh`, so rendering from it made the
 milestone vanish a second after it appeared.
 
+#### Retention is derived too, and the one number it refuses is the interesting one
+
+`lib/retention.ts` (pure), `components/stats/RetentionPanel.tsx`, in Stats → Schedule beside
+`ReviewHeatmap` and `FutureLoad`. **Nothing is stored**: every figure is a function of
+`stability`, `difficulty` and `lastReview`, which the deck already carries because FSRS needs
+them — the same rule `lib/achievements.ts` and `lib/yearInReading.ts` follow.
+
+`cardInsight` could already answer "why is THIS card due", and was called in exactly one place
+(`VocabTab`, per card). This is the deck-wide version: what you would recall today, how durable
+the deck is, and what is already slipping.
+
+**⚠ TRUE RETENTION IS NOT IN HERE AND CANNOT BE, AND THE PANEL SAYS SO.** "Of the cards FSRS put
+at 90%, how many did I actually recall?" needs each review's OUTCOME paired with the probability
+predicted at that moment, and `DeckWord` keeps only current state — the next review overwrites
+both. So everything here is the model's own PREDICTION. Calling a forecast a measurement is the
+one way a panel like this becomes a lie, so the copy never does: *"what the scheduler expects —
+not a measurement."* Measuring it needs a stored review log, which is a separate decision.
+
+**A card with no model is SKIPPED AND COUNTED, never averaged in as zero.** `cardInsight`
+returns null before the first graduation and says why; averaging those in as 0 would make a deck
+of fresh cards read as amnesia, and as 1 would flatter it. The panel reports "30 modelled · 3
+still learning" so the exclusion is visible rather than silent.
+
+**MEDIAN stability, not mean.** Stability is unbounded above and floored near zero, so a handful
+of year-long cards drags a mean past anything the deck looks like. A test pins it with the
+control: twelve cards at 10 days plus two at ten years reads 10, where the mean would say ~530.
+
+**AT RISK IS NOT THE SAME QUESTION AS DUE**, which is why it earns its own list. Intervals are
+rounded and fuzzed, so a due card can be comfortably above target and a card below target may
+not be due for days. The due count cannot answer it.
+
+**The decay curve is a counterfactual and is labelled as one** — "if you reviewed nothing for 28
+days" — because the whole point of the app is that you do not. Its vertical axis is pinned to
+0–100% rather than fitted to the data, so two decks are comparable by eye; fitting would
+exaggerate a small change, which is the classic misleading chart.
+
+**It renders NOTHING below `MIN_MODELLED` (12).** Same risk `npm run seed:dev` exists for: a wall
+of empty bars is a list of things you have failed to do. `null` (not counted yet) and `sparse`
+(too little to say) are kept apart, because collapsing them is this file's most-repeated bug.
+No chart library, for the reason `YearInReading` gives.
+
 #### A year in reading is derived too, and the refusals are the feature
 
 `lib/yearInReading.ts` is a pure function over (activity log, shelves, decks, finished lessons);

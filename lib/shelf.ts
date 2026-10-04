@@ -157,3 +157,57 @@ export function ownEntry(opts: {
     words,
   };
 }
+
+/**
+ * REMOVING A PASSAGE FROM THE SHELF, AND WHY IT NEEDS A TOMBSTONE.
+ *
+ * `saveShelf` writes the array it is given, so dropping an entry and saving is enough — for
+ * every entry except the ones that can be DERIVED AGAIN. `LocalStorage.saveDailyContent`
+ * rebuilds the day's entries from the cached content on every save (`entriesFrom`, then
+ * `mergeShelf`), which is right for shelving and fatal for deleting: remove today's passage,
+ * read one more section, and it is back. A union cannot express a removal — the same reason
+ * `srsly-lessons-done` merges last-writer-wins rather than as a union, since a union would
+ * make un-ticking impossible.
+ *
+ * So a removal is recorded as an id that must not be re-derived. The list is **device-local**
+ * (`srsly-shelf-removed-{lang}`), which is a real limitation stated plainly rather than hidden:
+ * deleting on a laptop does not delete on a phone, because the shelf column syncs and this
+ * does not. Making it sync is a schema decision and is deliberately not taken here.
+ *
+ * It is pruned against the shelf it is given, so it cannot grow without bound: once an id is
+ * gone from the content cache there is nothing left to suppress and the tombstone is dropped.
+ */
+const REMOVED_KEY = (lang: LanguageCode) => `srsly-shelf-removed-${lang}`;
+
+export function loadRemoved(lang: LanguageCode): Set<string> {
+  if (typeof localStorage === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(REMOVED_KEY(lang));
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string') : []);
+  } catch {
+    return new Set();          // a corrupt value is not worth throwing over
+  }
+}
+
+export function saveRemoved(lang: LanguageCode, ids: Set<string>): void {
+  if (typeof localStorage === 'undefined') return;
+  try { localStorage.setItem(REMOVED_KEY(lang), JSON.stringify([...ids])); }
+  catch { /* quota — the worst case is a deleted passage reappearing */ }
+}
+
+/** The shelf with `id` gone, and the tombstone that keeps it gone. Pure; the caller persists. */
+export function removeEntry(
+  entries: ShelfEntry[],
+  id: string,
+  removed: Set<string>,
+): { entries: ShelfEntry[]; removed: Set<string> } {
+  const next = entries.filter(e => e.id !== id);
+  if (next.length === entries.length) return { entries, removed };   // nothing matched
+  return { entries: next, removed: new Set([...removed, id]) };
+}
+
+/** Drop anything the tombstone list names. Applied wherever entries are re-derived. */
+export function withoutRemoved(entries: ShelfEntry[], removed: Set<string>): ShelfEntry[] {
+  return removed.size === 0 ? entries : entries.filter(e => !removed.has(e.id));
+}

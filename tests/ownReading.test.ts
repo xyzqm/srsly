@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ownEntry, countWords, lengthOf, mergeShelf } from '@/lib/shelf';
+import { ownEntry, countWords, lengthOf, mergeShelf, removeEntry, withoutRemoved } from '@/lib/shelf';
 import { yearInReading } from '@/lib/yearInReading';
 import { MAX_ENTRIES } from '@/lib/shelf';
 import type { ShelfEntry } from '@/lib/types';
@@ -111,5 +111,62 @@ describe('and now it reaches the year page', () => {
     });
     expect(r.passages).toBe(2);
     expect(r.wordsRead).toBe(countWords(prose, false) + 2);
+  });
+});
+
+/**
+ * REMOVING FROM THE SHELF — and the tombstone, which is the whole difficulty.
+ *
+ * `saveShelf` is authoritative, so dropping an entry would be enough if entries were only
+ * ever written. They are not: `LocalStorage.saveDailyContent` re-derives today's entries from
+ * the cached content on every save and unions them in. A union cannot express a removal.
+ */
+describe('removing a passage from the shelf', () => {
+  const e = (id: string): ShelfEntry => ({
+    id, date: '2026-10-04', language: 'zh', level: 1, title: id,
+    text: '', sentences: [], vocabWords: [],
+  } as unknown as ShelfEntry);
+
+  it('drops the entry and records the tombstone', () => {
+    const before = [e('a'), e('b'), e('c')];
+    const { entries, removed } = removeEntry(before, 'b', new Set());
+    expect(entries.map(x => x.id)).toEqual(['a', 'c']);
+    expect([...removed]).toEqual(['b']);
+  });
+
+  it('is a no-op for an id that is not there, and does not invent a tombstone', () => {
+    const before = [e('a')];
+    const { entries, removed } = removeEntry(before, 'zzz', new Set());
+    expect(entries).toBe(before);          // same reference — nothing was rebuilt
+    expect(removed.size).toBe(0);
+  });
+
+  it('accumulates tombstones rather than replacing them', () => {
+    let state = { entries: [e('a'), e('b'), e('c')], removed: new Set<string>() };
+    state = removeEntry(state.entries, 'a', state.removed);
+    state = removeEntry(state.entries, 'c', state.removed);
+    expect([...state.removed].sort()).toEqual(['a', 'c']);
+    expect(state.entries.map(x => x.id)).toEqual(['b']);
+  });
+
+  it('withoutRemoved is what stops a deleted passage being re-derived', () => {
+    // This is the real scenario: entriesFrom rebuilds today's passage, mergeShelf unions it
+    // back in, and the learner sees the thing they deleted return.
+    const rederived = [e('today-0'), e('today-1')];
+    const removed = new Set(['today-0']);
+    expect(withoutRemoved(rederived, removed).map(x => x.id)).toEqual(['today-1']);
+  });
+
+  it('withoutRemoved is free when nothing was removed', () => {
+    const list = [e('a'), e('b')];
+    expect(withoutRemoved(list, new Set())).toBe(list);   // same reference
+  });
+
+  it('a union WOULD resurrect it — the control for the whole design', () => {
+    const shelf = [e('b')];                        // 'a' was deleted
+    const rederived = [e('a'), e('b')];            // the day's cache still holds it
+    expect(mergeShelf(shelf, rederived).map(x => x.id).sort()).toEqual(['a', 'b']);
+    // …which is exactly why saveDailyContent filters through withoutRemoved first.
+    expect(mergeShelf(shelf, withoutRemoved(rederived, new Set(['a']))).map(x => x.id)).toEqual(['b']);
   });
 });

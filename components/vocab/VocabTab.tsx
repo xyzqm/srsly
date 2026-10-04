@@ -17,6 +17,7 @@ import LeechTriage from './LeechTriage';
 import { weakestWords } from '@/lib/weakWords';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
+import GlossText from '@/components/shared/GlossText';
 
 const UNDO_DURATION_MS = 5000;
 
@@ -65,18 +66,6 @@ type PendingUndo =
   | { kind: 'clear';  count: number };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function sdm(m: string) {
-  // Split on either separator (older cards use commas, newer use semicolons).
-  return m.split(/\s*[;,]\s*/).filter(Boolean).map((part, i, arr) => (
-    <span key={i}>
-      {part}
-      {i < arr.length - 1 && (
-        <span style={{ fontFamily: 'var(--f-display)', fontSize: '1.15em', fontWeight: 500, letterSpacing: '-.01em', color: 'var(--ink-soft)' }}>; </span>
-      )}
-    </span>
-  ));
-}
 
 function ActivatePoolBtn({ poolCount, onActivate, onUndo }: {
   poolCount: number;
@@ -909,15 +898,19 @@ export default function VocabTab() {
               ) : (
               <>
                   <div
-                    className="grid items-center gap-4 py-3 px-1"
-                    style={{ gridTemplateColumns: 'auto 1fr auto', borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: (w.paused || w.pool) ? 0.55 : 1 }}
+                    className="deck-row py-3 px-1"
+                    style={{ borderBottom: managing ? 'none' : '1px solid var(--line-soft)', opacity: (w.paused || w.pool) ? 0.55 : 1 }}
                   >
                     <span style={{ fontFamily: 'var(--f-han)', fontSize: 23, fontWeight: 'var(--han-weight)' as 'bold', minWidth: 60 }}>
                       {w.h}
                     </span>
                     <span style={{ fontSize: 14, color: 'var(--ink)' }}>
                       <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
-                      {sdm(w.m)}
+                      {/* ONE SENSE, not all of them. `本` ships nine, and nine senses in a list row
+                          is the wall of text GlossText exists to prevent — "a five-sense dump is why
+                          a card will not stick". The full gloss is one tap away and the deck still
+                          stores every word of it; this only changes what is shown first. */}
+                      <GlossText gloss={w.m} collapsible />
                       {w.pool && <StatusChip label="pool" />}
                       {w.leech && <StatusChip label="stuck" />}
                       {w.paused && <StatusChip label="paused" />}
@@ -926,7 +919,7 @@ export default function VocabTab() {
                     {/* Wraps on a narrow screen. Fixed-width action buttons in a nowrap row
                         pushed each deck row to ~526px at a 375px viewport, which is what made
                         the whole Vocab tab scroll sideways. */}
-                    <div className="flex gap-1.5 items-center flex-wrap justify-end">
+                    <div className="deck-row-actions flex gap-1.5 items-center flex-wrap justify-end">
                       {(() => { const lbl = dueLabel(w, today); return lbl ? (
                         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', color: lbl === 'now' ? 'var(--accent)' : 'var(--ink-faint)', minWidth: 24, textAlign: 'right' }}>
                           {lbl}

@@ -74,7 +74,16 @@ const FACTOR = Math.pow(0.9, 1 / DECAY) - 1; // 19/81 ≈ 0.2346
 
 // ── Math helpers ─────────────────────────────────────────────────────────────
 
-function retrievability(elapsedDays: number, stability: number): number {
+/**
+ * R(t,S) — the probability you still recall a card `t` days after its last review.
+ *
+ * EXPORTED so lib/retention.ts can draw the curve rather than re-derive it. `cardInsight`
+ * already returns one POINT on this curve; a chart needs the shape, and a second copy of
+ * `(1 + FACTOR*t/S)^DECAY` living in a component is the drift lib/pinyin.ts warns about for
+ * `stripTones`. The constants stay private: they are the scheduler's, and nothing outside
+ * should be doing its own FSRS arithmetic.
+ */
+export function retrievability(elapsedDays: number, stability: number): number {
   if (stability <= 0) return 0;
   return Math.pow(1 + FACTOR * elapsedDays / stability, DECAY);
 }
@@ -153,7 +162,15 @@ const HARD_MIN = 5;
 
 // ── Utility ──────────────────────────────────────────────────────────────────
 
-function daysBetween(a: string, b: string): number {
+/**
+ * Whole days from `a` to `b`, both `YYYY-MM-DD`. The scheduler's own day arithmetic.
+ *
+ * Exported for lib/retention.ts, which has to ask "how long since this card was last seen"
+ * and must get the same answer `cardInsight` does. NOTE the name collides with
+ * `lib/streak.ts`'s `daysBetween`, which returns the LIST of dates in between — import this
+ * one explicitly from `@/lib/fsrs` and the two cannot be confused.
+ */
+export function daysBetween(a: string, b: string): number {
   return Math.max(0, Math.round(
     (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000,
   ));

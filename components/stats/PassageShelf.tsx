@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LanguageCode, ShelfEntry } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getLanguageConfig, levelLabel } from '@/lib/languageConfig';
-import { lengthOf } from '@/lib/shelf';
+import { lengthOf, removeEntry, loadRemoved, saveRemoved } from '@/lib/shelf';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
@@ -53,6 +53,29 @@ export default function PassageShelf({ language }: Props) {
   const [entries, setEntries] = useState<ShelfEntry[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
+  /** Two-tap delete: the first arms, the second does it. No modal — see the control below. */
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  /**
+   * Remove one entry, and record that it must not be re-derived.
+   *
+   * `saveShelf` writes what it is given, so dropping the entry is most of the job — but
+   * `LocalStorage.saveDailyContent` rebuilds today's entries from the cached content on every
+   * save, so today's passage would simply come back. `removeEntry` returns the tombstone that
+   * stops it; see the long note in lib/shelf.ts for why a union cannot express a removal.
+   */
+  const remove = useCallback((id: string) => {
+    if (confirming !== id) { setConfirming(id); return; }
+    setConfirming(null);
+    setEntries(prev => {
+      if (!prev) return prev;
+      const { entries: next, removed } = removeEntry(prev, id, loadRemoved(language));
+      saveRemoved(language, removed);
+      void storage.saveShelf(language, next);
+      return next;
+    });
+    setOpen(null);
+  }, [confirming, language]);
 
   /**
    * Looking a word up from the shelf, and adding it, is the point of keeping tokens.
@@ -226,6 +249,40 @@ export default function PassageShelf({ language }: Props) {
                       </div>
                     );
                   })()}
+
+                  {/* REMOVE LIVES INSIDE THE EXPANDED PANEL, NOT ON THE ROW.
+                      A delete sitting on a collapsed row is one mis-tap away from destroying
+                      a record that cannot be rebuilt — the passage's text is not stored
+                      anywhere else, and for an `own` entry there was never any text to begin
+                      with. Opening the entry first means you have seen what you are deleting,
+                      which is the confirmation, so a second modal would be ceremony. */}
+                  <div className="flex items-center gap-3 mt-5" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 12 }}>
+                    <button
+                      onClick={() => remove(e.id)}
+                      className="cursor-pointer"
+                      style={{
+                        fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em',
+                        color: confirming === e.id ? 'var(--paper)' : 'var(--ink-faint)',
+                        background: confirming === e.id ? 'var(--wrong)' : 'transparent',
+                        border: `1px solid ${confirming === e.id ? 'var(--wrong)' : 'var(--line)'}`,
+                        borderRadius: 7, padding: '4px 10px',
+                      }}
+                    >
+                      {confirming === e.id ? 'Tap again to remove' : 'Remove from shelf'}
+                    </button>
+                    {confirming === e.id && (
+                      <button
+                        onClick={() => setConfirming(null)}
+                        className="cursor-pointer"
+                        style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', background: 'none', border: 'none' }}
+                      >
+                        cancel
+                      </button>
+                    )}
+                    <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
+                      on this device
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

@@ -458,3 +458,29 @@
   .ps-model { color: #000000 !important; }
   .ps-trace { color: #cccccc !important; }
 }
+
+/* THE DECK ROW, AND WHY IT STACKS ON A PHONE.
+   `auto 1fr auto` is right on a laptop: character, meaning, controls. At 375px the controls
+   column still claims ~160px and the character ~60px, so the meaning gets what is left —
+   about eight characters — and a six-sense gloss became a twelve-line ribbon 400px tall.
+   Reported as "so tight together" and "the definitions look weird", which is one cause with
+   two symptoms. Below 560px the controls take a line of their own and the meaning gets the
+   full width. The cap on HOW MANY senses show is separate and lives in GlossText. */
+.deck-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+@media (max-width: 560px) {
+  .deck-row {
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 0.35rem 0.75rem;
+  }
+  .deck-row > .deck-row-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    margin-top: 0.15rem;
+  }
+}

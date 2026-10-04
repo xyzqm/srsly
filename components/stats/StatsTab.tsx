@@ -11,6 +11,7 @@ import MilestoneRing from './MilestoneRing';
 import Achievements from './Achievements';
 import ReviewHeatmap from './ReviewHeatmap';
 import FutureLoad from './FutureLoad';
+import RetentionPanel from './RetentionPanel';
 import LevelProgress from './LevelProgress';
 import WeakWords from './WeakWords';
 import YearInReading from './YearInReading';
@@ -280,6 +281,7 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
       <TabPanel active={group === 'schedule'}><>
         <ReviewHeatmap deck={deck} />
         <FutureLoad deck={deck} />
+        <RetentionPanel deck={deck} deckLoaded={deckLoaded} />
       </></TabPanel>
     </div>
   );

@@ -89,6 +89,10 @@ export default function ToastHost(
    * step later. `deckLoaded` is derived during render from which language the deck actually
    * belongs to, so it is false for exactly that window.
    */
+  /** Set when a deck SWAP silently acknowledged milestones; read by the announcer below,
+   *  in the same commit, which is the only thing a ref can do and state cannot. */
+  const swallowed = useRef(false);
+
   useEffect(() => {
     if (!deckLoaded) return;                       // the deck in hand is not this language's
     const ids = new Set(deck.map(w => w.id ?? w.h));
@@ -111,7 +115,24 @@ export default function ToastHost(
      * what is currently earned as seen WITHOUT showing anything.
      */
     if (prev.lang !== language || prev.loadSeq !== loadSeq) {
-      if (fresh.length > 0) acknowledge();
+      if (fresh.length > 0) {
+        /**
+         * ⚠ `acknowledge()` ALONE DID NOT STOP THE ANNOUNCEMENT, AND THAT IS WHY SIGNING IN
+         * REPLAYED BADGES EARNED MONTHS AGO.
+         *
+         * It marks them seen and calls `setFresh([])` — but that is a STATE UPDATE, so it
+         * takes effect on the next render. React runs every effect in a commit in
+         * declaration order, so the announcer effect below runs immediately after this one,
+         * IN THE SAME COMMIT, holding the `fresh` array this render closed over. Non-empty.
+         * So it pushed a toast for every milestone the cloud deck had just revealed.
+         *
+         * This is the same shape as `completionSurfaceMounted()` and is answered the same
+         * way: a ref, written here and read there, because a ref is the only thing two
+         * effects in one commit can agree about. State cannot be.
+         */
+        swallowed.current = true;
+        acknowledge();
+      }
       return;
     }
 
@@ -133,6 +154,12 @@ export default function ToastHost(
 
   useEffect(() => {
     if (fresh.length === 0) return;
+    /**
+     * A deck that ARRIVED is not a milestone that happened. The effect above has already
+     * acknowledged these; it cannot empty `fresh` in time for this commit, so it leaves a
+     * flag instead. Cleared here so the next genuinely-earned milestone is announced.
+     */
+    if (swallowed.current) { swallowed.current = false; return; }
     /**
      * A completion screen outranks this one, and takes the acknowledgement with it.
      *

@@ -1,6 +1,6 @@
 import type { DataService } from './types';
 import type { DeckWord, SRSState, UserPrefs, ClaimedWords, DailyContent, LanguageCode, ClozeOccurrenceMap, ShelfEntry } from '@/lib/types';
-import { contentKeyOf, entriesFrom, mergeShelf } from '@/lib/shelf';
+import { contentKeyOf, entriesFrom, mergeShelf, loadRemoved, withoutRemoved } from '@/lib/shelf';
 import { todayStr } from '@/lib/deck';
 import { getActivityLog, setActivityLog, type DayActivity } from '@/lib/activityLog';
 import { loadDay, saveDay, type DayCounts } from '@/lib/reviewCounts';
@@ -172,7 +172,12 @@ export class LocalStorage implements DataService {
         idx => get<ClozeOccurrenceMap | null>(clozeStateKey(ck, idx), null),
       );
       if (fresh.length === 0) return;
-      set(shelfKey(lang), mergeShelf(get<ShelfEntry[]>(shelfKey(lang), []), fresh));
+      // A passage the learner DELETED must not be re-derived from the day's cache on the
+      // next save. `mergeShelf` is a union and cannot express a removal; the tombstone can.
+      const removed = loadRemoved(lang);
+      const kept = withoutRemoved(fresh, removed);
+      if (kept.length === 0) return;
+      set(shelfKey(lang), mergeShelf(get<ShelfEntry[]>(shelfKey(lang), []), kept));
     } catch { /* quota or parse failure — the passage itself still saved */ }
   }
 
