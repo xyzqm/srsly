@@ -9,6 +9,7 @@ import { mismatchWarning } from '@/lib/languageMismatch';
 import ClipperInstall from './ClipperInstall';
 import ReadabilityNote from './ReadabilityNote';
 import { useReadability } from '@/hooks/useReadability';
+import { fetchFailureMessage } from '@/lib/offlineMessage';
 
 interface Props {
   /**
@@ -163,7 +164,7 @@ export default function PasteTextPanel({ language, deck, dueWords, onCommit, sta
         suggestedNames: raw.suggestedNames ?? [],
       });
     } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
+      setError(fetchFailureMessage(err, 'checking this text'));
     } finally {
       setBusy(false);
     }

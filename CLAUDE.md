@@ -53,6 +53,8 @@ npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
 npm run seed:dev   # print a console snippet that seeds a deck lighting up the milestone seals
 npm run build:practice  # re-cut the lesson practice tiles with the real segmenters
+npm run start:verify    # serve .next-verify on :3100 — the ONLY way to exercise the
+                        # service worker, which does not register outside production
 ```
 
 **Never run `npm run build` while a dev server is live.** They share `.next`, and doing it
@@ -70,10 +72,13 @@ overwritten with fixtures and could not be recovered.
 `.eslintignore` — the file is silently inert — so build output has to be excluded in the config
 itself. Without it `npm run lint` walked `.vercel/output` and reported 248 errors from minified
 one-line bundles, which is not a lint result, it is noise that makes the command useless as a
-gate. The `no-unused-vars` override for a leading `_` is there for the same reason:
-`lib/storage/firebase.ts` implements `DataService` with stub methods that must take the full
-parameter list and use none of it, and deleting those parameters to satisfy the linter would
-break the interface the file exists to implement.
+gate. The `no-unused-vars` override for a leading `_` is there for the same reason: a
+parameter kept to satisfy a signature it does not use is prefixed with `_`, and deleting it to
+satisfy the linter would break the interface it exists to implement. It earned its place against
+`lib/storage/firebase.ts`, a stub adapter with 17 such parameters — **that file is gone, and the
+rule stays, because the convention is the point rather than the one file that first needed it.**
+`eslint.config.mjs` says exactly that in its own comment; this paragraph described the file as
+current for months after it was deleted, which is the drift the top of this document warns about.
 
 **`npm run build` raises the Node heap to 4 GB, and needs to.** The default on a 16 GB Mac is
 ~2.2 GB, and webpack has to parse and minify every generated table that a chunk imports — the
@@ -2052,15 +2057,18 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **316 kB** for `/` after the handwriting and conjugation work; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the PWA and the writing UI landed. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **331 kB** for `/` as of the service worker; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
 `lib/storage/types.ts` defines the `DataService` interface. `lib/storage/index.ts` exports a
 singleton `storage` that starts on `LocalStorage`; after sign-in `AuthProvider` swaps in
 `SupabaseStorage`, which composes a LocalStorage as an offline read cache and write-through.
-`lib/storage/firebase.ts` is a throwing skeleton for a backend that lost to Supabase — it is
-not wired to anything and `firebase` is not a dependency.
+Those two are the whole of it: `lib/storage/` holds `index.ts`, `local.ts`, `supabase.ts`,
+`types.ts` and `writeQueue.ts`. **A `firebase.ts` throwing skeleton used to sit beside them and
+was deleted; `firebase` has never been a dependency.** This paragraph went on describing it, as
+did the eslint note above, which is the same staleness the handwriting section once carried —
+a file named as current in project instructions is one a later session will go looking for.
 
 **Every column `SupabaseStorage` names must exist in `supabase/schema.sql` AND in a file under
 `supabase/migrations/`.** Three of them once lived only as `alter table` statements written in
@@ -2297,6 +2305,177 @@ travels. Anonymous accounts are refused in SQL, and that is a fact rather than a
 blind spot that let a second `consume_ai_credit` live in the project unseen. Until `0009` is
 applied in the Supabase SQL editor, every call here fails and the panel reports it rather than
 pretending — but no test can know the difference.
+
+### The installed app has to OPEN offline, and that is a service worker
+
+`public/sw.js`, `lib/serviceWorker.ts`, `components/shared/UpdateBanner.tsx`,
+`lib/offlineMessage.ts`, and `tests/serviceWorker.test.ts`.
+
+**`app/manifest.ts` SHIPPED THE PROMISE AND NOTHING KEPT IT.** That file made srsly
+installable — home-screen icon, standalone window, theme colour — and its docstring gives the
+reason: *"reviews happen in dead minutes — a queue, a lift, a bus — which is exactly when nobody
+is going to type a URL."* There was no service worker behind it, so that window opened on the
+browser's offline error page. **That is the worse of the two possible failures**: a WEBSITE that
+fails offline looks like the network failed, and an INSTALLED APP that fails offline looks like
+srsly is broken. The one condition the manifest existed to serve was the one condition under
+which the app could not start.
+
+**THE HARD HALF WAS ALREADY BUILT, WHICH IS WHY THIS IS SMALL.** Offline *grading and syncing*
+have worked for a long time: `lib/storage/local.ts` is the truth and is written first,
+`lib/storage/writeQueue.ts` holds what the cloud has not accepted and is replayed on
+construction and on `online`, and `isPending` stops a stale cloud read mirroring back over a
+local write — all pinned by `tests/writeQueue.test.ts` and `tests/offlineWrites.test.ts`. None
+of it was reachable, because the app had to LOAD for any of it to run. This change is the app
+shell cache and nothing else; the storage layer was not touched.
+
+#### An allowlist, never a denylist
+
+**`classify` returns `network-only` for everything it is not explicitly told to cache**, and
+that is the one security decision here. Every PWA tutorial reaches for a runtime rule on
+`/api/*`; here that writes a request bearing `x-srsly-anthropic-key` into Cache Storage, which
+persists on disk, against `lib/server/generator.ts`'s rule that the key "is used for that one
+request and never written anywhere". Three routes spend money, a fourth is a paid TTS call, and
+`/auth/callback` is an OAuth redirect.
+
+A denylist also has to be MAINTAINED, and **there is no symptom for "this was served from disk
+and nobody paid"** — the same blindness that let `missed-review` bill the operator unmetered.
+With an allowlist, adding a route cannot make it cacheable; adding it to the allowlist can, and
+that is a line somebody has to write. Same reasoning `lib/aiProviders.ts` gives for the Spanish
+tag set being a whitelist: *"Blacklisting was tried first and is unwinnable."*
+
+**IT CLASSIFIES A PARSED `URL`, NOT A STRING, AND THAT IS NOT DEFENSIVENESS.**
+`/strokes/../api/tts` passes a naive `path.startsWith('/strokes/')` and is fetched by the
+browser as `/api/tts` — a raw-string allowlist caches a paid call. `//evil.example/cedict.json`
+is a different ORIGIN wearing a same-origin shape. Reading `origin` and `pathname` off a real
+`URL` normalises both the way the browser already did. Both are controls in the test.
+
+#### Three strategies, each earned by what the thing is
+
+| Strategy | What | Why not the others |
+|---|---|---|
+| `document` | `/` on a navigation | **Network-first.** Cache-first makes a deploy invisible. Only `/` qualifies — there is exactly one route in this app, so the rule is exact, and it is what keeps `/auth/callback` off the cache without naming it |
+| `immutable` | `/_next/static/**`, `/strokes/**`, `/strokes-ja/**`, the four dictionaries, the icons, the manifest | **Cache-first.** Chunks are content-hashed and the dictionaries carry `?v=DICT_VERSION`, so a new version is a new URL and a stale hit is impossible |
+| `revalidate` | `fonts.googleapis.com`, `fonts.gstatic.com` | Serve the cache, refresh behind it. The font CSS arrives **opaque** — a `<link rel=stylesheet>` with no `crossorigin` is a no-cors request, so a 500 is indistinguishable from the stylesheet. Cache-first would pin that failure until the cache version moved |
+| `network-only` | everything else | |
+
+**NOTHING IS PRECACHED EXCEPT FOUR SMALL FILES.** Measured: cedict 7.6 MB, esdict 5.6, frdict
+4.7, jmdict 3.1, plus 2,663 Chinese and 1,904 Japanese stroke files at 11 MB and 8.4 MB —
+**~40 MB over ~4,600 requests**, which is not a thing to do to a phone before the learner has
+read a word, and it would fetch French at a Chinese learner. Tiers 2 and 3 are populated ON USE,
+so anyone who has opened the app online is already offline-ready for their own language and the
+cache grows to the few hundred characters actually practised. The one-file-per-character choice
+`build-strokes.mjs` made for session cost pays off a second time here.
+
+**EVERY CACHE WRITE GOES THROUGH `event.waitUntil`, AND THE FAILURE IF IT DOES NOT IS NASTY.**
+A worker is kept alive only for the promise handed to `respondWith`. A `cache.put` started
+alongside it — the obvious `void put(...)` — is a detached task the browser may kill the moment
+the response is delivered, which is precisely when it is least likely to have finished. It works
+on a fast machine, it works with DevTools open, and it silently stores nothing on a phone. The
+three handlers therefore take the `event` rather than just the request.
+
+**A 404 IS NEVER CACHED, AND THAT IS LOAD-BEARING.** `scripts/build-strokes-ja.mjs` leaves 63
+rare JLPT kanji absent on purpose and relies on them 404ing gracefully, exactly as the Chinese
+build does for anything outside HSK. Caching those would make a missing character permanently
+missing. `storable()` is the one place that decides, and a control asserts that relaxing it to
+`return true` would do precisely that.
+
+#### The worker WAITS, and the learner's Reload is what activates it
+
+`public/sw.js` deliberately does not call `skipWaiting` on install. Activating immediately swaps
+chunks under a page that is already running. So a new worker installs and waits,
+`lib/serviceWorker.ts` notices, `UpdateBanner` says so, and only pressing Reload posts
+`SKIP_WAITING`.
+
+**A stale shell outliving a schema change is the worst form of the stale-artefact bug this file
+already records** — silent, persistent across reloads, and most dangerous exactly when the data
+model has moved. The escape hatch is therefore a visible control rather than a timer, and it is
+NOT a `ToastHost` toast: that component's own docstring says its notices are "auto-dismissing,
+because neither is an action — they are receipts". An available update is an action.
+
+Three traps in the registration, all of which produce a bug rather than a warning:
+
+- **It does not register outside production.** A worker caching `localhost:3000` serves
+  yesterday's chunks to today's dev server, and the symptom is an unrelated compile error or a
+  lazy `import()` resolving to a chunk the new build never emitted. This file already records
+  "debugging against a stale artefact" as a recurring cost and forbids building while a dev
+  server is live; a dev-registered worker is the same hazard with a longer fuse, because
+  clearing it needs DevTools rather than a rebuild.
+- **A FIRST INSTALL IS NOT AN UPDATE.** `registration.waiting` is non-null both for a worker
+  standing behind the one in control and for the very first worker on a page that has no
+  controller. `navigator.serviceWorker.controller` is what separates them, so it is checked
+  before anything is announced — otherwise the update banner greets a first-time visitor.
+- **`controllerchange` fires on a first install too**, the moment `clients.claim()` runs.
+  Reloading on it unconditionally reloads the page out from under somebody who merely opened the
+  app, which reads as a crash. `applyUpdate` sets a flag first and the listener reloads only
+  when the reload is one this module asked for.
+
+A standalone window is never navigated, so the browser's own update check never happens — an
+installed copy could hold one shell open for a week. `reg.update()` on return to the tab,
+throttled to an hour, is what makes the banner reachable at all for the installed case.
+`unregisterServiceWorker()` is exported as a deliberate kill switch: a worker outlives the
+deploy that shipped it, so a bad one needs a route out that is not "open DevTools".
+
+#### What cannot work offline says so, in words
+
+Every segmenter and lemmatizer is server-side and kuromoji cannot run in a browser, so
+**`/api/segment-text` needs the server even though it makes no model call.**
+
+| Works offline | Does not |
+|---|---|
+| The app opens; deck, prefs, SRS state and shelf load from localStorage | Generating a passage |
+| Flashcards, typed recall, conjugation, grading, the streak | Pasting new text, or a new EPUB chapter (`/api/segment-text`) |
+| Handwriting, for characters whose stroke files are cached | Passage audio — `/api/tts` is a paid call |
+| Tapping words in an open passage: the gloss already travels on the token | Typing a NEW word to add in ja/es/fr (`/api/{lang}-word-lookup`) |
+| Flashcard audio — `useSpeech` uses local system voices | Reaching the cloud, though writes queue and replay |
+| Stats, Year in Reading, the printable sheet, the lesson trees | |
+
+**AND THE SERVICE WORKER IS WHAT MADE THAT COLUMN REACHABLE**, which is why
+`lib/offlineMessage.ts` exists. `PasteTextPanel` did
+`setError(String(err instanceof Error ? err.message : err))`, so a learner with no connection
+was shown `TypeError: Failed to fetch`. That is this file's most-repeated bug wearing a new
+face — a value meaning "there is no network" rendered as a value meaning "something is broken" —
+and before the app could open offline almost nobody could get to it.
+
+`fetchFailureMessage` has three branches because there are three different truths, and the order
+matters: `navigator.onLine === false` is the browser stating a fact; a `TypeError` out of `fetch`
+means the request never completed, which `onLine` can be `true` throughout because it reports a
+link rather than reachability; and anything else is a real answer whose own message is better
+than anything invented here, which is why `daily-content` puts the reason on `detail`. The
+`TypeError` test is deliberately SECOND, because a bug in the calling code throws one too and
+announcing that as a network problem would hide it. `hooks/useWordLookup.ts` already drew the
+same distinction and says why: *"a network blip must not tell someone their word is made up."*
+
+#### The test RUNS the shipped worker rather than grepping it
+
+`tests/serviceWorker.test.ts` reads `public/sw.js`, evaluates it with a stub `self`, and drives
+the `classify` and `storable` it hands back on `self.__srsly`. That matters, because the obvious
+alternative is the pattern `tests/aiGate.test.ts` and `tests/pactFirewall.test.ts` use — assert
+against the source text — and this file names its weakness outright: *"pinned by grepping the
+route's own source for an identifier, which catches a deletion and nothing else."* A worker
+cannot be imported (it is a classic script, see below), but it is plain JavaScript, so it can be
+executed. There is no second copy of the allowlist in TypeScript to drift from it.
+
+The API routes are enumerated **off disk**, so a tenth route is covered the day it appears with
+no list to update — which is the allowlist's whole point restated as a test. The list is not
+pinned, deliberately, because pinning it would be theatre when new routes are safe by default;
+what is asserted instead is that the directory yields at least nine and contains the four that
+spend money, so the test cannot pass vacuously against a renamed folder.
+
+**It is a CLASSIC script, not a module worker.** `{ type: 'module' }` would let it `import` from
+`lib/`, which is the tidier design and is not available: **Safari does not support module
+service workers**, and iOS is the hardware the handwriting feature exists for.
+
+**No `next-pwa` and no Workbox.** The first is unmaintained for the App Router and the second
+pulls a toolchain to generate forty lines of fetch handler whose interesting content is a
+security decision that has to be read by a human anyway. Same judgement as `lib/fsrs.ts`
+implementing FSRS directly, the absent `openai` SDK and the hand-rolled SVG charts — and this
+file's rule is to say so when a library is declined.
+
+**`npm run start:verify` is how any of this gets checked.** The worker does not register in
+development, so verifying it needs a real `next start` — and `next dev` is frequently live on
+3000 for the readability sweep, so that script builds nothing and serves `.next-verify` on
+**3100** with `SRSLY_STUB_AI=1`. Building into `.next` while a dev server runs is the corruption
+`next.config.ts` documents at length; `NEXT_DIST_DIR` is the escape hatch it exists for.
 
 ### Theming
 
@@ -2875,7 +3054,7 @@ Supabase row fresh on every mount, and a mode switch is an isolated read with no
 coalesce with — a network round trip to re-fetch what the device already had.
 
 Panels still mount on FIRST activation only, so a learner who never opens Write never loads
-`hanzi-writer` and `/` first-load JS is unchanged at 316 kB. The capability guards stay OUTSIDE
+`hanzi-writer` and `/` first-load JS was unchanged at the 316 kB of the time. The capability guards stay OUTSIDE
 the panel rather than on `active`: a drill the current language does not offer must UNMOUNT, or
 a Chinese session would keep a Spanish drill alive and quietly fetch the 4.21 MB Spanish grammar
 table for it.

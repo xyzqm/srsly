@@ -13,6 +13,7 @@ import { syncGuestAiRemaining, markGuestAiExhausted } from '@/lib/aiBudget';
 import { getLanguageConfig, wordsForDensity, RECOMMENDED_BLANK_DENSITY } from '@/lib/languageConfig';
 import { tokensToText } from '@/lib/tokenText';
 import { aiHeaders } from '@/lib/userApiKey';
+import { fetchFailureMessage } from '@/lib/offlineMessage';
 
 export type RawTok =
   | [string]
@@ -850,7 +851,7 @@ export function useDailyContent(
         } catch (err) {
           if (cancelled) return;
           console.error('[useDailyContent]', section, err);
-          setErrorMsg(err instanceof Error ? err.message : String(err));
+          setErrorMsg(fetchFailureMessage(err, `writing the ${section}`));
           setStatus('error');
         } finally {
           setGenerating(prev => {
@@ -969,7 +970,7 @@ export function useDailyContent(
        * renders as a notice instead, the way MissedWordReview surfaces its own.
        */
       console.error('[loadMore]', err);
-      setErrorMsg(err instanceof Error ? err.message : String(err));
+      setErrorMsg(fetchFailureMessage(err, 'writing a passage'));
     } finally {
       setLoadingMore(false);
     }
@@ -1041,7 +1042,7 @@ export function useDailyContent(
       // Silence here read as "the button does nothing". A guest whose AI budget is spent, or
       // a malformed generation, got no questions and no reason.
       console.error('[generateQuestionsForPassage]', err);
-      setQuestionsError(String(err instanceof Error ? err.message : err));
+      setQuestionsError(fetchFailureMessage(err, 'writing the questions'));
     } finally {
       setLoadingQuestions(false);
     }

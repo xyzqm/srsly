@@ -31,6 +31,8 @@ import SettingsTab, { type Group as SettingsGroup } from '@/components/settings/
 import { useSRS } from '@/hooks/useSRS';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import ToastHost from '@/components/shared/ToastHost';
+import UpdateBanner from '@/components/shared/UpdateBanner';
+import { registerServiceWorker } from '@/lib/serviceWorker';
 import { runDailyPoolActivation } from '@/lib/poolAutoActivate';
 import { AuthProvider, useAuth } from '@/lib/auth/AuthProvider';
 import SignInModal from '@/components/auth/SignInModal';
@@ -211,6 +213,17 @@ function AppShell() {
    * recent choice, and the next one replaces it.
    */
   const [settingsGroup, setSettingsGroup] = useState<SettingsGroup | undefined>(undefined);
+
+  /**
+   * THE SERVICE WORKER IS REGISTERED HERE BECAUSE `AppShell` MOUNTS EXACTLY ONCE.
+   *
+   * The same reason `ToastHost` was moved up to this component: anything that registers a
+   * global listener or owns a one-per-app resource races itself when it lives inside a tab,
+   * and `ReadTab` mounts twice. `registerServiceWorker` is a no-op outside production and
+   * swallows every failure, so there is nothing to guard here (see lib/serviceWorker.ts).
+   */
+  const [updateReady, setUpdateReady] = useState(false);
+  useEffect(() => { registerServiceWorker(() => setUpdateReady(true)); }, []);
 
   // Active study language. Persisted in prefs; drives deck namespacing, dictionary lookups,
   // proficiency labels and TTS locale via LanguageProvider below. Declared BEFORE useSRS,
@@ -426,6 +439,7 @@ function AppShell() {
             Worse, TabPanel hides an inactive tab with `display: none`, so the winner could
             be the one nobody could see and the milestone simply never appeared. */}
         <ToastHost deck={deck} loadSeq={loadSeq} language={language} deckLoaded={deckLoaded} />
+        <UpdateBanner ready={updateReady} />
         <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
               They are the two that visibly rebuilt on every switch: Read re-entered its
