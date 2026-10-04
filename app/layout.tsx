@@ -68,13 +68,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Blocking script: reads saved prefs before first paint to prevent theme/font flash
             and to set <html lang> for the active study language.
 
+            ⚠ IT SETS FIVE ATTRIBUTES, NOT TWO, AND THE OTHER THREE WERE SIMPLY MISSING.
+            `useTheme` is the only thing that writes `data-texture`, `data-blank` and
+            `data-tones` — and it is called in exactly ONE place, inside `ThemeSheet`'s body,
+            which by design does not mount until the drawer has been opened (see its own
+            docstring: mounting it eagerly would run a second `useAchievements` on the landing
+            path). So a learner who had chosen an earned paper or a blank style got the DEFAULT
+            on every load until they happened to open the drawer, at which point it silently
+            corrected itself. Theme and font were immune only because this script already
+            carried them.
+
+            Found while adding tone colours, which landed in the same hole. The fix belongs
+            here rather than in a new root-level `useTheme()` call: this runs before first
+            paint, which is the whole reason the script exists, and a hook in `AppShell` would
+            apply the attribute a frame late — a flash of the wrong paper, which is the thing
+            this script was written to prevent.
+
             The lang map is GENERATED from LanguageConfig rather than written out here. It
             used to read `if (p.language === 'ja')` and nothing else, so Spanish and French
             learners were served `lang="zh"` until the client mounted and corrected it —
             wrong for screen readers and for the font fallback the browser picks. This is a
             server component, so the config can simply be interpolated in and cannot drift
             from it the way a hand-kept ternary would. */}
-        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);var L=${JSON.stringify(
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);document.body.setAttribute('data-texture',p.texture||'grain');document.body.setAttribute('data-blank',p.blankStyle||'dotted');document.body.setAttribute('data-tones',p.toneColors===true?'on':'off');var L=${JSON.stringify(
           Object.fromEntries(SUPPORTED_LANGUAGES.map(c => [c.code, c.htmlLang])),
         )};if(p.language&&L[p.language])document.documentElement.setAttribute('lang',L[p.language]);}catch(e){}})();` }} />
         {children}

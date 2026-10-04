@@ -871,6 +871,61 @@ something already known.`,
         tiles: ['el', 'libro', 'está', 'en', 'la', 'mesa.'] },
     ],
   },
+  {
+    id: 'es-accents',
+    kind: 'grammar',
+    title: 'Tildes, diptongos, hiatos',
+    summary: 'Why habló and hablo are different words',
+    explanation: `Spanish stress is not random and the written accent is not decoration. Every
+word has one stressed syllable, and the tilde exists only to mark the cases the default rules
+would get wrong — which is why most words do not carry one.
+
+Start with where the stress falls. A word stressed on its LAST syllable is aguda (jamón,
+hablar). On the SECOND-TO-LAST, llana — and most Spanish words are llanas (casa, libro,
+mesa). On the THIRD-TO-LAST, esdrújula (médico, teléfono, sábado).
+
+Now the rule. An aguda is written with a tilde when it ends in a vowel, -n or -s: sofá, jamón,
+inglés. A llana takes one when it does NOT: árbol, lápiz, fácil. An esdrújula always does, with
+no exceptions at all. Read that twice — the two first rules are mirror images, which is what
+makes them easy to confuse and easy to remember once you see it.
+
+The second half is about vowels meeting. a, e and o are strong; i and u are weak. A strong and
+a weak vowel together make ONE syllable, a diptongo: bai-le, cue-nta, vie-jo. Two strong vowels
+never do — they split into two syllables, a hiato: te-a-tro, ca-os.
+
+The case that produces most of the accents a beginner cannot predict is the third one. When the
+WEAK vowel is the stressed one, it refuses to join the strong vowel beside it and the pair
+splits — and the tilde is how that is written down. día is di-a, not the single syllable the
+spelling would otherwise give. So país, río, baúl and continúa: every one of those accents is
+there to break a diphthong, not to mark an unusual stress.`,
+    table: {
+      caption: 'Where the stress falls, and when it is written',
+      columns: ['Word', 'Stressed syllable', 'Ends in', 'Tilde'],
+      rows: [
+        ['sofá',     'last (aguda)',           'a vowel',  'yes'],
+        ['jamón',    'last (aguda)',           '-n',       'yes'],
+        ['inglés',   'last (aguda)',           '-s',       'yes'],
+        ['hablar',   'last (aguda)',           'anything else', 'no'],
+        ['casa',     'second-to-last (llana)', 'a vowel',  'no'],
+        ['árbol',    'second-to-last (llana)', 'anything else', 'yes'],
+        ['lápiz',    'second-to-last (llana)', 'anything else', 'yes'],
+        ['médico',   'third-to-last (esdrújula)', 'anything', 'always'],
+      ],
+    },
+    pitfall: `A tilde can be the only thing separating two different words, and this is where it
+costs you marks and meaning. él is "he" and el is "the". tú is "you" and tu is "your". sí is
+"yes" and si is "if". más is "more" and mas is a literary "but". qué is the question word and
+que is the one that joins clauses. None of these is about stress — both words are said the same
+way — so the accent is pure spelling, and you simply have to know the pairs.`,
+    examples: [
+      { text: 'el médico habla inglés.', gloss: 'The doctor speaks English — one esdrújula and one aguda in -s, both written.',
+        tiles: ['el', 'médico', 'habla', 'inglés.'] },
+      { text: 'mi casa tiene un árbol.', gloss: 'My house has a tree — casa is llana in a vowel, so nothing; árbol is llana in -l, so a tilde.',
+        tiles: ['mi', 'casa', 'tiene', 'un', 'árbol.'] },
+      { text: 'estudio todos los días.', gloss: 'I study every day — the accent on días breaks the vowels apart into two syllables.',
+        tiles: ['estudio', 'todos', 'los', 'días.'] },
+    ],
+  },
   { id: 'es-v-basics',  kind: 'vocab', theme: 'basics',
     title: 'Everyday words', summary: 'The small words that hold sentences together' },
   { id: 'es-v-numbers', kind: 'vocab', theme: 'numbers',

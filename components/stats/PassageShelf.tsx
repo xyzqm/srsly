@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LanguageCode, ShelfEntry } from '@/lib/types';
 import { storage } from '@/lib/storage';
 import { getLanguageConfig, levelLabel } from '@/lib/languageConfig';
-import { lengthOf, removeEntry, loadRemoved, saveRemoved } from '@/lib/shelf';
+import { lengthOf, removeEntry, clearShelf, loadRemoved, saveRemoved } from '@/lib/shelf';
 import { needsSpaceBefore } from '@/lib/tokenText';
 import ClickableWord from '@/components/shared/ClickableWord';
 import WordPopup from '@/components/read/WordPopup';
@@ -55,6 +55,8 @@ export default function PassageShelf({ language }: Props) {
   const [shown, setShown] = useState(PAGE);
   /** Two-tap delete: the first arms, the second does it. No modal — see the control below. */
   const [confirming, setConfirming] = useState<string | null>(null);
+  /** Same two-tap shape as a single removal, held separately so one cannot arm the other. */
+  const [clearArmed, setClearArmed] = useState(false);
 
   /**
    * Remove one entry, and record that it must not be re-derived.
@@ -76,6 +78,26 @@ export default function PassageShelf({ language }: Props) {
     });
     setOpen(null);
   }, [confirming, language]);
+
+  /**
+   * Clear the whole shelf. Two taps, like a single removal, and the label counts what will go.
+   *
+   * It does NOT touch the deck, the schedule or the streak — the shelf is a record of what you
+   * read, not the studying itself, and somebody clearing a reading history must not discover
+   * they have also reset their reviews.
+   */
+  const clearAll = useCallback(() => {
+    if (!clearArmed) { setClearArmed(true); return; }
+    setClearArmed(false);
+    setEntries(prev => {
+      if (!prev) return prev;
+      const { entries: next, removed } = clearShelf(prev, loadRemoved(language));
+      saveRemoved(language, removed);
+      void storage.saveShelf(language, next);
+      return next;
+    });
+    setOpen(null);
+  }, [clearArmed, language]);
 
   /**
    * Looking a word up from the shelf, and adding it, is the point of keeping tokens.
@@ -288,6 +310,40 @@ export default function PassageShelf({ language }: Props) {
             </div>
           );
         })}
+      </div>
+
+      {/* AT THE FOOT, NOT THE HEAD. A destructive control sitting above the thing it destroys
+          is the first thing a thumb meets when scrolling to read; putting it past the last
+          entry means you have scrolled the whole history before you can reach it. The Vocab
+          tab's "Clear all" is at the top because that list is a tool; this is a record. */}
+      <div className="flex items-center gap-3 mt-5" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 12 }}>
+        <button
+          onClick={clearAll}
+          className="cursor-pointer"
+          style={{
+            fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.06em',
+            color: clearArmed ? 'var(--paper)' : 'var(--ink-faint)',
+            background: clearArmed ? 'var(--wrong)' : 'transparent',
+            border: `1px solid ${clearArmed ? 'var(--wrong)' : 'var(--line)'}`,
+            borderRadius: 7, padding: '4px 10px',
+          }}
+        >
+          {clearArmed
+            ? `Tap again to clear all ${entries.length}`
+            : 'Clear reading history'}
+        </button>
+        {clearArmed && (
+          <button
+            onClick={() => setClearArmed(false)}
+            className="cursor-pointer"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', background: 'none', border: 'none' }}
+          >
+            cancel
+          </button>
+        )}
+        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
+          your deck and streak are untouched
+        </span>
       </div>
 
       {shown < entries.length && (

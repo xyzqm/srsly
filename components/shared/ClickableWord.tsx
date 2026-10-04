@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { PassageToken } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
+import TonedReading from '@/components/shared/TonedReading';
 
 interface Props {
   token: PassageToken;
@@ -57,7 +58,7 @@ export default function ClickableWord({ token, onOpen, style, showWordBoundaries
         }}
       >
         {token.text}
-        {token.reading && <rt>{token.reading}</rt>}
+        {token.reading && <rt><TonedReading reading={token.reading} /></rt>}
       </ruby>
       {/* Blank slot after the word, so adjacent tokens read as separate where the script
           has no spaces of its own. It used to carry the '+' badge; with that gone it is

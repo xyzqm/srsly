@@ -484,3 +484,41 @@
     margin-top: 0.15rem;
   }
 }
+
+/* ── PINYIN TONE COLOURS ───────────────────────────────────────────────────────
+   Off unless `data-tones="on"`. Chinese only; nothing else renders a .tone span.
+
+   COLOUR IS REINFORCEMENT, NEVER THE ONLY CHANNEL. The tone MARK is already on the vowel and
+   stays there — ā á ǎ à are distinguishable without any colour at all. That matters: the
+   conventional tone palettes put tone 1 red against tone 2 green, which is the single worst
+   pair for the ~1 in 12 men with a red-green deficiency. Here the colour is a second cue on
+   top of a mark that already carries the answer, which is the accessible arrangement by
+   construction. Do not "simplify" this by dropping the marks.
+
+   DERIVED FROM THE THEME, not fixed. A hardcoded palette is illegible on `terminal` and
+   `midnight` and would break the one global styling rule this project has. Each theme states
+   its own four, so the hues stay in the family the rest of the screen is painted from. */
+:root {
+  --tone1: #B23A2E;  /* high flat   */
+  --tone2: #C27B10;  /* rising      */
+  --tone3: #2F6B4C;  /* dipping     */
+  --tone4: #2D5BA9;  /* falling     */
+  --tone5: var(--ink-faint);
+}
+body[data-theme="ink"]      { --tone1:#A32A1E; --tone2:#8A5A00; --tone3:#1F5638; --tone4:#1E4486; }
+body[data-theme="tea"]      { --tone1:#A8402F; --tone2:#996A12; --tone3:#2F6B4C; --tone4:#2B5480; }
+body[data-theme="slate"]    { --tone1:#A63A3A; --tone2:#8C6410; --tone3:#2C6150; --tone4:#2D5BA9; }
+body[data-theme="bone"]     { --tone1:#C44A20; --tone2:#9A6B14; --tone3:#3A6B4A; --tone4:#315E96; }
+body[data-theme="vellum"]   { --tone1:#7A3B2E; --tone2:#8A6412; --tone3:#3C6147; --tone4:#3A5580; }
+body[data-theme="sakura"]   { --tone1:#B24A6E; --tone2:#A9701C; --tone3:#3F7057; --tone4:#4063A0; }
+/* The three dark themes need LIGHTER tones, not the same ones — a mid-tone red on a near-black
+   card is unreadable. Same reason the grain blend inverts for these three. */
+body[data-theme="dusk"]     { --tone1:#D77A5B; --tone2:#D9A441; --tone3:#6FBF95; --tone4:#7FA8E8; }
+body[data-theme="midnight"] { --tone1:#E08A72; --tone2:#E0B358; --tone3:#74C6A0; --tone4:#6E9BE0; }
+body[data-theme="terminal"] { --tone1:#FF8A6B; --tone2:#F0C65A; --tone3:#4ADE80; --tone4:#7FB8FF; }
+
+body[data-tones="on"] .tone-1 { color: var(--tone1); }
+body[data-tones="on"] .tone-2 { color: var(--tone2); }
+body[data-tones="on"] .tone-3 { color: var(--tone3); }
+body[data-tones="on"] .tone-4 { color: var(--tone4); }
+body[data-tones="on"] .tone-5 { color: var(--tone5); }

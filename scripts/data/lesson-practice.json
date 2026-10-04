@@ -1039,6 +1039,20 @@
         "text": "¿hay una farmacia cerca?",
         "gloss": "Is there a chemist nearby?"
       }
+    ],
+    "es-accents": [
+      {
+        "text": "el jamón está en la mesa.",
+        "gloss": "The ham is on the table."
+      },
+      {
+        "text": "tú tienes un lápiz azul.",
+        "gloss": "You have a blue pencil."
+      },
+      {
+        "text": "hay un sofá en la casa.",
+        "gloss": "There is a sofa in the house."
+      }
     ]
   },
   "fr": {

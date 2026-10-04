@@ -144,9 +144,10 @@ function SheetBody() {
   const langConfig = getLanguageConfig(useLanguage());
   const sampleGlyph = langConfig.glyph;
   const {
-    theme, font, texture, blankStyle, accentColor,
-    setTheme, setFont, setTexture, setBlankStyle, setAccentColor,
+    theme, font, texture, blankStyle, accentColor, toneColors,
+    setTheme, setFont, setTexture, setBlankStyle, setAccentColor, setToneColors,
   } = useTheme();
+  const language = useLanguage();
   const { earned, next, ready } = useAchievements();
 
   const unlocked = unlockedCosmetics(earned.map(a => a.id));
@@ -288,6 +289,46 @@ function SheetBody() {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Pinyin tones ──────────────────────────────────────────────────
+          CHINESE ONLY, and a switch rather than a palette. Japanese furigana has no tones to
+          colour, and the other two languages have no reading layer at all — so this is gated
+          on the study language rather than on `hasReadings`, which is also true for Japanese.
+
+          FREE. `lib/cosmetics.ts` gates decoration; this is a comprehension aid, and a reading
+          aid behind a milestone would break the additions-only rule in spirit. It is also OFF
+          by default: the tone marks already carry the answer, and somebody who has not asked
+          for four colours should not have their passage repainted. */}
+      {language === 'zh' && (
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--line-soft)' }}>
+          <div style={label}>Pinyin tones</div>
+          <button
+            onClick={() => setToneColors(!toneColors)}
+            className="cursor-pointer rounded-[10px] p-[10px] w-full text-left transition-all duration-150 flex items-center gap-3"
+            style={{
+              border: toneColors ? '1px solid var(--accent)' : '1px solid var(--line)',
+              boxShadow: toneColors ? '0 0 0 2px var(--accent-soft)' : 'none',
+              background: 'none', color: 'var(--ink)', fontFamily: 'inherit',
+            }}
+            aria-pressed={toneColors}
+          >
+            <span aria-hidden style={{ fontFamily: 'var(--f-mono)', fontSize: 15, letterSpacing: '.02em' }}>
+              <span className="tone-1">mā</span>{' '}
+              <span className="tone-2">má</span>{' '}
+              <span className="tone-3">mǎ</span>{' '}
+              <span className="tone-4">mà</span>{' '}
+              <span className="tone-5">ma</span>
+            </span>
+            <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
+              {toneColors ? 'on' : 'off'}
+            </span>
+          </button>
+          <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 8, lineHeight: 1.5 }}>
+            Colours each syllable by its tone. The tone marks stay either way, so this is a
+            second cue rather than the only one.
+          </p>
         </div>
       )}
 

@@ -187,6 +187,14 @@ export interface UserPrefs {
   texture?: Texture;
   blankStyle?: BlankStyle;
   /**
+   * Colour each pinyin syllable by its tone. Chinese only, off by default.
+   *
+   * FREE, never an earned cosmetic. `lib/cosmetics.ts` gates DECORATION — a theme, a paper
+   * grain, the shape of a cloze gap. This is a comprehension aid, and putting a reading aid
+   * behind a milestone would break the additions-only rule in spirit while keeping its letter.
+   */
+  toneColors?: boolean;
+  /**
    * A custom accent, as `#rrggbb`. The top-tier unlock.
    *
    * ONE COLOUR, NOT A PALETTE. `--accent` is the only token a learner can move without being

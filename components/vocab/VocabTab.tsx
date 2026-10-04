@@ -18,6 +18,7 @@ import { weakestWords } from '@/lib/weakWords';
 import AddWordForm from './AddWordForm';
 import ImportPanel from './ImportPanel';
 import GlossText from '@/components/shared/GlossText';
+import TonedReading from '@/components/shared/TonedReading';
 
 const UNDO_DURATION_MS = 5000;
 
@@ -905,7 +906,7 @@ export default function VocabTab() {
                       {w.h}
                     </span>
                     <span style={{ fontSize: 14, color: 'var(--ink)' }}>
-                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}>{w.p}</span>
+                      <span style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--accent)', marginRight: 8 }}><TonedReading reading={w.p} /></span>
                       {/* ONE SENSE, not all of them. `本` ships nine, and nine senses in a list row
                           is the wall of text GlossText exists to prevent — "a five-sense dump is why
                           a card will not stick". The full gloss is one tap away and the deck still

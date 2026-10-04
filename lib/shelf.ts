@@ -174,10 +174,26 @@ export function ownEntry(opts: {
  * deleting on a laptop does not delete on a phone, because the shelf column syncs and this
  * does not. Making it sync is a schema decision and is deliberately not taken here.
  *
- * It is pruned against the shelf it is given, so it cannot grow without bound: once an id is
- * gone from the content cache there is nothing left to suppress and the tombstone is dropped.
+ * ⚠ THE FIRST VERSION OF THIS COMMENT CLAIMED A PRUNING THAT WAS NEVER WRITTEN — it said the
+ * list "is pruned against the shelf it is given, so it cannot grow without bound", and nothing
+ * pruned anything. That is the exact drift CLAUDE.md opens by warning about, committed in the
+ * same hour as the warning. The bound is real now and it is a CAP: `MAX_TOMBSTONES`, oldest
+ * dropped, insertion order being what a `Set` preserves.
+ *
+ * A cap is safe because a tombstone only has to outlive the thing that could re-derive it —
+ * the day's cached content — and that rolls over daily. The cap is deliberately twice
+ * `MAX_ENTRIES`, so it cannot be exhausted by clearing a full shelf.
  */
 const REMOVED_KEY = (lang: LanguageCode) => `srsly-shelf-removed-${lang}`;
+
+/** Twice MAX_ENTRIES, so clearing a full shelf cannot overflow it. Oldest dropped. */
+export const MAX_TOMBSTONES = MAX_ENTRIES * 2;
+
+/** Keep the most recent ids. `Set` preserves insertion order, which is what makes this work. */
+function capped(ids: Set<string>): Set<string> {
+  if (ids.size <= MAX_TOMBSTONES) return ids;
+  return new Set([...ids].slice(ids.size - MAX_TOMBSTONES));
+}
 
 export function loadRemoved(lang: LanguageCode): Set<string> {
   if (typeof localStorage === 'undefined') return new Set();
@@ -192,7 +208,7 @@ export function loadRemoved(lang: LanguageCode): Set<string> {
 
 export function saveRemoved(lang: LanguageCode, ids: Set<string>): void {
   if (typeof localStorage === 'undefined') return;
-  try { localStorage.setItem(REMOVED_KEY(lang), JSON.stringify([...ids])); }
+  try { localStorage.setItem(REMOVED_KEY(lang), JSON.stringify([...capped(ids)])); }
   catch { /* quota — the worst case is a deleted passage reappearing */ }
 }
 
@@ -205,6 +221,21 @@ export function removeEntry(
   const next = entries.filter(e => e.id !== id);
   if (next.length === entries.length) return { entries, removed };   // nothing matched
   return { entries: next, removed: new Set([...removed, id]) };
+}
+
+/**
+ * Empty the shelf, and tombstone everything that was on it.
+ *
+ * Separate from calling `removeEntry` in a loop only because the intent is different and the
+ * UI needs to say so: this is the one action here that cannot be undone a row at a time. The
+ * entries themselves are not recoverable — a generated passage's text lives nowhere else, and
+ * an `own` entry never had text to recover.
+ */
+export function clearShelf(
+  entries: ShelfEntry[],
+  removed: Set<string>,
+): { entries: ShelfEntry[]; removed: Set<string> } {
+  return { entries: [], removed: capped(new Set([...removed, ...entries.map(e => e.id)])) };
 }
 
 /** Drop anything the tombstone list names. Applied wherever entries are re-derived. */

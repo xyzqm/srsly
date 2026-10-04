@@ -186,3 +186,147 @@ export function autoFillPinyin(hanzi: string): string {
   if (parts.some(p => !p)) return '';
   return joinPinyin(parts);
 }
+
+// ─── Tones, for colouring ─────────────────────────────────────────────────────
+
+/**
+ * WHICH TONE A SYLLABLE CARRIES — the exact inverse of `stripTones`, and that is the point.
+ *
+ * `stripTones` decomposes to NFD and DISCARDS the combining marks. Reading the tone out is the
+ * same two lines keeping them instead, so the two cannot disagree about what a tone mark is.
+ * Writing a second table of accented vowels is the drift that function's own docstring warns
+ * about.
+ *
+ * Returns 1–4, or 5 for a neutral/unmarked syllable.
+ */
+const MARK_TONE: Record<string, 1 | 2 | 3 | 4> = {
+  '\u0304': 1,   // macron     ā
+  '\u0301': 2,   // acute      á
+  '\u030C': 3,   // caron      ǎ
+  '\u0300': 4,   // grave      à
+};
+
+export function toneOf(syllable: string): 1 | 2 | 3 | 4 | 5 {
+  for (const ch of (syllable || '').normalize('NFD')) {
+    const t = MARK_TONE[ch];
+    if (t) return t;
+  }
+  return 5;
+}
+
+/**
+ * SPLITTING A READING INTO SYLLABLES, so each can be coloured on its own.
+ *
+ * `péngyou` is two syllables and two tones; colouring the whole string by the first would be a
+ * confidently wrong answer, which this codebase refuses everywhere else. The dictionary does
+ * not help — `build-cedict.mjs` joins syllables through `joinPinyin` and the boundary is gone
+ * by the time anything renders.
+ *
+ * So the boundary is recovered by asking whether a split produces only REAL syllables. The
+ * table is generated from initials × finals rather than written out, because ~400 hand-typed
+ * syllables is ~400 chances to be wrong, and the generated set is checked against the whole of
+ * CC-CEDICT in tests/pinyin.test.ts.
+ *
+ * **IT RETURNS null RATHER THAN GUESSING.** `fangan` is genuinely ambiguous — fan+gan or
+ * fang+an — and Hanyu Pinyin's own answer is the apostrophe, which is why `joinPinyin` writes
+ * one and why it is treated as a hard boundary here. Where no segmentation exists at all, or
+ * where the input is not pinyin, the caller gets null and renders the reading uncoloured.
+ * Colour is a reinforcement of the tone mark that is already there, so losing it costs nothing;
+ * colouring the wrong syllable would teach the wrong tone.
+ */
+const FINALS = [
+  // Longest first so `uang` is not read as `ua`.
+  'iang', 'iong', 'uang', 'ueng', 'üan',
+  'ang', 'eng', 'ing', 'ong', 'iao', 'ian', 'uai', 'uan', 'üe', 'ün',
+  'ai', 'ei', 'ao', 'ou', 'an', 'en', 'er', 'ia', 'ie', 'iu', 'in',
+  'ua', 'uo', 'ui', 'un', 'ê',
+  // ⚠ `ue` IS `üe` WITH THE UMLAUT DROPPED, and leaving it out cost 1,431 entries.
+  // Hanyu Pinyin writes ü as a plain u after j, q, x and y — because those initials can never
+  // take a true u — so `xué`, `jué`, `què` and `yuè` are all üe syllables spelled `ue`. Without
+  // this the splitter could not match `xué` at all and fell back to `xu` + `é`, which put the
+  // wrong tone on the wrong half of學, 月 and every word containing them. Measured against the
+  // whole of CC-CEDICT, which is the only way this was going to be found.
+  'ue',
+  'a', 'o', 'e', 'i', 'u', 'ü',
+];
+const INITIALS = [
+  'zh', 'ch', 'sh', 'b', 'p', 'm', 'f', 'd', 't', 'n', 'l',
+  'g', 'k', 'h', 'j', 'q', 'x', 'r', 'z', 'c', 's', 'y', 'w',
+];
+/** Syllabic nasals and interjections, which have no final at all. */
+const STANDALONE = ['hng', 'ng', 'hm', 'm', 'n', 'ê', 'o'];
+
+const SYLLABLES: Set<string> = (() => {
+  const out = new Set<string>(STANDALONE);
+  for (const f of FINALS) {
+    out.add(f);                                   // a zero-initial syllable: an, ou, er…
+    for (const i of INITIALS) out.add(i + f);
+  }
+  return out;
+})();
+
+/** True for a toneless, lowercase string that is a real Hanyu Pinyin syllable. */
+export function isSyllable(toneless: string): boolean {
+  return SYLLABLES.has(toneless);
+}
+
+export function splitSyllables(pinyin: string): string[] | null {
+  if (!pinyin) return null;
+  // An apostrophe is Hanyu Pinyin's own boundary mark (xi'an), so it is honoured as one and
+  // each side is solved independently. Spaces separate WORDS in the HSK tables and are
+  // boundaries for the same reason.
+  const parts = pinyin.split(/([\s'\u2019·]+)/);
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    if (/^[\s'\u2019·]+$/.test(part)) { out.push(part); continue; }
+    const solved = solve(part);
+    if (!solved) return null;
+    out.push(...solved);
+  }
+  return out.length ? out : null;
+}
+
+/** Longest-first with backtracking: the first segmentation that consumes the whole run wins. */
+function solve(run: string): string[] | null {
+  const bare = stripTones(run).toLowerCase().replace(/v/g, 'ü').replace(/u:/g, 'ü');
+  if (!bare) return null;
+  const found = walk(bare, 0, new Map());
+  if (!found) return null;
+  // Map the toneless lengths back onto the ORIGINAL string, so the tone marks travel with it.
+  // NFD length differs from NFC, so the original is walked by grapheme count rather than index.
+  const chars = [...run];
+  const pieces: string[] = [];
+  let at = 0;
+  for (const syl of found) {
+    pieces.push(chars.slice(at, at + syl.length).join(''));
+    at += syl.length;
+  }
+  return at === chars.length ? pieces : null;
+}
+
+function walk(s: string, i: number, memo: Map<number, string[] | null>): string[] | null {
+  if (i === s.length) return [];
+  const seen = memo.get(i);
+  if (seen !== undefined) return seen;
+  // Longest first, so `xian` beats `xi` — which is the orthography's own rule, and why an
+  // apostrophe exists for the cases where it is wrong.
+  for (let len = Math.min(6, s.length - i); len >= 1; len--) {
+    const piece = s.slice(i, i + len);
+    if (!SYLLABLES.has(piece)) continue;
+    const rest = walk(s, i + len, memo);
+    if (rest) { const r = [piece, ...rest]; memo.set(i, r); return r; }
+  }
+  memo.set(i, null);
+  return null;
+}
+
+/** Each syllable of a reading with its tone, or null when it cannot be split confidently. */
+export function tonedSyllables(pinyin: string): { text: string; tone: 1 | 2 | 3 | 4 | 5 }[] | null {
+  const parts = splitSyllables(pinyin);
+  if (!parts) return null;
+  return parts.map(text => ({
+    text,
+    tone: /^[\s'\u2019·]+$/.test(text) ? 5 : toneOf(text),
+  }));
+}

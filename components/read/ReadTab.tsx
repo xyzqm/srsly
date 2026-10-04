@@ -39,6 +39,7 @@ import LookupSummary from './LookupSummary';
 import Question from './Question';
 import VocabResults from './VocabResults';
 import MissedWordReview from './MissedWordReview';
+import StarterPanel from '@/components/read/StarterPanel';
 
 interface Props {
   onScore: (score: number) => void;
@@ -1553,6 +1554,43 @@ export default function ReadTab({ onScore, onActivity, onAnswer, onRequireSignIn
                 >
                   {errorMsg}
                 </p>
+              )}
+
+              {/* ── WHAT TO DO ABOUT IT ──────────────────────────────────────
+                  A FAILED GENERATION LEFT THE READER WITH NOTHING, which on a shared free-tier
+                  key is not an edge case — Gemini's quota is spent most evenings, and the
+                  portfolio visitor who arrives then meets an error where the app's headline
+                  feature should be.
+
+                  These are the starter texts. They are a REAL alternative rather than a
+                  consolation: `/api/segment-text` makes no model call in any language, so this
+                  path works at exactly the moment the provider does not. They go through the
+                  same segmenter, the same dictionary and the same blanks as anything you paste.
+
+                  AND THEY ARE LABELLED AS SAMPLES, in as many words. This codebase refuses
+                  content a learner cannot tell apart from real output — that rule is why there
+                  is no static fallback for a generated passage and why `SRSLY_STUB_AI` fires on
+                  an explicit flag alone. A text that says what it is breaks none of it; silently
+                  substituting one for a generation would break all of it.
+
+                  `lib/data/starterTexts.ts` and `StarterPanel` were left in the tree
+                  unreferenced when the starter card was removed in 2026-09, with their test
+                  still holding the data to its contract, precisely so restoring them would be
+                  one entry rather than re-authoring twelve texts. This is that entry. */}
+              {!loadingMore && errorMsg && (
+                <div style={{ marginTop: 18, maxWidth: '46ch' }}>
+                  <div style={{
+                    fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.18em',
+                    textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 6,
+                  }}>
+                    Sample readings
+                  </div>
+                  <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.55, marginBottom: 10 }}>
+                    Written for srsly, not generated just now — but they are real reading, with
+                    the same word lookups and the same dictionary. Nothing here needs a key.
+                  </p>
+                  <StarterPanel language={language} deck={deck} onCommit={commitPastedPassage} />
+                </div>
               )}
             </>
           ) : null}

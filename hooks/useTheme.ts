@@ -40,6 +40,7 @@ export function useTheme() {
   const [font, setFontState] = useState<Font>('editorial-warm');
   const [texture, setTextureState] = useState<Texture>('grain');
   const [blankStyle, setBlankStyleState] = useState<BlankStyle>('dotted');
+  const [toneColors, setToneColorsState] = useState(false);
   const [accentColor, setAccentColorState] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,10 @@ export function useTheme() {
       setBlankStyleState(blank);
       document.body.setAttribute('data-texture', tex);
       document.body.setAttribute('data-blank', blank);
+
+      const tones = p.toneColors === true;
+      setToneColorsState(tones);
+      document.body.setAttribute('data-tones', tones ? 'on' : 'off');
 
       const accent = safeAccent(p.accentColor);
       setAccentColorState(accent);
@@ -80,6 +85,19 @@ export function useTheme() {
     storage.getPrefs().then(p => storage.savePrefs({ ...p, texture: t }));
   }, []);
 
+  /**
+   * Tone colours, as a body attribute like every other visual switch.
+   *
+   * An ATTRIBUTE rather than a prop threaded through five components, because the readings it
+   * colours render in the passage, the popup, the vocab list and both flashcard faces — the
+   * same reason `data-blank` exists rather than a `blankStyle` prop on ClozeBlank.
+   */
+  const setToneColors = useCallback((on: boolean) => {
+    setToneColorsState(on);
+    document.body.setAttribute('data-tones', on ? 'on' : 'off');
+    storage.getPrefs().then(p => storage.savePrefs({ ...p, toneColors: on }));
+  }, []);
+
   const setBlankStyle = useCallback((b: BlankStyle) => {
     setBlankStyleState(b);
     document.body.setAttribute('data-blank', b);
@@ -100,7 +118,7 @@ export function useTheme() {
   }, []);
 
   return {
-    theme, font, texture, blankStyle, accentColor,
-    setTheme, setFont, setTexture, setBlankStyle, setAccentColor,
+    theme, font, texture, blankStyle, accentColor, toneColors,
+    setTheme, setFont, setTexture, setBlankStyle, setAccentColor, setToneColors,
   };
 }
