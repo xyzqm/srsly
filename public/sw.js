@@ -198,20 +198,60 @@ async function revalidate(event, request) {
   return net;
 }
 
+/**
+ * ⚠ NETWORK-FIRST WITHOUT A TIMEOUT IS WHY THE INSTALLED APP HUNG ON LAUNCH.
+ *
+ * The first version awaited `fetch` and only reached the cached shell on a THROW. A phone
+ * opening a home-screen app has a sleeping radio: the request does not fail, it waits — for
+ * seconds, sometimes tens of them — and a `fetch` that is merely slow never throws. So the
+ * shell sat in the cache, complete and instant, while the app showed nothing. Pull-to-refresh
+ * "fixed" it because by the second attempt the radio was awake, which is exactly the shape of
+ * the bug report.
+ *
+ * Reported as "it hangs until I manually reload". It is the opposite failure to the one the
+ * cache was added to prevent, and it is worse: offline was at least honest.
+ *
+ * So the network is RACED against the cached shell. If the shell is there and the network has
+ * not answered within `SHELL_TIMEOUT_MS`, the shell wins and the fetch is allowed to finish in
+ * the background — the next launch gets the fresh document either way, which is what keeps this
+ * network-first in the sense that matters: a deploy is never more than one launch away.
+ *
+ * The race happens ONLY when there is something to fall back to. With an empty cache there is
+ * no choice but to wait, and timing out into nothing would turn a slow first visit into a
+ * broken one.
+ */
+const SHELL_TIMEOUT_MS = 2500;
+
 async function documentFirst(event, request) {
   const cache = await caches.open(SHELL_CACHE);
-  try {
-    const res = await fetch(request);
-    // Stored under '/' rather than under the request, because a navigation may carry a query
-    // (Next appends _rsc= for some requests) and the fallback has to match whatever arrives.
-    if (res && res.ok) event.waitUntil(putQuietly(cache, '/', res.clone()));
+  // Stored under '/' rather than under the request, because a navigation may carry a query
+  // (Next appends _rsc= for some requests) and the fallback has to match whatever arrives.
+  const cached = await cache.match('/');
+
+  const net = fetch(request).then(function (res) {
+    if (res && res.ok) void putQuietly(cache, '/', res.clone());
     return res;
-  } catch (e) {
-    const hit = await cache.match('/');
-    if (hit) return hit;
-    // Nothing cached and no network: let the browser say so. Inventing a page here would be a
-    // loading state rendered as an answer.
-    throw e;
+  });
+
+  if (!cached) return net;          // nothing to race against; waiting is the only option
+
+  let timer;
+  const slow = new Promise(function (resolve) {
+    timer = setTimeout(function () { resolve(undefined); }, SHELL_TIMEOUT_MS);
+  });
+
+  try {
+    const won = await Promise.race([net, slow]);
+    clearTimeout(timer);
+    if (won) return won;
+    // The network lost. Hand over the shell NOW and let the request finish into the cache,
+    // which is what `waitUntil` is for — without it the browser may kill the worker the moment
+    // the response is delivered and the shell would never refresh.
+    event.waitUntil(net.catch(function () { /* offline; the shell stands */ }));
+    return cached;
+  } catch {
+    clearTimeout(timer);
+    return cached;                  // a real failure, and we have the shell
   }
 }
 

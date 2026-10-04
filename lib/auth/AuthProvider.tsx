@@ -23,6 +23,25 @@ export function useAuth(): AuthState {
   return c;
 }
 
+/**
+ * Does this device hold a Supabase session AT ALL — asked of storage, never of the network.
+ *
+ * supabase-js persists under `sb-<project-ref>-auth-token`. Matching the shape rather than
+ * naming the project means this keeps working if the project ref changes, and it is only ever
+ * used to REFUSE a destructive action, so a false positive costs an anonymous session nobody
+ * needed and a false negative is the bug this exists to prevent.
+ */
+function hasPersistedSession(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^sb-.+-auth-token$/.test(k) && localStorage.getItem(k)) return true;
+    }
+  } catch { /* storage disabled — then there is nothing to protect */ }
+  return false;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const sb = getSupabaseBrowser();
   const [user, setUser] = useState<User | null>(null);
@@ -79,6 +98,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // point is to keep this path free of anything that could run while the answer to
         // "is there a session" is unknowable.
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          storage.resetToLocal();
+          setReady(true);
+          return;
+        }
+        /**
+         * ⚠ AND THE OFFLINE GUARD ALONE WAS NOT ENOUGH, WHICH IS WHY THIS CAME BACK.
+         *
+         * `getSession()` reads the persisted session — but if its access token has EXPIRED it
+         * first tries to refresh, over the network, and returns null when that cannot complete.
+         * A phone opening a home-screen app has a sleeping radio and a token that expired
+         * hours ago, so this is the ordinary cold start, not an edge case. `navigator.onLine`
+         * is `true` throughout: it reports a link, not reachability.
+         *
+         * So an empty `getSession()` is still ambiguous, and the previous fix only closed the
+         * half of it that announces itself. The unambiguous question is whether supabase-js has
+         * a token WRITTEN DOWN, which is answered without asking anybody — and if it has, this
+         * device belongs to an account and must not be handed a throwaway one. The refresh will
+         * land on its own once the radio is up; `onAuthStateChange` is already listening and
+         * will apply it.
+         */
+        if (hasPersistedSession()) {
           storage.resetToLocal();
           setReady(true);
           return;

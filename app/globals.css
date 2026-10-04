@@ -495,22 +495,37 @@
    top of a mark that already carries the answer, which is the accessible arrangement by
    construction. Do not "simplify" this by dropping the marks.
 
+   ⚠ AND THE NUMBERS WERE CHECKED, WHICH CHANGED SEVEN OF THEM. Contrast was computed per
+   theme against `--paper-2`, the card these actually render on. The dark themes were already
+   the strongest — terminal runs 7.8 to 11.1 — and the weak ones were the LIGHT themes, where
+   amber is simply hard: tone 2 sat at 2.80 on paper, 3.31 on sakura, 3.42 on bone. Each was
+   walked down in lightness, hue and saturation held, until it cleared 4.5:1. Everything is
+   at or above WCAG AA for normal text now.
+
+   `--tone5` is `--ink-soft`, not `--ink-faint`. Faint is the app's colour for text you are
+   meant to skim past, and it measured 2.11 to 3.82 — fine for a timestamp, not for a syllable
+   somebody is reading. A neutral tone is still a tone.
+
+   *(An earlier measurement of this taken in the browser read 1.42 and blamed `terminal`. It
+   was comparing against the wrong surface. The CSS-level computation above is the one to
+   trust, and it says the opposite.)*
+
    DERIVED FROM THE THEME, not fixed. A hardcoded palette is illegible on `terminal` and
    `midnight` and would break the one global styling rule this project has. Each theme states
    its own four, so the hues stay in the family the rest of the screen is painted from. */
 :root {
   --tone1: #B23A2E;  /* high flat   */
-  --tone2: #C27B10;  /* rising      */
+  --tone2: #935D0C;  /* rising      */
   --tone3: #2F6B4C;  /* dipping     */
   --tone4: #2D5BA9;  /* falling     */
-  --tone5: var(--ink-faint);
+  --tone5: var(--ink-soft);
 }
 body[data-theme="ink"]      { --tone1:#A32A1E; --tone2:#8A5A00; --tone3:#1F5638; --tone4:#1E4486; }
-body[data-theme="tea"]      { --tone1:#A8402F; --tone2:#996A12; --tone3:#2F6B4C; --tone4:#2B5480; }
-body[data-theme="slate"]    { --tone1:#A63A3A; --tone2:#8C6410; --tone3:#2C6150; --tone4:#2D5BA9; }
-body[data-theme="bone"]     { --tone1:#C44A20; --tone2:#9A6B14; --tone3:#3A6B4A; --tone4:#315E96; }
-body[data-theme="vellum"]   { --tone1:#7A3B2E; --tone2:#8A6412; --tone3:#3C6147; --tone4:#3A5580; }
-body[data-theme="sakura"]   { --tone1:#B24A6E; --tone2:#A9701C; --tone3:#3F7057; --tone4:#4063A0; }
+body[data-theme="tea"]      { --tone1:#A8402F; --tone2:#8B6010; --tone3:#2F6B4C; --tone4:#2B5480; }
+body[data-theme="slate"]    { --tone1:#A63A3A; --tone2:#845E0F; --tone3:#2C6150; --tone4:#2D5BA9; }
+body[data-theme="bone"]     { --tone1:#A73F1B; --tone2:#815A11; --tone3:#3A6B4A; --tone4:#315E96; }
+body[data-theme="vellum"]   { --tone1:#7A3B2E; --tone2:#7B5910; --tone3:#3C6147; --tone4:#3A5580; }
+body[data-theme="sakura"]   { --tone1:#A64566; --tone2:#8C5D17; --tone3:#3F7057; --tone4:#4063A0; }
 /* The three dark themes need LIGHTER tones, not the same ones — a mid-tone red on a near-black
    card is unreadable. Same reason the grain blend inverts for these three. */
 body[data-theme="dusk"]     { --tone1:#D77A5B; --tone2:#D9A441; --tone3:#6FBF95; --tone4:#7FA8E8; }

@@ -59,7 +59,19 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
   const [storedProvider, setStoredProvider] = useState<ProviderId>('anthropic');
   /** Which provider the picker is pointed at — the stored one until the learner moves it. */
   const [picked, setPicked] = useState<ProviderId>('anthropic');
-  const [draft, setDraft] = useState('');
+  /**
+   * ⚠ ONE DRAFT PER PROVIDER, because one shared draft was WIPED on every tab click.
+   *
+   * The picker's handler called `setDraft('')`, so pasting a Groq key, glancing at Gemini and
+   * coming back lost the paste — and an API key is the single most annoying thing in this app
+   * to re-fetch, because it lives in another tab on another site behind a login. Reported as
+   * "I have to re-enter it every time I switch tabs".
+   *
+   * Keyed by provider rather than cleared, so moving between the three is free and nothing is
+   * typed twice. Cleared on save and on cancel, which are the two places a draft is finished
+   * with.
+   */
+  const [drafts, setDrafts] = useState<Partial<Record<ProviderId, string>>>({});
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
 
@@ -72,6 +84,8 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
   }, []);
 
   const provider = providerOrDefault(picked);
+  const draft = drafts[picked] ?? '';
+  const setDraft = (v: string) => setDrafts(d => ({ ...d, [picked]: v }));
   /**
    * The connected row shows only when the picker is still pointed at the key that is actually
    * connected. Moving it elsewhere opens the field for THAT service without disconnecting
@@ -137,7 +151,7 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
           return (
             <button
               key={p.id}
-              onClick={() => { setPicked(p.id); setError(''); setDraft(''); setEditing(false); }}
+              onClick={() => { setPicked(p.id); setError(''); }}
               className="text-left cursor-pointer transition-all duration-150 rounded-[10px] px-4 py-3"
               style={{
                 background: on ? 'color-mix(in srgb, var(--accent) 8%, var(--card))' : 'var(--card)',
@@ -180,7 +194,7 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
             Connected to {providerOrDefault(storedProvider).name}
           </span>
           <button
-            onClick={() => { setEditing(true); setDraft(''); }}
+            onClick={() => setEditing(true)}
             className="cursor-pointer"
             style={{ ...mono, fontSize: 11.5, background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '7px 12px', color: 'var(--ink-soft)' }}
           >
