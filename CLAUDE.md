@@ -57,6 +57,47 @@ npm run start:verify    # serve .next-verify on :3100 — the ONLY way to exerci
                         # service worker, which does not register outside production
 ```
 
+### Deploying, and the one thing the CLI does differently
+
+srsly deploys from the CLI (`npx vercel --prod`), not from a Git integration. That is a
+deliberate choice and it has one consequence that is very easy to miss:
+
+**⚠ THE VERCEL CLI DOES NOT READ `.gitignore`.** It reads `.vercelignore` plus a short built-in
+list — `node_modules`, `.git`, `.next`, `.vercel`, `.env*` — and uploads **everything else in
+the working tree**, tracked or not. The Git integration behaves the opposite way: it only ever
+sees committed files, so `.gitignore` protects you for free. Deploying from the CLI removes that
+protection and nothing warns you.
+
+**Measured 2026-10-04, with no `.vercelignore`: every deploy was uploading 2.2 GB across 11,588
+files.** Of that, `measurements/` was **1.9 GB and 6,476 files** — each sweep keeps an entire
+Chrome profile, 1,274 PNGs and 157 tflite models, several of them 35 MB — and it grows by about
+**300 MB per sweep day**. `.next-agent` added another 244 MB, because the built-in `.next`
+exclusion is an exact name and not a prefix. With the file in place: **88 MB.**
+
+This is the THIRD time this one directory has had to be hidden from a tool that walks the project
+tree. `eslint.config.mjs` already ignores it ("lint went from clean to 796 problems across six
+vendor files nobody wrote"), `tsconfig.json`'s `exclude` now names it as insurance, and now the
+deploy. The pattern is the lesson: **a sweep's output looks like source to anything that globs**,
+and gitignoring it does nothing for tools that do not read `.gitignore` — which is ESLint 9 flat
+config, and the Vercel CLI, and very nearly TypeScript.
+
+**AND A FAILING DEPLOY DOES NOT SAY ANY OF THIS.** What it says is
+`Command "npm run build" exited with SIGKILL`, which reads as out-of-memory and sends you
+looking at webpack. Two measurements say that reading is wrong: a full cold build with no cache
+and no env vars peaks at **~1.2 GB** locally, nowhere near a build container's 8 GB; and nothing
+in the suspected code is even in the module graph — **every `@dict` import is static and names
+one of four files**, so `public/sw.js` and the 4,567 stroke files are never parsed by webpack at
+all. What webpack does parse is 34 MB of statically-imported JSON, and that has been true for
+months.
+
+*(The earlier failure on the same commit was `uncaughtException [TypeError: Cannot read
+properties of undefined (reading 'length')]`, which is what a truncated webpack cache entry
+deserialises to. Both errors are downstream of the deploy, not of the diff.)*
+
+**`vercel inspect --logs` gives BUILD logs; `vercel logs` gives RUNTIME ones.** Recorded twice in
+this file now, because it is an easy half-hour to lose and it is the first thing to reach for
+when a deploy fails.
+
 **Never run `npm run build` while a dev server is live.** They share `.next`, and doing it
 has corrupted the directory three times — each looking like an unrelated compile error.
 

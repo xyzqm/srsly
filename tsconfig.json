@@ -40,6 +40,13 @@
     ".next-agent/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    // The directories eslint.config.mjs already had to ignore, for the same reason: any tool
+    // that walks the project tree finds a sweep's leftover Chrome profile unless told not to.
+    // No .ts file lives there today, so this is insurance rather than a fix — but the sweep
+    // writes whatever Chrome leaves behind and `allowJs` is on.
+    "measurements",
+    ".next-agent",
+    ".next-verify"
   ]
 }

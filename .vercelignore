@@ -1,0 +1,44 @@
+# WHAT A CLI DEPLOY MUST NOT UPLOAD — and why this file has to exist at all.
+#
+# THE VERCEL CLI DOES NOT READ .gitignore. It reads THIS file, plus a short built-in list
+# (node_modules, .git, .next, .vercel, .env*). Everything else in the working tree is
+# uploaded, whether or not git has ever heard of it. That is the opposite of the Git
+# integration's behaviour, where only committed files are ever sent — and srsly deploys from
+# the CLI (see the note in CLAUDE.md), so the safe-by-default half does not apply here.
+#
+# WITHOUT THIS FILE A DEPLOY UPLOADED 2.2 GB ACROSS 11,588 FILES. Measured, 2026-10-04:
+#
+#   measurements/   1.9 GB   6,476 files   readability-sweep dumps
+#   .next-agent/    244 MB     137 files   build output for the agent dev server
+#
+# `measurements/` is the worst of it and it GROWS ~300 MB EVERY SWEEP DAY, because each run
+# keeps a whole Chrome profile — 1,274 PNGs, 157 tflite models, several of them 35 MB each.
+# The same directory already had to be added to eslint.config.mjs for the same reason
+# ("lint went from clean to 796 problems across six vendor files nobody wrote"), which is the
+# tell: a tool that walks the project tree will find this directory unless it is told not to.
+#
+# .next-agent is NOT covered by the built-in `.next` exclusion — that is an exact name, not a
+# prefix — which is exactly the trap eslint.config.mjs already records about naming build dirs
+# one at a time. Globs here for the same reason.
+
+# ── Build output ─────────────────────────────────────────────────────────────
+.next*/
+out/
+build/
+coverage/
+*.tsbuildinfo
+
+# ── Measurement dumps: provider quota to produce, never part of a deployment ──
+measurements/
+
+# ── Secrets, belt and braces ─────────────────────────────────────────────────
+# The CLI already excludes these. Listed anyway: a credential uploaded once is a credential
+# leaked, and this repository has had to rotate a key before.
+.env
+.env.*
+!.env.example
+.vercel
+
+# ── Local tooling ────────────────────────────────────────────────────────────
+.claude/
+.DS_Store
