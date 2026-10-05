@@ -12,6 +12,8 @@ interface AuthState {
   enabled: boolean;
   signInWithEmail: (email: string) => Promise<{ error?: string }>;
   signInWithGoogle: () => Promise<{ error?: string }>;
+  /** The ID-token flow. `nonce` is the RAW half of the pair — see googleIdentity.ts. */
+  signInWithGoogleCredential: (credential: string, nonce: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -173,13 +175,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error ? { error: error.message } : {};
   }, [sb]);
 
+  /**
+   * The REDIRECT flow, kept as the fallback.
+   *
+   * Still correct, and still what runs when `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is unset — a
+   * deployment without that variable keeps working exactly as before rather than losing Google
+   * sign-in. Its one flaw is cosmetic and unfixable: the consent screen names the redirect
+   * host, which is Supabase's, and no amount of OAuth-client configuration moves it. See
+   * lib/auth/googleIdentity.ts.
+   */
   const signInWithGoogle = useCallback(async () => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
-    
-    const { error } = await sb.auth.signInWithOAuth({ 
-      provider: 'google', 
-      options: { redirectTo } 
+
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+    return error ? { error: error.message } : {};
+  }, [sb]);
+
+  /**
+   * The ID-TOKEN flow: a credential Google issued to THIS page, exchanged for a session.
+   *
+   * `nonce` is the RAW half of the pair — Google was given the SHA-256 hex and embedded it in
+   * the token, and Supabase hashes this and compares. Passing the hashed half here fails with a
+   * flat "Invalid token", which is the one mistake worth naming at the call site.
+   *
+   * Nothing else is needed: a successful exchange fires `onAuthStateChange`, which already
+   * swaps the backend and applies the user, so this returns only an error.
+   */
+  const signInWithGoogleCredential = useCallback(async (credential: string, nonce: string) => {
+    if (!sb) return { error: 'Sign-in isn’t configured yet.' };
+    const { error } = await sb.auth.signInWithIdToken({
+      provider: 'google',
+      token: credential,
+      nonce,
     });
     return error ? { error: error.message } : {};
   }, [sb]);
@@ -201,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <Ctx.Provider value={{ user, isAnonymous, signedIn, enabled: supabaseEnabled, signInWithEmail, signInWithGoogle, signOut }}>
+    <Ctx.Provider value={{ user, isAnonymous, signedIn, enabled: supabaseEnabled, signInWithEmail, signInWithGoogle, signInWithGoogleCredential, signOut }}>
       {children}
     </Ctx.Provider>
   );

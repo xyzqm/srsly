@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth/AuthProvider';
+import { googleIdentityConfigured } from '@/lib/auth/googleIdentity';
+import GoogleIdButton from '@/components/auth/GoogleIdButton';
 
 interface Props {
   open: boolean;
@@ -63,12 +65,23 @@ export default function SignInModal({ open, onClose, reason }: Props) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <button
-              onClick={doGoogle}
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 12, borderRadius: 8, padding: '11px 14px', width: '100%', background: 'var(--paper-2)', color: 'var(--ink)', border: '1px solid var(--line)', cursor: 'pointer' }}
-            >
-              Continue with Google
-            </button>
+            {/* GOOGLE'S OWN BUTTON WHERE IT IS CONFIGURED, OURS WHERE IT IS NOT.
+                The ID-token flow needs Google to render the control, and it is the only thing
+                that makes the consent prompt name this site rather than the Supabase project
+                — the redirect flow's "to continue to <hash>.supabase.co" is the redirect
+                host and cannot be configured away. With no NEXT_PUBLIC_GOOGLE_CLIENT_ID set,
+                this falls back to exactly what shipped before, so a deployment without that
+                variable keeps Google sign-in rather than losing it. */}
+            {googleIdentityConfigured()
+              ? <GoogleIdButton onError={setErr} />
+              : (
+                <button
+                  onClick={doGoogle}
+                  style={{ fontFamily: 'var(--f-mono)', fontSize: 12, borderRadius: 8, padding: '11px 14px', width: '100%', background: 'var(--paper-2)', color: 'var(--ink)', border: '1px solid var(--line)', cursor: 'pointer' }}
+                >
+                  Continue with Google
+                </button>
+              )}
             <input
               type="email"
               value={email}

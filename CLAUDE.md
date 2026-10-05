@@ -57,6 +57,50 @@ npm run start:verify    # serve .next-verify on :3100 — the ONLY way to exerci
                         # service worker, which does not register outside production
 ```
 
+### Google sign-in names THIS SITE, which took two attempts
+
+`lib/auth/googleIdentity.ts`, `components/auth/GoogleIdButton.tsx`, and
+`signInWithGoogleCredential` in `AuthProvider`.
+
+**⚠ THE CONSENT SCREEN SHOWS THE REDIRECT URI'S HOST, NOT THE APP NAME.** `signInWithOAuth`
+sends the browser to `<project-ref>.supabase.co/auth/v1/authorize`, so Google said
+*"to continue to ogqhgvily….supabase.co"* — a hash, on the first screen anybody evaluating this
+project sees. Google shows the configured app name only after BRAND VERIFICATION, and brand
+verification requires proving ownership in Search Console of every authorized domain, which
+there means `supabase.co`. Nobody but Supabase can ever verify it.
+
+**A CUSTOM OAUTH CLIENT DOES NOT FIX THIS AND WAS TRIED FIRST.** It changes who the client
+belongs to, not where the redirect points, and the redirect is what is displayed. Recorded
+because it is the advice everyone gives, it sounds right, and it costs an evening. `vercel.app`
+cannot be verified either — it is on the Public Suffix List, so Google treats it as shared.
+
+**The ID-TOKEN flow removes the redirect.** Google issues a credential to the page and
+`signInWithIdToken` exchanges it, so there is no supabase.co hop to name. Free, and needs no
+domain. The alternative is Supabase's Custom Domain add-on, which is Pro plus a monthly fee and
+a domain you own — the right answer for a product and not for this.
+
+**THE NONCE IS TWO VALUES AND SWAPPING THEM FAILS SILENTLY.** Google is initialised with the
+**SHA-256 hex** and embeds it in the token; Supabase gets the **raw** value and hashes it to
+compare. That is what stops a token minted for another site being replayed. Reversed, the
+exchange returns a flat "Invalid token" naming nothing, so `makeNonce` returns the pair and
+`tests/googleIdentity.test.ts` asserts which half goes where, with a control.
+
+**`renderButton`, NOT One Tap.** `google.accounts.id.prompt()` is allowed to do NOTHING — a
+dismissal cooldown, third-party cookie settings, a browser without FedCM — and in each case it
+fails with no UI and no error. That is the dead-button bug this file already records twice.
+`renderButton` always draws something, and it is Google's branding requirement anyway, which is
+why that one control is deliberately not styled like the rest of the sheet.
+
+**IT FALLS BACK RATHER THAN DISAPPEARING.** With `NEXT_PUBLIC_GOOGLE_CLIENT_ID` unset the sheet
+renders the old redirect button and everything behaves as it did, so a deployment that never
+sets the variable keeps Google sign-in instead of losing it. Email OTP is untouched throughout
+and is the floor under both. The client ID is PUBLIC by design — it identifies the app and
+authorises nothing — which is why it carries the `NEXT_PUBLIC_` prefix.
+
+The script is third-party, so it loads when the sheet opens and never on the landing path, and
+`public/sw.js` classifies `accounts.google.com` `network-only` — an auth script served from disk
+is not something this app will do. A test asserts that classification.
+
 ### Deploying, and the one thing the CLI does differently
 
 srsly deploys from the CLI (`npx vercel --prod`), not from a Git integration. That is a
