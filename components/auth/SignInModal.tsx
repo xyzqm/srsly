@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { googleIdentityConfigured } from '@/lib/auth/googleIdentity';
 import GoogleIdButton from '@/components/auth/GoogleIdButton';
@@ -11,11 +11,26 @@ interface Props {
 }
 
 export default function SignInModal({ open, onClose, reason }: Props) {
-  const { signInWithEmail, signInWithGoogle, enabled } = useAuth();
+  const { signInWithEmail, signInWithGoogle, signedIn, enabled } = useAuth();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  /**
+   * ⚠ NOTHING CLOSED THIS SHEET WHEN SIGN-IN ACTUALLY WORKED.
+   *
+   * It never read `signedIn`, and it did not have to: every path out of here USED TO NAVIGATE.
+   * The Google redirect left the page and came back through /auth/callback, and an email link
+   * is a navigation by definition. The ID-token flow is the first that finishes in place — so
+   * the popup closed, the session was created, and the sheet sat on top of a signed-in app
+   * saying nothing. Reported, accurately, as "it doesn't log me in and shows no error".
+   *
+   * `AuthProvider` reloads on an in-place sign-in, which makes this almost moot — but only
+   * almost, and a modal that depends on somebody else's reload to disappear is one refactor
+   * away from the same bug.
+   */
+  useEffect(() => { if (open && signedIn) onClose(); }, [open, signedIn, onClose]);
 
   if (!open) return null;
 

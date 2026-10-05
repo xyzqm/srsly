@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import type { User, AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { getSupabaseBrowser, supabaseEnabled } from '@/lib/supabase/client';
 import { storage } from '@/lib/storage';
@@ -58,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [sb]);
 
+  /** False until the initial session resolution finishes — see the SIGNED_IN branch. */
+  const settled = useRef(false);
+
   useEffect(() => {
     if (!sb) return;
     let active = true;
@@ -102,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           storage.resetToLocal();
           setReady(true);
+          settled.current = true;
           return;
         }
         /**
@@ -123,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (hasPersistedSession()) {
           storage.resetToLocal();
           setReady(true);
+          settled.current = true;
           return;
         }
         const { data, error } = await sb.auth.signInAnonymously();
@@ -133,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await applyBackend(u);
       setUser(u);
       setReady(true);
+      settled.current = true;
     })();
     const { data: sub } = sb.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       const u = session?.user ?? null;
@@ -142,6 +148,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Only redirect if the URL contains auth recovery/access tokens to prevent infinite loops on home page reloads
         if (window.location.hash.includes('access_token') || window.location.search.includes('code')) {
           window.location.href = '/';
+          return;
+        }
+        /**
+         * ⚠ AND A SIGN-IN THAT NEVER NAVIGATES HAD NOTHING TO MAKE THE APP NOTICE IT.
+         *
+         * Every earlier path left the page: the Google REDIRECT came back through
+         * /auth/callback with tokens in the URL and the branch above reloaded, and an email
+         * link is a navigation by definition. The ID-token flow is the first that completes
+         * IN PLACE — and `storage.setBackend` swaps the implementation while notifying nobody
+         * (see lib/storage/index.ts), so every hook that had already read kept the LOCAL deck.
+         * Combined with a modal that did not watch `signedIn`, the symptom was precise and
+         * baffling: the Google popup closes, the sheet stays, nothing appears to happen — and
+         * the learner is in fact signed in, behind it.
+         *
+         * A reload is what the other two paths get for free and what `signOut` already does,
+         * and it is the only thing that guarantees every hook re-reads through the new backend.
+         * Threading a subscription through the storage facade is the tidier fix and a much
+         * larger one, in the layer where a deck arriving from the cloud is already delicate.
+         *
+         * `settled` is what stops this looping. `SIGNED_IN` also fires when a session is merely
+         * RESTORED on load, which would reload forever; the flag is set after the initial
+         * resolution below, so only a sign-in that happens afterwards counts as new.
+         */
+        if (settled.current && u && u.is_anonymous !== true) {
+          window.location.reload();
         }
       }
     });
@@ -207,12 +238,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const signInWithGoogleCredential = useCallback(async (credential: string, nonce: string) => {
     if (!sb) return { error: 'Sign-in isn’t configured yet.' };
-    const { error } = await sb.auth.signInWithIdToken({
-      provider: 'google',
-      token: credential,
-      nonce,
-    });
-    return error ? { error: error.message } : {};
+    try {
+      const { error } = await sb.auth.signInWithIdToken({
+        provider: 'google',
+        token: credential,
+        nonce,
+      });
+      return error ? { error: error.message } : {};
+    } catch (e) {
+      // supabase-js usually RETURNS an error rather than throwing — but a transport failure
+      // throws, and an uncaught rejection here is a sign-in that does nothing and says nothing.
+      // That is the dead-button shape this repo keeps meeting; it does not get a third outing.
+      return { error: e instanceof Error ? e.message : 'Google sign-in could not be completed.' };
+    }
   }, [sb]);
 
   const signOut = useCallback(async () => {

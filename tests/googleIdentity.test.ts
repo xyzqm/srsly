@@ -108,3 +108,71 @@ describe('the service worker must never cache the auth script', () => {
     expect(api.classify('https://accounts.google.com/gsi/client', 'GET', 'no-cors')).toBe('network-only');
   });
 });
+
+/**
+ * THE SILENT FAILURE, WHICH WAS NOT A FAILURE AT ALL.
+ *
+ * Reported as: the Google popup closes, the sheet stays, no error, not signed in. Three
+ * separate gaps, and the first one is why there was no error to show — there was no error.
+ * Every earlier sign-in path NAVIGATED (the redirect returned through /auth/callback, an email
+ * link is a navigation), so nothing had ever needed to close the sheet or re-read the data.
+ * The ID-token flow is the first that completes in place.
+ */
+describe('a sign-in that never navigates still has to be noticed', () => {
+  it('the modal closes itself when signedIn goes true', () => {
+    const src = code(read('components/auth/SignInModal.tsx'));
+    expect(src).toMatch(/signedIn/);
+    expect(src).toMatch(/if \(open && signedIn\) onClose\(\)/);
+  });
+
+  it('AuthProvider reloads on an in-place sign-in, so hooks re-read through the new backend', () => {
+    const src = code(read('lib/auth/AuthProvider.tsx'));
+    const branch = src.slice(src.indexOf("event === 'SIGNED_IN'"));
+    expect(branch).toContain('window.location.reload()');
+  });
+
+  it('⚠ the reload is guarded by `settled`, or a restored session loops forever', () => {
+    // SIGNED_IN also fires when a session is merely restored on load. Without the guard the
+    // app would reload, restore, reload — a boot loop shipped to every signed-in device.
+    const src = code(read('lib/auth/AuthProvider.tsx'));
+    const branch = src.slice(src.indexOf("event === 'SIGNED_IN'"));
+    const reloadAt = branch.indexOf('window.location.reload()');
+    const guardAt = branch.indexOf('settled.current');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(reloadAt);
+    // and it must only ever fire for a REAL user, never the anonymous one the app mints itself
+    expect(branch.slice(guardAt, reloadAt)).toMatch(/is_anonymous !== true/);
+  });
+
+  it('`settled` is set on EVERY path out of the initial resolution', () => {
+    // Three exits: offline, a stored-but-unrefreshable token, and the ordinary one. Miss any
+    // and a later genuine sign-in silently fails to reload — the bug, wearing a third face.
+    const src = code(read('lib/auth/AuthProvider.tsx'));
+    expect(src.match(/settled\.current = true/g) ?? []).toHaveLength(3);
+    expect(src).toMatch(/settled\s*=\s*useRef\(false\)/);
+  });
+});
+
+describe('nothing in this flow may reject silently', () => {
+  it('the exchange catches a throw as well as returning an error', () => {
+    const src = code(read('lib/auth/AuthProvider.tsx'));
+    const fn = src.slice(src.indexOf('signInWithGoogleCredential = useCallback'));
+    const body = fn.slice(0, fn.indexOf('}, [sb]);'));
+    expect(body).toContain('try {');
+    expect(body).toContain('catch');
+    expect(body).toContain('signInWithIdToken');
+  });
+
+  it('the button handles a rejection as well as an error field', () => {
+    const src = code(read('components/auth/GoogleIdButton.tsx'));
+    const call = src.slice(src.indexOf('signInWithGoogleCredential('));
+    expect(call).toContain('.then(');
+    expect(call).toContain('.catch(');
+    expect(call.indexOf('.then(')).toBeLessThan(call.indexOf('.catch('));
+  });
+
+  it('CONTROL: a bare `.then` would fail that rule', () => {
+    const broken = code('void signIn(c, n).then(r => { if (r.error) onError(r.error); });');
+    expect(broken).not.toContain('.catch(');
+  });
+});

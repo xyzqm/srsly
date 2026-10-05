@@ -91,6 +91,26 @@ fails with no UI and no error. That is the dead-button bug this file already rec
 `renderButton` always draws something, and it is Google's branding requirement anyway, which is
 why that one control is deliberately not styled like the rest of the sheet.
 
+**⚠ AND THE FIRST WORKING EXCHANGE LOOKED LIKE A SILENT FAILURE, BECAUSE NOTHING NAVIGATED.**
+The popup closed, the sheet stayed, no error appeared and the learner was not signed in — as
+far as they could see. They were. Three gaps, all from one assumption:
+
+- **`SignInModal` never read `signedIn`.** It never had to: the redirect flow came back through
+  `/auth/callback` and reloaded, and an email link is a navigation by definition. Nothing had
+  ever finished sign-in IN PLACE, so nothing closed the sheet.
+- **`storage.setBackend` notifies nobody** (lib/storage/index.ts), so every hook that had
+  already read kept the LOCAL deck. The other paths got a page reload for free. This one now
+  reloads deliberately, which is also what `signOut` does.
+- **The reload is guarded by `settled`.** `SIGNED_IN` also fires when a session is merely
+  RESTORED on load, so an unguarded reload is a boot loop shipped to every signed-in device.
+  The flag is set after the initial resolution — on ALL THREE of its exits, because missing one
+  means a later genuine sign-in silently fails to reload — and the branch additionally requires
+  a non-anonymous user, since the app mints an anonymous session for every visitor.
+
+And two rejection paths were swallowing errors: `signInWithIdToken` RETURNS an error but THROWS
+on a transport failure, and the call site had a `.then` with no `.catch`. Neither was the cause
+here, and both would have produced exactly this report later.
+
 **IT FALLS BACK RATHER THAN DISAPPEARING.** With `NEXT_PUBLIC_GOOGLE_CLIENT_ID` unset the sheet
 renders the old redirect button and everything behaves as it did, so a deployment that never
 sets the variable keeps Google sign-in instead of losing it. Email OTP is untouched throughout

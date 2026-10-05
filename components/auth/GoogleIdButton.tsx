@@ -57,8 +57,11 @@ export default function GoogleIdButton({ onError }: { onError: (m: string) => vo
           cancel_on_tap_outside: true,
           callback: (res) => {
             if (!res.credential) { onError('Google did not return a sign-in token.'); return; }
+            // `.catch` as well as the error field: a rejected promise with no handler is a
+            // sign-in that does nothing and says nothing, which is exactly what was reported.
             void signInWithGoogleCredential(res.credential, nonceRaw.current)
-              .then(r => { if (r.error) onError(r.error); });
+              .then(r => { if (r.error) onError(r.error); })
+              .catch(e => onError(e instanceof Error ? e.message : 'Google sign-in failed.'));
           },
         });
 
