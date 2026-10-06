@@ -5,45 +5,19 @@ import type { DailyAccuracy, DeckWord, LanguageCode, SRSState } from '@/lib/type
 import { todayStr, dateInDays } from '@/lib/deck';
 import { applyActivity, dueCountOn, forgivenInStreak, reconcileStreak, languageActivity, languageStreakDisplay, withLanguageStreak } from '@/lib/streak';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
-
-interface EmojiState { emoji: string; tip: string }
+import { pickFace, type FaceName } from '@/lib/stateFace';
 
 /**
- * `daysAway` is UNFORGIVEN absence, not days since you last opened the app.
+ * What the header shows and what it says when asked.
  *
- * These three states used to key off `lastVisit`, which is the one signal the honest
- * streak was written to stop trusting (see lib/streak.ts). The result contradicted itself
- * on screen: three days where FSRS asked for nothing kept the streak alive and intact, and
- * then the header greeted the learner with "Getting rusty — let's shake it off!" for
- * obeying the schedule. A rest day is not rust, and a visit is not study.
- *
- * `restToday` is the other half: today is asking nothing of you and your streak is safe.
- * Saying so is the point of the mechanic — silence would only mean the app has stopped
- * contradicting itself.
+ * `face` NAMES A DRAWING, it is not a character. It was `emoji: string` — a literal 🤔 and
+ * eleven friends — which `components/shared/Mark.tsx` had already ruled out in writing for
+ * every other mark in the app: an emoji is somebody else's artwork, drawn differently on
+ * every OS, arriving in full colour into a themed palette. See `lib/stateFace.ts`, which owns
+ * both the state table and `pickFace` so that the one part of this with branches in it can be
+ * tested without a renderer.
  */
-function pickEmoji(streak: number, daysAway: number, todayScore: number, scoreFresh: boolean, restToday: boolean): EmojiState {
-  if (daysAway >= 14) return { emoji: '🥶', tip: 'Been a while... welcome back!' };
-  if (daysAway >= 4)  return { emoji: '🫥', tip: "Getting rusty — let's shake it off!" };
-  if (daysAway >= 2)  return { emoji: '😶‍🌫️', tip: 'A couple days off — ease back in' };
-  if (restToday) {
-    return {
-      emoji: '😌',
-      tip: streak > 0
-        ? `Rest day — nothing is due. Your ${streak}-day streak is safe.`
-        : 'Rest day — nothing is due.',
-    };
-  }
-  if (scoreFresh) {
-    if (todayScore >= 90) return { emoji: '🤓', tip: 'Top marks today!' };
-    if (todayScore >= 75) return { emoji: '😎', tip: 'Strong session!' };
-    if (todayScore >= 55) return { emoji: '🙃', tip: 'Getting there — keep pushing!' };
-    return { emoji: '😅', tip: "Tough one — tomorrow's another shot" };
-  }
-  if (streak >= 100) return { emoji: '🎉', tip: `${streak}-day streak — absolutely legendary!` };
-  if (streak >= 30)  return { emoji: '😍', tip: `${streak}-day streak — you're on a roll!` };
-  if (streak >= 7)   return { emoji: '🔥', tip: `${streak}-day streak — keep the fire going!` };
-  return { emoji: '🤔', tip: 'New day — what are we learning?' };
-}
+interface FaceState { face: FaceName; tip: string }
 
 function yesterday(): string {
   return dateInDays(-1);
@@ -76,12 +50,12 @@ export function rollingAccuracy(history: DailyAccuracy[] | undefined, days: numb
 }
 
 /**
- * `language` enables the per-language streak. Optional because Header only wants the emoji,
+ * `language` enables the per-language streak. Optional because Header only wants the face,
  * and asking every caller for a language it does not use would be noise — omitted simply
  * means the global streak behaves exactly as before and `langStreak` stays 0.
  */
 export function useSRS(language?: LanguageCode) {
-  const [emojiState, setEmojiState] = useState<EmojiState>({ emoji: '🤔', tip: '' });
+  const [faceState, setFaceState] = useState<FaceState>({ face: 'thinking', tip: '' });
   const [streak, setStreak] = useState(0);
   const [sessions, setSessions] = useState(0);
   const [accuracy, setAccuracy] = useState<DailyAccuracy[]>([]);
@@ -149,7 +123,7 @@ export function useSRS(language?: LanguageCode) {
       const restToday = lastActive === yest && dueCountOn(decks, today, lastActive) === 0;
 
       const scoreFresh = state.todayScoreDate === today && state.todayScore >= 0;
-      setEmojiState(pickEmoji(displayStreak, daysAway, state.todayScore, scoreFresh, restToday));
+      setFaceState(pickFace(displayStreak, daysAway, state.todayScore, scoreFresh, restToday));
     })();
     // Re-runs on a language switch so the new language's own streak is settled and shown.
   }, [language]);
@@ -249,8 +223,8 @@ export function useSRS(language?: LanguageCode) {
     setSessions(newSessions);
     setStreak(updated.streak);
     setForgiven(forgivenInStreak(updated, today));
-    // A score means they just studied, so neither away nor resting — the score emoji wins.
-    setEmojiState(pickEmoji(updated.streak, 0, score, true, false));
+    // A score means they just studied, so neither away nor resting — the score face wins.
+    setFaceState(pickFace(updated.streak, 0, score, true, false));
   }, [bumpLanguage]);
 
   /**
@@ -269,5 +243,5 @@ export function useSRS(language?: LanguageCode) {
     setAccuracy(trimmed);
   }, []);
 
-  return { ...emojiState, recordScore, recordActivity, recordAnswer, streak, langStreak, sessions, accuracy, forgiven };
+  return { ...faceState, recordScore, recordActivity, recordAnswer, streak, langStreak, sessions, accuracy, forgiven };
 }

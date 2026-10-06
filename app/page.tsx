@@ -77,24 +77,40 @@ function AccountChip({ onSignIn, onOpenAccount }: { onSignIn: () => void; onOpen
   };
   if (signedIn) {
     const email = user?.email ?? 'account';
+    /**
+     * The LOCAL PART on a phone, the whole address on a desktop.
+     *
+     * This chip was capped at 200px and was the single widest thing in a header that a learner
+     * reported as cramped at 375px. The domain is the half that carries no information here —
+     * there is one account and the learner knows which provider it is at — so a narrow screen
+     * shows `samuelfangzhu` where a wide one shows the address in full. Both are rendered, and
+     * CSS picks; doing it in JS would need a resize listener and would be wrong on the first
+     * frame after a rotate.
+     */
+    const localPart = email.includes('@') ? email.slice(0, email.indexOf('@')) : email;
     return (
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
         <button
           onClick={onOpenAccount}
           title={`Signed in as ${email} — open account settings`}
-          className="cursor-pointer transition-colors duration-150"
+          className="cursor-pointer transition-colors duration-150 max-w-[108px] sm:max-w-[200px] px-2.5 sm:px-3"
           style={{
             fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.02em',
             background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--ink-soft)',
-            borderRadius: 7, padding: '8px 12px', maxWidth: 200,
+            borderRadius: 7, paddingTop: 8, paddingBottom: 8,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-soft)'; }}
         >
-          {email}
+          <span className="sm:hidden">{localPart}</span>
+          <span className="hidden sm:inline">{email}</span>
         </button>
-        <button onClick={signOut} style={chip} title="Sign out">
+        {/* HIDDEN ON A PHONE, AND NOT REMOVED. `AccountPanel` puts Sign out at the TOP of
+            Settings → Account — deliberately, per its own docstring — and the button
+            immediately to the left of this one goes exactly there. So the narrow layout drops a
+            shortcut whose destination is one tap away, rather than dropping the action. */}
+        <button onClick={signOut} style={chip} title="Sign out" className="hidden sm:inline-block">
           Sign out
         </button>
       </div>
@@ -441,11 +457,35 @@ function AppShell() {
         <ToastHost deck={deck} loadSeq={loadSeq} language={language} deckLoaded={deckLoaded} />
         <UpdateBanner ready={updateReady} />
         <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
-          {/* Read and Stats are kept alive between visits — see components/TabPanel.tsx.
-              They are the two that visibly rebuilt on every switch: Read re-entered its
-              loading state and Stats blinked the milestone ring in late. The other three
-              mount and unmount as before; nothing there is expensive enough to earn the
-              memory, and Practice owns audio and timers that should stop when you leave. */}
+          {/* ── EVERY TAB IS KEPT ALIVE NOW, AND THE LAST THREE WERE A MEASUREMENT AWAY ──
+
+              This read "the other three mount and unmount as before; nothing there is
+              expensive enough to earn the memory, and Practice owns audio and timers that
+              should stop when you leave." Two of those three claims were wrong and the third
+              had already been fixed without this comment being updated:
+
+              - Practice has been inside a `TabPanel` for some time, with `active` threaded in
+                so its keyboard shortcuts do not fire while it is hidden. The sentence
+                describing it as unmounting survived the change that stopped it.
+              - "Nothing there is expensive enough" was never measured. `VocabTab` is 1,019
+                lines and `SettingsTab` 890, and both read the deck through `useVocabDeck` on
+                mount — on a phone, signed in, that is a fresh Supabase round trip for a row
+                the device already had, because an isolated mount has nothing to coalesce with
+                (see `tests/rowCoalescing.test.ts`). Reported from a real phone as "a distinct
+                lag/freeze before the tab content populates" on exactly SETTINGS and VOCAB,
+                which are exactly two of the three that unmounted. The third is Learn.
+              - `LearnTab` ALREADY TOOK AN `active` PROP, documented "False while the tab is
+                kept alive but hidden — see components/TabPanel.tsx", and nothing ever passed
+                it. Half-built plumbing, the same shape as `errorMsg` being returned by a hook
+                and rendered by nothing.
+
+              The flicker reported alongside the freeze is the same bug seen from the other
+              end: an unmounted tab has no layout, so switching to it paints an empty `main`
+              for a frame and then reflows to full height. Keeping the subtree alive removes
+              both, because there is nothing left to rebuild.
+
+              An unvisited tab still costs nothing — `TabPanel` latches on first activation —
+              so this trades memory for smoothness only once per tab per session. */}
           <TabPanel active={tab === 'read'}>
             <ReadSections
               active={tab === 'read'}
@@ -469,18 +509,20 @@ function AppShell() {
               onScore={recordScore}
             />
           </TabPanel>
-          {/* Not kept alive: the lesson list is a static render off local state, so remounting
-              it costs nothing and there is no session in progress to lose. */}
-          {tab === 'learn' && (
-            <LearnTab onNavigateSrs={() => changeTab('practice')} />
-          )}
+          <TabPanel active={tab === 'learn'}>
+            <LearnTab active={tab === 'learn'} onNavigateSrs={() => changeTab('practice')} />
+          </TabPanel>
           <TabPanel active={tab === 'dash'}>
             <StatsTab onNavigateRead={() => changeTab('read')} onNavigateReview={() => changeTab('practice')} />
           </TabPanel>
-          {tab === 'vocab' && (
+          <TabPanel active={tab === 'vocab'}>
             <VocabTab />
-          )}
-          {tab === 'settings' && (
+          </TabPanel>
+          {/* `initialGroup` is now watched rather than read at mount — see its docstring in
+              SettingsTab. Keeping this tab alive is what made that necessary: a route that
+              asks for the Account group has to work on the second arrival as well as the
+              first, and a `useState` initialiser only ever runs on the first. */}
+          <TabPanel active={tab === 'settings'}>
             <SettingsTab
               languages={languages ?? []}
               initialGroup={settingsGroup}
@@ -496,7 +538,7 @@ function AppShell() {
                 }
               }}
             />
-          )}
+          </TabPanel>
         </main>
         {/* ── The footer credits the dictionaries, and that is an obligation, not manners ──
             Every definition in this app comes from CC BY-SA data — CC-CEDICT, JMdict and

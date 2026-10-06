@@ -150,6 +150,82 @@ describe('a route to Settings arrives where the thing it promised is', () => {
     expect(settings).toContain('onGroupChange?.(g.id)');
     expect(page).toContain('onGroupChange={setSettingsGroup}');
   });
+
+  /**
+   * ⚠ AND THE ROUTE HAS TO WORK ON THE SECOND ARRIVAL, WHICH IS WHAT KEEPING THE TAB ALIVE
+   * BROKE.
+   *
+   * `initialGroup` was read in a `useState` INITIALISER, which runs once per mount — fine while
+   * `app/page.tsx` rendered Settings as `{tab === 'settings' && …}`, because leaving the tab
+   * unmounted it and every arrival was a first arrival. Settings is inside a `TabPanel` now, so
+   * it mounts once per session: a mount-time read means only the very first arrival can choose
+   * a group, and every later "Connect a key in Settings" lands on whatever group you last left
+   * open. Nothing errors. The learner simply does not find the key field, which is the exact
+   * bug this whole file exists to stop.
+   *
+   * The two halves are asserted TOGETHER because they are one fact: it is the `TabPanel` that
+   * makes the watcher necessary. Reverting either alone is safe; reverting the watcher while
+   * the panel stays is the silent break.
+   */
+  it('watches the requested group rather than reading it once at mount', () => {
+    expect(page, 'Settings is no longer kept alive — see the watcher below').toContain(
+      "<TabPanel active={tab === 'settings'}>",
+    );
+    expect(
+      /useEffect\(\(\) => \{\s*if \(initialGroup\) setGroup\(initialGroup\);\s*\}, \[initialGroup\]\);/.test(settings),
+      'SettingsTab no longer re-reads initialGroup, so the route only works on the first arrival',
+    ).toBe(true);
+  });
+});
+
+/**
+ * EVERY TAB IS KEPT ALIVE, AND THE LAST THREE WERE A MEASUREMENT AWAY.
+ *
+ * Read, Review and Home were already wrapped; Learn, Vocab and Settings were not, on a comment
+ * claiming "nothing there is expensive enough to earn the memory" that had never been measured.
+ * Measured on a production build with a sixteen-word deck, time from the click until the panel
+ * had laid out and stopped changing height: Vocab 48 ms, Settings 92 ms, Learn 367 ms on the
+ * FIRST visit, and at the probe's ~35 ms floor on every visit after. Under the old code every
+ * visit paid the first-visit cost, which is what was reported from a phone as "a distinct
+ * lag/freeze before the tab content populates" on exactly Settings and Vocab.
+ *
+ * Pinned here because the failure is a performance regression with no error and no test of its
+ * own — someone tidying `app/page.tsx` back to `{tab === 'x' && …}` would reintroduce it in a
+ * diff that looks like a simplification.
+ */
+describe('no tab rebuilds itself on every visit', () => {
+  const TABS = ['read', 'practice', 'learn', 'dash', 'vocab', 'settings'];
+
+  it('wraps all six tabs in a TabPanel', () => {
+    for (const id of TABS) {
+      expect(page, `the ${id} tab unmounts when you leave it`).toContain(
+        `<TabPanel active={tab === '${id}'}>`,
+      );
+    }
+  });
+
+  it('leaves no tab rendered by a bare conditional', () => {
+    for (const id of TABS) {
+      expect(page, `the ${id} tab is conditionally rendered again`).not.toContain(
+        `{tab === '${id}' && (`,
+      );
+    }
+  });
+
+  /**
+   * A kept-alive tab still hears `window`.
+   *
+   * `LearnTab` already TOOK an `active` prop — documented "False while the tab is kept alive but
+   * hidden" — and nothing ever passed it, because nothing kept it alive. Half-built plumbing of
+   * the same shape as `errorMsg` being returned by a hook and rendered by nothing. It gates a
+   * lazy effect, so without it a hidden Learn tab would keep doing work for a language the
+   * learner may have switched away from.
+   */
+  it('tells the drills and the lesson tree when they are off screen', () => {
+    expect(page).toContain('<LearnTab active={tab === \'learn\'}');
+    expect(page).toContain('<SrsTab');
+    expect(page).toContain('active={tab === \'practice\'}');
+  });
 });
 
 describe('the account panel reports rather than reassures', () => {

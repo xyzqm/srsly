@@ -75,6 +75,37 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
 
+  /**
+   * MASK WITHOUT BEING A PASSWORD FIELD, WHERE THE BROWSER LETS US.
+   *
+   * The field was `type="password"` with `autoComplete="off"`, and that combination does not
+   * do what it looks like it does: Chrome and Safari deliberately IGNORE `autocomplete="off"`
+   * on password inputs, because sites used it to block password managers and users lost
+   * passwords. So pasting an API key raised the browser's own credential popup — reported from
+   * a phone as a panel that "covers the top nav tabs" — and offered to save a Groq token as a
+   * website password, which is also where it does not belong.
+   *
+   * `-webkit-text-security: disc` gives the dots without the semantics. It is supported by
+   * every WebKit and Chromium browser, which is iOS Safari, Chrome, Edge and Android — all of
+   * the platforms this was reported on. Firefox does not implement it, so there the field
+   * stays a real password input and keeps its masking; Firefox's manager is also the one that
+   * does not pop over the page for a field outside a `<form>`, and this one is outside a form.
+   *
+   * Detected AFTER mount rather than during render, deliberately. `CSS.supports` does not
+   * exist on the server, so deciding this in a `useState` initialiser would render `password`
+   * on the server and `text` on the client and fail hydration on the `type` attribute. Both
+   * sides start masked the safe way and the swap happens in the first effect, long before
+   * anybody can focus the field.
+   */
+  const [softMask, setSoftMask] = useState(false);
+  useEffect(() => {
+    try {
+      if (typeof CSS !== 'undefined' && CSS.supports?.('-webkit-text-security', 'disc')) {
+        setSoftMask(true);
+      }
+    } catch { /* no CSS.supports — stay a password field */ }
+  }, []);
+
   useEffect(() => {
     const k = loadUserKey();
     const p = loadProvider();
@@ -212,15 +243,28 @@ export default function ApiKeyPanel({ onKeyChange }: Props) {
         <div className="flex flex-col gap-2" style={{ maxWidth: 480 }}>
           <div className="flex items-center gap-2 flex-wrap">
             <input
-              type="password"
+              type={softMask ? 'text' : 'password'}
               value={draft}
               onChange={e => { setDraft(e.target.value); setError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') save(); }}
               placeholder={provider.keyPlaceholder}
               spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               autoComplete="off"
+              /* The three vendor opt-outs, for the managers that are not the browser's own.
+                 1Password, Bitwarden/LastPass and Dashlane each read their own attribute and
+                 each honours it; there is no standard one to use instead. A key is not a
+                 credential for THIS site, so none of them has anything useful to offer here. */
+              data-1p-ignore=""
+              data-lpignore="true"
+              data-form-type="other"
               className="rounded-lg px-3 py-2"
-              style={{ ...mono, fontSize: 12.5, flex: '1 1 240px', background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+              style={{
+                ...mono, fontSize: 12.5, flex: '1 1 240px', background: 'var(--paper-2)',
+                border: '1px solid var(--line)', color: 'var(--ink)',
+                ...(softMask ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : {}),
+              }}
             />
             <button
               onClick={save}

@@ -15,8 +15,33 @@
 # showed exactly why that matters: 7 of Gemini's 78 above-level tokens were `cafeteria`, because
 # the day's draw handed it two passages about cafes.
 #
-# So this script exists to make "both, today" one command that cannot be half-done. It appends
-# one row per provider per day to measurements/paired-log.tsv, which after a week IS the result.
+# So this script exists to make "both, today" one command that cannot be half-done. It keeps
+# one row per provider per day in measurements/paired-log.tsv, which after a week IS the result.
+#
+# ⚠ ONE ROW PER PROVIDER PER DAY, AND IT USED TO APPEND INSTEAD — WHICH IS A DOUBLE-COUNT.
+# `run_one` ended in `>> "$LOG"`, so running this twice on one afternoon wrote the day twice.
+# That is not extra data and CLAUDE.md already says why: `passageTopic(date, language, level,
+# offset)` is a pure function of the date, and a fresh sweep wipes the day's cache and restarts
+# `offset` at 0 — so the second run regenerates the IDENTICAL topic sequence and measures the
+# same sample again. The log carried 2026-09-29 three times over for exactly this reason, and
+# the cumulative line at the foot summed the duplicates: it reported groq n=190 over 10 days
+# where the truth was 181 over 7. `upsert_row` REPLACES a day's row now, and `normalise_log`
+# repairs a file that was written before it did.
+#
+# ⚠ AND THE ROWS ARE ONLY COMPARABLE WHILE THE BAND TABLE HOLDS STILL. `analyse-sweep` scores a
+# dump against whatever `lib/data/cefr-levels.json` says TODAY, so a row is a measurement of the
+# passages AND of the table that was current when it ran. Re-scoring the 2026-09-28 dump after
+# the fact reads 11.2% where the log recorded 13.5% — same 25 passages, nothing else changed —
+# because `8b44317` pinned fifteen more words to A1 later that same day. Every other row in the
+# log re-scores to exactly what it recorded, so the table has been still since 09-29 and 09-28
+# was the one row measured on the old one.
+#
+# Nothing here can detect that: the script cannot know which table a row was scored against.
+# What it can do is keep the DUMP, which is why `measurements/<provider>-<day>/` is not deleted
+# — a row whose dump survives can be re-scored onto the current table and rejoin the series. A
+# row whose dump is gone (the early gemini days wiped theirs on a re-run) cannot, and is stuck
+# wherever it was measured. If you change the band table mid-week, re-score every surviving dump
+# before reading the log as a series.
 #
 #   bash scripts/sweep-both.sh          # 30 passages per provider at A1
 #   PER=10 bash scripts/sweep-both.sh   # a shorter run
@@ -42,6 +67,43 @@ if ! curl -s -o /dev/null --max-time 5 http://localhost:3000; then
   exit 1
 fi
 
+TAB="$(printf '\t')"
+
+# Replace this (day, provider)'s row rather than adding a second one, and keep the file sorted
+# by day then provider so it reads as a series. Writing through a temp file and moving it is
+# what stops an interrupted run truncating the only copy of the week's results.
+upsert_row() {                    # $1=day $2=provider $3=n $4=pooled $5=mean $6=sd
+  local tmp; tmp="$(mktemp)"
+  {
+    head -1 "$LOG"
+    {
+      awk -F'\t' -v d="$1" -v p="$2" 'NR>1 && !($1==d && $2==p)' "$LOG"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$@"
+    } | sort -t"$TAB" -k1,1 -k2,2
+  } > "$tmp"
+  mv "$tmp" "$LOG"
+}
+
+# Collapse a log written by the old appending version: LAST row wins for each (day, provider).
+# Last rather than largest-n, because that is what `upsert_row` would have produced had it
+# always existed — the repair and the fix agree, so re-running this is a no-op on a clean file.
+# Idempotent and safe to run on every sweep, which is why it runs on every sweep.
+normalise_log() {
+  [ -f "$LOG" ] || return 0
+  local tmp; tmp="$(mktemp)"
+  {
+    head -1 "$LOG"
+    awk -F'\t' 'NR==FNR { if (FNR>1) last[$1 FS $2]=FNR; next }
+                 FNR>1 && last[$1 FS $2]==FNR' "$LOG" "$LOG" | sort -t"$TAB" -k1,1 -k2,2
+  } > "$tmp"
+  if ! cmp -s "$tmp" "$LOG"; then
+    echo "   (paired-log.tsv held duplicate day/provider rows — collapsed to the last of each)"
+    mv "$tmp" "$LOG"
+  else
+    rm -f "$tmp"
+  fi
+}
+
 run_one() {                       # $1 = provider label, $2 = env file
   local name="$1" envfile="$2" dir="measurements/${1}-${DAY}"
   if [ ! -f "$envfile" ]; then
@@ -65,11 +127,12 @@ run_one() {                       # $1 = provider label, $2 = env file
   pooled="$(echo "$line" | grep -o 'pooled [0-9.]*%'      | awk '{print $2}')"
   mean="$(  echo "$line" | grep -o 'per-passage [0-9.]*%' | awk '{print $2}')"
   sd="$(    echo "$line" | grep -o '± [0-9.]*%'           | awk '{print $2}')"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$DAY" "$name" "${n:-0}" "$pooled" "$mean" "$sd" >> "$LOG"
+  upsert_row "$DAY" "$name" "${n:-0}" "$pooled" "$mean" "$sd"
   echo "   $name: n=${n:-0}  pooled $pooled  per-passage $mean ± $sd"
 }
 
 [ -f "$LOG" ] || printf 'day\tprovider\tn\tpooled\tper_passage_mean\tsd\n' > "$LOG"
+normalise_log
 
 run_one gemini .env.sweep
 run_one groq   .env.sweep.groq

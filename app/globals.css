@@ -485,6 +485,37 @@
   }
 }
 
+/* ── THE HEADER, AT PHONE WIDTH ────────────────────────────────────────────────
+   The top bar carries four controls — language, Theme, the account email, Sign out — and they
+   were measured at 375px for the first time only after a learner reported them "tightly
+   compressed and cramped against the margins". They were: roughly 500px of content in 343px
+   of usable width, wrapping into a second row with no breathing space on either side.
+
+   `components/Header.tsx` does most of the work by dropping ink rather than shrinking it (the
+   word "Theme", the domain half of the email, the redundant Sign out — Settings → Account
+   holds that one at the top of the panel). What is left here is the one thing Tailwind cannot
+   express on a `<select>`: its padding, which has to come down on a narrow screen without
+   changing the font size, because a 16px minimum is what stops iOS Safari ZOOMING the whole
+   page when the control is focused. Shrink the type instead and the header fixes itself by
+   making every tap on it scroll the layout sideways.
+
+   The select's own font is 13px, which is below that threshold — but it is a `<select>`, not a
+   text input, and iOS only auto-zooms on fields it can put a caret in. Verified on a phone.
+   ────────────────────────────────────────────────────────────────────────────── */
+.header-select {
+  padding: 7px 11px;
+  max-width: 100%;
+}
+@media (max-width: 639px) {
+  .header-select {
+    padding: 7px 8px;
+    /* Enough for "Espanol \00b7 Spa..." to clip rather than push Theme off the row. A select
+       does not ellipsize reliably across engines, so this clips — which is legible, because
+       the native name leads and that is the half that identifies the language. */
+    max-width: 44vw;
+  }
+}
+
 /* ── PINYIN TONE COLOURS ───────────────────────────────────────────────────────
    Off unless `data-tones="on"`. Chinese only; nothing else renders a .tone span.
 

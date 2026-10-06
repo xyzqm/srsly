@@ -659,6 +659,20 @@ that matter:
   ration the OPERATOR'S tokens; a learner spending their own money must never be rationed on
   top of it. Getting this backwards either double-charges them or gives away tokens the
   operator is billed for.
+- **The field is NOT a password input, and `autocomplete="off"` is why.** It was
+  `type="password"` with `autoComplete="off"`, which does not do what it looks like: Chrome and
+  Safari deliberately IGNORE that attribute on password inputs, because sites used it to block
+  password managers and users lost passwords. So pasting a key raised the browser's own
+  credential popup — reported from a phone as a panel covering the top nav — and offered to save
+  a Groq token as a website password, which is also not where it belongs.
+  `-webkit-text-security: disc` gives the dots without the semantics, and is supported by every
+  WebKit and Chromium browser, which is every platform this was reported on. Firefox does not
+  implement it, so there the field stays a real password input and keeps its masking. It is
+  feature-detected AFTER mount rather than in a `useState` initialiser, because `CSS.supports`
+  does not exist on the server and deciding it during render fails hydration on the `type`
+  attribute. The three vendor opt-outs (`data-1p-ignore`, `data-lpignore`, `data-form-type`) are
+  there for the managers that are not the browser's own; there is no standard attribute for
+  "this is a credential, but not for this site".
 - **It lives in its own localStorage entry**, not in `srsly-prefs`. Prefs get exported and
   synced as one blob in a way a credential must not, and a key belongs to the device it was
   typed on. It is masked (`sk-ant-…7f3a`) whenever displayed.
@@ -843,6 +857,77 @@ things none of which can start on their own. `StarterPanel` and `lib/data/starte
 left in the tree unreferenced, and `tests/starterTexts.test.ts` still holds that data to its
 contract, so restoring the card is one entry in `CARDS` rather than re-authoring twelve texts.
 
+#### The header's mark, and the icon — the two places still wearing somebody else's artwork
+
+`lib/stateFace.ts` (the table and `pickFace`), `components/shared/StateFace.tsx` (the drawing),
+`public/icon.svg`, and `tests/stateFace.test.ts`.
+
+**⚠ THE RULE BELOW WAS WRITTEN AND THEN NOT APPLIED TO THE LARGEST GLYPH ON THE SCREEN.**
+`Mark.tsx` refuses emoji in as many words, `BadgeSeal` repeats the refusal for milestones, and
+`uiStrings.ts` exists so a hardcoded 空 cannot sit in the middle of a French session. Meanwhile
+the header rendered a **28px system emoji** — 🤔 and eleven others from `useSRS` — in the exact
+position a logo occupies, which is the first thing anybody meets. Reported as the app feeling
+"bleak and placeholder-like", and that is precisely what a system emoji standing in for a brand
+mark is: somebody else's drawing, different on every OS, arriving in full colour into a palette
+assembled from ten themes.
+
+**ONE PARAMETERISED FACE, NOT TWELVE DRAWINGS.** All twelve states still show, but they are
+COMBINATIONS of a small vocabulary — six eye shapes, six mouths, eight badges. A hand-drawn set
+this size drifts in stroke weight and eye spacing between members, and the drift is obvious
+precisely because the members appear in the same 25px box one after another.
+
+**THE TABLE IS IN `lib/` AND THE GEOMETRY IS IN THE COMPONENT, BECAUSE A `.tsx` CANNOT BE
+TESTED HERE AT ALL.** `tsconfig.json` sets `jsx: "preserve"` for Next, so vitest cannot parse
+one — the same trap `lib/server/generateJson.ts` records about logic stranded inside an API
+route. Splitting the spec from the drawing costs one import and makes the half that can be wrong
+ordinary data. What the test asserts is the thing neither the types nor a grep can see: that no
+two states draw the SAME PICTURE. That failure has no error and no symptom beyond a learner who
+stops reading the mark because it never seems to change.
+
+**TWO OF THE TWELVE WERE WRONG AND WERE FOUND BY RENDERING THEM AND LOOKING.** `celebrating`
+walked its three rays round the upper right — crown, shoulder, side — which reads as broken
+antennae rather than as shining, because the eye expects a radiating set to be balanced. And
+`misty` drew a single wavy stroke at mouth height, which simply became a red mouth: the face read
+as queasy rather than as fogged, a different sentence entirely to show somebody who has been away
+two days. Neither is visible in the source. This file's most-repeated lesson, in a new place.
+
+**THE BADGE TAKES `--accent` AND THE FACE TAKES `currentColor`**, which is the one place this
+departs from `Mark.tsx`'s single-colour rule and is deliberate: a monochrome line face is refined
+and slightly lifeless, and the thing it replaced was a flame. Two tokens, both from the theme, so
+every palette still owns the result. A test forbids a hex or an `rgb()` anywhere in the output.
+
+**AND THE APP ICON WAS THE `page` MARK, WHICH WAS CORRECT AND STILL A PLACEHOLDER.** Geometry
+rather than an emoji, the app's own tokens rather than new colours — and a sheet with two rules
+on it is the icon of every notes app ever shipped. It said "documents". It did not say srsly. It
+is the app's own last character now: `srsly?` and the `?`.
+
+**⚠ A UNIFORM STROKE WAS TRIED FIRST AND REJECTED BY LOOKING AT IT.** A constant-width `?`
+centred on a rounded square is the universal HELP button. Rendered beside a serif one the
+difference is not subtle: thick-and-thin reads as a typeset character, which is what an app about
+reading should be wearing. That is why the path is 1.4 kB of bezier rather than one stroked arc.
+
+**AND IT IS DRAWN RATHER THAN LIFTED FROM A FONT, WHICH IS A LICENCE DECISION.** Georgia renders
+a lovely `?` and is installed on the machine this was made on; its outlines are Microsoft's and
+are not ours to redistribute. This repository vendors Arphic, LGPL and CC BY-SA data and states
+every one of them in NOTICE.md — quietly embedding a licensed font's glyph in an icon would be
+the one unattributed thing in the tree. The skeleton is an arc plus a cubic neck, offset by a
+varying half-width and fitted back to cubics.
+
+**THE GROUND STAYS ACCENT WITH A PAPER MARK, AND THAT IS A FAVICON DECISION.** A cream ground is
+the warmer, more editorial object and it is the wrong one here: the same file is the browser tab
+icon, and paper-on-paper against a light tab strip is invisible. There is also **no hairline
+border and the `rx` is modest**, because iOS re-masks a home-screen icon with its own squircle,
+whose radius is larger than any `rx` written here — an inner border would be clipped at all four
+corners, which looks broken in a way no border does.
+
+**THE TAGLINE WAS NEVER IN THE HEADER.** "read what you actually want to read" was asked about as
+a header tagline and is nowhere near it: `components/Header.tsx` renders the wordmark and nothing
+else, and never has. The sentence lives in two pieces of METADATA — `app/manifest.ts`'s `name`,
+which a phone shows while asking whether to install, and `app/layout.tsx`'s `description`, which
+a crawler reads. The first is shortened; the second is left alone, because it was already fixed
+once for saying "Chinese" long after three other languages shipped and trimming it for tidiness
+would undo that.
+
 **The marks are geometry, not emoji** (`components/shared/Mark.tsx`). Emoji were used first and
 are the wrong tool for the same reason `BadgeSeal` gives: 📖 is a different drawing on every OS,
 it arrives in full colour into a palette assembled from six themes' worth of CSS variables, and
@@ -1016,6 +1101,32 @@ asked twice, and averaging it would SHRINK the apparent spread while the topic v
 spread is mostly made of stayed fixed. The samples in `measurements/paired-log.tsv` are
 independent across DAYS and nowhere else, which is why that log has one row per provider per day
 and why "more data" means tomorrow rather than another run now.
+
+**⚠ AND THE LOG APPENDED WHERE IT SHOULD HAVE REPLACED, WHICH DOUBLE-COUNTED THE WEEK.**
+`scripts/sweep-both.sh` ended its row in `>> "$LOG"`, so a second run on one afternoon wrote the
+day a second time — and by the paragraph above that is not extra data, it is the same sample
+recorded twice. `measurements/paired-log.tsv` carried **2026-09-29 three times over**, and the
+cumulative line at its foot summed the duplicates: it reported **groq n=190 over 10 days** where
+the truth was **181 over 7**, and gemini n=10 over 6 where the truth was 8 over 4. `upsert_row`
+replaces a day's row now, and `normalise_log` runs on every sweep and collapses a file written
+before it did — LAST row wins, because that is what the fixed script would have produced had it
+always existed, so the repair and the fix agree and re-running is a no-op on a clean file.
+
+**⚠ AND THE ROWS ARE ONLY COMPARABLE WHILE THE BAND TABLE HOLDS STILL, WHICH IS THE SUBTLER
+HAZARD AND IT HAD ALREADY BITTEN.** `analyse-sweep` scores a dump against whatever
+`lib/data/cefr-levels.json` says TODAY, so a logged row is a measurement of the passages AND of
+the table current when it ran. Re-scoring the 2026-09-28 dump reads **11.2% where the log
+recorded 13.5%** — same 25 passages, nothing else touched — because `8b44317` pinned fifteen more
+words to A1 later that same day. Every other row in the log re-scores to exactly what it
+recorded, so the table has been still since 09-29 and 09-28 was the single row measured on the
+old one; it has been re-scored onto the current table so it rejoins the series.
+
+Nothing in the script can detect this — it cannot know which table a row was scored against. What
+it can do is keep the DUMP, which is why `measurements/<provider>-<day>/` is not deleted: a row
+whose dump survives can be re-scored and rejoin the series, and a row whose dump is gone cannot.
+The early gemini days wiped theirs on a re-run and are stuck wherever they were measured. **If
+you change the band table mid-week, re-score every surviving dump before reading the log as a
+series.**
 
 **A RETRY BUDGET THAT NEVER RESETS CANNOT TELL A SLOW PROVIDER FROM A SPENT ONE**, and it ended
 the run it was added to save. A free-tier rate limit is a pause rather than the end of a level —
@@ -1733,6 +1844,25 @@ so **the honest arc is 19.9% → ~13%, not → 11.1%**. Recorded prominently bec
 number was reported as a headline the day before, and a figure that improves when you measure it
 harder is the one to distrust. Combined across both runs Groq is **n=31, 12.7% ± 6.6**.
 
+**⚠ THE PAIRED PROTOCOL HAS NOW BEEN RUN FOR A WEEK, AND IT DID NOT SETTLE IT EITHER — WHICH IS
+THE ANSWER, NOT A SETBACK.** The design below says the thing that WOULD settle it is "both
+providers every day for a week, paired by day", reaching n ≈ 35 each. It was run 2026-09-28 to
+10-05. Groq delivered **181 passages over 7 days**. Gemini delivered **8 over 4**, and the other
+three days produced no dump at all — **1.1 passages per attempt-day**, against a free tier the
+earlier note already measured as yielding about seven in a good evening.
+
+Paired on the four days both providers ran, the difference is **+1.8 points (gemini above groq),
+sd 5.03, t = 0.73 on 3 df**. The design could only have resolved **8.0 points**. So it is not a
+result for the fourth time, and the reason is no longer sample-size impatience — the protocol
+built to fix that has been executed in full and Gemini simply does not produce enough passages
+for any amount of patience to help. Two of its four day-figures rest on a SINGLE passage, which
+is why the paired days swing +8.0 and −4.2 around a mean near zero.
+
+**Stop measuring this.** The honest statement is the one below: the two providers are
+indistinguishable at any sample this project can afford, the learner picks the provider anyway,
+and the remaining above-level share is not a provider problem. What the week did buy is the two
+log defects above, both of which were overstating the data.
+
 **AND THE PROVIDER COMPARISON IS CLOSED: THE GAP IS SMALLER THAN THE COST OF MEASURING IT.**
 With Groq at n=31 and Gemini at n=7 the gap is **2.4 points** (15.1% against 12.7%), **t = 1.38**,
 against a design that resolves 4.9. Note the gap SHRANK as the samples grew — it was 4.0 points
@@ -2162,7 +2292,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **331 kB** for `/` as of the service worker; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **341 kB** for `/` as of the drawn header mark, against a **339 kB** build of the previous commit — so that change cost **2 kB**, measured by stashing it rather than estimated. This line said 331 kB and was already stale by 8 kB when quoted, which is the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -2959,6 +3089,74 @@ location hash in an effect inside the LIBRARY section — so defaulting to Gener
 in the URL would leave that effect unmounted and the article silently unread. `initialTab()`
 already documents this for the tab bar; adding a level of tabs reintroduced it, and it is
 answered the same way. `tests/readSections.test.ts` pins both halves.
+
+#### Every tab is kept alive, and the last three were a measurement away
+
+`components/TabPanel.tsx` latches on first activation and then hides with `display: none`. Read,
+Review and Home were wrapped some time ago. Learn, Vocab and Settings were not, under a comment
+saying *"nothing there is expensive enough to earn the memory, and Practice owns audio and timers
+that should stop when you leave."* **Two of those three claims were wrong and the third was
+already stale** — Practice had been inside a `TabPanel` with `active` threaded in for a while,
+and the sentence describing it as unmounting survived the change that stopped it.
+
+**"NOTHING THERE IS EXPENSIVE ENOUGH" WAS NEVER MEASURED.** `VocabTab` is 1,019 lines and
+`SettingsTab` 890, and both read the deck through `useVocabDeck` on mount — on a phone, signed
+in, that is a fresh Supabase round trip for a row the device already had, because an isolated
+mount has nothing to coalesce with (`tests/rowCoalescing.test.ts`). Reported from a real phone as
+"a distinct lag/freeze before the tab content populates" on exactly SETTINGS and VOCAB, which are
+exactly two of the three that unmounted. Measured on a production build, click until the panel
+had laid out and stopped changing height:
+
+| tab | first visit | every visit after |
+|---|---|---|
+| Vocab | 48 ms | ~35 ms (the probe's floor) |
+| Settings | 92 ms | ~35 ms |
+| Learn | 367 ms | ~35 ms |
+
+Under the old code **every** visit paid the first-visit column. The flicker reported alongside
+the freeze is the same bug from the other end: an unmounted tab has no layout, so switching to it
+paints an empty `main` for a frame and then reflows to full height.
+
+**`LearnTab` ALREADY TOOK AN `active` PROP** — documented "False while the tab is kept alive but
+hidden — see components/TabPanel.tsx" — and nothing ever passed it. Half-built plumbing of the
+same shape as `errorMsg` being returned by a hook and rendered by nothing.
+
+**⚠ AND KEEPING SETTINGS ALIVE SILENTLY BROKE THE ROUTE INTO IT, WHICH IS THE PART TO REMEMBER.**
+`SettingsTab` read `initialGroup` in a `useState` INITIALISER, and its own docstring said why
+that was safe: *"the tab is unmounted when you leave it, so arriving again re-reads it."* True
+when written, false the moment the tab stopped unmounting — a mount-time read in a component
+that no longer remounts means only the FIRST arrival can choose a group, so every later "Connect
+a key in Settings" lands on whatever group was last left open. Nothing errors; the learner just
+does not find the key field, which is the bug `tests/accountRoutes.test.ts` exists to stop. It
+watches `initialGroup` now, and the test asserts the `TabPanel` and the watcher TOGETHER, because
+they are one fact: reverting either alone is safe and reverting the watcher alone is the silent
+break.
+
+*(It also nearly produced a false bug report in the other direction. A browser probe said the
+route was broken; a clean reload of the same code said it worked. The first reading was against
+a dev server several HMR updates deep — "debugging against a stale artefact", which this file
+already lists as a recurring cost, met while verifying a fix for something else.)*
+
+#### The header, at phone width
+
+Four controls sat in one `flex-wrap` row — the language picker, Theme, the account email and
+Sign out — which at 375px is about 500px of content in 343px of usable width. It wrapped, with
+everything jammed to both margins; reported as "tightly compressed and cramped against the
+margins", which is what it was.
+
+The fix is the move that strip has already made once: **REMOVE INK, NOT INFORMATION**, the same
+reasoning that deleted the word "Studying" from in front of a picker that captions itself.
+Narrow screens drop the word "Theme" and keep its swatch, shorten the email to its local part,
+and drop Sign out — which is NOT the action being taken away, because the email chip immediately
+beside it opens Settings → Account, where `AccountPanel` puts Sign out at the top of the panel
+precisely so it is the first thing there. Measured after: the signed-in control row is **320px in
+343px**, so it fits on one line. Every hidden label keeps an `aria-label`, so nothing becomes an
+unnamed icon to a screen reader.
+
+**The select's padding is in `globals.css` rather than in Tailwind, and its font size is left
+alone deliberately.** Shrinking the type is the obvious way to buy width and it is a trap: iOS
+Safari ZOOMS the whole page when a field below ~16px is focused, so the header would fix itself
+by making every tap on it scroll the layout sideways.
 
 **THE TAB IS LABELLED "Review" AND THE CODE STILL SAYS SRS, DELIBERATELY.** It read "SRS"
 until 2026-09-12 and "Practice" until the passage left it. "SRS" is a term of art: precise to someone who already knows what spaced

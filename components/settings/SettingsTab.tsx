@@ -55,8 +55,18 @@ interface Props {
    * The header's account chip and the Read tab's "connect a key" button both land here
    * wanting ACCOUNT — the key panel lives in that group, so without this the second one
    * opened Settings on "Studying" with no key field anywhere on screen, which is a dead end
-   * dressed as a route. Read on mount only; the tab is unmounted when you leave it
-   * (`{tab === 'settings' && …}` in app/page.tsx), so arriving again re-reads it.
+   * dressed as a route.
+   *
+   * ⚠ IT IS A REQUEST THIS COMPONENT WATCHES, NOT A VALUE IT READS ONCE, AND THAT CHANGED
+   * WHEN SETTINGS STOPPED UNMOUNTING. This used to say "read on mount only; the tab is
+   * unmounted when you leave it, so arriving again re-reads it" — which was true and became
+   * false the moment `app/page.tsx` wrapped Settings in `TabPanel` to stop it rebuilding on
+   * every visit. A mount-time read in a component that no longer remounts is a route that
+   * silently stops working: pressing "Connect a key in Settings" would switch tab and land on
+   * whichever group you happened to leave open. The effect below is what keeps the route
+   * honest, and it is cheap because the parent's copy MIRRORS this one — `onGroupChange` is
+   * called on every pick, so a request for the group already showing is the same value and
+   * React does nothing with it.
    */
   initialGroup?: Group;
   /**
@@ -127,6 +137,13 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
    * with it instead of silently leaving it pointing at the middle.
    */
   const [group, setGroup] = useState<Group>(initialGroup ?? GROUPS[0].id);
+
+  // Honour a LATER request, not just the one present at mount. See `initialGroup` above: this
+  // component is kept alive between visits now, so without this the only arrival that could
+  // choose a group was the very first one.
+  useEffect(() => {
+    if (initialGroup) setGroup(initialGroup);
+  }, [initialGroup]);
   const [ttsSpeed, setTtsSpeed] = useState<number | undefined>(undefined);
   const [blankDensity,    setBlankDensity]    = useState(RECOMMENDED_BLANK_DENSITY);
   const [blankDensityRaw, setBlankDensityRaw] = useState(String(RECOMMENDED_BLANK_DENSITY));

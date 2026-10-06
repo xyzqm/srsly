@@ -19,7 +19,22 @@ import type { MetadataRoute } from 'next';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'srsly — read what you actually want to read',
+    /**
+     * ⚠ THIS IS THE INSTALL PROMPT'S LABEL, AND IT IS NOT THE HEADER.
+     *
+     * It read "srsly — read what you actually want to read", which was asked about as "the
+     * tagline in the header" and is nowhere near the header: `components/Header.tsx` renders
+     * the wordmark and nothing else, and never has. The sentence lives in exactly two places,
+     * both of them metadata — here, where a phone shows it while asking whether to install,
+     * and `app/layout.tsx`'s `description`, where a search engine reads it.
+     *
+     * Shortened here and LEFT ALONE THERE, because the two are not the same kind of copy. An
+     * install prompt gets about three words of attention and the brand has to lead; a meta
+     * description is read by a crawler that wants the four languages named, and that sentence
+     * was already fixed once for saying "Chinese" long after Japanese, Spanish and French
+     * shipped. Trimming it for tidiness would undo that.
+     */
+    name: 'srsly — language learning, in context',
     short_name: 'srsly',
     description:
       'Spaced repetition built around real reading, in Chinese, Japanese, Spanish and French.',
