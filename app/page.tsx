@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
@@ -15,6 +15,15 @@ import ThemeSheet from '@/components/ThemeSheet';
 import TabPanel from '@/components/TabPanel';
 import dynamic from 'next/dynamic';
 import { hasLessons } from '@/lib/lessons';
+
+/**
+ * `useLayoutEffect` on the client, `useEffect` on the server.
+ *
+ * This page is a client component and Next still PRERENDERS it, and `useLayoutEffect` warns
+ * loudly when it runs during a server render. Picked once at module scope rather than per
+ * render, so it is a constant and not a conditional hook.
+ */
+const useBeforePaint = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 /**
  * The Learn tab carries its whole lesson tree, and is the one tab most learners never open —
@@ -209,6 +218,71 @@ function initialTab(): TabId {
 
 function AppShell() {
   const [tab, setTab] = useState<TabId>(initialTab);
+
+  /**
+   * ── EACH TAB REMEMBERS WHERE YOU WERE IN IT ──
+   *
+   * Keeping every tab mounted fixed the rebuild and exposed the other half of the same
+   * problem. Only the active panel has height, and measured across the six, `main` runs from
+   * 676px to 3,853px — so switching from a long tab to a short one hands the browser a page
+   * that is suddenly too short for its own scroll position and it CLAMPS. Measured: scrolled
+   * to 1800 in Learn, tapping Home lands at 120; tapping Vocab lands at 737. The content you
+   * were reading leaves the screen and something else is under your thumb. Reported as the
+   * layout "moving vertically up and down", and `.app-frame`'s floor cannot fix it — a tall
+   * tab is genuinely tall.
+   *
+   * Scrolling to the top on every switch would be deterministic and would throw away the thing
+   * keeping the tabs alive bought: come back to Read and you are back where you were reading.
+   * So each tab keeps its own offset.
+   *
+   * ⚠ THE SAVER IS A LAYOUT EFFECT TOO, AND THE ORDER OF THESE TWO IS LOAD-BEARING. React runs
+   * every layout-effect CLEANUP before any layout effect in the same commit, so declaring the
+   * listener first means the outgoing tab's listener is detached before the restore scrolls —
+   * otherwise `scrollTo` fires a scroll event that the OLD tab's listener attributes to itself,
+   * overwriting the position it just saved with the new tab's. As a passive `useEffect` the
+   * cleanup runs after paint and that race is real.
+   */
+  const scrollByTab = useRef<Partial<Record<TabId, number>>>({});
+
+  /**
+   * The current tab, mirrored for the handlers below.
+   *
+   * Assigned during render rather than in an effect, the same way `TabPanel` latches `mounted`
+   * and `lib/completionSurface.ts` makes its claim: the handlers are `useCallback([])` so they
+   * never see a fresh `tab` through a closure, and an effect would update this one commit late
+   * — which here means saving the scroll position against the tab you just left for.
+   */
+  const tabRef = useRef<TabId>(tab);
+  tabRef.current = tab;
+
+  /**
+   * ⚠ CAPTURED ON THE TAP, NOT ONLY FROM THE SCROLL EVENT, AND THE PROBE FOUND OUT WHY.
+   *
+   * The listener below is the general case: it covers every route into a tab change, including
+   * ones that do not go through `changeTab`. What it cannot cover is the gap between the last
+   * frame the learner scrolled and the tap — a scroll event fires at most once a frame, so
+   * scrolling and immediately tapping a tab can switch before the position was ever recorded.
+   * Measured rather than reasoned about: the same trace restored 0 with a 300ms settle and 1600
+   * with 400ms, which is a test that passes on timing and a feature that loses your place.
+   *
+   * Reading `window.scrollY` here is exact, because this runs BEFORE React has touched the DOM,
+   * so the page is still the outgoing tab's.
+   */
+  const rememberScroll = useCallback(() => {
+    scrollByTab.current[tabRef.current] = window.scrollY;
+  }, []);
+
+  useBeforePaint(() => {
+    const save = () => { scrollByTab.current[tab] = window.scrollY; };
+    window.addEventListener('scroll', save, { passive: true });
+    return () => window.removeEventListener('scroll', save);
+  }, [tab]);
+
+  // Before paint, not after: restoring in a passive effect shows one frame at the clamped
+  // position and then jumps, which is the flicker this exists to remove.
+  useBeforePaint(() => {
+    window.scrollTo(0, scrollByTab.current[tab] ?? 0);
+  }, [tab]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [signIn, setSignIn] = useState<{ open: boolean; reason?: string }>({ open: false });
   /**
@@ -273,6 +347,7 @@ function AppShell() {
    * Read tab keeps the offer available for whenever you go back.
    */
   const changeTab = useCallback((next: TabId) => {
+    rememberScroll();
     setSignIn(s => (s.open ? { open: false } : s));
     // Deliberately does NOT reset `settingsGroup` — leaving Settings and coming back should
     // land where you were, not back at the top. See the declaration.
@@ -280,7 +355,7 @@ function AppShell() {
     // Remembered so a reload returns here — see initialTab(). Failing to write is a lost
     // memory and never a lost navigation, so it is swallowed rather than surfaced.
     try { localStorage.setItem(TAB_KEY, next); } catch { /* storage blocked */ }
-  }, []);
+  }, [rememberScroll]);
 
   /**
    * Settings, opened at the Account group.
@@ -292,10 +367,13 @@ function AppShell() {
    * promised is not visible is worse than no route.
    */
   const openAccount = useCallback(() => {
+    // Sets the tab directly rather than through `changeTab`, so it has to remember the scroll
+    // itself — a second caller is exactly how the other half of a pair gets forgotten.
+    rememberScroll();
     setSignIn(s => (s.open ? { open: false } : s));
     setSettingsGroup('account');
     setTab('settings');
-  }, []);
+  }, [rememberScroll]);
 
   /** Languages the learner has added. null until prefs load — distinct from [], which is a
    *  genuinely empty account and the one state that forces onboarding. */
@@ -439,7 +517,7 @@ function AppShell() {
 
   return (
     <LanguageProvider value={language}>
-      <div className="relative z-[1]">
+      <div className="relative z-[1] flex flex-col app-frame">
         <Header
           onOpenTheme={() => setSheetOpen(true)}
           accountSlot={<AccountChip onSignIn={() => setSignIn({ open: true })} onOpenAccount={openAccount} />}
@@ -456,7 +534,11 @@ function AppShell() {
             be the one nobody could see and the milestone simply never appeared. */}
         <ToastHost deck={deck} loadSeq={loadSeq} language={language} deckLoaded={deckLoaded} />
         <UpdateBanner ready={updateReady} />
-        <main className="max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
+        {/* `flex-1` is what stops a tab change moving the footer and flipping the
+            scrollbar — see `.app-frame` in globals.css. `w-full` because a flex child
+            with a max-width still needs to ask for the full width before `mx-auto`
+            has anything to centre. */}
+        <main className="flex-1 w-full max-w-[1200px] mx-auto px-3 sm:px-7 pb-16">
           {/* ── EVERY TAB IS KEPT ALIVE NOW, AND THE LAST THREE WERE A MEASUREMENT AWAY ──
 
               This read "the other three mount and unmount as before; nothing there is

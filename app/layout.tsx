@@ -24,12 +24,18 @@ export const metadata: Metadata = {
     title: 'srsly',
     statusBarStyle: 'default',
   },
+  /**
+   * ⚠ `apple` POINTS AT A 180, NOT AT THE 192, AND THAT WAS A REUSED FILE RATHER THAN A CHOICE.
+   * iOS has asked for 180x180 since the iPhone 6 Plus and rescales anything else, which on a
+   * mark built from thin curves is where the softness on a home screen comes from. The 192 was
+   * named here only because it already existed for the web manifest.
+   */
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     ],
-    apple: '/icon-192.png',
+    apple: { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
   },
 };
 

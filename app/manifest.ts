@@ -44,11 +44,27 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: '#F4F1EC',
     theme_color: '#B23A2E',
     categories: ['education'],
+    /**
+     * ⚠ THE MASKABLE ONE IS SEPARATE ARTWORK, AND DECLARING THE ORDINARY ICON `maskable` IS
+     * THE MISTAKE IT EXISTS TO AVOID.
+     *
+     * Android crops an adaptive icon to whatever shape the launcher wants — circle, squircle,
+     * teardrop — and guarantees only the central 80% circle survives. `icon.svg` is drawn to
+     * FILL a rounded square, so labelling it maskable hands the launcher a mark whose corners
+     * get cut. `scripts/build-icons.mjs` re-wraps the same path at 80% on a full-bleed ground
+     * instead, which is why there are two 512s here and not one listed twice.
+     *
+     * With no `maskable` icon at all Android does not crop — it letterboxes the icon inside a
+     * white rounded square, which is the beige-tile look every un-maskable PWA has.
+     */
     icons: [
       // SVG first: one file, every size, and it stays sharp on any display.
       { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
-      // A raster fallback, because iOS home-screen icons do not take SVG.
+      // Raster fallbacks, because iOS home-screen icons do not take SVG and splash screens
+      // want something larger than 192.
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   };
 }

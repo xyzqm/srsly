@@ -2,8 +2,6 @@
 import type { ReactNode } from 'react';
 import type { LanguageCode } from '@/lib/types';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
-import { useSRS } from '@/hooks/useSRS';
-import StateFace from '@/components/shared/StateFace';
 
 interface Props {
   onOpenTheme: () => void;
@@ -22,14 +20,21 @@ const ADD = '__add__';
 /**
  * The top bar: who you are, what you are studying, and how it looks.
  *
- * ── THE MARK IS DRAWN NOW, NOT TYPED ──
+ * ── THE WORDMARK, AND NOTHING BESIDE IT ──
  *
- * This held a 28px system emoji — 🤔 and eleven others from `useSRS` — in the position a logo
- * occupies, which is why the app read as unfinished before a word of it had been used.
- * `components/shared/Mark.tsx` and `BadgeSeal` had both already refused emoji in writing, for
- * reasons that apply hardest here: it is the largest glyph on the screen, it is the first thing
- * anybody sees, and it was the one surface still rendering somebody else's artwork into a
- * palette assembled from ten themes. `StateFace` draws all twelve states instead.
+ * This held a 28px system emoji — 🤔 and eleven others from `useSRS`, a mood indicator — in the
+ * position a logo occupies. That was a real defect: `Mark.tsx` and `BadgeSeal` both refuse
+ * emoji in writing, and this was the largest glyph on screen, the first thing anybody sees, and
+ * the one surface still rendering somebody else's artwork into a palette assembled from ten
+ * themes. It was replaced by a drawn set covering the same twelve states.
+ *
+ * ⚠ AND THE DRAWN SET WAS REMOVED TOO, WHICH IS THE PART WORTH KEEPING. A face of any kind —
+ * emoji or hand-drawn — is the wrong REGISTER next to a serif wordmark: it reads as a mascot on
+ * a page that is otherwise set like a book. That is not visible in a diff and was not visible
+ * in the catalogue of twelve either; it is only visible beside the rest of the app. The header
+ * is the wordmark alone now. Both the emoji and the face were wrong, for different reasons, and
+ * neither should come back — the streak and the score already have a home in Stats and on Home,
+ * which is where a number belongs rather than in a glyph that has to be hovered to be read.
  *
  * ── AND THE CONTROLS WERE MEASURED AGAINST A PHONE, WHICH THEY HAD NEVER BEEN ──
  *
@@ -47,19 +52,14 @@ const ADD = '__add__';
  * the shortcut stays.
  */
 export default function Header({ onOpenTheme, accountSlot, language, languages, onLanguageChange, onAddLanguage }: Props) {
-  const { face, tip } = useSRS();
-
   return (
     <header
       className="flex items-center justify-between px-4 sm:px-7 py-4 sm:py-5 max-w-[1200px] mx-auto w-full relative z-[2] gap-x-3 gap-y-2 flex-wrap"
       style={{ borderBottom: '1px solid var(--line)' }}
     >
-      <div className="flex items-center gap-2.5" style={{ color: 'var(--ink-soft)' }}>
-        <StateFace name={face} size={25} title={tip} />
-        <h1 style={{ fontFamily: 'var(--f-display)', fontWeight: 500, fontSize: 21, letterSpacing: '-.01em', color: 'var(--ink)' }}>
-          srsly?
-        </h1>
-      </div>
+      <h1 style={{ fontFamily: 'var(--f-display)', fontWeight: 500, fontSize: 21, letterSpacing: '-.01em', color: 'var(--ink)' }}>
+        srsly?
+      </h1>
 
       <div className="flex gap-1.5 sm:gap-2 items-center">
         {/*

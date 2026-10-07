@@ -485,6 +485,37 @@
   }
 }
 
+/* ── THE PAGE IS A COLUMN, SO SWITCHING TAB CANNOT MOVE THE FURNITURE ──────────
+   Every tab is kept alive and hidden with `display: none`, so only the active one has height
+   — and measured across the six, `main` ran from 64px to 3,853px. Each switch therefore moved
+   the footer, flipped the scrollbar on and off (which on a desktop with classic scrollbars
+   shifts the whole page sideways as well), and clamped the scroll position. Reported as the
+   layout "moving vertically up and down", which is exactly what it did.
+
+   The fix is a flex column with `flex-1` on `main` rather than a min-height with the chrome
+   subtracted. A NUMBER WOULD BE WRONG AT THE BREAKPOINT IT MATTERS MOST: the header is 76px
+   on a desktop and taller on a phone, where it wraps to two rows, so `calc(100vh - 212px)`
+   would be right on a laptop and leave a phone either short or scrolling for no reason. Letting
+   `main` take whatever is left needs no magic number and cannot drift when the header changes.
+
+   ⚠ AND THE UNIT IS `svh` WHERE IT EXISTS. `100vh` on iOS Safari is the viewport with the
+   toolbar RETRACTED, so a page sized to it is always a little taller than what you can see and
+   every screen scrolls slightly even when it has nothing to scroll — which is the same
+   complaint this rule exists to answer, arriving by a different route. `svh` is the SMALL
+   viewport, the one with the toolbar showing, so the floor is never taller than the screen.
+   Declared after the `vh` line rather than instead of it: a browser without `svh` ignores the
+   override and keeps a working floor, where `min-height: 100svh` alone would parse as invalid
+   and leave no floor at all.
+   ────────────────────────────────────────────────────────────────────────────── */
+.app-frame {
+  min-height: 100vh;
+}
+@supports (min-height: 100svh) {
+  .app-frame {
+    min-height: 100svh;
+  }
+}
+
 /* ── THE HEADER, AT PHONE WIDTH ────────────────────────────────────────────────
    The top bar carries four controls — language, Theme, the account email, Sign out — and they
    were measured at 375px for the first time only after a learner reported them "tightly

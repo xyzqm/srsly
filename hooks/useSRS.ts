@@ -3,21 +3,30 @@ import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
 import type { DailyAccuracy, DeckWord, LanguageCode, SRSState } from '@/lib/types';
 import { todayStr, dateInDays } from '@/lib/deck';
-import { applyActivity, dueCountOn, forgivenInStreak, reconcileStreak, languageActivity, languageStreakDisplay, withLanguageStreak } from '@/lib/streak';
+import { applyActivity, forgivenInStreak, reconcileStreak, languageActivity, languageStreakDisplay, withLanguageStreak } from '@/lib/streak';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
-import { pickFace, type FaceName } from '@/lib/stateFace';
 
 /**
- * What the header shows and what it says when asked.
+ * ⚠ THERE IS NO MOOD INDICATOR ANY MORE, AND THAT IS THE END OF A THREE-STEP ARC.
  *
- * `face` NAMES A DRAWING, it is not a character. It was `emoji: string` — a literal 🤔 and
- * eleven friends — which `components/shared/Mark.tsx` had already ruled out in writing for
- * every other mark in the app: an emoji is somebody else's artwork, drawn differently on
- * every OS, arriving in full colour into a themed palette. See `lib/stateFace.ts`, which owns
- * both the state table and `pickFace` so that the one part of this with branches in it can be
- * tested without a renderer.
+ * This hook used to return `{ emoji, tip }` — 🤔 and eleven friends — read by exactly one
+ * caller, the header, which drew it at 28px in the position a logo occupies. That was replaced
+ * by a DRAWN set (`components/shared/StateFace.tsx`, twelve states built from one vocabulary of
+ * eyes, mouths and badges), because `Mark.tsx` and `BadgeSeal` both refuse emoji in writing and
+ * the header was the one surface still breaking the rule.
+ *
+ * Then the drawn set was removed too, on the judgement that a face of ANY kind is the wrong
+ * register beside a typographic wordmark — the header is `srsly?` set in the display serif and
+ * nothing else now. Recorded because the arc is the useful part: the emoji was a real defect
+ * and replacing it was right, and the replacement was ALSO wrong, in a way only visible once it
+ * was on screen next to everything else. Do not reintroduce either.
+ *
+ * What went with it is a genuine saving rather than a deletion of something load-bearing. The
+ * mood was derived from `daysAway`, `restToday` and `scoreFresh`, which existed for nothing
+ * else — `restToday` alone cost a `dueCountOn` sweep of every deck on every mount — and the
+ * header no longer calls this hook at all, which removes one of its four instances and with it
+ * one full pass of the streak reconciliation.
  */
-interface FaceState { face: FaceName; tip: string }
 
 function yesterday(): string {
   return dateInDays(-1);
@@ -50,12 +59,12 @@ export function rollingAccuracy(history: DailyAccuracy[] | undefined, days: numb
 }
 
 /**
- * `language` enables the per-language streak. Optional because Header only wants the face,
- * and asking every caller for a language it does not use would be noise — omitted simply
- * means the global streak behaves exactly as before and `langStreak` stays 0.
+ * `language` enables the per-language streak. Optional because not every caller studies one
+ * — omitted simply means the global streak behaves exactly as before and `langStreak`
+ * stays 0. Every caller passes one today; the header used to be the exception and no longer
+ * calls this hook at all.
  */
 export function useSRS(language?: LanguageCode) {
-  const [faceState, setFaceState] = useState<FaceState>({ face: 'thinking', tip: '' });
   const [streak, setStreak] = useState(0);
   const [sessions, setSessions] = useState(0);
   const [accuracy, setAccuracy] = useState<DailyAccuracy[]>([]);
@@ -70,10 +79,6 @@ export function useSRS(language?: LanguageCode) {
       let state = await storage.getSRSState();
       const lastVisit = state.lastVisit;
       const decks = await allDecks();
-      // Read the last active day BEFORE reconciling: a broken streak clears it, and that
-      // is the only record of how long the learner was actually gone.
-      const priorActive = state.lastActive ?? state.todayScoreDate;
-
       // Settle any gap FIRST, and before the day's reviews move any due dates — that
       // ordering is what makes the retroactive check trustworthy (see lib/streak.ts).
       const settled = reconcileStreak(state, decks, today, yest);
@@ -110,20 +115,6 @@ export function useSRS(language?: LanguageCode) {
       setAccuracy(state.accuracy ?? []);
       setForgiven(forgivenInStreak(state, today));
 
-      // How long the learner has genuinely been away. A live streak means zero, however
-      // many calendar days passed: reconcileStreak only leaves it live when every missed
-      // day was one FSRS asked nothing of them.
-      const daysAway = live || !priorActive ? 0 : Math.floor(
-        (new Date(today).getTime() - new Date(priorActive).getTime()) / 86400000
-      );
-
-      // Today is a rest day when the streak reaches yesterday and nothing is owed now.
-      // Requiring "not active today" is what stops a finished session from reading as
-      // rest — clearing the queue empties it just as surely as never having owed anything.
-      const restToday = lastActive === yest && dueCountOn(decks, today, lastActive) === 0;
-
-      const scoreFresh = state.todayScoreDate === today && state.todayScore >= 0;
-      setFaceState(pickFace(displayStreak, daysAway, state.todayScore, scoreFresh, restToday));
     })();
     // Re-runs on a language switch so the new language's own streak is settled and shown.
   }, [language]);
@@ -223,8 +214,6 @@ export function useSRS(language?: LanguageCode) {
     setSessions(newSessions);
     setStreak(updated.streak);
     setForgiven(forgivenInStreak(updated, today));
-    // A score means they just studied, so neither away nor resting — the score face wins.
-    setFaceState(pickFace(updated.streak, 0, score, true, false));
   }, [bumpLanguage]);
 
   /**
@@ -243,5 +232,5 @@ export function useSRS(language?: LanguageCode) {
     setAccuracy(trimmed);
   }, []);
 
-  return { ...faceState, recordScore, recordActivity, recordAnswer, streak, langStreak, sessions, accuracy, forgiven };
+  return { recordScore, recordActivity, recordAnswer, streak, langStreak, sessions, accuracy, forgiven };
 }

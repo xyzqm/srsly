@@ -857,44 +857,33 @@ things none of which can start on their own. `StarterPanel` and `lib/data/starte
 left in the tree unreferenced, and `tests/starterTexts.test.ts` still holds that data to its
 contract, so restoring the card is one entry in `CARDS` rather than re-authoring twelve texts.
 
-#### The header's mark, and the icon — the two places still wearing somebody else's artwork
+#### The header's mark, and the icon — one was removed twice, the other was a licence problem
 
-`lib/stateFace.ts` (the table and `pickFace`), `components/shared/StateFace.tsx` (the drawing),
-`public/icon.svg`, and `tests/stateFace.test.ts`.
+`public/icon.svg` (the only authored artwork), `scripts/build-icons.mjs` (everything derived
+from it), and `components/Header.tsx`.
 
-**⚠ THE RULE BELOW WAS WRITTEN AND THEN NOT APPLIED TO THE LARGEST GLYPH ON THE SCREEN.**
-`Mark.tsx` refuses emoji in as many words, `BadgeSeal` repeats the refusal for milestones, and
-`uiStrings.ts` exists so a hardcoded 空 cannot sit in the middle of a French session. Meanwhile
-the header rendered a **28px system emoji** — 🤔 and eleven others from `useSRS` — in the exact
-position a logo occupies, which is the first thing anybody meets. Reported as the app feeling
-"bleak and placeholder-like", and that is precisely what a system emoji standing in for a brand
-mark is: somebody else's drawing, different on every OS, arriving in full colour into a palette
-assembled from ten themes.
+**⚠ THE HEADER HAD A MOOD INDICATOR, AND BOTH VERSIONS OF IT WERE WRONG. Do not build a third.**
 
-**ONE PARAMETERISED FACE, NOT TWELVE DRAWINGS.** All twelve states still show, but they are
-COMBINATIONS of a small vocabulary — six eye shapes, six mouths, eight badges. A hand-drawn set
-this size drifts in stroke weight and eye spacing between members, and the drift is obvious
-precisely because the members appear in the same 25px box one after another.
+It began as a 28px SYSTEM EMOJI — 🤔 and eleven others from `useSRS` — in the position a logo
+occupies. That broke a rule this file states three times: `Mark.tsx` refuses emoji in writing,
+`BadgeSeal` repeats the refusal, and `uiStrings.ts` exists so a hardcoded 空 cannot sit in a
+French session. An emoji is somebody else's artwork, drawn differently on every OS, arriving in
+full colour into a palette assembled from ten themes — and this was the largest glyph on the
+screen and the first thing anybody saw.
 
-**THE TABLE IS IN `lib/` AND THE GEOMETRY IS IN THE COMPONENT, BECAUSE A `.tsx` CANNOT BE
-TESTED HERE AT ALL.** `tsconfig.json` sets `jsx: "preserve"` for Next, so vitest cannot parse
-one — the same trap `lib/server/generateJson.ts` records about logic stranded inside an API
-route. Splitting the spec from the drawing costs one import and makes the half that can be wrong
-ordinary data. What the test asserts is the thing neither the types nor a grep can see: that no
-two states draw the SAME PICTURE. That failure has no error and no symptom beyond a learner who
-stops reading the mark because it never seems to change.
+It was replaced by a DRAWN set: twelve states built from one vocabulary of eyes, mouths and
+badges, parameterised rather than hand-drawn so the members could not drift apart. That fixed
+the stated defect and introduced an unstated one — **a face of any kind is the wrong REGISTER
+beside a serif wordmark.** It reads as a mascot on a page otherwise set like a book. That was
+not visible in the source, and it was not visible in a contact sheet of the twelve either; it is
+only visible beside the rest of the app, which is the lesson rather than the outcome.
 
-**TWO OF THE TWELVE WERE WRONG AND WERE FOUND BY RENDERING THEM AND LOOKING.** `celebrating`
-walked its three rays round the upper right — crown, shoulder, side — which reads as broken
-antennae rather than as shining, because the eye expects a radiating set to be balanced. And
-`misty` drew a single wavy stroke at mouth height, which simply became a red mouth: the face read
-as queasy rather than as fogged, a different sentence entirely to show somebody who has been away
-two days. Neither is visible in the source. This file's most-repeated lesson, in a new place.
-
-**THE BADGE TAKES `--accent` AND THE FACE TAKES `currentColor`**, which is the one place this
-departs from `Mark.tsx`'s single-colour rule and is deliberate: a monochrome line face is refined
-and slightly lifeless, and the thing it replaced was a flame. Two tokens, both from the theme, so
-every palette still owns the result. A test forbids a hex or an `rgb()` anywhere in the output.
+The header is now `srsly?` in the display serif and nothing else. **What went with it is a
+saving rather than a loss**: the mood was derived from `daysAway`, `restToday` and `scoreFresh`,
+which existed for nothing else — `restToday` alone cost a `dueCountOn` sweep of every deck on
+every mount — and `Header` no longer calls `useSRS` at all, removing one of its four instances
+and one full pass of the streak reconciliation. The streak and the score already live on Home
+and in Stats, which is where a number belongs rather than in a glyph that has to be hovered.
 
 **AND THE APP ICON WAS THE `page` MARK, WHICH WAS CORRECT AND STILL A PLACEHOLDER.** Geometry
 rather than an emoji, the app's own tokens rather than new colours — and a sheet with two rules
@@ -903,30 +892,63 @@ is the app's own last character now: `srsly?` and the `?`.
 
 **⚠ A UNIFORM STROKE WAS TRIED FIRST AND REJECTED BY LOOKING AT IT.** A constant-width `?`
 centred on a rounded square is the universal HELP button. Rendered beside a serif one the
-difference is not subtle: thick-and-thin reads as a typeset character, which is what an app about
-reading should be wearing. That is why the path is 1.4 kB of bezier rather than one stroked arc.
+difference is not subtle: thick-and-thin reads as a typeset character, which is what an app
+about reading should be wearing. That is why the path is 1.4 kB of bezier rather than a stroked
+arc.
 
 **AND IT IS DRAWN RATHER THAN LIFTED FROM A FONT, WHICH IS A LICENCE DECISION.** Georgia renders
 a lovely `?` and is installed on the machine this was made on; its outlines are Microsoft's and
 are not ours to redistribute. This repository vendors Arphic, LGPL and CC BY-SA data and states
-every one of them in NOTICE.md — quietly embedding a licensed font's glyph in an icon would be
-the one unattributed thing in the tree. The skeleton is an arc plus a cubic neck, offset by a
-varying half-width and fitted back to cubics.
+every one in NOTICE.md — a font glyph quietly embedded in an icon would be the one unattributed
+thing in the tree. The skeleton is an arc plus a cubic neck, offset by a varying half-width and
+fitted back to cubics.
 
 **THE GROUND STAYS ACCENT WITH A PAPER MARK, AND THAT IS A FAVICON DECISION.** A cream ground is
 the warmer, more editorial object and it is the wrong one here: the same file is the browser tab
-icon, and paper-on-paper against a light tab strip is invisible. There is also **no hairline
-border and the `rx` is modest**, because iOS re-masks a home-screen icon with its own squircle,
-whose radius is larger than any `rx` written here — an inner border would be clipped at all four
-corners, which looks broken in a way no border does.
+icon, and paper-on-paper against a light tab strip is invisible.
+
+**`scripts/build-icons.mjs` DERIVES EVERY RASTER FROM THAT ONE SVG**, because generated data is
+generated. Three of the five exist for reasons worth keeping:
+
+- **`app/favicon.ico` was Next's default from the initial commit** and had never been touched,
+  so every browser tab showed the framework's logo — on a portfolio site, which is the one place
+  a tab strip is read by somebody being asked to form an opinion. Invisible precisely because a
+  favicon is: nobody looks at their own tab.
+- **`apple-touch-icon.png` is 180, not 192.** iOS has asked for 180 since the iPhone 6 Plus and
+  rescales anything else, which on a mark built from thin curves is where the softness comes
+  from. It pointed at the 192 only because that file already existed — a reason to reuse a file
+  and not a reason to serve the wrong size.
+- **`icon-maskable-512.png` is DIFFERENT ARTWORK, not the same PNG relabelled.** Android crops an
+  adaptive icon to whatever shape the launcher wants and guarantees only the central 80% circle
+  survives, so declaring the ordinary icon `maskable` cuts the corners off a mark drawn to fill
+  a rounded square. It drops the `rx` and scales the glyph to 80% about the centre, re-wrapping
+  the SAME path rather than being a second drawing that can drift. With no maskable icon at all
+  Android does not crop — it letterboxes inside a white rounded square, which is the beige-tile
+  look every un-maskable PWA has.
+
+**⚠ AND THE NEW ICON DID NOT REACH ANYBODY, BECAUSE THE SERVICE WORKER WAS CACHING IT FOREVER.**
+`/icon.svg`, `/icon-192.png` and `/manifest.webmanifest` were in `IMMUTABLE_PATHS` — cache-first
+with no revalidation — on reasoning that is true of their neighbours and false of them: chunks
+are content-hashed and the dictionaries carry `?v=DICT_VERSION`, so a new version is a NEW URL,
+while these are stable paths whose CONTENTS change. Reported as "the home screen icon is still
+the old glyph" against a server demonstrably returning the new one. **A cache-first entry on a
+mutable path is invisible until the day the content changes, which is exactly when it is least
+welcome.** They are `revalidate` now and `tests/serviceWorker.test.ts` asserts the RULE rather
+than the list: anything cached forever must be content-addressed.
+
+**THE VERSION WAS BUMPED TO v2 AS WELL, BECAUSE REVALIDATION ONLY HELPS A COPY THAT ASKS AGAIN.**
+Bumping drops the old caches outright, which is what rescues a phone already holding the wrong
+bytes. **And iOS caches the HOME SCREEN icon separately, outside anything the worker can reach:
+once installed, that artwork is replaced only by removing the icon and adding it again. There is
+no code fix for that half** — say so in the release note rather than letting it read as the fix
+not working.
 
 **THE TAGLINE WAS NEVER IN THE HEADER.** "read what you actually want to read" was asked about as
 a header tagline and is nowhere near it: `components/Header.tsx` renders the wordmark and nothing
-else, and never has. The sentence lives in two pieces of METADATA — `app/manifest.ts`'s `name`,
-which a phone shows while asking whether to install, and `app/layout.tsx`'s `description`, which
-a crawler reads. The first is shortened; the second is left alone, because it was already fixed
-once for saying "Chinese" long after three other languages shipped and trimming it for tidiness
-would undo that.
+else. The sentence lives in two pieces of METADATA — `app/manifest.ts`'s `name`, which a phone
+shows while asking whether to install, and `app/layout.tsx`'s `description`, which a crawler
+reads. The first is shortened; the second is left alone, because it was already fixed once for
+saying "Chinese" long after three other languages shipped.
 
 **The marks are geometry, not emoji** (`components/shared/Mark.tsx`). Emoji were used first and
 are the wrong tool for the same reason `BadgeSeal` gives: 📖 is a different drawing on every OS,
@@ -2292,7 +2314,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **341 kB** for `/` as of the drawn header mark, against a **339 kB** build of the previous commit — so that change cost **2 kB**, measured by stashing it rather than estimated. This line said 331 kB and was already stale by 8 kB when quoted, which is the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **339 kB** for `/`. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -3136,6 +3158,74 @@ break.
 route was broken; a clean reload of the same code said it worked. The first reading was against
 a dev server several HMR updates deep — "debugging against a stale artefact", which this file
 already lists as a recurring cost, met while verifying a fix for something else.)*
+
+#### And the page is a column, so a tab change cannot move the furniture
+
+Keeping every tab mounted fixed the rebuild and exposed the other half of the same problem.
+Only the active panel has height, and measured across the six, `main` runs from **676px to
+3,853px**. Two things followed, and only one of them is what was reported.
+
+**THE FURNITURE MOVED.** The footer sat at a different offset on every tab and the scrollbar
+appeared and disappeared, which on a desktop with classic scrollbars shifts the whole page
+sideways as well. `.app-frame` in `globals.css` makes the page a flex column with `flex-1` on
+`main`, so the content area takes whatever is left and the floor is the viewport.
+
+**⚠ A `min-height` WITH THE CHROME SUBTRACTED WOULD BE WRONG AT THE BREAKPOINT IT MATTERS MOST.**
+`calc(100vh - 212px)` is the obvious form and it hardcodes a header that is **76px on a desktop
+and 112px on a phone**, where it wraps to two rows — right on a laptop, and leaving a phone
+either short or scrolling for no reason. Letting `main` take the remaining space needs no number
+and cannot drift when the header changes.
+
+**AND THE UNIT IS `svh` WHERE IT EXISTS.** `100vh` on iOS Safari is the viewport with the toolbar
+RETRACTED, so a page sized to it is always slightly taller than what you can see and every screen
+scrolls a little even with nothing to scroll — the same complaint arriving by a different route.
+`svh` is the small viewport. It is declared AFTER the `vh` line rather than instead of it: a
+browser without `svh` ignores the override and keeps a working floor, where `min-height: 100svh`
+alone parses as invalid and leaves none.
+
+**⚠ AND THE THIRD CAUSE WAS THE TAB BAR RESIZING ITSELF, WHICH NEITHER OF THE ABOVE COULD FIX.**
+Measured after both: `main` stopped moving and the page still jumped 5px on every Home↔other
+switch. `TabNav` measured **49.5px tall on Home and 54.5px everywhere else**, so the entire page
+below it — including the content the learner was reading — stepped down five pixels and back.
+
+The cause is a React style-diffing trap worth knowing generally. The button style read
+`border: active ? '1px solid var(--line)' : 'none'` with a `borderBottom` longhand on the next
+line — **a shorthand and one of its own longhands in the same style object.** React expands
+`border` into longhands, the later `borderBottom` conflicts with them, and on a re-render the
+shorthand is dropped: read out of the live inline `style` attribute, the active button carried
+`border-top-width: ;` and every other border longhand EMPTY. React warns about exactly this in
+development and the warning had never been acted on. With no width specified the computed border
+fell back inconsistently — 1px on one tab, 3px (`medium`) on another — and because the row is a
+flex line, every button stretched to the tallest.
+
+Two rules come out of it. **Never put `border` and `borderBottom` in one React style object**;
+write all four longhands. And **a selected state must not add a box-model property** — vary the
+COLOUR instead, so the border is always 1px and inactive tabs simply draw it `transparent`. A
+selected state that changes the box reflows everything around it, which is the whole bug.
+
+*(It also shows why the other two fixes were not enough on their own, and why the order of
+investigation mattered: the floor and the scroll memory are both real and neither is this. Three
+independent causes produced one sentence of bug report.)*
+
+**THE REPORTED SYMPTOM WAS THE OTHER ONE, AND THE FLOOR CANNOT FIX IT.** Switching from a long
+tab to a short one hands the browser a page suddenly too short for its own scroll offset, and it
+CLAMPS. Measured: scrolled to 1800 in Learn, tapping Home lands at 120 and tapping Vocab at 737 —
+the content you were reading leaves the screen and something else is under your thumb. A tall tab
+is genuinely tall and no floor changes that.
+
+**SO EACH TAB REMEMBERS ITS OWN OFFSET.** Scrolling to the top on every switch would be
+deterministic and would throw away what keeping the tabs alive bought: come back to Read and you
+are back where you were reading. A fresh tab still opens at its top.
+
+**⚠ BOTH HALVES ARE LAYOUT EFFECTS, AND THE ORDER OF THE TWO IS LOAD-BEARING.** React runs every
+layout-effect CLEANUP before any layout effect in the same commit, so the scroll listener is
+declared BEFORE the restore — otherwise `scrollTo` fires a scroll event that the OUTGOING tab's
+listener attributes to itself, overwriting the position it just saved with the incoming tab's. As
+a passive `useEffect` the cleanup runs after paint and that race is real. The restore is a layout
+effect for its own reason: in a passive effect it paints one frame at the clamped position and
+then jumps, which is the flicker it exists to remove. `useBeforePaint` picks `useEffect` on the
+server at module scope, because this page is a client component that Next still PRERENDERS and
+`useLayoutEffect` warns loudly there.
 
 #### The header, at phone width
 

@@ -61,8 +61,37 @@ export default function TabNav({ active, onChange }: Props) {
               fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
               background: active === t.id ? 'var(--card)' : 'none',
               color: active === t.id ? 'var(--accent)' : 'var(--ink-faint)',
-              border: active === t.id ? '1px solid var(--line)' : 'none',
-              borderBottom: active === t.id ? '1px solid var(--card)' : 'none',
+              /**
+               * ⚠ FOUR LONGHANDS, NEVER THE `border` SHORTHAND BESIDE `borderBottom`, AND THE
+               * ⚠ COLOUR IS WHAT CHANGES — NOT WHETHER THERE IS A BORDER AT ALL.
+               *
+               * Two bugs in one line, and they compounded. It read
+               * `border: active ? '1px solid var(--line)' : 'none'` with a `borderBottom`
+               * longhand straight after, which is the React style-diffing trap: a shorthand
+               * and one of its own longhands in the same object. React expands `border` into
+               * longhands, the later `borderBottom` conflicts with them, and on a re-render the
+               * shorthand is dropped — the DOM ends up with `border-top-width: ;` and friends
+               * EMPTY. Read out of the live inline `style` attribute rather than reasoned
+               * about. React warns about this in development and the warning had never been
+               * acted on.
+               *
+               * With the width unspecified the computed border fell back inconsistently — 1px
+               * on one tab and 3px (`medium`) on another — and because the row is a flex line,
+               * EVERY button stretched to the tallest. So the nav measured **49.5px on Home and
+               * 54.5px everywhere else**, and the whole page below it jumped 5px on every
+               * Home↔other switch. That is the "layout moves vertically up and down" report,
+               * and the scroll-position work could not touch it: the furniture itself was
+               * resizing.
+               *
+               * Varying the COLOUR rather than the existence of the border is the fix for the
+               * layout half and is worth stating as a rule: a selected state that adds a box
+               * model property reflows everything around it. The border is always 1px; inactive
+               * tabs just draw it in `transparent`.
+               */
+              borderTop: `1px solid ${active === t.id ? 'var(--line)' : 'transparent'}`,
+              borderLeft: `1px solid ${active === t.id ? 'var(--line)' : 'transparent'}`,
+              borderRight: `1px solid ${active === t.id ? 'var(--line)' : 'transparent'}`,
+              borderBottom: `1px solid ${active === t.id ? 'var(--card)' : 'transparent'}`,
               borderRadius: '7px 7px 0 0',
               padding: '9px 13px',
               marginBottom: active === t.id ? -1 : 0,

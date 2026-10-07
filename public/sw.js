@@ -79,7 +79,7 @@
 
 /** Bump to evict everything this file owns. Both caches are versioned together on purpose:
  *  a shell that disagrees with its own chunks is the failure the version exists to prevent. */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = 'srsly-shell-' + VERSION;
 const ASSET_CACHE = 'srsly-assets-' + VERSION;
 const CURRENT = [SHELL_CACHE, ASSET_CACHE];
@@ -88,20 +88,52 @@ const CURRENT = [SHELL_CACHE, ASSET_CACHE];
 const OURS = /^srsly-(shell|assets)-/;
 
 /** Tier 1. Small, fixed, fetched on install. The document is re-cached on every online load. */
-const SHELL_URLS = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-192.png'];
+const SHELL_URLS = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/apple-touch-icon.png'];
 
-/** THE ALLOWLIST. Anything absent from these three lists is network-only. */
+/** THE ALLOWLIST. Anything absent from these four lists is network-only. */
 const IMMUTABLE_PREFIXES = ['/_next/static/', '/strokes/', '/strokes-ja/'];
 const IMMUTABLE_PATHS = [
-  '/manifest.webmanifest',
-  '/icon.svg',
-  '/icon-192.png',
-  // The dictionaries. Queried with ?v=DICT_VERSION, so a rebuild is a different URL.
+  // The dictionaries, and ONLY things of this shape. Queried with ?v=DICT_VERSION, so a rebuild
+  // is a different URL and a stale hit is impossible.
   '/cedict.json',
   '/jmdict.json',
   '/esdict.json',
   '/frdict.json',
 ];
+
+/**
+ * ⚠ THE ICONS AND THE MANIFEST WERE IN THE LIST ABOVE, AND THAT SHIPPED A STALE BRAND MARK.
+ *
+ * `immutable` is cache-first with no revalidation, which is exact for the two things that earn
+ * it: `/_next/static/**` is content-hashed and the dictionaries carry `?v=DICT_VERSION`, so a
+ * new version is a NEW URL. The icons and the manifest carry neither. They are stable paths
+ * whose CONTENTS change — and they were added to that list anyway, on reasoning that is true of
+ * their neighbours and false of them.
+ *
+ * The symptom took a redesign to surface: the app icon was replaced, the new one deployed
+ * correctly, and installed copies went on serving the old one off disk because nothing would
+ * ever ask again. Reported as "the home screen icon is still the old glyph" against a server
+ * that was demonstrably returning the new one. A cache-first entry on a mutable path is
+ * invisible until the day the content changes, which is exactly when it is least welcome.
+ *
+ * `revalidate` serves the cache and refreshes behind it, so the icon still costs nothing on a
+ * cold launch and a new one lands on the next visit. `VERSION` is bumped to v2 as well, because
+ * revalidation only helps copies that fetch again — bumping drops the old caches outright, which
+ * is what rescues a phone already holding the wrong bytes.
+ *
+ * NOTE FOR THE NEXT ICON CHANGE: iOS caches the HOME SCREEN icon separately, outside anything
+ * this worker can reach. Once the PWA is installed, that artwork is replaced only by removing
+ * the icon and adding it again. There is no code fix for that half.
+ */
+const REVALIDATE_PATHS = [
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-512.png',
+  '/apple-touch-icon.png',
+];
+
 const FONT_ORIGINS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 
 /**
@@ -142,6 +174,8 @@ function classify(rawUrl, method, mode) {
   for (let i = 0; i < IMMUTABLE_PREFIXES.length; i++) {
     if (path.indexOf(IMMUTABLE_PREFIXES[i]) === 0) return 'immutable';
   }
+  // Same-origin and mutable: fast from disk, refreshed behind. See REVALIDATE_PATHS.
+  if (REVALIDATE_PATHS.indexOf(path) >= 0) return 'revalidate';
   return 'network-only';
 }
 
@@ -185,7 +219,15 @@ async function immutableFirst(event, request) {
 
 async function revalidate(event, request) {
   const cache = await caches.open(ASSET_CACHE);
-  const hit = await cache.match(request);
+  let hit = await cache.match(request);
+  // The shell precaches the icons and the manifest at install, into the OTHER cache. Without
+  // this second look a first launch that is already offline would miss them — present on disk,
+  // and not where the only lookup went. Checked second and only on a miss, so the warm path is
+  // unchanged.
+  if (!hit) {
+    const shell = await caches.open(SHELL_CACHE);
+    hit = await shell.match(request);
+  }
   const net = fetch(request).then(function (res) {
     if (storable(res)) return putQuietly(cache, request, res.clone()).then(function () { return res; });
     return res;
@@ -304,6 +346,7 @@ self.__srsly = {
   allowlist: {
     IMMUTABLE_PREFIXES: IMMUTABLE_PREFIXES,
     IMMUTABLE_PATHS: IMMUTABLE_PATHS,
+    REVALIDATE_PATHS: REVALIDATE_PATHS,
     FONT_ORIGINS: FONT_ORIGINS,
     SHELL_URLS: SHELL_URLS,
   },

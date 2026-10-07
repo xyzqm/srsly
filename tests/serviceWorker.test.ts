@@ -35,6 +35,7 @@ interface Worker {
   allowlist: {
     IMMUTABLE_PREFIXES: string[];
     IMMUTABLE_PATHS: string[];
+    REVALIDATE_PATHS: string[];
     FONT_ORIGINS: string[];
     SHELL_URLS: string[];
   };
@@ -170,8 +171,48 @@ describe('the three tiers', () => {
     // `strokeDataUrl` percent-encodes the character, so this is the real shape of the request.
     expect(classify(`${ORIGIN}/strokes/%E5%A5%BD.json`, 'GET', 'cors')).toBe('immutable');
     expect(classify(`${ORIGIN}/strokes-ja/%E7%A7%81.json`, 'GET', 'cors')).toBe('immutable');
-    expect(classify(`${ORIGIN}/manifest.webmanifest`, 'GET', 'cors')).toBe('immutable');
-    expect(classify(`${ORIGIN}/icon.svg`, 'GET', 'cors')).toBe('immutable');
+  });
+
+  /**
+   * ⚠ ONLY A PATH WHOSE CONTENTS CANNOT CHANGE MAY BE `immutable`, AND THE ICONS WERE IN THAT
+   * LIST FOR A WHILE.
+   *
+   * `immutable` is cache-first with no revalidation, which is exact for its two real members:
+   * `/_next/static/**` is content-hashed and the dictionaries carry `?v=DICT_VERSION`, so a new
+   * version is a NEW URL. The icons and the manifest carry neither — they are stable paths
+   * whose CONTENTS change — and they were added anyway on reasoning true of their neighbours.
+   *
+   * It took a redesign to surface: the app icon was replaced, deployed correctly, and installed
+   * copies went on serving the old one off disk because nothing would ever ask again. Reported
+   * as a stale home-screen icon against a server demonstrably returning the new one. A
+   * cache-first entry on a mutable path is invisible until the day the content changes.
+   *
+   * This asserts the RULE rather than the list: anything that is cached forever must be
+   * content-addressed, so a future icon or manifest entry cannot quietly rejoin it.
+   */
+  it('never caches a mutable path forever', () => {
+    const { classify, allowlist } = load();
+    for (const path of allowlist.IMMUTABLE_PATHS) {
+      expect(
+        /\.(json)$/.test(path),
+        `${path} is cached forever but is not one of the ?v= dictionaries`,
+      ).toBe(true);
+    }
+    for (const path of ['/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png',
+                        '/apple-touch-icon.png', '/manifest.webmanifest']) {
+      expect(classify(ORIGIN + path, 'GET', 'cors'), `${path} would go stale on disk`)
+        .toBe('revalidate');
+    }
+  });
+
+  /** Every icon the app declares has to be reachable offline, or an installed copy loses its
+   *  own artwork the first time it opens without a connection. */
+  it('serves every declared icon from the cache', () => {
+    const { classify, allowlist } = load();
+    for (const path of ['/icon.svg', '/icon-192.png', '/apple-touch-icon.png']) {
+      expect(allowlist.SHELL_URLS.concat(allowlist.REVALIDATE_PATHS)).toContain(path);
+      expect(classify(ORIGIN + path, 'GET', 'cors')).not.toBe('network-only');
+    }
   });
 
   it('revalidates the Google Fonts origins, because their CSS arrives opaque', () => {
