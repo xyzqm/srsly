@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { storage } from '@/lib/storage';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { SUPPORTED_LANGUAGES, getLanguageConfig } from '@/lib/languageConfig';
@@ -112,6 +112,15 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
    * sections down promises that re-adding it "finds everything where you left it". A summary
    * that counted only the added ones would quietly contradict that promise for anyone who had
    * ever removed one, and this screen is exactly where someone goes to check.
+   *
+   * ⚠ A LANGUAGE APPEARS HERE BECAUSE ITS DECK HAS WORDS, WHICH IS NOT THE SAME QUESTION AS
+   * WHETHER IT IS BEING STUDIED — and for a while the row did not say which. A kept deck was
+   * drawn identically to the active one, so somebody studying Spanish saw "Français 3 words"
+   * with nothing to explain it and reasonably read it as the panel listing every language in
+   * the app. Reported as exactly that. The data was right and the LABEL was missing, which is
+   * this file's recurring mistake in its mildest form: a value meaning "saved, not in play"
+   * rendered as a value meaning "in play". An empty deck is skipped entirely, so a language
+   * never touched has never appeared.
    */
   const load = useCallback(async () => {
     const lines: DeckLine[] = [];
@@ -162,6 +171,20 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
 
   const totalWords = decks?.reduce((n, d) => n + d.total, 0) ?? 0;
   const totalMastered = decks?.reduce((n, d) => n + d.mastered, 0) ?? 0;
+
+  /**
+   * What you are studying first, what you kept after.
+   *
+   * The order was `SUPPORTED_LANGUAGES`, so a kept deck could sit ABOVE the language actually
+   * being studied purely because Chinese is declared before Spanish — which is most of why the
+   * list read as "every language in the app" rather than "your decks". Stable within each
+   * group, so the declared order still decides ties.
+   */
+  const added = useMemo(() => new Set(languages), [languages]);
+  const shownDecks = useMemo(
+    () => (decks ?? []).slice().sort((a, b) => Number(added.has(b.code)) - Number(added.has(a.code))),
+    [decks, added],
+  );
 
   return (
     <div className="mb-10" style={{ maxWidth: 560 }}>
@@ -271,7 +294,7 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
             </span>
           ) : (
             <span className="flex flex-col gap-1">
-              {decks.map(d => (
+              {shownDecks.map(d => (
                 <span key={d.code} style={{ fontSize: 13 }}>
                   <span style={{ fontFamily: 'var(--f-han)', marginRight: 6 }}>
                     {getLanguageConfig(d.code).nativeName}
@@ -283,6 +306,14 @@ export default function AccountPanel({ languages, onSignIn, keySeq = 0 }: Props)
                   <span style={{ ...mono, fontSize: 11.5, color: 'var(--ink-faint)', marginLeft: 8 }}>
                     {d.active} in circulation · {d.mastered} held
                   </span>
+                  {/* The one thing the row could not say before. Phrased as the Languages
+                      section phrases it — "removing one hides it, your deck is kept" — so the
+                      two answers match rather than being two descriptions of one state. */}
+                  {!added.has(d.code) && (
+                    <span style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)', marginLeft: 8 }}>
+                      · kept, not studying
+                    </span>
+                  )}
                 </span>
               ))}
               {decks.length > 1 && (
