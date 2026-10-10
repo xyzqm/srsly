@@ -59,6 +59,43 @@ export interface LessonTable {
   rows: string[][];
 }
 
+/**
+ * Which rule decides whether a word's accent is written.
+ *
+ * Spanish orthography is four rules and one exception, and naming the rule IS the skill — a
+ * learner who can say "aguda ending in -n" can spell every word in that class, where one who
+ * has merely memorised `jamón` can spell exactly `jamón`.
+ */
+export type AccentRule = 'aguda' | 'llana' | 'esdrujula' | 'hiato' | 'diacritica';
+
+/**
+ * One word the accent drill asks about.
+ *
+ * ⚠ THIS EXISTS BECAUSE SENTENCE-BUILDING CANNOT ASK ABOUT SPELLING. Every other lesson is
+ * about word order or word choice, and the two question shapes in `lib/lessonPractice.ts` —
+ * rebuild the sentence, pick the missing word — test exactly those. Pointed at an ORTHOGRAPHY
+ * lesson they ask nothing: the accents are already printed on the tiles, so a learner can
+ * reorder `El · jamón · está · en · la · mesa.` without once deciding where a stress falls or
+ * whether a tilde belongs. Reported as "the practice has nothing to do with it", which was
+ * exactly right — the drill was on-topic for the app and off-topic for the lesson.
+ *
+ * Syllables must be spelled exactly as they appear in `word`, so joining them reproduces it;
+ * `tests/lessons.test.ts` asserts that, and asserts they are DISTINCT, because the stress
+ * question is answered by tapping one and two identical tiles would make the answer ambiguous.
+ */
+export interface AccentWord {
+  /** The word as it is correctly written, tilde and all. */
+  word: string;
+  /** Its syllables in order, spelled exactly as in `word`. */
+  syllables: string[];
+  /** Index into `syllables` of the stressed one. */
+  stress: number;
+  /** Which rule settles it. */
+  rule: AccentRule;
+  /** The reason, in one sentence, shown after answering either way. */
+  why: string;
+}
+
 export interface Lesson {
   id: string;
   kind: 'grammar' | 'vocab';
@@ -98,6 +135,16 @@ export interface Lesson {
    * is degraded rather than broken.
    */
   practice?: LessonExample[];
+  /**
+   * Grammar only: words for the accent drill, which REPLACES the sentence questions.
+   *
+   * A lesson that has these is one whose rule lives in the spelling of a word rather than in
+   * the arrangement of a sentence, so `buildQuestions` runs the accent drill instead of
+   * ordering tiles — see `AccentWord` for why the sentence shapes cannot ask the question.
+   * `practice` is still required of every grammar lesson and is still the fallback here, so
+   * deleting this list degrades the lesson rather than emptying it.
+   */
+  accentWords?: AccentWord[];
   /** Vocabulary only: a theme key from `lib/data/beginner-themes`. */
   theme?: string;
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { ACCENT_RULE_LABEL } from '../lib/lessonPractice';
 import { grammarLessons, vocabLessons, nextGrammarLesson, hasLessons, LESSON_LANGUAGES } from '@/lib/lessons';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
@@ -202,6 +203,86 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
           expect(shown.has(bare(p.text)), `${l.id}: practice repeats the example «${p.text}»`).toBe(false);
         }
       }
+    });
+
+    /**
+     * THE ACCENT DRILL, WHICH EXISTS BECAUSE THE SENTENCE ONE COULD NOT ASK THE QUESTION.
+     *
+     * Reported against `es-accents`: the practice was "build the sentence" on sentences that
+     * merely CONTAINED accented words, so the accents were printed on the tiles and the
+     * learner reordered them without once deciding where a stress falls. Every assertion here
+     * guards a way that could come back silently — a word whose syllables do not spell it, a
+     * stress index pointing past the end, or two identical tiles making the answer ambiguous.
+     */
+    describe('accent words', () => {
+      const withAccents = LESSON_LANGUAGES.flatMap(lang =>
+        lessonsFor(lang).filter(l => l.accentWords?.length));
+
+      it('is used by at least one lesson, or these assertions are vacuous', () => {
+        expect(withAccents.length).toBeGreaterThan(0);
+      });
+
+      it('spells its own word out of its syllables', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            expect(w.syllables.join(''), `${l.id}: syllables do not spell «${w.word}»`)
+              .toBe(w.word);
+          }
+        }
+      });
+
+      it('points the stress at a syllable that exists', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            expect(w.stress, `${l.id}: ${w.word} stress out of range`).toBeGreaterThanOrEqual(0);
+            expect(w.stress, `${l.id}: ${w.word} stress out of range`).toBeLessThan(w.syllables.length);
+          }
+        }
+      });
+
+      /**
+       * `isCorrect` compares the SYLLABLE a learner tapped, not its position — so a word with
+       * two identical syllables would accept the wrong tap and reject the right one with no
+       * way to tell them apart on screen.
+       */
+      it('keeps a word\'s syllables distinct, because the answer is compared by text', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            expect(new Set(w.syllables).size, `${l.id}: «${w.word}» repeats a syllable`)
+              .toBe(w.syllables.length);
+          }
+        }
+      });
+
+      /** Every rule reachable, and the drill not three copies of one question. */
+      it('covers every rule it offers as an option', () => {
+        for (const l of withAccents) {
+          const used = new Set(l.accentWords!.filter(w => /[áéíóú]/u.test(w.word)).map(w => w.rule));
+          expect([...used].sort(), `${l.id}: the rule options are not all reachable`)
+            .toEqual((Object.keys(ACCENT_RULE_LABEL) as string[]).sort());
+        }
+      });
+
+      /**
+       * Both shapes present. All-accented would be a drill that never asks where a stress
+       * falls; all-unaccented would never ask why a mark is written.
+       */
+      it('asks both questions', () => {
+        for (const l of withAccents) {
+          const words = l.accentWords!;
+          expect(words.some(w => /[áéíóú]/u.test(w.word)), `${l.id}: no rule questions`).toBe(true);
+          expect(words.some(w => !/[áéíóú]/u.test(w.word)), `${l.id}: no stress questions`).toBe(true);
+        }
+      });
+
+      /** The explanation is the teaching; an empty one leaves the answer unexplained. */
+      it('explains every word', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            expect(w.why.trim().length, `${l.id}: ${w.word} has no explanation`).toBeGreaterThan(20);
+          }
+        }
+      });
     });
 
     it('gives every grammar lesson its own practice sentences', () => {

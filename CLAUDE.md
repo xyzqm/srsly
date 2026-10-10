@@ -1584,6 +1584,64 @@ itself. Examples shorter than `MIN_ORDER_TILES` become a CHOICE instead: one wor
 picked from four drawn from the same lesson. Which shape an example gets is derived in
 `lib/lessonPractice.ts`, so no lesson data changed.
 
+**AND A THIRD, BECAUSE NEITHER OF THOSE CAN ASK ABOUT SPELLING.** Both shapes test the
+arrangement or the choice of WORDS, which is right for every lesson about syntax and useless
+for one about orthography. `es-accents` teaches where a Spanish stress falls and when the tilde
+is written, and its practice was build-the-sentence over sentences that merely CONTAINED
+accented words — so the tildes arrived already printed on the tiles and the learner reordered
+`El · jamón · está · en · la · mesa.` without once deciding where a stress fell. Reported as
+"the practice has nothing to do with it", which was exactly right: the drill was on-topic for
+the app and off-topic for the lesson.
+
+`Lesson.accentWords` (`lib/lessons.ts`) SUPERSEDES the sentence drill wherever it is present —
+derived from the data, the same way `MIN_ORDER_TILES` picks between the first two. It emits one
+question per word, and **which question is decided by the word itself**:
+
+- **A word with no tilde is asked where the stress FALLS.** `casa`, `hablar`, `examen`,
+  `profesor` — the learner taps a syllable, which means applying the default rule, which is the
+  rule the lesson exists to teach.
+- **A word with a tilde is asked WHY it is written.** On `jamón` the mark already points at the
+  stress, so asking for it would be free; what is left worth knowing is the rule, picked from
+  the five (`aguda`, `llana`, `esdrújula`, `hiato`, `tilde diacrítica`).
+
+Between the two, no question in the run is answerable by reading the prompt — which is the
+whole reason for the split rather than one shape for every word. Both end on the word split
+into syllables with the stressed one marked, so the two halves of "identify the syllable, and
+know why the accent is there" land on the same picture.
+
+**`hasWrittenAccent` MATCHES ACUTE VOWELS ONLY, and that is not pedantry.** `ñ` is a letter and
+`ü` is a diaeresis saying the u is pronounced in `güe`/`güi`; neither marks stress. Counting
+either would send `español` and `vergüenza` down the rule branch with no tilde to explain, and
+a test pins both.
+
+**The stress answer is compared by SYLLABLE, not by position**, so `tests/lessons.test.ts`
+asserts a word's syllables are distinct — two identical tiles would accept the wrong tap and
+reject the right one with nothing on screen to tell them apart. It also asserts the syllables
+spell the word, the stress index is in range, and that every rule offered as an option is
+reachable, so the drill cannot become three copies of one question.
+
+*(The three practice SENTENCES stay on the lesson, because every grammar lesson is required to
+have them and they are the fallback if `accentWords` is ever removed — a lesson degrades rather
+than emptying. They are simply not what this lesson drills.)*
+
+**AND EVERY SPANISH AND FRENCH SENTENCE IN THE APP STARTED WITH A LOWERCASE LETTER.** Reported
+alongside the above and much larger than the lesson it was noticed in: **171 practice sentences
+and 192 authored examples, 363 in all** — every single one. Chinese and Japanese were unaffected
+because their scripts have no case, which is exactly why it survived: the two trees written
+first could not show the bug. The capital goes on the first LETTER rather than the first
+character, so `¿dónde está…` becomes `¿Dónde está…` and not `¿dónde`.
+
+A tile and its sentence have to move together or the exercise becomes unsolvable, and
+`tests/lessons.test.ts` already asserts the tiles rebuild their own text — which is what caught
+the first attempt at this: a regex whose string body excluded BOTH quote characters silently
+skipped every French sentence written as `"j'ai faim."`, capitalising 84 first tiles against 78
+texts. Six examples would have shipped with a capital tile and a lowercase sentence.
+
+*(A capitalised first tile does make an ordering question slightly easier, since it marks which
+tile starts. That is the same cue the full stop already gives for the last one, and correct
+orthography is worth more than the difficulty — a learner copying these sentences should be
+copying real Spanish.)*
+
 **The prompt is the gloss with its teaching aside removed.** 139 of the 333 authored glosses
 carry an explanation after an em dash, and it usually names the word being tested — the prompt
 for the 张 question read "This sheet of paper is big — 张 for flat things". `promptFor` cuts at

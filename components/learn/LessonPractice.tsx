@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { LanguageCode } from '@/lib/types';
 import type { Lesson } from '@/lib/lessons';
-import { buildQuestions, isCorrect, promptFor, type PracticeQuestion } from '@/lib/lessonPractice';
+import { buildQuestions, isCorrect, promptFor, type PracticeQuestion, ACCENT_RULE_LABEL } from '@/lib/lessonPractice';
 import { hasInspectModifier } from '@/lib/inspectGesture';
 import WordPopup from '@/components/read/WordPopup';
 import PracticeTiles from './PracticeTiles';
@@ -97,6 +97,20 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
     );
   }
 
+  /**
+   * The accent drill is a single pick, like a choice question — so `answer`, `complete` and
+   * the Check button below need no new cases. What differs is only what is being picked
+   * BETWEEN, which is why the options are flattened to {value,label} here: the stress shape
+   * offers syllables and the rule shape offers rule keys with a human label, and one list lets
+   * the markup below stay one block instead of two near-identical ones.
+   */
+  const isAccent = q.kind === 'accent-stress' || q.kind === 'accent-rule';
+  const accentOptions = q.kind === 'accent-rule'
+    ? q.options.map(r => ({ value: r as string, label: ACCENT_RULE_LABEL[r] }))
+    : q.kind === 'accent-stress'
+      ? q.options.map(o => ({ value: o, label: o }))
+      : [];
+
   const answer = q.kind === 'order' ? placed.map(i => q.shuffled[i]) : (pick === null ? [] : [pick]);
   const complete = q.kind === 'order' ? placed.length === q.tiles.length : pick !== null;
   const tone = checked === null ? undefined : checked ? 'var(--right)' : 'var(--wrong)';
@@ -141,10 +155,47 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
 
       <div style={{ ...MONO, fontSize: 9.5, letterSpacing: '.16em', textTransform: 'uppercase',
         color: 'var(--ink-faint)', marginBottom: 8 }}>
-        {q.kind === 'order' ? 'Build the sentence' : 'Choose the missing word'}
+        {q.kind === 'order' ? 'Build the sentence'
+          : q.kind === 'accent-stress' ? 'Find the stress'
+          : q.kind === 'accent-rule' ? 'Name the rule'
+          : 'Choose the missing word'}
       </div>
 
-      {q.kind === 'order' ? (
+      {isAccent ? (
+        <>
+          <div style={{ fontSize: 17, color: 'var(--ink)', marginBottom: 14, lineHeight: 1.5 }}>
+            {promptFor(q)}
+          </div>
+          {/* The word itself, large, in its correct spelling. On a stress question that
+              spelling is the evidence — there is no tilde, so the default rule has to decide
+              it — and on a rule question it is what the options are about. */}
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 34, color: 'var(--ink)',
+            marginBottom: 18, letterSpacing: '-.01em' }}>
+            {q.kind === 'accent-stress' ? q.word.word : q.word.word}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {accentOptions.map(o => {
+              const picked = pick === o.value;
+              return (
+                <button
+                  key={o.value}
+                  /* No inspect gesture here, deliberately: a syllable is not a word and a rule
+                     name is not Spanish, so a dictionary popup on either would answer nothing
+                     and would fire on the gesture the tile rows have trained into the hand. */
+                  onClick={() => { if (checked === null) setPick(o.value); }}
+                  className="cursor-pointer rounded-lg text-left"
+                  style={{ fontSize: 16, padding: '10px 14px', minHeight: 44,
+                    background: picked ? 'var(--accent-soft)' : 'var(--card)',
+                    border: `1px solid ${picked ? (tone ?? 'var(--accent)') : 'var(--line)'}`,
+                    color: 'var(--ink)' }}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : q.kind === 'order' ? (
         <>
           <div style={{ fontSize: 17, color: 'var(--ink)', marginBottom: 16, lineHeight: 1.5 }}>
             {promptFor(q)}
@@ -236,10 +287,32 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
               color: checked ? 'var(--jade)' : 'var(--gold)', marginBottom: 6 }}>
               {checked ? '✓ Correct' : 'Not quite — it comes back later'}
             </div>
-            <div style={{ fontSize: 19, color: 'var(--ink)', lineHeight: 1.5 }}>{q.example.text}</div>
-            <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5 }}>
-              {q.example.gloss}
-            </div>
+            {isAccent ? (
+              <>
+                {/* The word split, with the stressed syllable marked — which is the answer to
+                    the stress question and the evidence for the rule one, so both shapes end
+                    on the same picture and a learner sees where the mark belongs. */}
+                <div style={{ fontSize: 19, color: 'var(--ink)', lineHeight: 1.5 }}>
+                  {q.word.syllables.map((syl, i) => (
+                    <span key={i}>
+                      {i > 0 && <span style={{ color: 'var(--ink-faint)' }}>·</span>}
+                      <span style={{ color: i === q.word.stress ? 'var(--accent)' : 'var(--ink)',
+                        fontWeight: i === q.word.stress ? 600 : 400 }}>{syl}</span>
+                    </span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5 }}>
+                  {q.word.why}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 19, color: 'var(--ink)', lineHeight: 1.5 }}>{q.example.text}</div>
+                <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5 }}>
+                  {q.example.gloss}
+                </div>
+              </>
+            )}
             <button onClick={next} className="cursor-pointer rounded-lg mt-4"
               style={{ ...MONO, fontSize: 11, padding: '11px 18px', fontWeight: 600,
                 background: 'var(--jade)', border: 'none', color: '#fff' }}>

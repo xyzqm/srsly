@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildQuestions, isCorrect, bareWord, MIN_ORDER_TILES, CHOICE_OPTIONS,
-  promptFor,
+  promptFor, hasWrittenAccent, ACCENT_RULE_LABEL,
 } from '@/lib/lessonPractice';
 import { lessonsFor } from '@/lib/data/lessons';
 import { grammarLessons, LESSON_LANGUAGES } from '@/lib/lessons';
@@ -216,6 +216,84 @@ describe('the prompt does not contain the answer', () => {
           expect(leaked, `${l.id}: prompt "${prompt}" names its answer "${q.answer}"`).toBe(false);
         }
       }
+    }
+  });
+});
+
+/**
+ * THE ACCENT DRILL SUPERSEDES THE SENTENCE ONE, AND THE SPLIT IS THE POINT.
+ *
+ * `es-accents` shipped with ordinary build-the-sentence practice over sentences that merely
+ * contained accented words. Reported as "the practice has nothing to do with it", correctly:
+ * the tiles arrive with their tildes already printed, so reordering them asks about word
+ * order and never about where a stress falls. These pin the replacement.
+ */
+describe('the accent drill', () => {
+  const accentLesson = (words: Lesson['accentWords']): Lesson => ({
+    id: 'test-accents', kind: 'grammar', title: 't', summary: 's', explanation: 'e',
+    // Sentence practice is present and must be IGNORED — that is the behaviour under test.
+    examples: [{ text: 'El jamón está aquí.', gloss: 'The ham is here.', tiles: ['El', 'jamón', 'está', 'aquí.'] }],
+    practice: [{ text: 'Hay un sofá.', gloss: 'There is a sofa.', tiles: ['Hay', 'un', 'sofá.'] }],
+    accentWords: words,
+  });
+
+  const CASA = { word: 'casa', syllables: ['ca', 'sa'], stress: 0, rule: 'llana' as const, why: 'llana in a vowel.' };
+  const JAMON = { word: 'jamón', syllables: ['ja', 'món'], stress: 1, rule: 'aguda' as const, why: 'aguda in -n.' };
+
+  it('knows a written accent from a letter that merely has a mark on it', () => {
+    expect(hasWrittenAccent('jamón')).toBe(true);
+    expect(hasWrittenAccent('día')).toBe(true);
+    // ñ is a LETTER and ü is a diaeresis — neither marks stress, and counting either would
+    // send español and vergüenza down the rule branch with no tilde to explain.
+    expect(hasWrittenAccent('español')).toBe(false);
+    expect(hasWrittenAccent('vergüenza')).toBe(false);
+    expect(hasWrittenAccent('casa')).toBe(false);
+  });
+
+  it('replaces the sentence questions rather than adding to them', () => {
+    const qs = buildQuestions(accentLesson([CASA, JAMON]), seeded(5));
+    expect(qs).toHaveLength(2);
+    expect(qs.every(q => q.kind === 'accent-stress' || q.kind === 'accent-rule')).toBe(true);
+  });
+
+  it('asks for the stress when there is no tilde to give it away', () => {
+    const [q] = buildQuestions(accentLesson([CASA]), seeded(1));
+    expect(q.kind).toBe('accent-stress');
+    if (q.kind !== 'accent-stress') return;
+    // In word order, never shuffled: shuffled syllables are not a word.
+    expect(q.options).toEqual(['ca', 'sa']);
+    expect(isCorrect(q, ['ca'])).toBe(true);
+    expect(isCorrect(q, ['sa'])).toBe(false);
+  });
+
+  it('asks for the rule when the tilde already shows the stress', () => {
+    const [q] = buildQuestions(accentLesson([JAMON]), seeded(2));
+    expect(q.kind).toBe('accent-rule');
+    if (q.kind !== 'accent-rule') return;
+    expect(q.options).toEqual(Object.keys(ACCENT_RULE_LABEL));
+    expect(isCorrect(q, ['aguda'])).toBe(true);
+    expect(isCorrect(q, ['llana'])).toBe(false);
+  });
+
+  it('names the word in the rule prompt and not in the stress one', () => {
+    const [rule] = buildQuestions(accentLesson([JAMON]), seeded(3));
+    expect(promptFor(rule)).toContain('jamón');
+    const [stress] = buildQuestions(accentLesson([CASA]), seeded(3));
+    // The stress prompt must NOT print the syllables — the options are the answer set.
+    expect(promptFor(stress)).not.toContain('ca');
+  });
+
+  it('builds a real session for the shipped Spanish lesson', () => {
+    const lessons = lessonsFor('es' as LanguageCode);
+    const accents = lessons.find(l => l.id === 'es-accents');
+    expect(accents?.accentWords?.length, 'es-accents lost its accent words').toBeGreaterThan(4);
+    const qs = buildQuestions(accents!, seeded(7));
+    expect(qs.length).toBe(accents!.accentWords!.length);
+    // Every question answerable, and answerable by exactly one option.
+    for (const q of qs) {
+      if (q.kind !== 'accent-stress' && q.kind !== 'accent-rule') throw new Error('not an accent question');
+      const right = (q.options as string[]).filter(o => isCorrect(q, [o]));
+      expect(right, `${q.word.word} has ${right.length} correct options`).toHaveLength(1);
     }
   });
 });

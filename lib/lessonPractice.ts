@@ -1,4 +1,4 @@
-import type { Lesson, LessonExample } from './lessons';
+import type { AccentRule, AccentWord, Lesson, LessonExample } from './lessons';
 
 /**
  * Turning a lesson's examples into a run of practice questions.
@@ -62,7 +62,62 @@ export interface OrderQuestion {
   shuffled: string[];
 }
 
-export type PracticeQuestion = OrderQuestion | ChoiceQuestion;
+/**
+ * Tap the stressed syllable of a word that carries NO written accent.
+ *
+ * Asked only of unaccented words, and that is the whole point: on `jamón` the tilde already
+ * points at the answer, so the question would be free. On `examen` the learner has to apply
+ * the default rule — llana unless the word says otherwise — which is the rule the lesson is
+ * actually teaching and the one that decides every word they will ever write.
+ *
+ * The syllables are shown IN ORDER, never shuffled: shuffled syllables are not a word.
+ */
+export interface AccentStressQuestion {
+  kind: 'accent-stress';
+  word: AccentWord;
+  /** The syllables, in order. Tapping one is the answer. */
+  options: string[];
+  answer: string;
+}
+
+/**
+ * Name the rule that writes a word's tilde.
+ *
+ * The mirror of the above, asked of words that DO carry one — where the stress is readable
+ * off the page and the thing still worth knowing is why the mark is there at all. Between the
+ * two, every word in the drill asks something the learner cannot simply read.
+ */
+export interface AccentRuleQuestion {
+  kind: 'accent-rule';
+  word: AccentWord;
+  options: AccentRule[];
+  answer: AccentRule;
+}
+
+export type PracticeQuestion = OrderQuestion | ChoiceQuestion | AccentStressQuestion | AccentRuleQuestion;
+
+/** Short enough for a button, specific enough to be a real choice. */
+export const ACCENT_RULE_LABEL: Record<AccentRule, string> = {
+  aguda:      'aguda — stressed on the last syllable',
+  llana:      'llana — stressed on the second-to-last',
+  esdrujula:  'esdrújula — stressed on the third-to-last',
+  hiato:      'hiato — a stressed i or u splitting the pair',
+  diacritica: 'tilde diacrítica — it tells two words apart',
+};
+
+const ACCENT_RULES = Object.keys(ACCENT_RULE_LABEL) as AccentRule[];
+
+/**
+ * Does this word carry a written accent?
+ *
+ * Acute vowels ONLY. `ñ` is a letter rather than a mark, and `ü` is a diaeresis that says the
+ * u is pronounced in `güe`/`güi` — neither marks stress, and counting either would send a word
+ * like `español` or `vergüenza` down the wrong branch.
+ */
+export function hasWrittenAccent(word: string): boolean {
+  return /[áéíóúÁÉÍÓÚ]/u.test(word);
+}
+
 
 /**
  * Below this, ordering is trivial: with punctuation pinned to the last tile, two tiles have
@@ -110,6 +165,11 @@ export function bareWord(tile: string): string {
  * `rand` is injectable so tests can pin the shuffle; the UI passes `Math.random`.
  */
 export function buildQuestions(lesson: Lesson, rand: () => number = Math.random): PracticeQuestion[] {
+  // An orthography lesson gets the accent drill INSTEAD of the sentence one. Which shape a
+  // lesson gets is decided from its own data, the same way `MIN_ORDER_TILES` decides between
+  // ordering and choosing — see `AccentWord` for why ordering tiles cannot ask about spelling.
+  if (lesson.accentWords?.length) return shuffle(lesson.accentWords.map(accentQuestion), rand);
+
   const buildable = (list?: LessonExample[]) => (list ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
   // Purpose-written sentences when the lesson has them; the printed examples otherwise, so a
   // lesson that has not been given practice sentences yet is degraded and not empty.
@@ -158,6 +218,26 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
   return shuffle(questions, rand);
 }
 
+/**
+ * Which question a word earns, decided by the word itself.
+ *
+ * A written tilde gives the stress away, so an accented word is asked for the RULE; an
+ * unaccented one is asked where the stress falls, which it cannot show. Neither branch is
+ * answerable by reading the prompt, which is the whole reason the split exists rather than
+ * one question type for all of them.
+ */
+function accentQuestion(word: AccentWord): PracticeQuestion {
+  if (hasWrittenAccent(word.word)) {
+    return { kind: 'accent-rule', word, options: ACCENT_RULES, answer: word.rule };
+  }
+  return {
+    kind: 'accent-stress',
+    word,
+    options: word.syllables,
+    answer: word.syllables[word.stress],
+  };
+}
+
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
 }
@@ -167,6 +247,9 @@ export function isCorrect(q: PracticeQuestion, given: string[]): boolean {
   if (q.kind === 'order') {
     return sameOrder(given, q.tiles);
   }
+  // Choice and both accent shapes are all one pick. The stress answer compares the SYLLABLE
+  // rather than its index, which is safe because `tests/lessons.test.ts` asserts a word's
+  // syllables are distinct — two identical tiles would make tapping either one ambiguous.
   return given.length === 1 && given[0] === q.answer;
 }
 
@@ -182,6 +265,10 @@ export function isCorrect(q: PracticeQuestion, given: string[]): boolean {
  * prints `example.gloss` in full, which is where the teaching belongs.
  */
 export function promptFor(q: PracticeQuestion): string {
+  // An accent question has no sentence and no gloss — it asks about one word, and the word is
+  // shown beside the prompt rather than inside it.
+  if (q.kind === 'accent-stress') return 'Which syllable is stressed?';
+  if (q.kind === 'accent-rule') return `Why does ${q.word.word} carry a tilde?`;
   const [meaning] = q.example.gloss.split(' — ');
   return meaning.trim();
 }
