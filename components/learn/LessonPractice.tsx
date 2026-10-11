@@ -104,10 +104,10 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
    * offers syllables and the rule shape offers rule keys with a human label, and one list lets
    * the markup below stay one block instead of two near-identical ones.
    */
-  const isAccent = q.kind === 'accent-stress' || q.kind === 'accent-rule';
+  const isAccent = q.kind === 'accent-stress' || q.kind === 'accent-rule' || q.kind === 'accent-letter';
   const accentOptions = q.kind === 'accent-rule'
     ? q.options.map(r => ({ value: r as string, label: ACCENT_RULE_LABEL[r] }))
-    : q.kind === 'accent-stress'
+    : q.kind === 'accent-stress' || q.kind === 'accent-letter'
       ? q.options.map(o => ({ value: o, label: o }))
       : [];
 
@@ -158,6 +158,7 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
         {q.kind === 'order' ? 'Build the sentence'
           : q.kind === 'accent-stress' ? 'Find the stress'
           : q.kind === 'accent-rule' ? 'Name the rule'
+          : q.kind === 'accent-letter' ? 'Write the word'
           : 'Choose the missing word'}
       </div>
 
@@ -169,9 +170,20 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
           {/* The word itself, large, in its correct spelling. On a stress question that
               spelling is the evidence — there is no tilde, so the default rule has to decide
               it — and on a rule question it is what the options are about. */}
+          {/* A letter question shows the word with its accented character held out; the other
+              two show it whole, because for them the spelling IS the evidence. */}
           <div style={{ fontFamily: 'var(--f-display)', fontSize: 34, color: 'var(--ink)',
             marginBottom: 18, letterSpacing: '-.01em' }}>
-            {q.kind === 'accent-stress' ? q.word.word : q.word.word}
+            {q.kind === 'accent-letter' ? (
+              <>
+                {q.masked.split('\u2002')[0]}
+                <span style={{ borderBottom: `2px solid ${tone ?? 'var(--accent)'}`,
+                  color: tone ?? 'var(--accent)', padding: '0 2px' }}>
+                  {pick ?? '\u2002'}
+                </span>
+                {q.masked.split('\u2002')[1]}
+              </>
+            ) : q.word.word}
           </div>
           <div className="flex flex-wrap gap-2">
             {accentOptions.map(o => {
@@ -293,13 +305,17 @@ export default function LessonPractice({ lesson, language, unspaced, onAddVocab,
                     the stress question and the evidence for the rule one, so both shapes end
                     on the same picture and a learner sees where the mark belongs. */}
                 <div style={{ fontSize: 19, color: 'var(--ink)', lineHeight: 1.5 }}>
-                  {q.word.syllables.map((syl, i) => (
-                    <span key={i}>
-                      {i > 0 && <span style={{ color: 'var(--ink-faint)' }}>·</span>}
-                      <span style={{ color: i === q.word.stress ? 'var(--accent)' : 'var(--ink)',
-                        fontWeight: i === q.word.stress ? 600 : 400 }}>{syl}</span>
-                    </span>
-                  ))}
+                  {q.word.syllables
+                    ? q.word.syllables.map((syl, i) => (
+                        <span key={i}>
+                          {i > 0 && <span style={{ color: 'var(--ink-faint)' }}>·</span>}
+                          <span style={{ color: i === q.word.stress ? 'var(--accent)' : 'var(--ink)',
+                            fontWeight: i === q.word.stress ? 600 : 400 }}>{syl}</span>
+                        </span>
+                      ))
+                    /* No syllables means a language whose accents are about letters rather
+                       than stress — marking a "stressed" syllable there would invent one. */
+                    : q.word.word}
                 </div>
                 <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5 }}>
                   {q.word.why}

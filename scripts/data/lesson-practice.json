@@ -1447,6 +1447,20 @@
         "text": "Leur maison est petite.",
         "gloss": "Their house is small."
       }
+    ],
+    "fr-accents": [
+      {
+        "text": "Le café est très chaud.",
+        "gloss": "The coffee is very hot."
+      },
+      {
+        "text": "Ma mère achète du pain.",
+        "gloss": "My mother buys some bread."
+      },
+      {
+        "text": "La forêt est près d'ici.",
+        "gloss": "The forest is near here."
+      }
     ]
   }
 }

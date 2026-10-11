@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildQuestions, isCorrect, bareWord, MIN_ORDER_TILES, CHOICE_OPTIONS,
-  promptFor, hasWrittenAccent, ACCENT_RULE_LABEL,
+  promptFor, hasWrittenAccent,
 } from '@/lib/lessonPractice';
 import { lessonsFor } from '@/lib/data/lessons';
 import { grammarLessons, LESSON_LANGUAGES } from '@/lib/lessons';
@@ -240,14 +240,21 @@ describe('the accent drill', () => {
   const CASA = { word: 'casa', syllables: ['ca', 'sa'], stress: 0, rule: 'llana' as const, why: 'llana in a vowel.' };
   const JAMON = { word: 'jamón', syllables: ['ja', 'món'], stress: 1, rule: 'aguda' as const, why: 'aguda in -n.' };
 
-  it('knows a written accent from a letter that merely has a mark on it', () => {
+  it('knows a diacritic from a letter of the alphabet', () => {
     expect(hasWrittenAccent('jamón')).toBe(true);
     expect(hasWrittenAccent('día')).toBe(true);
-    // ñ is a LETTER and ü is a diaeresis — neither marks stress, and counting either would
-    // send español and vergüenza down the rule branch with no tilde to explain.
+    // Every French mark counts too — this predicate decides whether a word gets asked where
+    // its stress falls, and French has none to find. It was acute-only when the drill was
+    // Spanish-only, which read `garçon` and `très` as unaccented.
+    expect(hasWrittenAccent('garçon')).toBe(true);
+    expect(hasWrittenAccent('très')).toBe(true);
+    expect(hasWrittenAccent('forêt')).toBe(true);
+    expect(hasWrittenAccent('naïf')).toBe(true);
+    expect(hasWrittenAccent('où')).toBe(true);
+    // ñ is a LETTER of the Spanish alphabet, not a mark on one, and no rule here explains it.
     expect(hasWrittenAccent('español')).toBe(false);
-    expect(hasWrittenAccent('vergüenza')).toBe(false);
     expect(hasWrittenAccent('casa')).toBe(false);
+    expect(hasWrittenAccent('hablar')).toBe(false);
   });
 
   it('replaces the sentence questions rather than adding to them', () => {
@@ -270,9 +277,52 @@ describe('the accent drill', () => {
     const [q] = buildQuestions(accentLesson([JAMON]), seeded(2));
     expect(q.kind).toBe('accent-rule');
     if (q.kind !== 'accent-rule') return;
-    expect(q.options).toEqual(Object.keys(ACCENT_RULE_LABEL));
     expect(isCorrect(q, ['aguda'])).toBe(true);
     expect(isCorrect(q, ['llana'])).toBe(false);
+  });
+
+  /**
+   * ⚠ THE OPTIONS COME FROM THE LESSON, NOT FROM THE WHOLE LABEL TABLE.
+   *
+   * That table now holds both languages' rules. Offering all of them would put "cédille —
+   * keeps c soft" among the answers to a Spanish question and "esdrújula" among a French
+   * one — a confidently wrong grammatical label, which is the one thing a beginner cannot
+   * catch. Scoping also makes every option reachable by construction.
+   */
+  it('offers only the rules its own lesson uses', () => {
+    const ARBOL = { word: 'árbol', syllables: ['ár', 'bol'], stress: 0, rule: 'llana' as const, why: 'llana in -l.' };
+    const qs = buildQuestions(accentLesson([JAMON, ARBOL, CASA]), seeded(4));
+    for (const q of qs) {
+      if (q.kind !== 'accent-rule') continue;
+      expect(q.options.sort()).toEqual(['aguda', 'llana']);
+      expect(q.options as string[]).not.toContain('cedille');
+      expect(q.options as string[]).not.toContain('circonflexe');
+    }
+  });
+
+  /**
+   * The French shape. `é` against `è` is the choice a learner actually gets wrong, and the
+   * options are the spellings they could plausibly write — including the bare letter, which
+   * is the commonest wrong answer of all.
+   */
+  it('blanks the letter for a French word and offers the real alternatives', () => {
+    const CAFE = { word: 'café', rule: 'aigu' as const, why: 'the closed e.' };
+    const [q] = buildQuestions(accentLesson([CAFE]), seeded(6));
+    expect(q.kind).toBe('accent-letter');
+    if (q.kind !== 'accent-letter') return;
+    expect(q.masked).not.toContain('é');
+    expect(q.masked.replace(/\u2002/u, 'é')).toBe('café');
+    expect(q.options).toEqual(['e', 'é', 'è', 'ê']);
+    expect(isCorrect(q, ['é'])).toBe(true);
+    expect(isCorrect(q, ['è'])).toBe(false);
+    expect(isCorrect(q, ['e'])).toBe(false);
+  });
+
+  it('asks a French word for its rule where the mark is history rather than a choice', () => {
+    const FORET = { word: 'forêt', rule: 'circonflexe' as const, why: 'the lost s of forest.' };
+    const OU = { word: 'où', rule: 'grave-homographe' as const, why: 'separates où from ou.' };
+    const qs = buildQuestions(accentLesson([FORET, OU]), seeded(8));
+    expect(qs.every(q => q.kind === 'accent-rule')).toBe(true);
   });
 
   it('names the word in the rule prompt and not in the stress one', () => {

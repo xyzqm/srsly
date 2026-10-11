@@ -878,6 +878,96 @@ which makes them the easy half.`,
         tiles: ['Mon', 'amie', "s'appelle", 'Marie.'] },
     ],
   },
+  {
+    id: 'fr-accents',
+    kind: 'grammar',
+    title: 'Accents: é, è, ê, ç, ï',
+    summary: 'What each mark does — and why forêt lost its s',
+    explanation: `A French accent is not decoration and it is not stress. Spanish writes a mark
+to say which syllable is emphasised; French does not mark stress at all — it falls at the end
+of a rhythmic group and nothing records it. Every French accent is telling you something about
+the LETTER it sits on.
+
+é, the accent aigu, goes on e and nowhere else. It is the closed e of café, été, parlé — the
+ending of thousands of -er infinitives and past participles.
+
+è, the accent grave on e, is the open e of père, très, mère. These are two different sounds,
+and swapping them is the mistake that marks a sentence as foreign.
+
+à and où carry a grave too, and there it changes NOTHING about the sound. It is there to keep
+two words apart: a (has) from à (to), ou (or) from où (where), la (the) from là (there). ù
+appears in exactly one French word, and that word is où.
+
+ê, â, î, ô, û — the circonflexe — is usually a ghost. It marks a letter that used to be in the
+word and has fallen out, almost always an s: forêt was forest, hôpital was hospital, île was
+isle, pâte was paste. Once you can see it, a column of French vocabulary stops looking
+arbitrary and starts looking like English with the s removed.
+
+ç, the cédille, only ever goes under a c and only before a, o or u — exactly where c would
+otherwise be hard. Before e and i it is already soft (ceci, cinéma), so the mark would have
+nothing to do.
+
+ë, ï, ü — the tréma — says the vowel is sounded separately from the one before it instead of
+joining it. naïf is na-ïf; Noël is no-ël. It is the one French mark doing the job a Spanish
+accent does on a weak vowel: it breaks a pair apart.`,
+    table: {
+      caption: 'What each mark is doing',
+      columns: ['Mark', 'Where it goes', 'What it does', 'Example'],
+      rows: [
+        ['é',         'on e only',              'the closed e sound',            'café'],
+        ['è',         'on e',                   'the open e sound',              'père'],
+        ['à, où',     'on a and u',             'nothing — keeps two words apart', 'où'],
+        ['ê â î ô û', 'any vowel',              'a lost letter, usually s',      'forêt'],
+        ['ç',         'under c, before a o u',  'keeps c soft',                  'garçon'],
+        ['ë ï ü',     'on the second vowel',    'sound it separately',           'naïf'],
+      ],
+    },
+    pitfall: `Learn the pairs that turn on nothing but the mark, because both spellings are
+real words and neither is said differently: a / à, ou / où, la / là, sur / sûr, du / dû. The
+one that costs most, though, is not a pair at all — it is é against è. Both are e, both are
+everywhere, and they are different sounds: préfère carries one of each, and saying it with two
+of the same is the single clearest sign of an accent.`,
+    examples: [
+      { text: 'Le garçon boit un café.', gloss: 'The boy drinks a coffee — ç keeps the c soft before o, and é is the closed e.',
+        tiles: ['Le', 'garçon', 'boit', 'un', 'café.'] },
+      { text: 'Mon père habite près de la forêt.', gloss: 'My father lives near the forest — è is the open e, and the circumflex on forêt is the s of "forest".',
+        tiles: ['Mon', 'père', 'habite', 'près', 'de', 'la', 'forêt.'] },
+      { text: "C'est très naïf.", gloss: 'That is very naive — è again, and the tréma makes naïf two syllables rather than one.',
+        tiles: ["C'est", 'très', 'naïf.'] },
+    ],
+    /**
+     * The drill. Four LETTER questions and four RULE ones, and which a word gets is decided
+     * by its rule in `lib/lessonPractice.ts` rather than per word here.
+     *
+     * The split is a judgement about where the learning is. é and è are choices made with a
+     * pen — the learner hears the word and has to write the right mark — so those are asked
+     * by blanking the letter. The other four are facts about why a mark exists at all, which
+     * no amount of staring at the word reveals, so those are asked as rules.
+     *
+     * No `syllables` on any of them, deliberately: French has no lexical stress, so there is
+     * no stressed syllable to mark and inventing one would be data written to satisfy a type.
+     */
+    accentWords: [
+      // ── Asked as letters: the e that a learner has to choose.
+      { word: 'café', rule: 'aigu',
+        why: 'é is the CLOSED e. It ends café, été and every -er infinitive and past participle, and it is the only accent that sits on a final e like this.' },
+      { word: 'santé', rule: 'aigu',
+        why: 'The same closed e. Hear the end of café and you can spell santé, marché and liberté without being told.' },
+      { word: 'mère', rule: 'grave-son',
+        why: 'è is the OPEN e — a different sound from é, not a different decoration. Say mère and café one after the other; the mark is recording that difference.' },
+      { word: 'très', rule: 'grave-son',
+        why: 'Open e again, in one of the commonest words in the language. é here would be the wrong sound.' },
+      // ── Asked as rules: marks whose reason is not visible in the word.
+      { word: 'garçon', rule: 'cedille',
+        why: 'The cédille goes under a c only before a, o or u — exactly where c would otherwise be hard. Before e and i (ceci, cinéma) it is already soft and the mark would do nothing.' },
+      { word: 'forêt', rule: 'circonflexe',
+        why: 'The circumflex marks a letter that fell out of the word, almost always an s: forêt was forest, hôpital hospital, île isle. It is history rather than pronunciation.' },
+      { word: 'où', rule: 'grave-homographe',
+        why: 'This grave changes no sound whatsoever. It separates où ("where") from ou ("or") — and ù appears in no other French word.' },
+      { word: 'naïf', rule: 'trema',
+        why: 'The tréma says the vowel is sounded separately from the one before it: na-ïf, not a single run. It does for French what an accent on a weak vowel does in Spanish.' },
+    ],
+  },
   { id: 'fr-v-basics',  kind: 'vocab', theme: 'basics',
     title: 'Everyday words', summary: 'The small words that hold sentences together' },
   { id: 'fr-v-numbers', kind: 'vocab', theme: 'numbers',

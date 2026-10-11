@@ -66,7 +66,30 @@ export interface LessonTable {
  * learner who can say "aguda ending in -n" can spell every word in that class, where one who
  * has merely memorised `jamón` can spell exactly `jamón`.
  */
-export type AccentRule = 'aguda' | 'llana' | 'esdrujula' | 'hiato' | 'diacritica';
+export type EsAccentRule = 'aguda' | 'llana' | 'esdrujula' | 'hiato' | 'diacritica';
+
+/**
+ * ⚠ FRENCH IS A SEPARATE SET BECAUSE A FRENCH ACCENT MARKS THE VOWEL, NOT THE STRESS.
+ *
+ * Spanish stress is lexical and the tilde exists to write it down, so every Spanish rule names
+ * a stressed syllable. French stress is not lexical at all — it falls on the last syllable of
+ * a rhythmic group and no mark records it — so `aguda` and friends describe nothing a French
+ * word has. Sharing one union would let a French word be labelled "stressed on the
+ * second-to-last", which is a confidently wrong grammatical label in front of a beginner, and
+ * `tests/lessons.test.ts` asserts a lesson never mixes the two sets.
+ *
+ * The names do not collide, so neither set needs a prefix and the shipped Spanish data did not
+ * have to be migrated to make room.
+ */
+export type FrAccentRule =
+  | 'aigu'              // é — the closed e
+  | 'grave-son'         // è — the open e
+  | 'grave-homographe'  // à, où — no sound change at all; it separates two words
+  | 'circonflexe'       // ê, ô — a letter, usually s, that used to be there
+  | 'cedille'           // ç — keeps c soft before a, o, u
+  | 'trema';            // ï, ë — the vowel is sounded separately from the one before it
+
+export type AccentRule = EsAccentRule | FrAccentRule;
 
 /**
  * One word the accent drill asks about.
@@ -84,12 +107,24 @@ export type AccentRule = 'aguda' | 'llana' | 'esdrujula' | 'hiato' | 'diacritica
  * question is answered by tapping one and two identical tiles would make the answer ambiguous.
  */
 export interface AccentWord {
-  /** The word as it is correctly written, tilde and all. */
+  /** The word as it is correctly written, mark and all. */
   word: string;
-  /** Its syllables in order, spelled exactly as in `word`. */
-  syllables: string[];
-  /** Index into `syllables` of the stressed one. */
-  stress: number;
+  /**
+   * Its syllables in order, spelled exactly as in `word` — SPANISH ONLY, and optional for
+   * that reason.
+   *
+   * A Spanish accent is a statement about which syllable is stressed, so the syllables are
+   * the subject of the lesson and the drill asks the learner to point at one. A French accent
+   * is a statement about a LETTER, and French has no lexical stress to point at — so
+   * declaring syllables on a French word would be data invented to satisfy a type, and the
+   * explanation panel would mark a "stressed" syllable that French does not have.
+   *
+   * Required of any word with NO written accent, because the only question such a word can be
+   * asked is where its stress falls. A test pins that.
+   */
+  syllables?: string[];
+  /** Index into `syllables` of the stressed one. Spanish only; see above. */
+  stress?: number;
   /** Which rule settles it. */
   rule: AccentRule;
   /** The reason, in one sentence, shown after answering either way. */

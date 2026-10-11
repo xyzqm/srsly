@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ACCENT_RULE_LABEL } from '../lib/lessonPractice';
+import { ACCENT_RULE_LABEL, buildQuestions } from '../lib/lessonPractice';
 import { grammarLessons, vocabLessons, nextGrammarLesson, hasLessons, LESSON_LANGUAGES } from '@/lib/lessons';
 import { lessonsFor } from '@/lib/data/lessons';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
@@ -217,6 +217,8 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
     describe('accent words', () => {
       const withAccents = LESSON_LANGUAGES.flatMap(lang =>
         lessonsFor(lang).filter(l => l.accentWords?.length));
+      /** Every character either rule set can mark — acute, grave, circumflex, tréma, cédille. */
+      const ACCENTED = /[áéíóúàèùâêîôûäëïöüç]/u;
 
       it('is used by at least one lesson, or these assertions are vacuous', () => {
         expect(withAccents.length).toBeGreaterThan(0);
@@ -225,6 +227,7 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
       it('spells its own word out of its syllables', () => {
         for (const l of withAccents) {
           for (const w of l.accentWords!) {
+            if (!w.syllables) continue;   // letters-not-stress language; see AccentWord
             expect(w.syllables.join(''), `${l.id}: syllables do not spell «${w.word}»`)
               .toBe(w.word);
           }
@@ -234,8 +237,9 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
       it('points the stress at a syllable that exists', () => {
         for (const l of withAccents) {
           for (const w of l.accentWords!) {
-            expect(w.stress, `${l.id}: ${w.word} stress out of range`).toBeGreaterThanOrEqual(0);
-            expect(w.stress, `${l.id}: ${w.word} stress out of range`).toBeLessThan(w.syllables.length);
+            if (!w.syllables) continue;
+            expect(w.stress ?? -1, `${l.id}: ${w.word} stress out of range`).toBeGreaterThanOrEqual(0);
+            expect(w.stress ?? -1, `${l.id}: ${w.word} stress out of range`).toBeLessThan(w.syllables.length);
           }
         }
       });
@@ -248,30 +252,85 @@ for (const lang of LESSON_LANGUAGES as LanguageCode[]) {
       it('keeps a word\'s syllables distinct, because the answer is compared by text', () => {
         for (const l of withAccents) {
           for (const w of l.accentWords!) {
+            if (!w.syllables) continue;
             expect(new Set(w.syllables).size, `${l.id}: «${w.word}» repeats a syllable`)
               .toBe(w.syllables.length);
           }
         }
       });
 
-      /** Every rule reachable, and the drill not three copies of one question. */
-      it('covers every rule it offers as an option', () => {
+      /**
+       * ⚠ A LESSON MAY NOT MIX THE TWO RULE SETS.
+       *
+       * Spanish rules name a stressed syllable and French ones name something about a letter,
+       * and the options a question offers are drawn from the lesson's own words — so one
+       * stray `llana` on a French word would put "stressed on the second-to-last" in front of
+       * a learner of a language that has no lexical stress. Nothing else can catch that: both
+       * sets satisfy the type, and the label renders perfectly well.
+       */
+      it('never mixes the Spanish and French rule sets', () => {
+        const ES = new Set(['aguda', 'llana', 'esdrujula', 'hiato', 'diacritica']);
+        const FR = new Set(['aigu', 'grave-son', 'grave-homographe', 'circonflexe', 'cedille', 'trema']);
         for (const l of withAccents) {
-          const used = new Set(l.accentWords!.filter(w => /[áéíóú]/u.test(w.word)).map(w => w.rule));
-          expect([...used].sort(), `${l.id}: the rule options are not all reachable`)
-            .toEqual((Object.keys(ACCENT_RULE_LABEL) as string[]).sort());
+          const used = l.accentWords!.map(w => w.rule as string);
+          const allEs = used.every(r => ES.has(r));
+          const allFr = used.every(r => FR.has(r));
+          expect(allEs || allFr, `${l.id}: mixes rule sets — ${used.join(', ')}`).toBe(true);
+        }
+      });
+
+      /** Every label the options can show must exist, or a button renders `undefined`. */
+      it('labels every rule it uses', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            expect(ACCENT_RULE_LABEL[w.rule], `${l.id}: ${w.rule} has no label`).toBeTruthy();
+          }
         }
       });
 
       /**
-       * Both shapes present. All-accented would be a drill that never asks where a stress
-       * falls; all-unaccented would never ask why a mark is written.
+       * A rule question picks from the rules the lesson's own words use, so too few distinct
+       * rules makes it a coin flip rather than a question.
        */
-      it('asks both questions', () => {
+      it('offers enough rules that naming one is not a guess', () => {
         for (const l of withAccents) {
-          const words = l.accentWords!;
-          expect(words.some(w => /[áéíóú]/u.test(w.word)), `${l.id}: no rule questions`).toBe(true);
-          expect(words.some(w => !/[áéíóú]/u.test(w.word)), `${l.id}: no stress questions`).toBe(true);
+          const accented = l.accentWords!.filter(w => ACCENTED.test(w.word));
+          const rules = new Set(accented.map(w => w.rule));
+          expect(rules.size, `${l.id}: only ${rules.size} rule(s) to choose between`)
+            .toBeGreaterThanOrEqual(4);
+        }
+      });
+
+      /**
+       * A word with NO written mark can only be asked where its stress falls, so it must say.
+       * Without this a Spanish word missing its syllables would silently become a one-option
+       * question whose only answer is the whole word.
+       */
+      it('gives every unaccented word the syllables its question needs', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!.filter(x => !ACCENTED.test(x.word))) {
+            expect(w.syllables?.length, `${l.id}: «${w.word}» has no mark and no syllables`)
+              .toBeGreaterThan(1);
+          }
+        }
+      });
+
+      /** A letter question blanks ONE character, so two would make the gap ambiguous. */
+      it('keeps letter-question words to a single accented character', () => {
+        for (const l of withAccents) {
+          for (const w of l.accentWords!) {
+            if (!ACCENTED.test(w.word)) continue;
+            const marks = [...w.word].filter(c => ACCENTED.test(c));
+            expect(marks.length, `${l.id}: «${w.word}» carries ${marks.length} marks`).toBe(1);
+          }
+        }
+      });
+
+      /** Two shapes per lesson, or the drill asks one thing eight times. */
+      it('asks more than one kind of question', () => {
+        for (const l of withAccents) {
+          const kinds = new Set(buildQuestions(l, () => 0.5).map(q => q.kind));
+          expect(kinds.size, `${l.id}: every question is a ${[...kinds][0]}`).toBeGreaterThan(1);
         }
       });
 

@@ -94,28 +94,112 @@ export interface AccentRuleQuestion {
   answer: AccentRule;
 }
 
-export type PracticeQuestion = OrderQuestion | ChoiceQuestion | AccentStressQuestion | AccentRuleQuestion;
+/**
+ * Write the word: one accented character is blanked and the learner picks it.
+ *
+ * ⚠ THIS IS THE FRENCH ANALOGUE OF THE SPANISH STRESS QUESTION, AND IT HAD TO BE A DIFFERENT
+ * SHAPE. The Spanish drill can ask "which syllable is stressed" because Spanish stress is
+ * lexical and the tilde writes it down. French stress is not lexical at all, so there is
+ * nothing to point at — the decision a French learner actually makes while writing is WHICH
+ * MARK the letter takes, and `é` against `è` is the one they get wrong.
+ *
+ * The options are the real alternatives for that letter, so this is a choice between spellings
+ * a learner could plausibly produce rather than between a right answer and three absurdities.
+ */
+export interface AccentLetterQuestion {
+  kind: 'accent-letter';
+  word: AccentWord;
+  /** The word with the accented character replaced, for display. */
+  masked: string;
+  options: string[];
+  answer: string;
+}
+
+export type PracticeQuestion =
+  | OrderQuestion | ChoiceQuestion
+  | AccentStressQuestion | AccentRuleQuestion | AccentLetterQuestion;
 
 /** Short enough for a button, specific enough to be a real choice. */
 export const ACCENT_RULE_LABEL: Record<AccentRule, string> = {
+  // Spanish — every one of these names a stressed syllable.
   aguda:      'aguda — stressed on the last syllable',
   llana:      'llana — stressed on the second-to-last',
   esdrujula:  'esdrújula — stressed on the third-to-last',
   hiato:      'hiato — a stressed i or u splitting the pair',
   diacritica: 'tilde diacrítica — it tells two words apart',
+  // French — every one of these names something about a LETTER. See `FrAccentRule`.
+  'aigu':             'accent aigu — the closed e of café',
+  'grave-son':        'accent grave — the open e of père',
+  'grave-homographe': 'accent grave — no sound change; it separates two words',
+  'circonflexe':      'accent circonflexe — a letter, usually s, that used to be there',
+  'cedille':          'cédille — keeps c soft before a, o and u',
+  'trema':            'tréma — the vowel is sounded separately from the one before it',
 };
 
-const ACCENT_RULES = Object.keys(ACCENT_RULE_LABEL) as AccentRule[];
+/**
+ * Which question each rule earns.
+ *
+ * ⚠ THE OPTIONS ARE SCOPED TO THE LESSON, NOT TO THIS TABLE. A Spanish question must never
+ * offer `cédille` and a French one must never offer `esdrújula`, so `buildQuestions` draws the
+ * option list from the rules the LESSON'S OWN WORDS use. That also makes every option
+ * reachable by construction rather than by a list somebody has to keep in step.
+ *
+ * The split between asking for the letter and asking for the rule is a judgement about where
+ * the learning is, and it is a table rather than a per-word field so it cannot drift word by
+ * word. `aigu` and `grave-son` are choices you make with a pen — which is why they are the two
+ * French learners get wrong — so they are asked as letters. The other four are facts about why
+ * a mark exists at all, which no amount of staring at the word reveals, so they are asked as
+ * rules. Spanish is all rules, because its own second shape is the stress question below.
+ */
+const QUESTION_FOR_RULE: Record<AccentRule, 'rule' | 'letter'> = {
+  aguda: 'rule', llana: 'rule', esdrujula: 'rule', hiato: 'rule', diacritica: 'rule',
+  'aigu': 'letter', 'grave-son': 'letter',
+  'grave-homographe': 'rule', 'circonflexe': 'rule', 'cedille': 'rule', 'trema': 'rule',
+};
 
 /**
- * Does this word carry a written accent?
+ * The spellings a learner could plausibly write instead.
  *
- * Acute vowels ONLY. `ñ` is a letter rather than a mark, and `ü` is a diaeresis that says the
- * u is pronounced in `güe`/`güi` — neither marks stress, and counting either would send a word
- * like `español` or `vergüenza` down the wrong branch.
+ * Keyed by the CORRECT character and always including the bare letter, because "no accent at
+ * all" is the commonest wrong answer and leaving it out would make the question easier than
+ * writing the word is.
+ */
+const LETTER_CHOICES: Record<string, string[]> = {
+  'é': ['e', 'é', 'è', 'ê'],
+  'è': ['e', 'é', 'è', 'ê'],
+  'ê': ['e', 'é', 'è', 'ê'],
+  'ë': ['e', 'é', 'è', 'ë'],
+  'à': ['a', 'à', 'â'],
+  'â': ['a', 'à', 'â'],
+  'î': ['i', 'î', 'ï'],
+  'ï': ['i', 'î', 'ï'],
+  'ô': ['o', 'ó', 'ô'],
+  'ù': ['u', 'ù', 'û'],
+  'û': ['u', 'ù', 'û'],
+  'ç': ['c', 'ç'],
+};
+
+/** Where the one accented character sits, or -1. Exported for the test that pins "exactly one". */
+export function accentedCharIndex(word: string): number {
+  return [...word].findIndex(c => c in LETTER_CHOICES);
+}
+
+/**
+ * Does this word carry a diacritic one of the rule sets explains?
+ *
+ * ⚠ THIS WAS ACUTE-VOWELS-ONLY AND THAT WAS RIGHT FOR A SPANISH-ONLY DRILL AND WRONG AS A
+ * GENERAL TEST. The reasoning then was that `ü` is a diaeresis rather than a stress mark, so
+ * counting it would send `vergüenza` down the rule branch with no tilde to explain — true of
+ * SPANISH, where every rule names a stressed syllable. French has a tréma rule, a cédille rule
+ * and three graves that are not acute, so the narrow version read every French word in the
+ * drill as unaccented and would have asked where the stress falls in a language that has no
+ * lexical stress to find.
+ *
+ * `ñ` stays out, and that half of the original reasoning survives intact: it is a LETTER of
+ * the Spanish alphabet rather than a mark on one, and no rule here explains it.
  */
 export function hasWrittenAccent(word: string): boolean {
-  return /[áéíóúÁÉÍÓÚ]/u.test(word);
+  return /[áéíóúàèùâêîôûëïüç]/iu.test(word);
 }
 
 
@@ -168,7 +252,15 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
   // An orthography lesson gets the accent drill INSTEAD of the sentence one. Which shape a
   // lesson gets is decided from its own data, the same way `MIN_ORDER_TILES` decides between
   // ordering and choosing — see `AccentWord` for why ordering tiles cannot ask about spelling.
-  if (lesson.accentWords?.length) return shuffle(lesson.accentWords.map(accentQuestion), rand);
+  if (lesson.accentWords?.length) {
+    // Only the rules this lesson's own words use, so a Spanish question cannot offer `cédille`
+    // and a French one cannot offer `esdrújula`. Declaration order, not shuffled: a stable
+    // option list is one the learner can scan rather than re-read on every question.
+    const ruleOptions = [...new Set(
+      lesson.accentWords.filter(w => hasWrittenAccent(w.word)).map(w => w.rule),
+    )];
+    return shuffle(lesson.accentWords.map(w => accentQuestion(w, ruleOptions)), rand);
+  }
 
   const buildable = (list?: LessonExample[]) => (list ?? []).filter(e => (e.tiles?.length ?? 0) > 1);
   // Purpose-written sentences when the lesson has them; the printed examples otherwise, so a
@@ -226,16 +318,31 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
  * answerable by reading the prompt, which is the whole reason the split exists rather than
  * one question type for all of them.
  */
-function accentQuestion(word: AccentWord): PracticeQuestion {
-  if (hasWrittenAccent(word.word)) {
-    return { kind: 'accent-rule', word, options: ACCENT_RULES, answer: word.rule };
+function accentQuestion(word: AccentWord, ruleOptions: AccentRule[]): PracticeQuestion {
+  // No mark at all: the only thing such a word can be asked is where its stress falls, and
+  // only Spanish has words in the drill without one. A test requires the syllables.
+  if (!hasWrittenAccent(word.word)) {
+    const syllables = word.syllables ?? [word.word];
+    return {
+      kind: 'accent-stress',
+      word,
+      options: syllables,
+      answer: syllables[word.stress ?? 0],
+    };
   }
-  return {
-    kind: 'accent-stress',
-    word,
-    options: word.syllables,
-    answer: word.syllables[word.stress],
-  };
+  if (QUESTION_FOR_RULE[word.rule] === 'letter') {
+    const i = accentedCharIndex(word.word);
+    const chars = [...word.word];
+    const answer = chars[i];
+    return {
+      kind: 'accent-letter',
+      word,
+      masked: chars.map((c, j) => (j === i ? '\u2002' : c)).join(''),
+      options: LETTER_CHOICES[answer],
+      answer,
+    };
+  }
+  return { kind: 'accent-rule', word, options: ruleOptions, answer: word.rule };
 }
 
 function sameOrder(a: string[], b: string[]): boolean {
@@ -268,7 +375,10 @@ export function promptFor(q: PracticeQuestion): string {
   // An accent question has no sentence and no gloss — it asks about one word, and the word is
   // shown beside the prompt rather than inside it.
   if (q.kind === 'accent-stress') return 'Which syllable is stressed?';
-  if (q.kind === 'accent-rule') return `Why does ${q.word.word} carry a tilde?`;
+  if (q.kind === 'accent-letter') return 'Which accent does this letter take?';
+  // "mark" rather than "tilde": the same question is asked of a cédille and a circonflexe,
+  // and calling either a tilde would be wrong in the prompt that introduces them.
+  if (q.kind === 'accent-rule') return `Why does ${q.word.word} carry its mark?`;
   const [meaning] = q.example.gloss.split(' — ');
   return meaning.trim();
 }

@@ -1468,14 +1468,16 @@ part of the primary school", `yaourt` with "a song where the singer makes up the
 
 ### The lesson tree
 
-`components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: **186 lessons
+`components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: **188 lessons
 across four trees**, one per language, each split into two sections — a numbered grammar track
-(28 lessons for French and Spanish, 23 for Chinese and Japanese) and 21 vocabulary sets. That is
-102 grammar lessons and 84 word sets in total.
+(29 lessons for French and Spanish, 23 for Chinese and Japanese) and 21 vocabulary sets. That is
+104 grammar lessons and 84 word sets in total.
 
 *(This line read "33 lessons in 6 lessons per language" — a number that was stale by a factor of
 five and a sentence that had stopped parsing. Counted from `lessonsFor()` rather than estimated,
-the same way every other figure in this file is meant to be.)* `TabNav` still
+the same way every other figure in this file is meant to be. **It then went stale again, by two**:
+`es-accents` and `fr-accents` were both added without touching it, so a paragraph whose own
+footnote is about being stale was wrong within a fortnight. Count it, do not adjust it.)* `TabNav` still
 filters on `hasLessons`, because an empty tab reads as a broken one.
 
 **GRAMMAR IS THE COURSE; WORDS ARE A SHELF.** The two are split rather than interleaved because
@@ -1623,6 +1625,46 @@ reachable, so the drill cannot become three copies of one question.
 *(The three practice SENTENCES stay on the lesson, because every grammar lesson is required to
 have them and they are the fallback if `accentWords` is ever removed — a lesson degrades rather
 than emptying. They are simply not what this lesson drills.)*
+
+**⚠ AND FRENCH NEEDED A FOURTH SHAPE, BECAUSE A FRENCH ACCENT IS NOT ABOUT STRESS AT ALL.**
+`fr-accents` reuses the drill and could reuse almost none of the Spanish thinking. Spanish
+stress is LEXICAL and the tilde exists to write it down, so every Spanish rule names a stressed
+syllable and the second question can ask the learner to point at one. **French has no lexical
+stress** — it falls at the end of a rhythmic group and no mark records it — so there is nothing
+to point at, and every French accent is instead a statement about a LETTER: é is a sound, ç is a
+soft c, the circumflex is a ghost s, the tréma splits a vowel pair, and the grave on `à` and `où`
+changes nothing at all and merely separates two words.
+
+So the French second shape is `accent-letter`: one accented character is blanked and the learner
+picks it from the spellings they could plausibly have written, the bare letter included because
+"no accent" is the commonest wrong answer. `m_re` against `e / é / è / ê` is the decision a
+French learner actually gets wrong, which the stress question could not have asked.
+
+**WHICH SHAPE A WORD GETS IS A TABLE (`QUESTION_FOR_RULE`), NOT A PER-WORD FIELD**, so it cannot
+drift word by word. `aigu` and `grave-son` are choices made with a pen, so they are asked as
+letters; the other four are facts about why a mark exists at all, which no amount of staring at
+the word reveals, so they are asked as rules. Spanish is all rules, because its own second shape
+is the stress question.
+
+**THE RULE OPTIONS ARE SCOPED TO THE LESSON**, drawn from the rules its own words use. The label
+table now holds both languages, and offering all of it would put *"cédille — keeps c soft"*
+among the answers to a Spanish question and *"esdrújula"* among a French one — a confidently
+wrong grammatical label, which is the one thing a beginner cannot catch. Scoping also makes
+every option reachable by construction rather than by a list somebody keeps in step, and a test
+asserts a lesson never mixes the two sets.
+
+**AND `hasWrittenAccent` WAS ACUTE-ONLY, WHICH WAS RIGHT FOR A SPANISH-ONLY DRILL AND WRONG AS A
+PREDICATE.** Its comment argued that `ü` is a diaeresis rather than a stress mark, so counting
+it would send `vergüenza` down the rule branch with no tilde to explain — true of Spanish, where
+every rule names a stressed syllable, and false the moment a tréma rule exists. The narrow
+version read every French word in the drill as UNACCENTED and would have asked where the stress
+falls in a language that has none. `ñ` stays excluded and that half of the reasoning survives: it
+is a letter of the Spanish alphabet rather than a mark on one.
+
+`syllables` and `stress` are **optional** on `AccentWord` for the same reason — a French word
+declaring them would be data invented to satisfy a type, and the explanation panel would mark a
+stressed syllable the language does not have. A test requires them of any word with NO mark,
+since where-is-the-stress is the only question such a word can be asked.
 
 **AND EVERY SPANISH AND FRENCH SENTENCE IN THE APP STARTED WITH A LOWERCASE LETTER.** Reported
 alongside the above and much larger than the lesson it was noticed in: **171 practice sentences
