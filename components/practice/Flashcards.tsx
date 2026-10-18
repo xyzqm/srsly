@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
+import { hasLessons } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
 import { isDueToday, isActive, todayStr } from '@/lib/deck';
@@ -279,8 +280,24 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       <div className="text-center py-14">
         <div style={{ fontFamily: 'var(--f-han)', fontSize: stateGlyphSize(ui.empty), color: 'var(--ink-faint)', fontWeight: 'var(--han-weight)' as 'bold' }}>{ui.empty}</div>
         <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 500, marginTop: 10 }}>No words in your deck yet.</h3>
-        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '34ch', marginInline: 'auto', lineHeight: 1.6 }}>
-          Go to the <strong>Read</strong> tab and click any underlined word to add it, or add words manually in the <strong>Vocab</strong> tab.
+        {/*
+          ── THE ROUTES OUT, CHEAPEST FIRST ───────────────────────────────────
+          CLAUDE.md's rule is that this must never say "add words in Vocab" FIRST, because
+          reading is what fills the deck and a word list is the boring half. That still holds,
+          and it was written when there were only two answers.
+
+          There is now a third and for a beginner it is the fastest: a vocabulary lesson in the
+          Learn tab is 26 words and one tap. Somebody staring at an empty deck in a language
+          they have just started cannot usefully be sent to read — that was the same dead end
+          Home had, and it is this screen's version of it. Reading keeps the lead for anyone
+          who can already read; the course is named beside it rather than instead of it, and
+          only where the language actually has one.
+        */}
+        <p style={{ color: 'var(--ink-soft)', margin: '8px 0 0', maxWidth: '36ch', marginInline: 'auto', lineHeight: 1.6 }}>
+          Go to the <strong>Read</strong> tab and click any underlined word to add it
+          {hasLessons(language)
+            ? <> — or open the <strong>Learn</strong> tab, where a word set fills your deck in one tap.</>
+            : <>, or add words manually in the <strong>Vocab</strong> tab.</>}
         </p>
       </div>
     );
