@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { storage } from '@/lib/storage';
+import { logLesson } from '@/lib/activityLog';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { type Lesson } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
@@ -100,16 +101,39 @@ export default function LearnTab({ onNavigateSrs, active = true, onActivity, str
     setStreakNote({ day: extendedTo ?? streak, extended: extendedTo !== undefined });
   }, [onActivity, streak]);
 
+  /**
+   * ⚠ EVERY SIDE EFFECT HERE IS OUTSIDE THE `setDone` UPDATER, AND ONE CLICK PROVED WHY.
+   *
+   * This used to do its work inside `setDone(prev => …)`. React treats a state updater as a
+   * PURE function and calls it twice under StrictMode to prove it is one — so a single click
+   * on "Add 25 words" wrote `{"d":"2026-10-18","n":0,"l":2}`: two lessons logged for one
+   * lesson finished, and a weekly XP total inflated by a factor of two.
+   *
+   * It was invisible before XP existed, because the two effects already in there were
+   * idempotent: `saveLessonsDone` writes the same array twice and `countToday` is guarded by
+   * `recordActivity`'s own "already counted today". `logLesson` ACCUMULATES, so it was the
+   * first one that could show the double — found by reading localStorage after a single
+   * click rather than by reading this function.
+   *
+   * CLAUDE.md records the same hazard from the other side: `lib/completionSurface.ts` is a
+   * Set keyed by instance "so that StrictMode's double render is a no-op instead of a
+   * permanent +1".
+   */
   const mark = useCallback((id: string) => {
-    setDone(prev => {
-      const next = new Set(prev);
-      const finishing = !next.has(id);
-      if (finishing) next.add(id); else next.delete(id);
-      void storage.saveLessonsDone([...next]);
-      if (finishing) void countToday();
-      return next;
-    });
-  }, [countToday]);
+    const finishing = !done.has(id);
+    const next = new Set(done);
+    if (finishing) next.add(id); else next.delete(id);
+    setDone(next);
+    void storage.saveLessonsDone([...next]);
+    if (finishing) {
+      // A DATE for something that otherwise has none: `srsly-lessons-done` is a flat list of
+      // ids, so without this a finished lesson could never appear in a weekly total. See
+      // `DayActivity.l`. Separate from `countToday`, which is about the streak and fires only
+      // on the day's FIRST study, where this has to count every lesson.
+      logLesson();
+      void countToday();
+    }
+  }, [done, countToday]);
 
   const open = all.find(l => l.id === openId) ?? null;
   const units = useMemo(() => unitsFor(language), [language]);

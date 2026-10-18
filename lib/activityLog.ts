@@ -15,7 +15,25 @@ import { todayStr } from './deck';
  * flashcards and finishing a passage land in the same series and neither can drift.
  */
 
-export interface DayActivity { d: string; n: number }
+export interface DayActivity {
+  d: string;
+  /** Cards graded that day. The review heatmap's only input. */
+  n: number;
+  /**
+   * Lessons finished that day — OPTIONAL, and absent on every row written before XP existed.
+   *
+   * ⚠ IT IS A SECOND FIELD RATHER THAN A SECOND LOG, AND IT IS DELIBERATELY NOT `n`.
+   * XP needs a DATED record of lesson completions and `srsly-lessons-done` is a flat list of
+   * ids with no dates — so without this, finishing a lesson could never earn anything that a
+   * weekly total could see. Folding it into `n` was the tempting shortcut and would have
+   * inflated the review heatmap, which reads `n` and means "cards graded" in its own legend.
+   *
+   * It rides on this record because the record already syncs, already merges per-day MAX,
+   * already prunes to the same window, and is already the one dated thing a device writes.
+   * A parallel log would have been a second copy of all four of those decisions.
+   */
+  l?: number;
+}
 
 const KEY = 'srsly-activity-log';
 
@@ -91,6 +109,25 @@ export function logGraded(count = 1): void {
   } catch { /* quota or private mode — the review itself already landed */ }
 }
 
+/**
+ * Record that a lesson was finished today.
+ *
+ * Separate from `logGraded` and never touching `n`: a lesson is not a graded card, the heatmap
+ * says "cards graded" in its own legend, and the curriculum is firewalled from FSRS. This adds
+ * a DATE to something that previously had none — see `DayActivity.l`.
+ */
+export function logLesson(count = 1): void {
+  if (typeof localStorage === 'undefined' || count <= 0) return;
+  try {
+    const log = getActivityLog();
+    const today = todayStr();
+    const i = log.findIndex(e => e.d === today);
+    if (i >= 0) log[i] = { ...log[i], l: (log[i].l ?? 0) + count };
+    else log.push({ d: today, n: 0, l: count });
+    localStorage.setItem(KEY, JSON.stringify(log));
+  } catch { /* quota or private mode — the lesson tick itself already landed */ }
+}
+
 /** Replace the whole log — used by the storage layer after a cloud merge. Never throws. */
 export function setActivityLog(log: DayActivity[]): void {
   if (typeof localStorage === 'undefined') return;
@@ -112,10 +149,20 @@ export function setActivityLog(log: DayActivity[]): void {
  * already takes: it counts only what was logged and refuses to reconstruct the rest.
  */
 export function mergeActivity(a: DayActivity[], b: DayActivity[]): DayActivity[] {
-  const byDay = new Map<string, number>();
-  for (const { d, n } of [...a, ...b]) byDay.set(d, Math.max(byDay.get(d) ?? 0, n));
+  // `l` takes the same per-day MAX as `n`, for the same reason and with the same cost: a day
+  // whose lessons were split across two devices reads as the busier device rather than the
+  // total. Maxing them INDEPENDENTLY is correct — they are two counts of two different things,
+  // and tying them together would let a day with more cards suppress the other device's
+  // lessons. Both are idempotent, which is what lets a merged log be written back.
+  const byDay = new Map<string, { n: number; l: number }>();
+  for (const { d, n, l } of [...a, ...b]) {
+    const cur = byDay.get(d) ?? { n: 0, l: 0 };
+    byDay.set(d, { n: Math.max(cur.n, n), l: Math.max(cur.l, l ?? 0) });
+  }
   return [...byDay.entries()]
-    .map(([d, n]) => ({ d, n }))
+    // `l` is omitted when zero, so a log written before lessons were counted round-trips
+    // byte-identical instead of growing an `l: 0` on every row.
+    .map(([d, v]) => (v.l > 0 ? { d, n: v.n, l: v.l } : { d, n: v.n }))
     .sort((x, y) => x.d.localeCompare(y.d));
 }
 

@@ -8,6 +8,8 @@ import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { hasLessons, courseProgress } from '@/lib/lessons';
 import { storage } from '@/lib/storage';
+import { xpThisWeek } from '@/lib/xp';
+import type { DayActivity } from '@/lib/activityLog';
 import PieChart from './PieChart';
 import MilestoneRing from './MilestoneRing';
 import Achievements from './Achievements';
@@ -93,6 +95,30 @@ export default function StatsTab({ onNavigateRead, onNavigateReview, onNavigateL
   }, [courseAvailable]);
   const { done: courseDone, total: courseTotal } =
     courseProgress(language, new Set(lessonsDone ?? []));
+
+  /**
+   * XP THIS WEEK — derived on read, like everything else on this screen.
+   *
+   * `lib/xp.ts` explains why the window is a week rather than a lifetime: the activity log is
+   * PRUNED at 400 days, so a lifetime total derived from it would quietly fall as old days
+   * aged out, and an XP counter that goes down is worse than none.
+   *
+   * The log is global across languages and the shelf is per language, so this counts cards and
+   * lessons from everywhere and passages from the language on screen. That asymmetry is real
+   * and is the honest trade: reading four shelves to balance it would cost three round trips
+   * for a motivational figure, and the one on screen is the one being studied.
+   */
+  const [xpSource, setXpSource] = useState<{ log: DayActivity[]; passageDates: string[] } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void Promise.all([storage.getActivityLog(), storage.getShelf(language)])
+      .then(([log, shelf]) => {
+        if (live) setXpSource({ log, passageDates: shelf.map(e => e.date) });
+      })
+      .catch(() => { if (live) setXpSource({ log: [], passageDates: [] }); });
+    return () => { live = false; };
+  }, [language]);
+  const xp = xpSource ? xpThisWeek(xpSource, todayStr()) : null;
   const { deck, deckLoaded } = useVocabDeck(language);
   const { streak, langStreak, sessions, forgiven } = useSRS(language);
   /**
@@ -328,6 +354,34 @@ export default function StatsTab({ onNavigateRead, onNavigateReview, onNavigateL
           className="grid mt-7 overflow-hidden rounded-[11px]"
           style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1, background: 'var(--line-soft)', border: '1px solid var(--line)' }}
         >
+          {/*
+            ── XP, AND IT IS A WEEK RATHER THAN A TOTAL ──────────────────────────
+            A lifetime number is a wall somebody new can never climb and somebody old can
+            never lose. A week resets, so nobody is permanently behind — the same reasoning
+            lib/achievements.ts gives for an unlock only ever ADDING, from the other side.
+            It is also the only honest option: see lib/xp.ts on the 400-day prune.
+
+            `null` is "not counted yet" and renders as a dash, not as a zero. Telling a
+            learner who has studied all week that they have earned nothing is this file's
+            most-repeated bug, and a stat cell is exactly where it would land.
+          */}
+          <div className="px-5 py-5" style={{ background: 'var(--paper-2)' }}>
+            <div style={statLabel}>XP this week</div>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>
+              {xp ? xp.total.toLocaleString() : '—'}
+            </div>
+            {xp && xp.total > 0 && (
+              <div style={statNote}>
+                {[
+                  xp.cards ? `${xp.cards} card${xp.cards === 1 ? '' : 's'}` : null,
+                  xp.passages ? `${xp.passages} passage${xp.passages === 1 ? '' : 's'}` : null,
+                  xp.lessons ? `${xp.lessons} lesson${xp.lessons === 1 ? '' : 's'}` : null,
+                ].filter(Boolean).join(' · ')}
+              </div>
+            )}
+            {xp && xp.total === 0 && <div style={statNote}>resets Monday</div>}
+          </div>
+
           <div className="px-5 py-5" style={{ background: 'var(--paper-2)' }}>
             <div style={statLabel}>Day streak</div>
             <div style={{ fontFamily: 'var(--f-display)', fontSize: 38, fontWeight: 500, letterSpacing: '-.02em', marginTop: 4, lineHeight: 1 }}>

@@ -102,15 +102,43 @@ describe('progress is a sum toward a target, and never a ranking', () => {
   ];
 
   /**
-   * THE ANTI-LEADERBOARD INVARIANT, ENFORCED HERE RATHER THAN LEFT TO THE RENDERER. A list
-   * sorted by contribution IS a leaderboard whatever the column heading says, and it would
-   * arrive the first time somebody decided the order looked arbitrary. `Zoë` contributes ten
-   * times what `Ana` does and still sorts last, which is the control: a by-contribution sort
-   * would put her first.
+   * ⚠ THIS ASSERTION IS THE REVERSE OF WHAT IT USED TO BE, AND THAT IS DELIBERATE.
+   *
+   * It read "sorts members by label, not by what they contributed", and called that the
+   * anti-leaderboard invariant: `Zoë` contributes ten times what `Ana` does and still sorted
+   * last. The product decision was reversed on request (2026-10-18) — a pact is invite-only
+   * and time-boxed, so ranking the two or three people you asked to study with is not the
+   * public ladder the rule was guarding against. `lib/pact.ts` carries the full reasoning.
+   *
+   * What is still asserted below, and matters more: ONE total toward ONE target, no demotion,
+   * and no shared streak. The order of the rows changed; the goal did not become a race.
    */
-  it('sorts members by label, not by what they contributed', () => {
+  it('sorts members by what they contributed, highest first', () => {
     expect(pactProgress({ target: 1000 }, members).byMember.map(m => m.label))
-      .toEqual(['Ana', 'Mika', 'Zoë']);
+      .toEqual(['Zoë', 'Mika', 'Ana']);
+  });
+
+  it('numbers them, sharing a rank between equal contributions', () => {
+    // Standard competition ranking. Breaking a tie on a name tells somebody they came second
+    // for having a later initial, which is the kind of detail that makes a list unpleasant.
+    const tied: PactMemberView[] = [
+      { userId: 'b', label: 'Bo', contributed: 40 },
+      { userId: 'a', label: 'Al', contributed: 40 },
+      { userId: 'c', label: 'Cy', contributed: 5 },
+    ];
+    expect(pactProgress({ target: 100 }, tied).byMember.map(m => [m.label, m.rank]))
+      .toEqual([['Al', 1], ['Bo', 1], ['Cy', 3]]);
+  });
+
+  it('orders equal contributions stably rather than by array order', () => {
+    // A list that reshuffles on every poll reads as broken.
+    const a: PactMemberView[] = [
+      { userId: 'z', label: 'Zed', contributed: 10 },
+      { userId: 'a', label: 'Ann', contributed: 10 },
+    ];
+    const once = pactProgress({ target: 100 }, a).byMember.map(m => m.label);
+    const again = pactProgress({ target: 100 }, [...a].reverse()).byMember.map(m => m.label);
+    expect(once).toEqual(again);
   });
 
   it('adds everyone up', () => {

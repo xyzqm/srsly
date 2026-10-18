@@ -14,10 +14,31 @@ import type { DayActivity } from './activityLog';
  * must not exist here: it makes a missed morning let somebody ELSE down, which is the opposite of
  * the reason this app forgives a rest day at all. Nothing in a pact reads or writes the streak.
  *
- * **`byMember` IS SORTED BY LABEL, NEVER BY CONTRIBUTION**, and that is enforced here rather than
- * left to the renderer. A list sorted by contribution IS a leaderboard, whatever the column
- * heading says, and it would arrive the first time somebody thought the order looked arbitrary.
- * Sorting by a name nobody chose for its rank makes that impossible by construction.
+ * ## ⚠ `byMember` IS NOW SORTED BY CONTRIBUTION, WHICH REVERSES THIS FILE'S OWN RULE
+ *
+ * It said, in this paragraph, that sorting by contribution IS a leaderboard whatever the column
+ * heading says, and that sorting by a name nobody chose for its rank made that impossible by
+ * construction. A test enforced it with a member contributing ten times the rest who still
+ * sorted last. That was a deliberate product position and it has been **deliberately reversed**
+ * (2026-10-18, on request) rather than eroded — which is the only way this file permits such a
+ * thing to change.
+ *
+ * **What the reversal keeps is the reason the rule existed.** The fear was a public ranking
+ * somebody cannot escape. A pact is *invite-only*: you are on this list because you gave
+ * somebody an eight-character code, the window ends on a date you chose, and there is no global
+ * table, no rank across strangers and nothing carried between pacts. Being second of two people
+ * you asked to study with is not the thing the rule was protecting anyone from.
+ *
+ * **And the surrounding refusals all still hold.** There is still no demotion — *an unlock may
+ * only ever ADD* — still no shared streak, still nothing a bad week can take away, and the pact
+ * is still **a sum toward one target** with ONE progress bar. The order of the rows changed; the
+ * goal did not become a race, because finishing is defined by the total rather than by who put
+ * in most.
+ *
+ * `rank` is computed here rather than left to the renderer, for the same reason the sort was:
+ * a fact this load-bearing should be testable without rendering anything. Equal contributions
+ * share a rank, because telling two people who did identical work that one of them came second
+ * is the kind of detail that makes a list like this unpleasant.
  *
  * ## NOBODY CAN CHEAT AT THIS, AND IT IS NOT WORTH DEFENDING AGAINST
  *
@@ -36,6 +57,12 @@ export interface PactMemberView {
   userId: string;
   label: string;
   contributed: number;
+}
+
+/** A member, with the standing the panel shows beside them. */
+export interface PactMemberStanding extends PactMemberView {
+  /** 1-based. Equal contributions SHARE a rank, and the next rank skips accordingly. */
+  rank: number;
 }
 
 export interface Pact {
@@ -138,9 +165,29 @@ export interface PactProgress {
   /** 0–1, clamped. */
   fraction: number;
   done: boolean;
-  /** Sorted by LABEL. See the note at the top of this file — sorting by contribution is a
-   *  leaderboard however it is captioned. */
-  byMember: PactMemberView[];
+  /**
+   * Sorted by CONTRIBUTION, descending, with ties broken by label so the order is stable.
+   * See the note at the top of this file — this reverses a rule that was previously enforced
+   * here, and the reasoning for the reversal is recorded there rather than in a commit nobody
+   * will read.
+   */
+  byMember: PactMemberStanding[];
+}
+
+/**
+ * Number an already-sorted list, sharing a rank between equal contributions.
+ *
+ * Standard competition ranking: two people tied at the top are both 1st and the next is 3rd.
+ * The alternative — breaking the tie on a name — tells somebody they came second for having a
+ * later initial, which is exactly the kind of detail that makes a list like this unpleasant.
+ */
+function rank(sorted: PactMemberView[]): PactMemberStanding[] {
+  let last = Number.NaN;
+  let at = 0;
+  return sorted.map((m, i) => {
+    if (m.contributed !== last) { at = i + 1; last = m.contributed; }
+    return { ...m, rank: at };
+  });
 }
 
 export function pactProgress(pact: Pick<Pact, 'target'>, members: PactMemberView[]): PactProgress {
@@ -152,7 +199,13 @@ export function pactProgress(pact: Pick<Pact, 'target'>, members: PactMemberView
     remaining: Math.max(0, target - total),
     fraction: Math.min(1, total / target),
     done: total >= target,
-    byMember: [...members].sort((a, b) => a.label.localeCompare(b.label) || a.userId.localeCompare(b.userId)),
+    byMember: rank([...members].sort((a, b) =>
+      // Contribution first; then label, then id, so two members who have done exactly the same
+      // amount still come out in a STABLE order rather than whichever the array happened to
+      // hold — a list that reshuffles on every poll reads as broken.
+      b.contributed - a.contributed
+      || a.label.localeCompare(b.label)
+      || a.userId.localeCompare(b.userId))),
   };
 }
 

@@ -171,11 +171,30 @@ export default function PactPanel() {
             <div style={{ height: 8, borderRadius: 4, background: 'var(--line-soft)', marginTop: 8, overflow: 'hidden' }}>
               <div style={{ width: `${(p.fraction * 100).toFixed(1)}%`, height: '100%', background: 'var(--accent)' }} />
             </div>
-            <div className="flex flex-wrap gap-x-5 gap-y-1" style={{ marginTop: 8 }}>
+            {/*
+              ── THE STANDINGS, WHICH THIS PANEL DELIBERATELY DID NOT HAVE ──────────
+              It printed the members in one wrapped row sorted by name. They are ranked now;
+              `lib/pact.ts` carries why that rule was reversed rather than eroded, and what
+              it kept — invite-only, time-boxed, one bar, one target, nothing to lose.
+
+              Rows rather than a wrapped line, because a rank you have to hunt for along a
+              line of names is not a standing. Still UNDER the single shared bar, so what the
+              pact is doing is read before who is doing it.
+            */}
+            <div className="flex flex-col gap-1" style={{ marginTop: 10 }}>
               {p.byMember.map(m => (
-                <span key={m.userId} style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)' }}>
-                  {m.label} · {m.contributed.toLocaleString()}
-                </span>
+                <div key={m.userId} className="flex items-baseline gap-2.5"
+                  style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)' }}>
+                  <span aria-hidden style={{ minWidth: 14, textAlign: 'right',
+                    color: m.rank === 1 ? 'var(--gold)' : 'var(--ink-faint)',
+                    opacity: m.rank === 1 ? 1 : .6 }}>
+                    {m.rank}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" style={{ color: 'var(--ink-soft)' }}>
+                    {m.label}
+                  </span>
+                  <span>{m.contributed.toLocaleString()}</span>
+                </div>
               ))}
             </div>
             {members.length === 1 && (
