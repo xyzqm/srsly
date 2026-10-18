@@ -595,7 +595,8 @@ function AppShell() {
             <LearnTab active={tab === 'learn'} onNavigateSrs={() => changeTab('practice')} />
           </TabPanel>
           <TabPanel active={tab === 'dash'}>
-            <StatsTab onNavigateRead={() => changeTab('read')} onNavigateReview={() => changeTab('practice')} />
+            <StatsTab onNavigateRead={() => changeTab('read')} onNavigateReview={() => changeTab('practice')}
+              onNavigateLearn={() => changeTab('learn')} />
           </TabPanel>
           <TabPanel active={tab === 'vocab'}>
             <VocabTab />

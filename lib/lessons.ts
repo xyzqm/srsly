@@ -215,6 +215,31 @@ export function hasLessons(lang: LanguageCode): boolean {
 }
 
 /**
+ * HOW MANY LESSONS EACH TREE HOLDS — four numbers, and deliberately not the lessons.
+ *
+ * Home wants to say "12 of 50" so the course is visible from the landing tab rather than only
+ * to somebody who already thought to open Learn. Answering that from `lessonsFor()` would
+ * import the prose, and this module is imported by `TabNav`, which renders on every screen —
+ * the exact failure the note above this function describes, and the one the level tables
+ * document at length in CLAUDE.md. A count is four integers.
+ *
+ * Hand-maintained is the obvious objection, and it is answered the way this repo answers it
+ * everywhere else: `tests/lessons.test.ts` asserts each number against `lessonsFor(lang).length`
+ * and asserts the KEYS are exactly `LESSON_LANGUAGES`, so adding a lesson fails CI rather than
+ * quietly making Home's denominator wrong, and adding a language fails it too.
+ */
+export const LESSON_COUNT: Record<string, number> = { fr: 50, es: 50, zh: 44, ja: 44 };
+
+/** How much of a language's course is behind you, for a progress line. Derived, never stored. */
+export function courseProgress(lang: LanguageCode, done: Set<string>): { done: number; total: number } {
+  const total = LESSON_COUNT[lang] ?? 0;
+  // Counted by PREFIX, because `done` is one flat list across every language the learner
+  // studies — a Spanish count that included their French lessons would read past 100%.
+  const prefix = `${lang}-`;
+  return { done: [...done].filter(id => id.startsWith(prefix)).length, total };
+}
+
+/**
  * GRAMMAR IS THE COURSE; WORDS ARE A SHELF.
  *
  * The two kinds are split rather than interleaved, because they are not the same kind of thing.

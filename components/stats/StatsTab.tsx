@@ -1,11 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import TabPanel from '@/components/TabPanel';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { isDueToday, todayStr } from '@/lib/deck';
 import { useSRS } from '@/hooks/useSRS';
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
+import { hasLessons, courseProgress } from '@/lib/lessons';
+import { storage } from '@/lib/storage';
 import PieChart from './PieChart';
 import MilestoneRing from './MilestoneRing';
 import Achievements from './Achievements';
@@ -64,10 +66,33 @@ interface Props {
   onNavigateRead: () => void;
   /** Into the drill tab, for the second of the two things a learner can do next. */
   onNavigateReview: () => void;
+  /**
+   * Into the course. Offered only on an EMPTY deck, and only where a course exists — see the
+   * empty-state comment below for why that is the one state where it outranks reading.
+   */
+  onNavigateLearn: () => void;
 }
 
-export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
+export default function StatsTab({ onNavigateRead, onNavigateReview, onNavigateLearn }: Props) {
   const language = useLanguage();
+  /** Whether this language has a course to send a brand-new learner into. */
+  const courseAvailable = hasLessons(language);
+  /**
+   * Finished lesson ids, for the course line below. `null` until storage answers, which is
+   * NOT the same as "none finished" — rendering the second as the first would tell a learner
+   * halfway through the course that they had read nothing. The line simply waits.
+   */
+  const [lessonsDone, setLessonsDone] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!courseAvailable) return;
+    let live = true;
+    storage.getLessonsDone()
+      .then(ids => { if (live) setLessonsDone(ids); })
+      .catch(() => { if (live) setLessonsDone([]); });
+    return () => { live = false; };
+  }, [courseAvailable]);
+  const { done: courseDone, total: courseTotal } =
+    courseProgress(language, new Set(lessonsDone ?? []));
   const { deck, deckLoaded } = useVocabDeck(language);
   const { streak, langStreak, sessions, forgiven } = useSRS(language);
   /**
@@ -132,24 +157,69 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
         */}
         {deckLoaded && deck.length === 0 ? (
           <>
+            {/*
+              ── AND THE ONE ROUTE OFFERED HERE USED TO BE A DEAD END ────────────
+              This said "Start by reading something" with a single button into Read, on the
+              reasoning quoted above: reading fills the deck, and sending a beginner to the
+              word list first asks for the boring half before they have seen why it is worth
+              doing. That argument is still right about Vocab, and it was never checked against
+              the screen it points at. `ReadSections` opens on *Generated*, and a generated
+              passage is written around the words you owe today — so with an empty deck it
+              answers **"Nothing to review yet. A passage here is written around the words you
+              have due, so it needs a deck first."**
+
+              The front door, for somebody who had just told the onboarding sheet they were new
+              to the language, led to a screen explaining they could not do this yet. Found by
+              walking it in a browser, which is this repo's own most-repeated lesson.
+
+              **THE COURSE IS NOT THE WORD LIST, and that is what makes it the right answer.**
+              The old sentence weighed reading against Vocab, where "a themed list of nouns"
+              really is the boring half. The Learn tab is a third thing: its first lesson hands
+              a beginner 26 words AND the grammar that uses them, fills the deck in one tap, and
+              leaves them in the state the reading route had assumed they were already in.
+              Reading is still offered and still one tap away — it is simply no longer the only
+              door, and no longer a door onto a wall.
+
+              Guarded on `hasLessons`, so a language with no tree keeps the old copy rather than
+              offering a button into an empty tab.
+            */}
             <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '0 0 4px', lineHeight: 1.15 }}>
-              Start by reading something.
+              {courseAvailable ? 'Start at the beginning.' : 'Start by reading something.'}
             </div>
             <p style={{ color: 'var(--ink-soft)', fontSize: 14.5, maxWidth: '46ch', lineHeight: 1.55 }}>
-              Tap any word you do not know and it joins your deck with a review scheduled. That
-              is the whole loop — there is nothing to set up first.
+              {courseAvailable
+                ? 'The course starts from nothing — a handful of words, then the grammar that uses them. The first lesson puts real words in your deck in one tap. Already read a little? Open something instead.'
+                : 'Tap any word you do not know and it joins your deck with a review scheduled. That is the whole loop — there is nothing to set up first.'}
             </p>
-            <button
-              onClick={onNavigateRead}
-              className="mt-5 cursor-pointer transition-all duration-150"
-              style={{
-                ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
-                background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
-                padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
-              }}
-            >
-              Read something
-            </button>
+            <div className="flex gap-2.5 flex-wrap" style={{ marginTop: 20 }}>
+              {courseAvailable && (
+                <button
+                  onClick={onNavigateLearn}
+                  className="cursor-pointer transition-all duration-150"
+                  style={{
+                    ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                    background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8,
+                    padding: '12px 20px', boxShadow: '0 2px 0 var(--accent-deep)',
+                  }}
+                >
+                  Start the course
+                </button>
+              )}
+              <button
+                onClick={onNavigateRead}
+                className="cursor-pointer transition-all duration-150"
+                style={{
+                  ...mono, fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 500,
+                  borderRadius: 8, padding: '12px 20px',
+                  background: courseAvailable ? 'var(--card)' : 'var(--accent)',
+                  color: courseAvailable ? 'var(--ink-soft)' : '#fff',
+                  border: courseAvailable ? '1px solid var(--line)' : 'none',
+                  boxShadow: courseAvailable ? 'none' : '0 2px 0 var(--accent-deep)',
+                }}
+              >
+                Read something
+              </button>
+            </div>
           </>
         ) : (<>
         <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 500, letterSpacing: '-.015em', margin: '0 0 4px', lineHeight: 1.15 }}>
@@ -199,6 +269,53 @@ export default function StatsTab({ onNavigateRead, onNavigateReview }: Props) {
             {dueToday && dueToday > 0 ? `Review ${dueToday} card${dueToday === 1 ? '' : 's'}` : 'Review cards'}
           </button>
         </div>
+
+        {/*
+          ── AND A THIRD, WHICH IS A LINE RATHER THAN A BUTTON ────────────────────
+          The comment above says two actions is the whole point, and it is still right that
+          three equal buttons is a menu rather than an answer. But the course had the opposite
+          problem: Home never mentioned it ONCE, in either state, so an app whose Learn tab
+          holds a 50-lesson curriculum pointed every returning learner at reading and reviewing
+          and left the course to be rediscovered. That is the same invisibility the empty state
+          above was fixed for, one step later in the learner's life.
+
+          So it is a RULE with a sentence on it, not a third primary button: it reports where
+          you are and offers the way back in, and reading and reviewing keep the two buttons.
+          It disappears once the course is finished, because a 50/50 line is furniture.
+
+          The denominator comes from `LESSON_COUNT` rather than from the lessons themselves —
+          this component renders on the landing tab, and importing the tree here would put
+          every language's prose in the first bundle. See the note on that constant.
+        */}
+        {courseAvailable && lessonsDone !== null && courseDone < courseTotal && (
+          <button
+            onClick={onNavigateLearn}
+            className="w-full text-left cursor-pointer transition-all duration-150 rounded-[11px] mt-5 flex items-center gap-3.5"
+            style={{ background: 'none', border: '1px solid var(--line)', padding: '12px 15px', color: 'var(--ink)' }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line)')}
+          >
+            <span className="min-w-0 flex-1">
+              <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', textTransform: 'uppercase',
+                color: 'var(--ink-faint)', display: 'block', marginBottom: 2 }}>
+                {courseDone === 0 ? 'The course' : 'Carry on with the course'}
+              </span>
+              <span style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.45, display: 'block' }}>
+                {courseDone === 0
+                  ? 'A guided path through the language, from your first words up.'
+                  : `${courseDone} of ${courseTotal} lessons read.`}
+              </span>
+            </span>
+            {courseDone > 0 && (
+              <span aria-hidden className="shrink-0" style={{ width: 54, height: 3, borderRadius: 2,
+                background: 'var(--line)', overflow: 'hidden' }}>
+                <span style={{ display: 'block', height: '100%', borderRadius: 2,
+                  width: `${Math.round((courseDone / courseTotal) * 100)}%`, background: 'var(--jade)' }} />
+              </span>
+            )}
+            <span aria-hidden style={{ ...mono, fontSize: 10, color: 'var(--ink-faint)' }}>›</span>
+          </button>
+        )}
 
         {/*
           THE STREAK FIRST, AND THE DECK COUNT NOT REPEATED.

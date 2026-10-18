@@ -1469,9 +1469,9 @@ part of the primary school", `yaourt` with "a song where the singer makes up the
 ### The lesson tree
 
 `components/learn/LearnTab.tsx` is a **Learn** tab holding an authored course: **188 lessons
-across four trees**, one per language, each split into two sections — a numbered grammar track
-(29 lessons for French and Spanish, 23 for Chinese and Japanese) and 21 vocabulary sets. That is
-104 grammar lessons and 84 word sets in total.
+across four trees**, one per language — a grammar track (29 lessons for French and Spanish, 23
+for Chinese and Japanese) and 21 vocabulary sets each, so 104 grammar lessons and 84 word sets
+in total. They are no longer shown as two lists; see the unit path below.
 
 *(This line read "33 lessons in 6 lessons per language" — a number that was stale by a factor of
 five and a sentence that had stopped parsing. Counted from `lessonsFor()` rather than estimated,
@@ -1480,19 +1480,59 @@ the same way every other figure in this file is meant to be. **It then went stal
 footnote is about being stale was wrong within a fortnight. Count it, do not adjust it.)* `TabNav` still
 filters on `hasLessons`, because an empty tab reads as a broken one.
 
-**GRAMMAR IS THE COURSE; WORDS ARE A SHELF.** The two are split rather than interleaved because
-they are not the same kind of thing. Grammar builds on itself — the passé composé cannot be
-explained to someone who has not met a participle — so it is ONE numbered track in array order,
-and the number is the whole navigation. Vocabulary sets have no such dependency; nobody needs
-colours before food, so numbering them would invent a prerequisite and make opening the one you
-wanted feel like skipping ahead. `grammarLessons`/`vocabLessons` split them and
-`nextGrammarLesson` marks where you left off.
+**⚠ IT IS ONE PATH CUT INTO UNITS, AND IT USED TO BE TWO LISTS. THE OLD ARGUMENT IS KEPT
+BECAUSE IT WAS RIGHT ABOUT EVERYTHING EXCEPT THE SCREEN.**
 
-**The array order IS the course order**, so all grammar must precede all word sets. A weaker
-"everything before the first vocab is grammar" test passes on an interleaved array, which is
-how the subjunctive briefly came out numbered 7, ahead of `être`; the test now asserts the last
-grammar lesson precedes the first word set. Advanced material was appended at the END of the
-grammar run for the same reason.
+What this said, for a long time, was: *grammar is the course; words are a shelf*. Grammar builds
+on itself — the passé composé cannot be explained to someone who has not met a participle — so
+it was ONE numbered track in array order and the number was the whole navigation; vocabulary
+sets have no such dependency, nobody needs colours before food, so numbering them would invent
+a prerequisite and make opening the one you wanted feel like skipping ahead. **Every clause of
+that is still true**, and two of them are now enforced by `tests/lessonUnits.test.ts` rather
+than by the layout.
+
+It was never checked against what the tab had become. Measured in a browser: **50 identical
+rows, 3,853 pixels tall**, opening on *Every noun has a gender* for somebody who had just told
+the onboarding sheet they were new to Spanish, under a paragraph explaining that the order was
+only a suggestion. Two separate failures, and only the first is about motivation:
+
+- **A list with no shape gives nothing back.** There is no sense of place in 50 rows, nothing
+  that is ever finished, and no answer to *how far in am I*. A unit is small enough to complete,
+  which is the only reason a progress rule is worth drawing at all.
+- **YOU CANNOT PRACTISE GENDER WITH NO NOUNS.** This is the real defect and it is pedagogical
+  rather than visual. The split put every word a beginner owns behind the entire grammar track,
+  so lesson one was a rule about a vocabulary they did not have. Interleaving is not decoration:
+  `es-v-basics` has to come before `es-gender`, and it now does — `tests/lessonUnits.test.ts`
+  asserts every tree OPENS ON A WORD SET.
+
+`lib/data/lessons/units.ts` holds the path: **11 units for French and Spanish, 10 for Chinese
+and Japanese**, each four to six lessons, each named for something you can DO rather than for
+what it covers. `components/learn/LearnTab.tsx` draws them collapsed, with the unit you are on
+opened and a Continue card naming the single next lesson above everything else. The tab is
+**1,468px** now.
+
+**THE ARRAY ORDER IS STILL THE GRAMMAR ORDER, AND THE DATA FILES DID NOT MOVE.** The four lesson
+arrays are untouched — grammar first, then the word sets — so `grammarLessons`, `vocabLessons`
+and `nextGrammarLesson` all still mean what they meant, and the old "the whole grammar track
+precedes the word sets" test still passes unchanged. **The units are a separate, authored
+display order**, which is what made this a low-risk change rather than a migration: a unit takes
+a CONTIGUOUS RUN of the grammar track and may place word sets anywhere around it, and the test
+asserts both — contiguity, and that the flattened path keeps grammar in its authored order. The
+weaker "everything before the first vocab is grammar" assertion is how the subjunctive briefly
+came out numbered 7, ahead of `être`; neither of its replacements can pass on a reshuffle.
+
+**AUTHORED, NOT PARSED OFF THE ID PREFIX.** The obvious build chunks `*-v-*` apart from the rest
+in fives, which gives a grouping nobody chose. `lib/achievements.ts` already states the reason:
+`FAMILIES` is declared explicitly because the ids are a storage key. A unit boundary is a
+teaching judgement about where one capability ends, and nothing in the data knows where that is.
+The cost is 188 ids typed by hand — which is exactly why the test was written FIRST, and it
+caught two of them on its first run (`plural` and `articles` transposed in both es and fr).
+
+**STILL NEVER LOCKED.** No unit gates another, nothing is `disabled`, there is no 🔒, and every
+lesson opens on day one. A unit is a shape, not a gate. There is deliberately no mascot and no
+winding path of cartoon nodes either — the register question was settled when the header's drawn
+face was removed, and a course shaped like a book's contents is the same motivation in this
+app's own voice.
 
 **A language gets its GRAMMAR TABLE before its lesson tree** where it can have one, and that
 order is deliberate: a tree that explains the imperfect beside a reader that cannot point one
@@ -3164,9 +3204,40 @@ reason `practice` survived becoming Review.
 reason for `npm run seed:dev` is that the Stats panel hides itself on a new account, *because a
 wall of empty progress bars is a list of things you have failed to do* — and making it the front
 door walks straight into that: 0 words, 0 days, a 0-day streak and an empty ring, as the first
-thing a new learner ever sees. So a deckless Home is ONE sentence and ONE route, and the route is
-READING rather than the word list, because reading is what fills the deck and sending a beginner
-to Vocab first asks for the boring half before they have seen why it is worth doing.
+thing a new learner ever sees. So a deckless Home is ONE sentence and a route out of it.
+
+**⚠ AND THAT ROUTE WAS A DEAD END FOR EVERY NEW LEARNER, WHICH NOBODY HAD WALKED.** The sentence
+here read *"Start by reading something"* over a single button into Read, on the reasoning that
+reading is what fills the deck and that sending a beginner to Vocab first asks for the boring
+half before they have seen why it is worth doing. That argument is still right about VOCAB. It
+was never checked against the screen it points at: `ReadSections` opens on **Generated**, and a
+generated passage is written around the words you owe today — so with an empty deck the front
+door answered *"Nothing to review yet. A passage here is written around the words you have due,
+so it needs a deck first."* Home → Read → you cannot do this yet → Review → go to Read.
+
+**THE COURSE IS NOT THE WORD LIST, and that is what resolves it.** The old sentence weighed
+reading against Vocab, where a themed list of nouns really is the boring half. The Learn tab is
+a third thing, and it did not have a front door: its first lesson hands a beginner 26 words AND
+the grammar that uses them, fills the deck in one tap, and leaves them in the state the reading
+route had assumed they were already in. A deckless Home now offers **Start the course** first
+and **Read something** beside it, guarded on `hasLessons` so a language with no tree keeps the
+old copy. Measured by walking it: the first word set earns the `collect-25` milestone inside a
+minute of a first open, which was previously unreachable without reading first.
+
+**AND A DECKED HOME NOW MENTIONS THE COURSE TOO, AS A RULE RATHER THAN A THIRD BUTTON.** Two
+actions is still the point of this screen, and three equal buttons is a menu rather than an
+answer — but Home mentioned the course in NEITHER state, so a 50-lesson curriculum was left to
+be rediscovered by anyone who thought to open the tab. It is a bordered line reporting
+`12 of 50 lessons read`, and it disappears at 50/50 because a full bar is furniture.
+
+**ITS DENOMINATOR COMES FROM `LESSON_COUNT`, NOT FROM THE LESSONS.** `StatsTab` renders on the
+landing tab, so importing the tree to count it would put every language's prose in the first
+bundle — the failure the level tables document at length. Four integers in `lib/lessons.ts`
+instead, and because that IS a second record of something derivable, `tests/lessonUnits.test.ts`
+pins it in both directions: each number against `lessonsFor(lang).length`, and the key set
+against `LESSON_LANGUAGES`. `courseProgress` filters `srsly-lessons-done` by language prefix,
+because that key is ONE flat list across every language studied and a Spanish line counting
+French ids reads past 100%.
 
 **THE DUE COUNT USES `Flashcards`' OWN FILTER**, not a second one that agrees today. A dashboard
 promising 4 due above a drill that offers 6 is worse than no number at all.
@@ -3269,6 +3340,28 @@ Only the active panel has height, and measured across the six, `main` runs from 
 appeared and disappeared, which on a desktop with classic scrollbars shifts the whole page
 sideways as well. `.app-frame` in `globals.css` makes the page a flex column with `flex-1` on
 `main`, so the content area takes whatever is left and the floor is the viewport.
+
+**⚠ AND MAKING IT A FLEX COLUMN SILENTLY BROKE THE TAB BAR'S WIDTH ON EVERY PHONE.** A flex item
+stretches to the container's cross size — **unless it has an auto margin on that axis**, which
+disables stretch. `<nav>` carries `mx-auto`, so it quietly fell back to shrink-to-fit, sized
+itself to the six tabs it contains, and came out **458px wide inside a 375px viewport**. The
+84px spilled out as horizontal scroll on the whole DOCUMENT, carrying the header and the card
+with it.
+
+Which defeated the very thing that was supposed to handle narrow screens: the row inside is
+`overflow-x-auto` precisely so six tabs scroll WITHIN the page, and with an unconstrained parent
+there is nothing to overflow, so the scroller did nothing and the page scrolled instead. `main`,
+the next element in the same frame, has carried `w-full` beside the identical `max-w` and
+`mx-auto` all along and measures 375 correctly — so the fix is that one missing class, and the
+worked example was one line below the bug the entire time.
+
+**It is invisible from the code and obvious from a measurement**, which is why it survived the
+change that caused it: nothing about `mx-auto` looks like a width declaration, the nav renders
+perfectly at every desktop size, and a phone just scrolls a bit sideways. Found by measuring
+`document.documentElement.scrollWidth` against `clientWidth` at 375 — 459 against 375 — while
+checking something else. `tests/tabNavWidth.test.ts` pins `w-full` and `mx-auto` TOGETHER, since
+dropping the margin would also have stopped the overflow, by left-aligning the tab row against a
+1200px page while `main` below it stayed centred.
 
 **⚠ A `min-height` WITH THE CHROME SUBTRACTED WOULD BE WRONG AT THE BREAKPOINT IT MATTERS MOST.**
 `calc(100vh - 212px)` is the obvious form and it hardcodes a header that is **76px on a desktop

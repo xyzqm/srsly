@@ -44,7 +44,24 @@ export default function TabNav({ active, onChange }: Props) {
   const tabs = TABS.filter(t => t.id !== 'learn' || hasLessons(language));
 
   return (
-    <nav className="max-w-[1200px] mx-auto px-3 sm:px-7 relative z-[1]">
+    /*
+      ⚠ `w-full` IS LOAD-BEARING AND ITS ABSENCE SCROLLED THE WHOLE PAGE SIDEWAYS.
+      `.app-frame` is a flex COLUMN (globals.css, added so a tab change cannot move the
+      footer). A flex item normally stretches to the container's cross size — except that
+      `mx-auto` sets `margin-inline: auto`, and an auto margin on the cross axis DISABLES
+      stretch. So this nav fell back to shrink-to-fit, sized itself to the six tabs it
+      contains, and came out **458px wide inside a 375px viewport**.
+
+      Which defeated the very scroller below it: the row is `overflow-x-auto` precisely so
+      the tabs scroll WITHIN the page, and with an unconstrained parent there was nothing to
+      overflow, so the whole document scrolled instead — 84px of horizontal page scroll on
+      every phone, carrying the header and the card with it.
+
+      `main`, the next element in this same frame, has carried `w-full` beside the identical
+      `max-w` and `mx-auto` all along and measures 375 correctly. This is that line, missing.
+      Measured rather than reasoned about: `tests/tabNavWidth.test.ts` pins the class pairing.
+    */
+    <nav className="w-full max-w-[1200px] mx-auto px-3 sm:px-7 relative z-[1]">
       {/* Six tabs do not fit a 375px screen, so the row scrolls. `scrollbarWidth: none`
           hides the only hint that it does, which is why Settings looked simply missing —
           `tab-scroll` fades the right edge while there is more to reach, and scroll-snap

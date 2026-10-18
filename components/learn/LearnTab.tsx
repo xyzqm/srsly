@@ -3,14 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/lib/LanguageContext';
 import { storage } from '@/lib/storage';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
-import {
-  grammarLessons, vocabLessons, nextGrammarLesson, type Lesson,
-} from '@/lib/lessons';
+import { type Lesson } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import LessonPractice from './LessonPractice';
 import WordPopup from '@/components/read/WordPopup';
 import { useLessonInspect } from './useLessonInspect';
 import { lessonsFor } from '@/lib/data/lessons';
+import { unitsFor, nextInCourse, unitProgress, type LessonUnit } from '@/lib/data/lessons/units';
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
 import GlossText from '@/components/shared/GlossText';
@@ -78,8 +77,8 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   }, []);
 
   const open = all.find(l => l.id === openId) ?? null;
-  const grammar = grammarLessons(all);
-  const words = vocabLessons(all);
+  const units = useMemo(() => unitsFor(language), [language]);
+  const byId = useMemo(() => new Map(all.map(l => [l.id, l])), [all]);
   /**
    * NOT UNTIL WE KNOW. `done` is an empty Set until storage answers, and "the next lesson"
    * computed from an empty set is always lesson ONE — so the marker painted itself on the
@@ -88,9 +87,10 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
    *
    * Same mistake as the passage skeleton and the empty-deck copy, in a third place: a value
    * meaning "not loaded yet" rendered as a value meaning "you have finished nothing". The
-   * marker simply appears once, on the right lesson.
+   * marker simply appears once, on the right lesson — and `doneLoaded` travels down with it,
+   * because the Continue card and every unit's progress count have exactly the same problem.
    */
-  const next = doneLoaded ? nextGrammarLesson(all, done) : undefined;
+  const next = doneLoaded ? nextInCourse(units, done) : null;
 
   if (!all.length) return null;
 
@@ -111,113 +111,261 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
             onNavigateSrs={onNavigateSrs}
             active={active}
           />
-        : <LessonList grammar={grammar} words={words} done={done} next={next} onOpen={setOpenId} />}
+        : <CoursePath units={units} byId={byId} done={done} doneLoaded={doneLoaded}
+            next={next} onOpen={setOpenId} />}
     </div>
   );
 }
 
 /**
- * TWO SECTIONS, and only one of them is a course.
+ * ONE PATH, CUT INTO UNITS — and it replaced two flat lists.
  *
- * Grammar builds on itself, so it is a single numbered track and the number is the whole
- * navigation: a learner who wants to be told what to do next reads down. Vocabulary sets have
- * no such dependency — nobody needs colours before food — so numbering them would invent a
- * prerequisite and make opening the one you wanted feel like skipping ahead.
+ * The tab used to render a numbered grammar track and, 29 rows below it, a pile of word sets
+ * "in no particular order". That reasoning is written out in `lib/lessons.ts` and is not wrong
+ * about the thing it was arguing — grammar builds on itself and vocabulary does not. It was
+ * wrong about the screen: **50 identical rows, 3,853 pixels tall**, opening on an abstract rule
+ * for somebody who had just said they were new to the language, under a paragraph explaining
+ * that the order was only a suggestion.
  *
- * NUMBERED, STILL NEVER LOCKED. Nothing is disabled and there is no 🔒 anywhere; the arrow
- * marks where you left off rather than where you are allowed. See lib/lessons.ts.
+ * Three things changed and each answers a specific complaint:
+ *
+ * - **A UNIT IS SOMETHING YOU CAN FINISH.** 50 rows have no end in them. Four or five do, which
+ *   is the only reason a progress bar is worth drawing — see `lib/data/lessons/units.ts`.
+ * - **UNITS COLLAPSE, so the course is 11 rows rather than 50.** The one you are on opens
+ *   itself. A table of contents you can see the whole of is a different object from a list you
+ *   scroll for five screens.
+ * - **CONTINUE IS THE FIRST THING ON THE PAGE.** The old tree answered "where am I" with a
+ *   `start here` tag eleven rows down, which the reader had to go and find. A course that makes
+ *   you choose where to start every time you open it is one you open less.
+ *
+ * NUMBERED, STILL NEVER LOCKED. Nothing is `disabled`, no unit gates another, and every lesson
+ * opens on day one — the position `lib/lessons.ts` states and this screen must not quietly
+ * reverse. The numbers say where you are, never where you are allowed.
+ *
+ * NO MASCOT, AND THAT IS A DELIBERATE REFUSAL. The obvious reference here draws a winding path
+ * of cartoon nodes. CLAUDE.md already settled the register question when the header's drawn
+ * face was removed: a mascot "reads as a mascot on a page otherwise set like a book". So this
+ * is shaped as a book's contents — numbered units, a rule of progress, prose that promises what
+ * you will be able to do — which is the same motivation in this app's own voice.
  */
-function LessonList({ grammar, words, done, next, onOpen }: {
-  grammar: Lesson[];
-  words: Lesson[];
+function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
+  units: LessonUnit[];
+  byId: Map<string, Lesson>;
   done: Set<string>;
-  next?: Lesson;
+  doneLoaded: boolean;
+  next: ReturnType<typeof nextInCourse>;
   onOpen: (id: string) => void;
 }) {
-  const row = (l: Lesson, n?: number) => {
-    const isDone = done.has(l.id);
-    const isNext = next?.id === l.id;
-    return (
-      <button
-        key={l.id}
-        onClick={() => onOpen(l.id)}
-        className="w-full text-left rounded-lg cursor-pointer transition-all duration-150 flex items-baseline gap-3"
-        style={{
-          background: 'none',
-          border: `1px solid ${isNext ? 'var(--accent)' : 'var(--line)'}`,
-          padding: '11px 14px',
-          color: 'var(--ink)',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-        onMouseLeave={e => (e.currentTarget.style.borderColor = isNext ? 'var(--accent)' : 'var(--line)')}
-      >
-        <span
-          aria-hidden
-          style={{
-            ...MONO, fontSize: n === undefined ? 11 : 10.5, letterSpacing: 0, flexShrink: 0,
-            minWidth: 20, textAlign: 'right',
-            color: isDone ? 'var(--jade)' : 'var(--ink-faint)',
-            opacity: isDone ? 1 : .55,
-          }}
-        >
-          {isDone ? '✓' : n === undefined ? '·' : n}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span style={{ fontSize: 14.5, display: 'block' }}>{l.title}</span>
-          <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 1 }}>
-            {l.summary}
-          </span>
-        </span>
-        {isNext && (
-          <span style={{ ...MONO, fontSize: 9, textTransform: 'uppercase', color: 'var(--accent)', flexShrink: 0 }}>
-            start here
-          </span>
-        )}
-      </button>
-    );
-  };
+  /**
+   * Which unit is expanded. The one you are on, once we know which that is.
+   *
+   * `null` is "not chosen yet" and is NOT the same as "none open" — the mistake this repo
+   * names four times over. Until storage answers, `next` is null and every unit would collapse,
+   * so a returning learner would watch the course open itself a beat after it rendered shut.
+   * The effect runs once `doneLoaded` flips and the user's own clicks win from then on.
+   */
+  const [openUnit, setOpenUnit] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!doneLoaded || touched) return;
+    setOpenUnit(next ? next.unit.id : units[0]?.id ?? null);
+  }, [doneLoaded, touched, next, units]);
 
-  const grammarDone = grammar.filter(l => done.has(l.id)).length;
-  const wordsDone = words.filter(l => done.has(l.id)).length;
+  const totalDone = doneLoaded ? units.reduce((n, u) => n + unitProgress(u, done).done, 0) : 0;
+  const total = units.reduce((n, u) => n + u.lessons.length, 0);
+  const nextLesson = next ? byId.get(next.lessonId) : undefined;
 
   return (
     <>
+      {/*
+        ── THE CONTINUE CARD ────────────────────────────────────────────────────
+        One control, naming one lesson, at the top. The reserved min-height is not decoration:
+        `next` is unknown until storage answers, and a card that appears a moment after the
+        page does shoves the entire course down under the reader's cursor.
+      */}
+      <div
+        className="rounded-[14px] px-5 py-4 mb-7 flex items-center gap-4 flex-wrap"
+        style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)', minHeight: 92 }}
+      >
+        {!doneLoaded ? (
+          <div style={{ ...MONO, fontSize: 11, color: 'var(--ink-faint)' }}>finding your place…</div>
+        ) : next && nextLesson ? (
+          <>
+            <div className="min-w-0 flex-1">
+              <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 4 }}>
+                {totalDone === 0 ? 'Start here' : 'Continue'} · Unit {next.index + 1}, {next.unit.title}
+              </div>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, color: 'var(--ink)', lineHeight: 1.2 }}>
+                {nextLesson.title}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3 }}>{nextLesson.summary}</div>
+            </div>
+            <button
+              onClick={() => onOpen(next.lessonId)}
+              className="cursor-pointer rounded-lg transition-all duration-150 shrink-0"
+              style={{ ...MONO, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
+                fontWeight: 600, padding: '12px 20px', background: 'var(--accent)', border: 'none',
+                color: '#fff', boxShadow: '0 2px 0 var(--accent-deep)' }}
+            >
+              {totalDone === 0 ? 'Begin' : 'Continue'}
+            </button>
+          </>
+        ) : (
+          /* FINISHING THE COURSE IS A REAL STATE and gets a real sentence, not an empty card.
+             It also must not read as the end of the app: the course was always the way in to
+             reading, and reading is the thing that does not run out. */
+          <div className="min-w-0">
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, color: 'var(--ink)' }}>
+              You have been through the whole course.
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
+              Every unit is read. Re-open any of them whenever a rule stops being obvious —
+              and keep reading, which is where the rest of the language is.
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-baseline justify-between mb-1">
         <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          Grammar
+          The course
         </div>
         <div style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)' }}>
-          {grammarDone} / {grammar.length}
+          {doneLoaded ? `${totalDone} / ${total}` : `${total} lessons`}
         </div>
       </div>
-
-      {/* Said plainly, because a numbered list looks like a ladder and this one is not. */}
-      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 20px', maxWidth: 560 }}>
-        The course, in order — each one builds on the last. Nothing is locked, so jump wherever
-        you like; the numbers are only a suggestion of where to go next.
+      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 18px', maxWidth: 560 }}>
+        {units.length} units, in order — each one teaches a handful of words and the grammar that
+        uses them. Nothing is locked; open any of it whenever you like.
       </p>
 
-      <div className="flex flex-col gap-1.5 mb-9">
-        {grammar.map((l, i) => row(l, i + 1))}
-      </div>
-
-      <div className="flex items-baseline justify-between mb-1">
-        <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-          Words
-        </div>
-        <div style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)' }}>
-          {wordsDone} / {words.length}
-        </div>
-      </div>
-      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 20px', maxWidth: 560 }}>
-        Sets of words by theme, in no particular order. Take whichever you want — adding a set
-        puts its words in your deck.
-      </p>
-
-      <div className="flex flex-col gap-1.5">
-        {words.map(l => row(l))}
+      <div className="flex flex-col gap-2">
+        {units.map((u, i) => (
+          <UnitBlock
+            key={u.id}
+            unit={u}
+            n={i + 1}
+            byId={byId}
+            done={done}
+            doneLoaded={doneLoaded}
+            nextId={next?.lessonId}
+            open={openUnit === u.id}
+            onToggle={() => { setTouched(true); setOpenUnit(openUnit === u.id ? null : u.id); }}
+            onOpen={onOpen}
+          />
+        ))}
       </div>
     </>
+  );
+}
+
+/**
+ * One unit: a heading that is always visible, and its lessons when it is open.
+ *
+ * The progress rule is SEGMENTED — one tick per lesson — rather than a continuous bar, for the
+ * reason `BadgeSeal` draws one arc per rung: "3 of 5" is legible without reading the caption,
+ * where a 60%-filled bar is a proportion you have to translate back into a number of things.
+ */
+function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, onOpen }: {
+  unit: LessonUnit;
+  n: number;
+  byId: Map<string, Lesson>;
+  done: Set<string>;
+  doneLoaded: boolean;
+  nextId?: string;
+  open: boolean;
+  onToggle: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const { done: d, total } = unitProgress(unit, done);
+  const complete = doneLoaded && d === total;
+
+  return (
+    <div className="rounded-[12px] overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full text-left cursor-pointer transition-all duration-150 flex items-center gap-3.5"
+        style={{ background: 'none', border: 'none', padding: '13px 15px', color: 'var(--ink)' }}
+      >
+        <span
+          aria-hidden
+          className="shrink-0 flex items-center justify-center rounded-full"
+          style={{
+            ...MONO, fontSize: 11, letterSpacing: 0, width: 27, height: 27,
+            border: `1px solid ${complete ? 'var(--jade)' : 'var(--line)'}`,
+            background: complete ? 'var(--jade)' : 'none',
+            color: complete ? '#fff' : 'var(--ink-faint)',
+          }}
+        >
+          {complete ? '✓' : n}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span style={{ fontSize: 15, display: 'block', fontWeight: 500 }}>{unit.title}</span>
+          <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 1, lineHeight: 1.45 }}>
+            {unit.blurb}
+          </span>
+        </span>
+        {/* The ticks carry the number, so they are hidden from a screen reader and the count
+            beside them is what is announced. */}
+        <span className="shrink-0 flex items-center gap-2.5">
+          {doneLoaded && (
+            <span aria-hidden className="hidden sm:flex gap-[3px]">
+              {unit.lessons.map((id, i) => (
+                <span key={i} style={{ width: 13, height: 3, borderRadius: 2,
+                  background: done.has(id) ? 'var(--jade)' : 'var(--line)' }} />
+              ))}
+            </span>
+          )}
+          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right' }}>
+            {doneLoaded ? `${d}/${total}` : `${total}`}
+          </span>
+          <span aria-hidden style={{ ...MONO, fontSize: 9, color: 'var(--ink-faint)',
+            transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="flex flex-col" style={{ borderTop: '1px solid var(--line)' }}>
+          {unit.lessons.map(id => {
+            const l = byId.get(id);
+            if (!l) return null;   // a test makes this unreachable; rendering nothing beats throwing
+            const isDone = done.has(id);
+            const isNext = nextId === id;
+            return (
+              <button
+                key={id}
+                onClick={() => onOpen(id)}
+                className="w-full text-left cursor-pointer transition-all duration-150 flex items-baseline gap-3"
+                style={{ background: isNext ? 'var(--accent-soft)' : 'none', border: 'none',
+                  padding: '10px 15px 10px 18px', color: 'var(--ink)' }}
+                onMouseEnter={e => { if (!isNext) e.currentTarget.style.background = 'var(--line)'; }}
+                onMouseLeave={e => { if (!isNext) e.currentTarget.style.background = 'none'; }}
+              >
+                <span aria-hidden style={{ ...MONO, fontSize: 10, letterSpacing: 0, flexShrink: 0,
+                  minWidth: 27, textAlign: 'center',
+                  color: isDone ? 'var(--jade)' : 'var(--ink-faint)', opacity: isDone ? 1 : .5 }}>
+                  {isDone ? '✓' : l.kind === 'vocab' ? '◇' : '·'}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span style={{ fontSize: 14, display: 'block' }}>{l.title}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', display: 'block', marginTop: 1, lineHeight: 1.45 }}>
+                    {l.summary}
+                  </span>
+                </span>
+                {/* WHICH KIND, said in a word rather than inferred from a glyph. The two end
+                    differently — a grammar lesson is read and ticked, a word set is finished by
+                    adding its words — so the reader is told which one they are opening. */}
+                <span style={{ ...MONO, fontSize: 8.5, textTransform: 'uppercase', flexShrink: 0,
+                  color: 'var(--ink-faint)', opacity: .8 }}>
+                  {l.kind === 'vocab' ? 'words' : 'grammar'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
