@@ -334,7 +334,7 @@ function AppShell() {
    */
   const [language, setLanguage] = useState<LanguageCode>(savedLanguage);
 
-  const { recordScore, recordActivity, recordAnswer } = useSRS(language);
+  const { recordScore, recordActivity, recordAnswer, streak } = useSRS(language);
   const requireSignIn = useCallback((reason?: string) => setSignIn({ open: true, reason }), []);
 
   /**
@@ -592,7 +592,22 @@ function AppShell() {
             />
           </TabPanel>
           <TabPanel active={tab === 'learn'}>
-            <LearnTab active={tab === 'learn'} onNavigateSrs={() => changeTab('practice')} />
+            {/*
+              ── THE COURSE COUNTS AS STUDYING ──────────────────────────────────
+              `recordActivity` is what keeps a streak alive, and until now only reading and
+              grading cards could call it. A learner who spent twenty minutes on the passé
+              composé had, as far as the app was concerned, done nothing that day.
+
+              That is the streak punishing somebody for choosing the curriculum, which is the
+              opposite of what it is for — `lib/streak.ts` already refuses to break a streak
+              for obeying the scheduler, on the same reasoning.
+
+              It touches the STREAK and nothing else. No FSRS write, no card scheduled, no
+              grade recorded: a lesson still cannot be failed, and `lib/lessonPractice.ts`
+              still grades nothing. See lib/lessons.ts.
+            */}
+            <LearnTab active={tab === 'learn'} onNavigateSrs={() => changeTab('practice')}
+              onActivity={recordActivity} streak={streak} />
           </TabPanel>
           <TabPanel active={tab === 'dash'}>
             <StatsTab onNavigateRead={() => changeTab('read')} onNavigateReview={() => changeTab('practice')}

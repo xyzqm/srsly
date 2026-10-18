@@ -32,11 +32,26 @@ interface Props {
   onNavigateSrs?: () => void;
   /** False while the tab is kept alive but hidden — see components/TabPanel.tsx. */
   active?: boolean;
+  /**
+   * Count today as studied. Resolves to the new streak when this was the day's FIRST study of
+   * any kind, and to `undefined` when the day was already counted — which is the difference
+   * between "extended" and "kept" on screen, and why the return value is not thrown away.
+   */
+  onActivity?: () => Promise<number | undefined>;
+  /** The streak as it stands, for the day the learner has already been counted for. */
+  streak?: number;
 }
+
+/**
+ * What a completed lesson says about the streak.
+ *
+ * `day` is where the streak now stands; `extended` is whether this action is what moved it.
+ */
+interface StreakNote { day: number; extended: boolean }
 
 const MONO: React.CSSProperties = { fontFamily: 'var(--f-mono)', letterSpacing: '.08em' };
 
-export default function LearnTab({ onNavigateSrs, active = true }: Props) {
+export default function LearnTab({ onNavigateSrs, active = true, onActivity, streak = 0 }: Props) {
   const language = useLanguage();
   const { deck, addWords, addWord } = useVocabDeck(language);
   const all = useMemo(() => lessonsFor(language), [language]);
@@ -66,15 +81,35 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
   // Opening a lesson while a different language is selected would show French lessons under
   // a Chinese deck; switching closes whatever was open, as EpubPanel does with its book.
   useEffect(() => { setOpenId(null); }, [language]);
+  // The note belongs to the lesson that earned it; opening another must not inherit it.
+  useEffect(() => { setStreakNote(null); }, [openId]);
+
+  const [streakNote, setStreakNote] = useState<StreakNote | null>(null);
+
+  /**
+   * Count today as studied, and report where that leaves the streak.
+   *
+   * Only ever called when a lesson is being FINISHED. Un-ticking one must not count a day —
+   * and more importantly must not UNCOUNT it, which nothing here could do anyway: the streak
+   * records that you studied, and reading a lesson and then changing your mind about the tick
+   * does not unmake the reading.
+   */
+  const countToday = useCallback(async () => {
+    if (!onActivity) return;
+    const extendedTo = await onActivity();
+    setStreakNote({ day: extendedTo ?? streak, extended: extendedTo !== undefined });
+  }, [onActivity, streak]);
 
   const mark = useCallback((id: string) => {
     setDone(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      const finishing = !next.has(id);
+      if (finishing) next.add(id); else next.delete(id);
       void storage.saveLessonsDone([...next]);
+      if (finishing) void countToday();
       return next;
     });
-  }, []);
+  }, [countToday]);
 
   const open = all.find(l => l.id === openId) ?? null;
   const units = useMemo(() => unitsFor(language), [language]);
@@ -110,6 +145,7 @@ export default function LearnTab({ onNavigateSrs, active = true }: Props) {
             onBack={() => setOpenId(null)}
             onNavigateSrs={onNavigateSrs}
             active={active}
+            streakNote={streakNote}
           />
         : <CoursePath units={units} byId={byId} done={done} doneLoaded={doneLoaded}
             next={next} onOpen={setOpenId} />}
@@ -369,7 +405,50 @@ function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, on
   );
 }
 
-function LessonView({ lesson, done, deck, addWords, addWord, onMark, onBack, onNavigateSrs, active }: {
+
+/**
+ * THE STREAK, SAID OUT LOUD AT THE MOMENT IT MOVES.
+ *
+ * A streak that is only ever visible on another tab is a number, not a motivation. It is shown
+ * here because this is where the day was earned, and immediately, because the gap between
+ * doing the thing and being told it counted is the whole of the feeling.
+ *
+ * ── IT DISTINGUISHES EXTENDED FROM KEPT, AND THAT IS NOT PEDANTRY ──
+ * `recordActivity` counts a day once. Finish a second lesson and the streak does not move —
+ * so announcing "day 4" twice would be the app claiming credit it did not give, and a learner
+ * who noticed would stop believing the number. The second one says the day is already counted,
+ * which is a real and reassuring thing to be told.
+ *
+ * No flame, and no emoji anywhere near it: `Mark.tsx` and `BadgeSeal` both refuse emoji for
+ * the same reason, that it is somebody else's artwork drawn differently on every OS, arriving
+ * in full colour into a palette assembled from ten themes.
+ */
+function StreakBanner({ note }: { note: StreakNote }) {
+  return (
+    <div
+      className="mt-4 rounded-[11px] px-4 py-3 flex items-baseline gap-3 animate-rise"
+      style={{ background: 'var(--jade-soft)', border: '1px solid var(--jade)' }}
+      role="status"
+    >
+      <span style={{ fontFamily: 'var(--f-display)', fontSize: 23, lineHeight: 1, color: 'var(--jade)' }}>
+        {note.day}
+      </span>
+      <span className="min-w-0">
+        <span style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--jade)',
+          display: 'block', letterSpacing: '.14em' }}>
+          {note.extended ? 'Day streak \u2014 extended' : 'Day streak \u2014 today already counted'}
+        </span>
+        <span style={{ fontSize: 12.5, color: 'var(--ink-soft)', display: 'block', marginTop: 2 }}>
+          {note.extended
+            ? 'Finishing a lesson counts as studying, the same as reviewing cards.'
+            : 'You had already studied today, so the streak stays where it is.'}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function LessonView({ lesson, done, deck, addWords, addWord, onMark, onBack, onNavigateSrs, active, streakNote }: {
   lesson: Lesson;
   done: boolean;
   deck: { h: string }[];
@@ -379,6 +458,7 @@ function LessonView({ lesson, done, deck, addWords, addWord, onMark, onBack, onN
   onBack: () => void;
   onNavigateSrs?: () => void;
   active: boolean;
+  streakNote: StreakNote | null;
 }) {
   return (
     <>
@@ -396,15 +476,16 @@ function LessonView({ lesson, done, deck, addWords, addWord, onMark, onBack, onN
       <div style={{ fontSize: 13, color: 'var(--ink-faint)', marginBottom: 22 }}>{lesson.summary}</div>
 
       {lesson.kind === 'vocab'
-        ? <VocabLesson lesson={lesson} done={done} deck={deck} addWords={addWords} onMark={onMark} onNavigateSrs={onNavigateSrs} active={active} />
-        : <GrammarLesson lesson={lesson} done={done} onMark={onMark} addWord={addWord} />}
+        ? <VocabLesson lesson={lesson} done={done} deck={deck} addWords={addWords} onMark={onMark} onNavigateSrs={onNavigateSrs} active={active} streakNote={streakNote} />
+        : <GrammarLesson lesson={lesson} done={done} onMark={onMark} addWord={addWord} streakNote={streakNote} />}
     </>
   );
 }
 
-function GrammarLesson({ lesson, done, onMark, addWord }: {
+function GrammarLesson({ lesson, done, onMark, addWord, streakNote }: {
   lesson: Lesson; done: boolean; onMark: () => void;
   addWord: (w: { h: string; p: string; m: string }) => Promise<void>;
+  streakNote: StreakNote | null;
 }) {
   const language = useLanguage();
   const unspaced = getLanguageConfig(language).scriptIsUnspaced;
@@ -547,6 +628,9 @@ function GrammarLesson({ lesson, done, onMark, addWord }: {
         >
           {done ? '✓ Done — mark unread' : 'Mark as done'}
         </button>
+        {/* Only while the lesson is still ticked — un-ticking it should not leave a banner
+            congratulating the learner for a lesson they have just un-finished. */}
+        {done && streakNote && <StreakBanner note={streakNote} />}
       </div>
 
       <WordPopup data={popup} onClose={() => setPopup(null)}
@@ -632,7 +716,7 @@ function ReferenceTable({ table, unspaced, onInspect }: {
   );
 }
 
-function VocabLesson({ lesson, done, deck, addWords, onMark, onNavigateSrs, active }: {
+function VocabLesson({ lesson, done, deck, addWords, onMark, onNavigateSrs, active, streakNote }: {
   lesson: Lesson;
   done: boolean;
   deck: { h: string }[];
@@ -640,6 +724,7 @@ function VocabLesson({ lesson, done, deck, addWords, onMark, onNavigateSrs, acti
   onMark: () => void;
   onNavigateSrs?: () => void;
   active: boolean;
+  streakNote: StreakNote | null;
 }) {
   const language = useLanguage();
   const [entries, setEntries] = useState<{ h: string; p: string; m: string }[] | null>(null);
@@ -742,6 +827,7 @@ function VocabLesson({ lesson, done, deck, addWords, onMark, onNavigateSrs, acti
           </button>
         )}
       </div>
+      {done && streakNote && <StreakBanner note={streakNote} />}
     </>
   );
 }
