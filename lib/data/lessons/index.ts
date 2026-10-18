@@ -5,6 +5,7 @@ import { ES_LESSONS } from './es';
 import { ZH_LESSONS } from './zh';
 import { JA_LESSONS } from './ja';
 import { LESSON_PRACTICE } from '../lesson-practice';
+import { LESSON_FOCUS } from './focus';
 
 /**
  * The lesson prose, kept BEHIND its own module.
@@ -39,9 +40,18 @@ export function lessonsFor(lang: LanguageCode): Lesson[] {
   if (cached) return cached;
   const base = LESSONS[lang] ?? [];
   const practice = LESSON_PRACTICE[lang] ?? {};
+  // Which forms each lesson's rule chooses between, attached the same way and for the same
+  // reason as the practice sentences: it is a fact about the EXERCISE rather than about the
+  // prose, and keeping it out of the four lesson files keeps all of it reviewable at once.
+  const focus = LESSON_FOCUS[lang] ?? {};
   // Memoised because the identity of these objects is load-bearing: `nextGrammarLesson`
   // returns one and callers compare it against the array they were given.
-  const out = base.map(l => (practice[l.id]?.length ? { ...l, practice: practice[l.id] } : l));
+  const out = base.map(l => {
+    const extra: Partial<typeof l> = {};
+    if (practice[l.id]?.length) extra.practice = practice[l.id];
+    if (focus[l.id]?.length) extra.focus = focus[l.id];
+    return Object.keys(extra).length ? { ...l, ...extra } : l;
+  });
   merged.set(lang, out);
   return out;
 }

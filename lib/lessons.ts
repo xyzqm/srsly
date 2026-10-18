@@ -171,6 +171,36 @@ export interface Lesson {
    */
   practice?: LessonExample[];
   /**
+   * Grammar only: THE FORMS THIS LESSON'S RULE CHOOSES BETWEEN.
+   *
+   * ⚠ WITHOUT THIS, 92% OF PRACTICE QUESTIONS ASKED THE WRONG THING. Measured across all 104
+   * grammar lessons: 297 of 323 questions were "rebuild the sentence", and 94 of the 104
+   * lessons asked NOTHING ELSE. Rebuilding tests word ORDER — which is exactly right for
+   * `es-adj-position`, `zh-le` or `ja-word-order`, where the position IS the rule.
+   *
+   * It is useless for every lesson whose rule is a CHOICE, because the choice is already
+   * printed on the tile. `es-gender` teaches el against la and hands the learner a tile
+   * reading `El`. `es-ser-estar` teaches the hardest distinction in Spanish and hands them
+   * `es`. `fr-partitif` hands them `du`. The sentences were well chosen — ser/estar correctly
+   * contrasts a tall sister with cold food — and the exercise could not ask about any of it.
+   *
+   * This is the SAME DEFECT `accentWords` exists for, reported then as "the practice has
+   * nothing to do with it", and it turned out to be sitting under most of the other lessons
+   * where it was simply less visible.
+   *
+   * So a lesson names the forms it is about, and `lib/lessonPractice.ts` blanks whichever one
+   * appears in each sentence and offers the whole set. `El perro es grande.` becomes
+   * `___ perro es grande.` against El / La — which is the question the lesson is teaching.
+   *
+   * **It DEGRADES rather than breaking.** A sentence containing none of these forms falls
+   * back to the ordering question, so a focus set that matches nothing costs nothing — which
+   * is also why `tests/lessonFocus.test.ts` asserts every declared set actually BITES.
+   *
+   * Deliberately absent from the word-order lessons. A focus set added there for consistency
+   * would replace the right question with a worse one.
+   */
+  focus?: string[];
+  /**
    * Grammar only: words for the accent drill, which REPLACES the sentence questions.
    *
    * A lesson that has these is one whose rule lives in the spelling of a word rather than in

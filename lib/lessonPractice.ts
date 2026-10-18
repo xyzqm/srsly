@@ -43,6 +43,16 @@ export interface ChoiceQuestion {
   /** The correct tile, plus distractors, already shuffled. */
   options: string[];
   answer: string;
+  /**
+   * Where this question came from. `'focus'` means the lesson named the forms and this blank
+   * is the rule itself; `'length'` means the sentence was too short to order and a word was
+   * removed at random.
+   *
+   * It exists for the TEST rather than for the UI, and that is a fair reason: a lesson can
+   * produce both kinds, so without it `tests/lessonFocus.test.ts` cannot assert anything about
+   * the focus questions without also asserting it of the random ones.
+   */
+  via: 'focus' | 'length';
 }
 
 /** The whole sentence, out of order, to be rebuilt. */
@@ -243,6 +253,83 @@ export function bareWord(tile: string): string {
   return tile.replace(/[。．.!！?？,，、;；:：]+$/u, '');
 }
 
+
+/**
+ * Match a tile against a lesson's `focus` set, ignoring case and trailing punctuation.
+ *
+ * Case has to be ignored because `tests/lessons.test.ts` capitalises the first word of every
+ * Spanish and French sentence, so the tile is `El` while the rule is about `el`.
+ */
+function focusIndex(tiles: string[], focus: readonly string[]): number {
+  const want = new Set(focus.map(f => f.toLowerCase()));
+  /*
+    ⚠ THE FINAL TILE IS INCLUDED, AND EXCLUDING IT KILLED THREE LESSONS OUTRIGHT.
+    The length-based choice question never blanks the last tile, because it carries the
+    sentence's punctuation and a gap there is visible before a word is read. That reasoning
+    does not survive contact with Chinese or Japanese: a SENTENCE-FINAL PARTICLE is final by
+    definition, so `zh-ne-ba` (吗？/吧。/呢？) and `ja-aru-iru` (います。/あります。) had every
+    one of their sentences skipped and silently stayed on the ordering drill — the exact
+    failure the focus mechanism exists to remove.
+
+    The punctuation is handled instead of avoided: the blank takes the WHOLE tile and every
+    option wears the same trailing mark, so it is identical across the list and distinguishes
+    nothing. See `focusOptions`.
+  */
+  for (let i = 0; i < tiles.length; i++) {
+    if (want.has(bareWord(tiles[i]).toLowerCase())) return i;
+  }
+  return -1;
+}
+
+/**
+ * The option list for a focus question, wearing the blanked tile's own capitalisation.
+ *
+ * ⚠ THIS IS THE WHOLE QUESTION, NOT A DETAIL. Blanking `El` and offering `El / la / los / las`
+ * hands over the answer: one option is capitalised and the gap is at the start of a sentence.
+ * Every option takes the case of the tile that was removed, so the only thing separating them
+ * is the grammar.
+ */
+function focusOptions(focus: readonly string[], answer: string): string[] {
+  const bare = bareWord(answer);
+  // Whatever the blanked tile carried after its word — a full stop, a question mark, nothing.
+  // Appended to EVERY option so the mark is constant across the list, which is what makes
+  // blanking a sentence-final particle a fair question rather than a giveaway.
+  const punct = answer.slice(bare.length);
+  const capitalised = bare[0] === bare[0]?.toUpperCase() && bare[0] !== bare[0]?.toLowerCase();
+  const cased = (w: string) => (capitalised ? w.charAt(0).toUpperCase() + w.slice(1) : w);
+  // Deduplicated AFTER casing, so a set naming both `el` and `El` cannot show one twice.
+  return [...new Set(focus.map(f => cased(f) + punct))];
+}
+
+
+/**
+ * ⚠ WOULD BLANKING THIS FORM PUT THE ANSWER IN THE PROMPT?
+ *
+ * The prompt for a sentence question is its English gloss, and `promptFor` already strips the
+ * teaching aside for exactly this reason — "This sheet of paper is big — 张 for flat things"
+ * printed the answer above the answer box. The focus questions reopened the problem from the
+ * other side: `es-negation` blanks **No** in "No tengo dinero.", whose gloss is "I have **no**
+ * money." The Spanish answer is an ordinary English word, and the prompt hands it over.
+ *
+ * Caught by `tests/lessonPractice.test.ts`, which has asserted this of every prompt since long
+ * before focus questions existed — so the rule is enforced here rather than worked around by
+ * deleting `no` from the lesson that is ABOUT no.
+ *
+ * A leak falls back to the ordering question, which costs that one sentence and nothing else.
+ *
+ * The two matching rules are the two the test uses, and the difference is load-bearing: a bare
+ * substring on a Latin answer is useless (`a`, from `fr-avoir`, is inside half the words in
+ * any English sentence) and a word boundary on CJK is meaningless, since `\b` needs spaces.
+ */
+function promptLeaksAnswer(gloss: string, answer: string): boolean {
+  const word = bareWord(answer);
+  if (!word) return false;
+  const [prompt] = gloss.split(' \u2014 ');
+  if (/[\u3040-\u30ff\u3400-\u9fff]/u.test(word)) return prompt.includes(word);
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(prompt);
+}
+
 /**
  * Build one lesson's questions.
  *
@@ -280,6 +367,34 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
   const questions: PracticeQuestion[] = [];
   for (const example of examples) {
     const tiles = example.tiles!;
+
+    /*
+      ── A LESSON ABOUT A CHOICE ASKS ABOUT THAT CHOICE, AHEAD OF EVERYTHING ELSE ──
+      Checked BEFORE the length test, because length is a fact about the sentence and this is
+      a fact about the rule — and the length test is what silently turned 90% of lessons into
+      a word-order drill. `El perro es grande.` is four tiles and would have been ordered; it
+      is a gender lesson, so it is `___ perro es grande.` against El / La instead.
+
+      Falls through to ordering when the sentence contains none of the lesson's forms, so a
+      focus set is additive and a lesson without one is untouched.
+    */
+    const fi = lesson.focus?.length ? focusIndex(tiles, lesson.focus) : -1;
+    if (fi >= 0 && !promptLeaksAnswer(example.gloss, tiles[fi])) {
+      // The whole tile, punctuation and all — `focusOptions` puts the same mark on every
+      // option, so the answer is still only distinguishable by its grammar.
+      const answer = tiles[fi];
+      const options = focusOptions(lesson.focus!, answer);
+      // Two options or it is not a choice — a one-option set would render a gap with a single
+      // button under it, which gives the answer away more thoroughly than printing it.
+      if (options.length >= 2) {
+        questions.push({
+          kind: 'choice', example, tiles, blankIndex: fi, via: 'focus',
+          options: shuffle(options, rand), answer,
+        });
+        continue;
+      }
+    }
+
     if (tiles.length >= MIN_ORDER_TILES) {
       let shuffled = shuffle(tiles, rand);
       for (let i = 0; i < RESHUFFLE_TRIES && sameOrder(shuffled, tiles); i++) {
@@ -304,6 +419,7 @@ export function buildQuestions(lesson: Lesson, rand: () => number = Math.random)
       blankIndex,
       options: shuffle([answer, ...distractors], rand),
       answer,
+      via: 'length',
     });
   }
 
