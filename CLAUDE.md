@@ -852,8 +852,13 @@ by accident is not evidence the description was being maintained** — check the
 
 **It used to lead with a STARTER TEXT, and that card was removed on request (2026-09-04).** The
 reasoning for it is kept because it was not wrong and the cost of removing it is real: every
-remaining route asks the learner to go and find something first, so an empty tab is now three
-things none of which can start on their own. `StarterPanel` and `lib/data/starterTexts.ts` are
+remaining route asks the learner to go and find something first, so an empty tab is three things
+none of which can start on their own. **Asked again on 2026-10-18 and declined again**, so the
+empty library was rebuilt instead of refilled: a real drag-and-drop dropzone for an EPUB (which
+`EpubPanel` had always had, two clicks away, so dragging a book onto the empty tab did nothing),
+a paste card showing a picture of the field it opens, and three numbered steps saying what
+happens after you bring something — because the old cards said what to GIVE and never what you
+GET. `StarterPanel` and `lib/data/starterTexts.ts` are
 left in the tree unreferenced, and `tests/starterTexts.test.ts` still holds that data to its
 contract, so restoring the card is one entry in `CARDS` rather than re-authoring twelve texts.
 
@@ -2454,7 +2459,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **339 kB** for `/`. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **344 kB** for `/` on Next 15.5.28, after the unit path, weekly XP, the reminder panel and the rebuilt empty library; it was 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -2811,6 +2816,87 @@ installed copy could hold one shell open for a week. `reg.update()` on return to
 throttled to an hour, is what makes the banner reachable at all for the installed case.
 `unregisterServiceWorker()` is exported as a deliberate kill switch: a worker outlives the
 deploy that shipped it, so a bad one needs a route out that is not "open DevTools".
+
+#### Daily reminders, which are the one feature that needs a server of its own
+
+`lib/push.ts` (browser), `app/api/push/{subscribe,unsubscribe}`, `app/api/cron/reminders`, the
+`push` and `notificationclick` handlers in `public/sw.js`, `components/settings/RemindersPanel.tsx`,
+`scripts/gen-vapid.mjs`, and migration `0010`.
+
+**THE OBVIOUS BUILD CANNOT WORK, AND IT IS WORTH SAYING WHY.** `setTimeout` plus
+`new Notification()` only runs while the page is open, and the entire point of a reminder is to
+arrive when the app is shut. Web Push is the only mechanism that does — the push service holds
+the message and wakes the service worker with the tab closed and the browser quit. That is also
+why this is the first feature in the repo that genuinely needs a scheduled server job.
+
+**⚠ ON iOS IT WORKS ONLY FROM THE HOME SCREEN.** Safari has supported Web Push since 16.4 for
+INSTALLED web apps only; in an ordinary tab `PushManager` is simply absent. So `pushAvailability()`
+returns `needs-install` separately from `unsupported`, because they need opposite sentences: one
+is "your browser cannot do this" and the other is "add this to your Home Screen and it can" —
+and the second is the only unsupported state a learner can actually fix. Collapsing them is this
+file's most-repeated bug with a new face.
+
+**THE PANEL IS FIVE STATES, NOT A TOGGLE.** not-configured (no VAPID key on the deployment),
+needs-install, unsupported, signed-out, and off. A switch implies the only two states are on and
+off; rendering any of the first four as an unchecked switch means the learner taps it, nothing
+happens, and the feature reads as broken rather than unavailable.
+
+**⚠ THE CRON RUNS HOURLY, AND A DAILY ONE IS WRONG RATHER THAN MERELY COARSE.** A single daily
+job fires at one UTC instant, which is breakfast in Berlin and 3am in Denver — and a
+notification that wakes somebody at 3am is the reason they uninstall. The device reports its own
+`tz_offset_minutes` (and re-reports on every subscribe, because a laptop flies and daylight
+saving moves), and the job asks per row whose local clock has just reached their chosen hour.
+
+**⚠ AND VERCEL'S HOBBY PLAN RUNS CRONS ONCE PER DAY**, so `vercel.json`'s `0 * * * *` is a
+Pro-plan schedule. On Hobby it is accepted and effectively runs daily, which breaks nothing
+visibly — most learners simply never reach their hour while the job happens to be awake, and
+reminders look like they silently do not work. Migration `0011` is the alternative: `pg_cron` +
+`pg_net` calling the route from the database side, which has no such limit. **Run one or the
+other, never both.**
+
+**IT SKIPS ANYONE WHO HAS ALREADY STUDIED**, which is the one thing that makes a daily reminder
+tolerable. `srs_state.lastActive` is one column; it is deliberately NOT a due-card count, which
+would mean parsing every learner's whole deck and running FSRS over it on every hourly tick to
+decide the wording of a sentence.
+
+**THE ROUTE REFUSES WITHOUT `CRON_SECRET`, AND A MISSING SECRET REFUSES RATHER THAN ALLOWS.** It
+reads every subscription with the service-role key and sends real notifications; left open,
+anybody could make every learner's phone buzz by loading a URL. Same fail-closed rule
+`consumeAiCredit` was fixed to follow.
+
+**AN ENDPOINT IS A BEARER CAPABILITY AND IS NEVER LOGGED.** Whoever holds it can push to that
+browser. It goes to its own row and nowhere else — not a log line, not an error message, not a
+URL — which is the rule `lib/server/generator.ts` states for an API key. Counts are logged.
+
+**A 404 OR 410 DELETES THE ROW; ANYTHING ELSE IS RETRIED NEXT HOUR.** Those two mean the browser
+is gone — uninstalled, site data cleared, permission revoked — so the row can never succeed and
+keeping it means strictly more useless work every day forever. A 429 or a 500 is transient. Same
+distinction `lib/storage/writeQueue.ts` draws between a schema fault and a network fault.
+
+**EVERY PUSH MUST SHOW SOMETHING.** `userVisibleOnly: true` is required at subscribe time, and a
+handler that resolves without calling `showNotification` is a promise the browser keeps for you:
+Chrome substitutes its own *"This site has been updated in the background"*, which is worse than
+the notification you meant to send. So the catch around the payload parse still shows one, and
+`tests/serviceWorkerPush.test.ts` drives the real handler to prove it — mutation-checked by
+making that catch rethrow.
+
+**`web-push` IS EARNED ON THE SEND PATH AND NOWHERE ELSE.** RFC 8291 payload encryption is ECDH,
+HKDF and AES-128-GCM, which is not something this repo should hand-roll. Key GENERATION
+deliberately does not use it: `scripts/gen-vapid.mjs` does the whole of it in ten lines of
+`node:crypto`, and using a library where it is load-bearing and not where it is not keeps the
+dependency's surface honest. That script PRINTS rather than writes, because `.env.example` is
+deliberately not gitignored and a helpful script could commit a private key.
+
+**⚠ ROTATING THE VAPID PAIR INVALIDATES EVERY EXISTING SUBSCRIPTION, SILENTLY.** The public key
+is baked into every subscription, so a new private key cannot push to an old one. Reminders
+simply stop until each device subscribes again, with nothing on screen to say so.
+
+**⚠ AND THE FIRST NESTED API ROUTE SWITCHED OFF THE BILLING FIREWALL.** `tests/aiGate.test.ts`
+enumerated `app/api/<name>/route.ts` and threw ENOENT the moment `app/api/push/subscribe`
+existed — which did not FAIL the firewall, it stopped it RUNNING: zero tests, beside a suite
+still reporting a pass. It walks nested routes now and names one as a control. **A security test
+that can be switched off by adding an unrelated directory is worse than one that is merely
+narrow.**
 
 #### What cannot work offline says so, in words
 
