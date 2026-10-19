@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
@@ -34,11 +34,33 @@ function code(src: string): string {
     .join('\n');
 }
 
-const routes = readdirSync(API, { withFileTypes: true })
-  .filter(d => d.isDirectory())
-  .map(d => d.name)
-  .sort()
-  .map(name => ({ name, src: code(readFileSync(resolve(API, name, 'route.ts'), 'utf8')) }));
+/**
+ * Every route handler under app/api, however deeply nested.
+ *
+ * ⚠ IT USED TO ASSUME ONE LEVEL — `app/api/<name>/route.ts` — and that is not what the App
+ * Router guarantees. The first nested route added (`app/api/push/subscribe`) made this file
+ * throw ENOENT at import time, so the firewall did not fail, it did not RUN: zero tests, and a
+ * suite that still reported "71 passed" beside it. A security test that can be switched off by
+ * adding an unrelated directory is worse than one that is merely narrow.
+ *
+ * The name keeps its full path (`push/subscribe`), because that is what the route IS and the
+ * lists below are easier to read for it.
+ */
+function routeFiles(dir: string, prefix = ''): { name: string; src: string }[] {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .flatMap(d => {
+      const here = resolve(dir, d.name);
+      const name = prefix ? `${prefix}/${d.name}` : d.name;
+      const own = existsSync(resolve(here, 'route.ts'))
+        ? [{ name, src: code(readFileSync(resolve(here, 'route.ts'), 'utf8')) }]
+        : [];
+      return [...own, ...routeFiles(here, name)];
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const routes = routeFiles(API);
 
 /** Anything that could construct an Anthropic client, deliberately over-approximated. */
 const reachesAnthropic = routes.filter(r =>
@@ -73,6 +95,11 @@ describe('every route that can reach Anthropic says who pays', () => {
     // Without this the two assertions below pass trivially if the scan ever breaks.
     expect(routes.length).toBeGreaterThan(5);
     expect(reachesAnthropic.map(r => r.name)).toContain('daily-content');
+    // ⚠ AND IT REACHES NESTED ROUTES. The scan assumed `app/api/<name>/route.ts` and threw
+    // ENOENT on the first nested one, which did not fail the firewall — it stopped it running
+    // at all, zero tests, beside a suite still reporting a pass. Naming one nested route here
+    // means that can only ever happen loudly.
+    expect(routes.map(r => r.name)).toContain('push/subscribe');
   });
 
   it('is exactly the known list, so a fourth route fails here rather than billing quietly', () => {

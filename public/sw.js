@@ -338,6 +338,70 @@ self.addEventListener('fetch', function (event) {
   event.respondWith(immutableFirst(event, request));
 });
 
+/*
+  ── PUSH: A REMINDER ARRIVING WHILE THE APP IS SHUT ──────────────────────────
+  This is the whole reason reminders need a service worker at all. A page only runs while it
+  is open, and the point of a reminder is to arrive when it is not.
+
+  ⚠ EVERY PUSH MUST SHOW SOMETHING. `userVisibleOnly: true` is required at subscribe time by
+  every browser, and a push handler that resolves without calling `showNotification` is a
+  broken promise the browser keeps for you — Chrome substitutes its own "This site has been
+  updated in the background" notice, which is worse than the notification we meant to send.
+  So the catch below still shows a notification rather than returning.
+
+  ⚠ AND IT MUST BE INSIDE `waitUntil`. `showNotification` returns a promise, and a service
+  worker is kept alive only for the promise handed to the event. Without it the worker may be
+  killed before the notification is drawn — which works on a desktop with devtools open and
+  silently drops on a phone, the same trap the cache writes above already document.
+*/
+self.addEventListener('push', function (event) {
+  var data = { title: 'srsly', body: 'Time to study.', url: '/', tag: 'srsly-daily' };
+  try {
+    if (event.data) data = Object.assign(data, event.data.json());
+  } catch {
+    // A payload that will not parse is still a push that must show something.
+  }
+  event.waitUntil(self.registration.showNotification(data.title, {
+    body: data.body,
+    // The app's own mark, not a system glyph — see scripts/build-icons.mjs.
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    // A TAG REPLACES RATHER THAN STACKS. Two days unopened should leave one notification
+    // saying today's thing, not a pile that has to be dismissed one by one.
+    tag: data.tag,
+    renotify: true,
+    data: { url: data.url },
+  }));
+});
+
+/*
+  ── TAPPING IT OPENS THE APP, OR FOCUSES THE COPY ALREADY OPEN ───────────────
+  `clients.openWindow` unconditionally would open a SECOND window beside one the learner
+  already has, which on a phone reads as the app losing their place. So an existing client is
+  focused and navigated instead, and a new window is the fallback.
+
+  `includeUncontrolled` matters: a tab opened before this worker took control is still the
+  learner's app and still the one to focus.
+*/
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  var target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        var client = list[i];
+        // Same-origin only: `focus()` on anything else is both pointless and not ours to do.
+        if (new URL(client.url).origin === self.location.origin) {
+          return client.focus().then(function (c) {
+            return c && c.navigate ? c.navigate(target) : c;
+          });
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
+
 // The seam tests/serviceWorker.test.ts drives. Exposed rather than duplicated in TypeScript:
 // two copies of an allowlist is the drift lib/pinyin.ts warns about for stripTones.
 self.__srsly = {

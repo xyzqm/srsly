@@ -16,6 +16,7 @@ import SignInModal from '@/components/auth/SignInModal';
 import LevelTest from '@/components/level/LevelTest';
 import AccountPanel from './AccountPanel';
 import ApiKeyPanel from './ApiKeyPanel';
+import RemindersPanel from './RemindersPanel';
 import SpeechSettings from './SpeechSettings';
 
 const RETENTION_PRESETS = [
@@ -639,6 +640,17 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
       </>)}
 
       {group === 'schedule' && (<>
+      {/*
+        ── REMINDERS, AND THEY BELONG IN *SCHEDULING* ─────────────────────────
+        The other groups were each wrong for a reason. Account is about who you are signed in
+        as; Studying is about how the app behaves while you are using it; Backup is sync. A
+        daily reminder is a question about WHEN you study, which is what this group already
+        answers for retention and the new-card budget — and it is the group someone annoyed by
+        a notification will open first.
+      */}
+      <SectionLabel>Daily reminder</SectionLabel>
+      <div className="mb-10"><RemindersPanel /></div>
+
       {/* ── Desired Retention ─────────────────────────────────────────────── */}
       <SectionLabel>Desired retention</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>

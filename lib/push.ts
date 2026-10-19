@@ -1,27 +1,16 @@
 /**
- * ⚠⚠ NOT WIRED UP YET — NOTHING IN THE APP CALLS ANY OF THIS, AND NO REMINDER CAN ARRIVE. ⚠⚠
+ * ── WHAT THIS NEEDS TO ACTUALLY DELIVER ANYTHING ────────────────────────────
+ * The fence that stood here is gone, because the rest shipped: the subscribe and unsubscribe
+ * routes, the hourly cron, the `push` and `notificationclick` handlers in `public/sw.js`, and
+ * the Settings panel. Four environment variables still have to be set or nothing is sent —
+ * `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` and `CRON_SECRET`, plus
+ * `SUPABASE_SERVICE_ROLE_KEY` for the cron. With the public key unset, `pushAvailability()`
+ * answers `not-configured` and the panel says so rather than offering a control that cannot
+ * work. See `.env.example` and `scripts/gen-vapid.mjs`.
  *
- * CLAUDE.md's rule: **a design that is not built yet gets FENCED, and the fence gets DELETED
- * when it ships.** This file, `scripts/gen-vapid.mjs` and
- * `supabase/migrations/0010_push_subscriptions.sql` are the finished third of a reminder
- * system. The rest does not exist:
- *
- *   - `app/api/push/subscribe/route.ts` and `/unsubscribe` — NOT WRITTEN. The two `fetch`
- *     calls below point at routes that will 404.
- *   - `app/api/cron/reminders/route.ts` + the `vercel.json` schedule — NOT WRITTEN. Nothing
- *     sends anything, so a subscription stored today would never be pushed to.
- *   - `push` and `notificationclick` handlers in `public/sw.js` — NOT WRITTEN. A push that did
- *     arrive would be dropped, and on some browsers would show a generic "site updated in the
- *     background" notice instead.
- *   - The Settings UI and the Add-to-Home-Screen prompt — NOT WRITTEN.
- *
- * So: `web-push` is installed and a VAPID pair validates against it, the table and its RLS are
- * ready to run, and the browser half is complete. Do NOT read the presence of this file as the
- * feature existing. Delete this fence when the five items above are done.
- *
- * (The dependency is earned on the SEND path only — RFC 8291 payload encryption is ECDH, HKDF
- * and AES-128-GCM, which is not something to hand-roll. Key generation deliberately does not
- * use it; `scripts/gen-vapid.mjs` says why.)
+ * (`web-push` is earned on the SEND path only — RFC 8291 payload encryption is ECDH, HKDF and
+ * AES-128-GCM, which is not something to hand-roll. Key generation deliberately does not use
+ * it; `scripts/gen-vapid.mjs` says why.)
  */
 
 /**

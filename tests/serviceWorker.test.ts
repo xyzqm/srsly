@@ -78,8 +78,13 @@ describe('the service worker exposes a classifier to test', () => {
     const sw = load();
     expect(typeof sw.classify).toBe('function');
     expect(typeof sw.storable).toBe('function');
-    // install / activate / message / fetch
-    expect(Object.keys(sw.events).sort()).toEqual(['activate', 'fetch', 'install', 'message']);
+    // The worker's whole surface, pinned as a SET rather than a count: `push` and
+    // `notificationclick` were added for daily reminders, and a listener disappearing is the
+    // failure that leaves a feature silently dead. `push` in particular must exist whenever
+    // anything subscribes — a subscription with no handler makes Chrome show its own "site
+    // updated in the background" notice instead of the reminder.
+    expect(Object.keys(sw.events).sort())
+      .toEqual(['activate', 'fetch', 'install', 'message', 'notificationclick', 'push']);
   });
 });
 
