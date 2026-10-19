@@ -71,6 +71,14 @@ const mono = { fontFamily: 'var(--f-mono)' } as const;
 export default function ReadingSources({ language, deck, dueWords, blankDensity, onCommit, onCommitBook, emptyTab, clip = null, pendingShare = false }: Props) {
   const [open, setOpen] = useState(pendingShare);
   const [source, setSource] = useState<Source | null>(pendingShare ? 'paste' : null);
+  /**
+   * A file dropped straight onto the empty library, before any source was chosen.
+   *
+   * The dropzone lives where the learner meets it rather than two clicks in, so the file
+   * arrives BEFORE the panel that reads it exists. It is held here for exactly one render and
+   * handed down; `EpubPanel` ingests it once and ignores it thereafter.
+   */
+  const [dropped, setDropped] = useState<File | null>(null);
 
   /**
    * Fold away once something arrives to read — otherwise the chooser stays expanded above the
@@ -122,29 +130,16 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
   /* ── Empty tab: the chooser leads the screen ─────────────────────────────── */
   if (emptyTab) {
     if (source) {
-      return <div className="flex flex-col gap-3 w-full">{back}{panel(source)}</div>;
+      return (
+        <div className="flex flex-col gap-3 w-full">
+          {back}
+          {source === 'epub'
+            ? <EpubPanel {...panelProps} onCommit={onCommitBook} startOpen initialFile={dropped} />
+            : panel(source)}
+        </div>
+      );
     }
-    return (
-      <div className="w-full">
-        <div style={{ ...mono, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
-          Read something
-        </div>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-          {CARDS.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setSource(c.id)}
-              className="cursor-pointer transition-all duration-150 text-left"
-              style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 12, padding: '15px 16px' }}
-            >
-              <div style={{ color: 'var(--ink-soft)', marginBottom: 9 }}><Mark name={c.mark} size={20} /></div>
-              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{c.label}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 3, lineHeight: 1.45 }}>{c.hint}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    return <EmptyLibrary onPick={setSource} onDropFile={f => { setDropped(f); setSource('epub'); }} />;
   }
 
   /* ── Reading already: one button ─────────────────────────────────────────── */
@@ -192,6 +187,157 @@ export default function ReadingSources({ language, deck, dueWords, blankDensity,
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * THE EMPTY LIBRARY — the screen that has to make somebody want to bring their own reading.
+ *
+ * ## WHAT IT REPLACED, AND WHY THAT WAS NOT GOOD ENOUGH
+ *
+ * Two small cards reading "Paste text" and "Upload a book", side by side, under a mono label.
+ * Nothing was broken about them and they were still the weakest screen in the app: this tab
+ * carries the whole argument — *read what you actually want to read* — and it opened with two
+ * grey boxes that each asked the learner to go and find something first, with no sense of what
+ * would happen once they did.
+ *
+ * ## THE DROPZONE IS REAL, AND IT WAS ALREADY BUILT TWO CLICKS AWAY
+ *
+ * `EpubPanel` has always had a drag-and-drop target with its own drag state. It was behind a
+ * card, so dragging a book onto the empty tab did nothing — the one gesture somebody with an
+ * EPUB in a folder would actually try. It is hoisted here: the file is caught before the panel
+ * that reads it exists, held for one render, and handed down through `initialFile`.
+ *
+ * ## AND THE THREE STEPS ARE THE PART A BEGINNER IS MISSING
+ *
+ * The cards said what to GIVE and never what you GET. Tapping a word to schedule it is the
+ * entire loop of this app and is invisible until you have already done it once — so it is
+ * stated, in three short steps, on the screen where somebody is deciding whether to bother.
+ */
+function EmptyLibrary({ onPick, onDropFile }: {
+  onPick: (s: Source) => void;
+  onDropFile: (f: File) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  /*
+    `dragenter`/`dragover` must BOTH preventDefault or the browser navigates to the file
+    instead, replacing the app with a raw EPUB download. `dragleave` fires when the pointer
+    crosses onto a CHILD element, so the highlight is cleared on drop and on leaving the
+    element itself rather than on every internal boundary.
+  */
+  const stop = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
+
+  return (
+    <div className="w-full">
+      <h3 style={{ fontFamily: 'var(--f-display)', fontSize: 26, fontWeight: 500, letterSpacing: '-.015em',
+        color: 'var(--ink)', margin: '0 0 6px', lineHeight: 1.2 }}>
+        Read what you actually want to read.
+      </h3>
+      <p style={{ fontSize: 14, color: 'var(--ink-soft)', lineHeight: 1.6, margin: '0 0 20px', maxWidth: '52ch' }}>
+        Bring an article, a chapter, a whole book. srsly splits it into words, defines every one
+        of them, and keeps the ones you tap.
+      </p>
+
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+        {/* ── The dropzone. Larger than its neighbour on purpose: it is the only one of the
+            two that can be used by doing nothing more than dragging. ── */}
+        <label
+          onDragEnter={e => { stop(e); setDragging(true); }}
+          onDragOver={stop}
+          onDragLeave={e => { stop(e); if (e.currentTarget === e.target) setDragging(false); }}
+          onDrop={e => {
+            stop(e);
+            setDragging(false);
+            const f = e.dataTransfer.files?.[0];
+            // Anything else falls through to the panel's own error, which names the problem.
+            if (f) onDropFile(f);
+          }}
+          className="cursor-pointer transition-all duration-150 flex flex-col items-center justify-center text-center"
+          style={{
+            borderRadius: 14, padding: '30px 20px', minHeight: 188,
+            border: `1.5px dashed ${dragging ? 'var(--accent)' : 'var(--line)'}`,
+            background: dragging ? 'var(--accent-soft)' : 'var(--paper-2)',
+          }}
+        >
+          <input
+            type="file"
+            accept=".epub,application/epub+zip"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onDropFile(f); }}
+          />
+          <div style={{ color: dragging ? 'var(--accent)' : 'var(--ink-soft)', marginBottom: 11 }}>
+            <Mark name="book" size={27} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>
+            {dragging ? 'Drop it' : 'Drop a book here'}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5, maxWidth: '26ch' }}>
+            EPUB, read a chapter at a time — or click to choose one
+          </div>
+          {/* The promise this panel has always made, said where the file is handed over
+              rather than after. */}
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.1em', textTransform: 'uppercase',
+            color: 'var(--ink-faint)', marginTop: 12 }}>
+            Stays on this device
+          </div>
+        </label>
+
+        {/* ── Paste. A real text affordance rather than a label: the box is what it does. ── */}
+        <button
+          onClick={() => onPick('paste')}
+          className="cursor-pointer transition-all duration-150 text-left flex flex-col"
+          style={{
+            borderRadius: 14, padding: '20px', minHeight: 188,
+            border: '1px solid var(--line)', background: 'var(--card)',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line)')}
+        >
+          <div style={{ color: 'var(--ink-soft)', marginBottom: 10 }}><Mark name="page" size={24} /></div>
+          <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Paste text</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.5 }}>
+            An article, a song, a page of a book — anything you already want to read.
+          </div>
+          {/* A stand-in for the field it opens, so the card SHOWS what pressing it gives you.
+              `aria-hidden`: it is a picture of an input, and a screen reader meeting a second
+              fake textbox inside a button would be told something untrue. */}
+          <div
+            aria-hidden
+            className="mt-auto w-full"
+            style={{ borderRadius: 9, border: '1px dashed var(--line)', background: 'var(--paper-2)',
+              padding: '10px 12px', marginTop: 16 }}
+          >
+            <div style={{ ...mono, fontSize: 11, color: 'var(--ink-faint)' }}>Paste here…</div>
+          </div>
+        </button>
+      </div>
+
+      {/* ── WHAT HAPPENS NEXT. The cards said what to give and never what you get. ── */}
+      <ol className="grid gap-x-6 gap-y-3 mt-7" style={{
+        gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', listStyle: 'none', padding: 0, margin: 0,
+      }}>
+        {[
+          ['Tap any word', 'Definition, how it sounds, and the grammar it is doing.'],
+          ['Save the ones you want', 'They go into your deck with a review scheduled.'],
+          ['They come back', 'Spaced out, just before you would have forgotten.'],
+        ].map(([title, body], i) => (
+          <li key={title} className="flex gap-3">
+            <span aria-hidden className="shrink-0 flex items-center justify-center rounded-full"
+              style={{ ...mono, fontSize: 10, width: 21, height: 21, marginTop: 1,
+                border: '1px solid var(--line)', color: 'var(--ink-faint)' }}>
+              {i + 1}
+            </span>
+            <span className="min-w-0">
+              <span style={{ fontSize: 13, color: 'var(--ink)', display: 'block', fontWeight: 500 }}>{title}</span>
+              <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 2, lineHeight: 1.5 }}>
+                {body}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

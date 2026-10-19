@@ -39,11 +39,19 @@ interface Props {
   dueWords: Set<string>;
   blankDensity?: number;
   onCommit: (passage: DailyPassage) => void;
+  /**
+   * A file already chosen somewhere else — the empty library's dropzone, which is this panel's
+   * own drop target hoisted up to where the learner actually meets it.
+   *
+   * Ingested ONCE, on the render that first sees it. `ReadingSources` clears it afterwards, so
+   * re-mounting this panel does not re-open a book the learner has since closed.
+   */
+  initialFile?: File | null;
 }
 
 const mono = { fontFamily: 'var(--f-mono)' as const };
 
-export default function EpubPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false}: Props) {
+export default function EpubPanel({ language, deck, dueWords, blankDensity, onCommit, startOpen = false, initialFile = null }: Props) {
   const [open, setOpen] = useState(startOpen);
   const [books, setBooks] = useState<StoredBook[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -131,6 +139,21 @@ export default function EpubPanel({ language, deck, dueWords, blankDensity, onCo
       setBusy('');
     }
   }, [refresh, language]);
+
+  /**
+   * A file dropped on the library's own dropzone, handed down and opened here.
+   *
+   * A ref rather than a dependency on the file, because `ingest` is not idempotent — it writes
+   * the book to IndexedDB and opens it — and an effect that re-ran would add the same book
+   * twice. StrictMode double-invokes effects in development, so without the guard the very
+   * first drop on a developer's machine produces two copies.
+   */
+  const ingestedRef = useRef<File | null>(null);
+  useEffect(() => {
+    if (!initialFile || ingestedRef.current === initialFile) return;
+    ingestedRef.current = initialFile;
+    void ingest(initialFile);
+  }, [initialFile, ingest]);
 
   /** Segment one section and hand it over as a passage, exactly as the paste panel does. */
   const readSection = useCallback(async (book: StoredBook, chapter: number, section: number) => {
