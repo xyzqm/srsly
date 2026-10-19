@@ -2847,12 +2847,31 @@ notification that wakes somebody at 3am is the reason they uninstall. The device
 `tz_offset_minutes` (and re-reports on every subscribe, because a laptop flies and daylight
 saving moves), and the job asks per row whose local clock has just reached their chosen hour.
 
-**⚠ AND VERCEL'S HOBBY PLAN RUNS CRONS ONCE PER DAY**, so `vercel.json`'s `0 * * * *` is a
-Pro-plan schedule. On Hobby it is accepted and effectively runs daily, which breaks nothing
-visibly — most learners simply never reach their hour while the job happens to be awake, and
-reminders look like they silently do not work. Migration `0011` is the alternative: `pg_cron` +
-`pg_net` calling the route from the database side, which has no such limit. **Run one or the
-other, never both.**
+**⚠ AND VERCEL'S HOBBY PLAN REFUSES AN HOURLY CRON AT DEPLOY TIME, SO THERE IS NO
+`vercel.json`.** A file declaring `0 * * * *` was written first and deleted, because the deploy
+fails outright:
+
+```
+Error: Hobby accounts are limited to daily cron jobs. This cron expression (0 * * * *)
+would run more than once per day.
+```
+
+*(This paragraph first said Hobby would ACCEPT it and quietly run it daily — "reminders look
+like they silently do not work". That was wrong, and wrong in the lucky direction: it is a
+blocked deploy rather than a degraded feature, so the whole site stops shipping until the file
+goes rather than one feature failing invisibly. Corrected after it blocked a real
+`npx vercel --prod`. Loud is the better of the two behaviours, and predicting the quiet one is
+the kind of guess this file keeps telling itself to measure instead.)*
+
+**DROPPING TO A DAILY SCHEDULE TO SATISFY HOBBY WAS REJECTED, NOT OVERLOOKED.** `0 9 * * *` is
+accepted and sends every learner a notification at 09:00 UTC wherever they are — 2am in Los
+Angeles. A reminder that wakes somebody at 2am is the reason they uninstall, so a wrong-hour
+reminder is worse than none, and the whole per-device `tz_offset_minutes` design exists to
+avoid exactly that.
+
+Migration `0011` is therefore the ONLY path on Hobby: `pg_cron` + `pg_net` calling the route
+from the database side, which has no such limit. It carries the Pro-plan `vercel.json` in its
+own header for whenever that becomes an option — **run one or the other, never both.**
 
 **IT SKIPS ANYONE WHO HAS ALREADY STUDIED**, which is the one thing that makes a daily reminder
 tolerable. `srs_state.lastActive` is one column; it is deliberately NOT a due-card count, which

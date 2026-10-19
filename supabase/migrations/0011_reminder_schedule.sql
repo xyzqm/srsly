@@ -1,20 +1,39 @@
 -- 0011_reminder_schedule.sql — the hourly tick that sends reminders.
 --
--- ⚠ THIS FILE IS OPTIONAL AND IS THE ALTERNATIVE TO `vercel.json`, NOT AN ADDITION TO IT.
--- Running both means every learner is considered twice an hour. Pick one; see below.
+-- ⚠ THIS IS NOT OPTIONAL ON A HOBBY PLAN — IT IS THE ONLY WAY THE REMINDERS RUN.
 --
--- ## WHY THIS EXISTS WHEN vercel.json ALREADY DECLARES THE SAME SCHEDULE
+-- ## WHY THERE IS NO `vercel.json`
 --
--- `/api/cron/reminders` has to run HOURLY, because each learner is reminded at an hour on
--- THEIR OWN clock and a daily job fires at one UTC instant — breakfast in Berlin, 3am in
--- Denver. **Vercel's Hobby plan runs cron jobs once per day**, so the `0 * * * *` in
--- vercel.json is a Pro-plan schedule. On Hobby it will be accepted and then effectively run
--- daily, which does not break anything visibly: most learners simply never reach their hour
--- while the job happens to be awake, and reminders look like they silently do not work.
+-- `/api/cron/reminders` must run HOURLY, because each learner is reminded at an hour on THEIR
+-- OWN clock and a daily job fires at one UTC instant — breakfast in Berlin, 3am in Denver.
+--
+-- A `vercel.json` declaring `0 * * * *` was written first and **deleted**, because Vercel's
+-- Hobby plan refuses it outright at deploy time:
+--
+--     Error: Hobby accounts are limited to daily cron jobs. This cron expression (0 * * * *)
+--     would run more than once per day.
+--
+-- That is a BLOCKED DEPLOY, not a degraded feature — the whole site stops shipping until the
+-- file goes. (An earlier note in CLAUDE.md predicted Vercel would accept it and quietly run it
+-- daily. It does not, and loud is the better of the two behaviours.)
+--
+-- Dropping to `0 9 * * *` to satisfy Hobby was rejected: it would send every learner a
+-- notification at 09:00 UTC regardless of where they are, which is 2am in Los Angeles and
+-- 6pm in Sydney. A reminder that wakes somebody at 2am is the reason they uninstall the app,
+-- so a wrong-hour reminder is worse than no reminder.
 --
 -- Postgres has no such limit. `pg_cron` + `pg_net` call the route from the database side on a
--- real hourly schedule, so this is the better fit for a Hobby deployment — and it is the one
--- the app was designed around.
+-- real hourly schedule, which is what the route was designed around.
+--
+-- ## IF YOU EVER MOVE TO VERCEL PRO
+--
+-- Recreate `vercel.json` at the repo root with exactly this, and then UNSCHEDULE the job below
+-- (`select cron.unschedule('srsly-reminders');`) so the two do not both fire:
+--
+--     {
+--       "$schema": "https://openapi.vercel.sh/vercel.json",
+--       "crons": [{ "path": "/api/cron/reminders", "schedule": "0 * * * *" }]
+--     }
 --
 -- ## RUN THIS BY HAND, WITH YOUR OWN VALUES
 --
