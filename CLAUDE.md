@@ -3113,6 +3113,71 @@ holds what it is showing in its OWN state rather than rendering from `fresh`. Th
 the same list and are not — acknowledging empties `fresh`, so rendering from it made the
 milestone vanish a second after it appeared.
 
+#### A deck row shows what you know, and "mature" is now ONE definition
+
+`lib/cardStrength.ts`, the stage bar in `components/vocab/VocabTab.tsx`, and the status chips
+in `components/practice/Flashcards.tsx`.
+
+**THE VOCAB TAB READ AS A SPREADSHEET OF STRINGS.** Twenty rows of word, gloss and two buttons,
+where a card's SRS state — the entire point of the app — was drawn only when it was
+EXCEPTIONAL: `pool`, `stuck`, `paused` and `snoozed` each earn a chip and everything else
+earned nothing. A word held for a year and one saved ten minutes ago were the same row. The
+information was already on every card, because FSRS needs `stability` and `reviews` anyway.
+
+**THE TOP RUNG IS `isMastered`'s THRESHOLD, SHARED DELIBERATELY**, and a test asserts the two
+agree on every card. A second number would have the deck list and the milestone cabinet
+disagreeing about which words are held — the "second record of a fact drifts" rule, in the one
+place a learner can see both in the same session.
+
+**`new` DRAWS ZERO SEGMENTS.** A card never asked about has no strength to report, and a
+partly-filled bar would make a freshly imported level render as a wall of progress that has not
+happened. Three segments rather than a number, because the question you scan a deck for is
+*what is solid*, which is a shape — and it reuses the Learn tab's unit ticks, so one visual idea
+serves both.
+
+**⚠ AND `mature` MEANT SOMETHING DIFFERENT ON THE FLASHCARD.** It was
+`reviews >= 5 && lapses === 0` there, which is the test `MASTERY_STABILITY_DAYS` exists to
+refuse in as many words — *"eight passes on a card you keep forgetting is not mastery"*. So a
+card read `mature` on the drill while the badges did not count it as held. **Harmless for as
+long as nothing else showed a stage, and a contradiction the moment the deck list did** — two
+screens, two taps apart, disagreeing about one card. That is the shape of this failure
+generally: a duplicated rule is invisible until a second surface renders it.
+
+**AND THE SAME CHIP PRINTED `S=20.0d · D=5.2`** — the scheduler's variable names, shipped, in
+front of a learner. The same term-of-art problem that renamed this tab from SRS to Review.
+Stability has a plain reading and `fmtDays` already writes it, so it says `holds 3 weeks`.
+DIFFICULTY is dropped rather than translated: it is an FSRS parameter on a 1–10 scale with no
+meaning outside the scheduler's own arithmetic, and inventing a sentence for it ("quite hard"?)
+would be a confident label this codebase cannot support.
+
+**REMOVE NO LONGER LOOKS LIKE MANAGE.** They sat in the identical ghost button, both going
+accent on hover, so the control that deletes a card and the one that opens a panel were
+indistinguishable until read — forty of them on a screen. Remove is borderless at rest and
+hovers to `--wrong`. Verified with a REAL hover: React implements `onMouseEnter` by delegation,
+so a dispatched synthetic event proves nothing, which is worth knowing before writing that
+probe again. The undo toast stays — this lowers the rate of the mistake rather than excusing
+the removal of the recovery.
+
+**AND THE SESSION PROGRESS BAR WAS CHECKED AND LEFT ALONE.** It is empty on card 1 because zero
+cards are complete, which is correct; it fills to 22/240 after one grade, measured. Recorded
+because "it looks like nothing is happening" is exactly the shape of a real bug in this
+codebase, and the discipline is to measure before fixing rather than after.
+
+#### A Settings heading has to out-rank the text it heads
+
+`SectionLabel` was 10.5px in `--ink-faint`, directly above 13.5px `--ink-soft` prose: SMALLER
+and FAINTER than the paragraph it introduced. The one element whose whole job is to be findable
+while scrolling was the least prominent thing in its own section, so the four groups could not
+be scanned by their headings. Measured in Studying — three sections over 1,761px, with 716 of
+them between the first heading and the second. **A heading you cannot see is a scroll you have
+to read your way through.**
+
+The register is kept, because it is the app's: mono, uppercase, wide tracking. What changed is
+the RANKING — `--ink-soft`, 11.5px, weight 500, and a hairline above. `tests/settingsHierarchy.test.ts`
+pins it against the body style that actually sits beneath it rather than against a number, and
+asserts the register survives in both directions, since a heading that out-shouted the page
+title would flatten the hierarchy from the top instead of the bottom.
+
 #### Retention is derived too, and the one number it refuses is the interesting one
 
 `lib/retention.ts` (pure), `components/stats/RetentionPanel.tsx`, in Stats → Schedule beside
