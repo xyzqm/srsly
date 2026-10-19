@@ -39,9 +39,40 @@ const GROUPS = [
 ];
 export type Group = (typeof GROUPS)[number]['id'];
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+/**
+ * ⚠ A SECTION HEADING WAS THE LEAST PROMINENT TEXT IN ITS OWN SECTION.
+ *
+ * It was 10.5px mono in `--ink-faint` — SMALLER and FAINTER than the 13.5px `--ink-soft`
+ * prose underneath it. So the one element whose entire job is to be findable while scrolling
+ * receded behind the paragraph it was introducing, and the four groups could not be scanned by
+ * their headings at all. Measured in the Studying group: three sections over 1,761px, with 716
+ * of those pixels between "CEFR level" and "Speech" — a heading you cannot see is a scroll you
+ * have to read your way through.
+ *
+ * The register is kept, because it is the app's: mono, uppercase, wide tracking, the same
+ * voice as every other label in the UI. What changes is that it now out-ranks its own body
+ * text — `--ink-soft` rather than `--ink-faint`, a little larger, and a hairline above it so a
+ * section reads as a section rather than as another paragraph.
+ *
+ * **The rule is not uppercase-mono-looks-nice; it is that a heading must out-rank what it
+ * heads.** `tests/settingsHierarchy.test.ts` pins that against the body style it sits above,
+ * so a later tidy-up cannot quietly invert it again.
+ *
+ * `first` drops the rule and the space above, because the first section already has the tab's
+ * own header and the group chips above it — a divider there separates a heading from nothing.
+ */
+function SectionLabel({ children, first = false }: { children: React.ReactNode; first?: boolean }) {
   return (
-    <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--ink-faint)', marginBottom: 12 }}>
+    <div
+      style={{
+        fontFamily: 'var(--f-mono)', fontSize: 11.5, letterSpacing: '.16em',
+        textTransform: 'uppercase', color: 'var(--ink-soft)', fontWeight: 500,
+        marginBottom: 13,
+        ...(first ? {} : {
+          marginTop: 38, paddingTop: 22, borderTop: '1px solid var(--line-soft)',
+        }),
+      }}
+    >
       {children}
     </div>
   );
@@ -505,7 +536,7 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
 
       {group === 'study' && (<>
       {/* ── Proficiency Level ─────────────────────────────────────────────── */}
-      <SectionLabel>{langConfig.levelSectionLabel}</SectionLabel>
+      <SectionLabel first>{langConfig.levelSectionLabel}</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '52ch', lineHeight: 1.55, marginBottom: 10 }}>
         Your level tells srsly how hard to make the passages it writes for you, and marks
         roughly where you are. <strong style={{ color: 'var(--ink)', fontWeight: 500 }}>It is
@@ -648,7 +679,7 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
         answers for retention and the new-card budget — and it is the group someone annoyed by
         a notification will open first.
       */}
-      <SectionLabel>Daily reminder</SectionLabel>
+      <SectionLabel first>Daily reminder</SectionLabel>
       <div className="mb-10"><RemindersPanel /></div>
 
       {/* ── Desired Retention ─────────────────────────────────────────────── */}
@@ -872,7 +903,7 @@ export default function SettingsTab({ languages, initialGroup, onGroupChange, on
 
       {group === 'data' && (<>
       {/* ── Backup & data ─────────────────────────────────────────────────── */}
-      <SectionLabel>Backup &amp; data</SectionLabel>
+      <SectionLabel first>Backup &amp; data</SectionLabel>
       <p style={{ fontSize: 13.5, color: 'var(--ink-soft)', maxWidth: '48ch', lineHeight: 1.55, marginBottom: 14 }}>
         Your deck lives on this device. Export a backup to keep it safe or move it
         elsewhere — JSON preserves all scheduling; CSV is a plain word list. Restoring a
