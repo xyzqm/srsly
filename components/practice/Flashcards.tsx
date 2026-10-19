@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef } from 'react';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { useLanguage } from '@/lib/LanguageContext';
+import { fmtDays } from '@/lib/retention';
+import { cardStage } from '@/lib/cardStrength';
 import { hasLessons } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { uiStrings, stateGlyphSize } from '@/lib/uiStrings';
@@ -565,15 +567,48 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
             {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
           </span>
         ) : card.stability !== undefined ? (
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}>
-            S={card.stability.toFixed(1)}d · D={card.difficulty?.toFixed(1) ?? '?'}
+          /*
+            ── IT SAID `S=20.0d · D=5.2`, WHICH NAMES THE VARIABLES ────────────
+            Shipped UI, not a debug flag. S is stability and D is difficulty, and a learner
+            reading that learns nothing — the same "term of art, precise to somebody who
+            already knows the system and meaningless to everybody else" that renamed this very
+            tab from SRS to Review.
+
+            Stability has a plain-English meaning and is worth saying: it is the number of days
+            until recall falls to about 90%, so "holds 3 weeks" is the honest translation and
+            `fmtDays` already writes it that way for the retention panel.
+
+            DIFFICULTY IS DROPPED RATHER THAN TRANSLATED. It is an FSRS parameter on a 1–10
+            scale with no meaning outside the scheduler's own arithmetic; there is no sentence
+            that makes `D=5.2` useful to a reader, and inventing one ("quite hard"?) would be
+            this codebase putting a confident label on something it cannot support.
+          */
+          <span
+            title="How long this card would hold without a review"
+            style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}
+          >
+            holds {fmtDays(card.stability)}
           </span>
         ) : null}
         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}>
           reviewed {card.reviews ?? 0}×
           {(card.lapses ?? 0) > 0 && ` · ${card.lapses} lapse${card.lapses === 1 ? '' : 's'}`}
-          {(card.reviews ?? 0) === 0 && !card.stability && ' · new'}
-          {(card.reviews ?? 0) >= 5 && (card.lapses ?? 0) === 0 && ' · mature'}
+          {/*
+            ── AND `mature` MEANT SOMETHING DIFFERENT HERE FROM EVERYWHERE ELSE ──
+            This read `reviews >= 5 && lapses === 0`, which is the test
+            `MASTERY_STABILITY_DAYS` exists to refuse, in as many words: *"Review count alone is
+            the wrong test: eight passes on a card you keep forgetting is not mastery, and FSRS
+            already has the honest measure."*
+
+            So a card could be labelled `mature` on the flashcard while the milestone cabinet
+            did not count it as held and the Vocab row drew two segments of three. Harmless
+            while nothing else showed a stage; the moment the deck list did, it became two
+            screens disagreeing about one card, two taps apart.
+
+            `cardStage` is the single definition now, and it is the same one `isMastered` uses.
+          */}
+          {cardStage(card) === 'new' && ' · new'}
+          {cardStage(card) === 'mature' && ' · held'}
         </span>
       </div>
 
