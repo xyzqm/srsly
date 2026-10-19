@@ -1,4 +1,5 @@
 import type { DeckWord, SRSState, LanguageCode } from './types';
+import { UNIT_LESSONS } from './lessonUnitIds';
 import { isActive } from './deck';
 
 /**
@@ -37,6 +38,20 @@ export interface AchievementStats {
   booksFinished: number;
   /** Cards that were leeches and are no longer — the triage actually worked. */
   leechesFixed: number;
+  /**
+   * Course units finished — every lesson in the unit ticked, across every language.
+   *
+   * ⚠ IT COUNTS UNITS, NOT LESSONS, AND THAT IS THE POINT. A lesson is one reading; a unit is
+   * a capability — "say what you do", "talk about yesterday" — and finishing one is the first
+   * moment the course has given the learner something whole. Counting lessons instead would
+   * hand out a badge for scrolling past a page.
+   *
+   * ⚠ AND IT CAN GO DOWN, WHICH IS WHY IT IS NOT ON THE COSMETIC LADDER. `LearnTab`'s tick
+   * TOGGLES, so un-ticking a lesson un-finishes its unit. `lib/cosmetics.ts` requires a
+   * condition a learner can aim at and never lose, and a test there forbids a `requires` on
+   * anything that regresses — so these milestones are announced and shown, and unlock nothing.
+   */
+  unitsCompleted: number;
 }
 
 /**
@@ -123,6 +138,51 @@ export const ACHIEVEMENTS: Achievement[] = [
     progress: s => ({ have: s.bestLanguageStreak, need: 30 }),
   },
   ...tiered('leech', 'Unstuck', 'stuck words rescued', [1, 10], s => s.leechesFixed),
+  /*
+    ── THE COURSE ────────────────────────────────────────────────────────────
+    A UNIT, never a lesson. A lesson is one reading; a unit is a capability the lessons add up
+    to — "say what you do", "talk about yesterday" — and finishing one is the first point at
+    which the course has given the learner something whole. Awarding per lesson would be a
+    badge for scrolling past a page.
+
+    `unit-1` is deliberately reachable in a first sitting, for the reason `first-word` is: the
+    moment the app is most trying to prove itself is the moment it had nothing to say. A first
+    unit is four or five short lessons, one of which fills the deck.
+
+    QUIET, and that is the whole brief. These announce through the same ToastHost and the same
+    seal as everything else, and they unlock no cosmetic — see `unitsCompleted` for why they
+    could not, even if that were wanted.
+  */
+  {
+    id: 'unit-1',
+    name: 'First unit',
+    description: 'Finish every lesson in a unit of the course',
+    progress: s => ({ have: s.unitsCompleted, need: 1 }),
+  },
+  {
+    id: 'unit-3',
+    name: 'Underway',
+    description: '3 units finished',
+    progress: s => ({ have: s.unitsCompleted, need: 3 }),
+  },
+  {
+    id: 'unit-5',
+    name: 'Halfway in',
+    description: '5 units finished',
+    progress: s => ({ have: s.unitsCompleted, need: 5 }),
+  },
+  {
+    id: 'unit-10',
+    name: 'Course held',
+    description: '10 units finished',
+    progress: s => ({ have: s.unitsCompleted, need: 10 }),
+  },
+  {
+    id: 'unit-20',
+    name: 'Two courses',
+    description: '20 units — more than one language\u2019s worth',
+    progress: s => ({ have: s.unitsCompleted, need: 20 }),
+  },
 ];
 
 /** Mastery: graduated out of learning, and stable enough to last a month. */
@@ -146,6 +206,8 @@ export function computeStats(input: {
   decks: Partial<Record<LanguageCode, DeckWord[]>>;
   srs: SRSState;
   booksFinished?: number;
+  /** Finished lesson ids, flat across every language — `srsly-lessons-done`. */
+  lessonsDone?: string[];
   leechThreshold: number;
 }): AchievementStats {
   const all = Object.values(input.decks).flat().filter(Boolean) as DeckWord[];
@@ -161,7 +223,31 @@ export function computeStats(input: {
     sessions: input.srs.sessions ?? 0,
     booksFinished: input.booksFinished ?? 0,
     leechesFixed: all.filter(w => isRescuedLeech(w, input.leechThreshold) && isActive(w)).length,
+    unitsCompleted: countCompletedUnits(input.lessonsDone ?? []),
   };
+}
+
+/**
+ * How many course units are entirely finished, across every language.
+ *
+ * Derived from the same `srsly-lessons-done` list the Learn tab already keeps — nothing is
+ * stored to answer this, which is the rule the rest of this module follows. The unit map is
+ * imported from `lib/lessonUnitIds.ts` rather than from the lesson tree, because this module
+ * is reached from `ToastHost` at the app ROOT and the tree's prose must not land in the first
+ * bundle. See the note on that file.
+ */
+export function countCompletedUnits(lessonsDone: readonly string[]): number {
+  if (!lessonsDone.length) return 0;
+  const done = new Set(lessonsDone);
+  let n = 0;
+  for (const byUnit of Object.values(UNIT_LESSONS)) {
+    for (const lessons of Object.values(byUnit ?? {})) {
+      // A unit with no lessons would otherwise count as complete by vacuous truth — which is
+      // how a renamed id could hand out every badge at once.
+      if (lessons.length > 0 && lessons.every(id => done.has(id))) n++;
+    }
+  }
+  return n;
 }
 
 export interface EarnedAchievement extends Achievement {
@@ -204,7 +290,8 @@ export function evaluate(stats: AchievementStats): {
  * them, so the marks are geometry — no script, nothing to mistranslate.
  */
 export type BadgeMark =
-  | 'deck' | 'held' | 'streak' | 'sessions' | 'book' | 'polyglot' | 'devoted' | 'unstuck';
+  | 'deck' | 'held' | 'streak' | 'sessions' | 'book' | 'polyglot' | 'devoted' | 'unstuck'
+  | 'course';
 
 export interface Family {
   key: string;
@@ -217,10 +304,13 @@ export interface Family {
    * Grouping is expressed here rather than by parsing an id prefix precisely so that
    * `first-word` can join `deck` and `book-1` can join `books` without either being renamed.
    */
-  ids: string[];
+  ids: string[
+];
 }
 
 export const FAMILIES: Family[] = [
+  { key: 'course', mark: 'course',
+    ids: ['unit-1', 'unit-3', 'unit-5', 'unit-10', 'unit-20'] },
   { key: 'deck', mark: 'deck',
     ids: ['first-word', 'first-steps', 'deck-25', 'deck-50', 'deck-250', 'deck-1000'] },
   { key: 'mastered', mark: 'held',

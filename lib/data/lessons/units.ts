@@ -1,4 +1,5 @@
 import type { LanguageCode } from '@/lib/types';
+import { UNIT_LESSONS } from '@/lib/lessonUnitIds';
 
 /**
  * THE COURSE, CUT INTO UNITS — one path, grammar and words interleaved.
@@ -66,152 +67,137 @@ export interface LessonUnit {
   title: string;
   /** One line under the title. Concrete: name the actual sentences it buys. */
   blurb: string;
-  /** Lesson ids, in the order they should be met. Grammar runs stay contiguous. */
+  /**
+   * Lesson ids, in the order they should be met. Grammar runs stay contiguous.
+   *
+   * Read from `lib/lessonUnitIds.ts` rather than written here, so the ids exist ONCE: that
+   * module is the half `lib/achievements.ts` needs, and it is split out by weight because
+   * achievements are reached from the app root where these titles must not be. See the note
+   * there.
+   */
   lessons: string[];
 }
 
-const ES: LessonUnit[] = [
+/** A unit's prose. The ids live in `UNIT_LESSONS`, keyed by the same id. */
+type UnitText = Omit<LessonUnit, 'lessons'>;
+
+const ES: UnitText[] = [
   { id: 'es-u1', title: 'Name things',
-    blurb: 'Your first words, and why every one of them is el or la.',
-    lessons: ['es-v-basics', 'es-gender', 'es-plural', 'es-articles', 'es-v-numbers'] },
+    blurb: 'Your first words, and why every one of them is el or la.' },
   { id: 'es-u2', title: 'Say what things are',
-    blurb: 'The two verbs for "to be", and the one that means "to have" and sometimes "to be".',
-    lessons: ['es-v-family', 'es-ser-estar', 'es-tener', 'es-v-adjectives'] },
+    blurb: 'The two verbs for "to be", and the one that means "to have" and sometimes "to be".' },
   { id: 'es-u3', title: 'Say what you do',
-    blurb: 'The present tense, and how to say you do not.',
-    lessons: ['es-v-verbs', 'es-present', 'es-negation', 'es-v-routine'] },
+    blurb: 'The present tense, and how to say you do not.' },
   { id: 'es-u4', title: 'Describe it, and say you like it',
-    blurb: 'Adjectives that agree with their noun, and gustar, which works backwards.',
-    lessons: ['es-v-colours', 'es-gustar', 'es-adjectives', 'es-adj-position', 'es-v-food'] },
+    blurb: 'Adjectives that agree with their noun, and gustar, which works backwards.' },
   { id: 'es-u5', title: 'Ask, and get around',
-    blurb: 'Questions, and the difference between por and para that nobody explains properly.',
-    lessons: ['es-v-places', 'es-questions', 'es-por-para', 'es-v-transport'] },
+    blurb: 'Questions, and the difference between por and para that nobody explains properly.' },
   { id: 'es-u6', title: 'Talk about yesterday',
-    blurb: 'Two past tenses, what is about to happen, and which past to reach for.',
-    lessons: ['es-v-weekdays', 'es-futuro-proximo', 'es-preterito', 'es-imperfecto', 'es-v-months'] },
+    blurb: 'Two past tenses, what is about to happen, and which past to reach for.' },
   { id: 'es-u7', title: 'Yourself, and other people',
-    blurb: 'Washing, dressing, getting up — and replacing a noun you have already said.',
-    lessons: ['es-v-body', 'es-reflexive', 'es-object-pronouns', 'es-saber-conocer', 'es-v-clothing'] },
+    blurb: 'Washing, dressing, getting up — and replacing a noun you have already said.' },
   { id: 'es-u8', title: 'Compare, and say what you have done',
-    blurb: 'Bigger, smaller, best — and the past that is still going on.',
-    lessons: ['es-v-weather', 'es-perfecto', 'es-comparatives', 'es-v-seasons'] },
+    blurb: 'Bigger, smaller, best — and the past that is still going on.' },
   { id: 'es-u9', title: 'Ask for things, and wish for them',
-    blurb: 'Telling someone to do something, a first subjunctive, and what will happen.',
-    lessons: ['es-v-house', 'es-imperative', 'es-subjunctive', 'es-future-conditional', 'es-v-school'] },
+    blurb: 'Telling someone to do something, a first subjunctive, and what will happen.' },
   { id: 'es-u10', title: 'This one, that one, mine',
-    blurb: 'Pointing at things, saying whose they are, and the many jobs of se.',
-    lessons: ['es-v-animals', 'es-demonstratives', 'es-possessives', 'es-se', 'es-v-tableware'] },
+    blurb: 'Pointing at things, saying whose they are, and the many jobs of se.' },
   { id: 'es-u11', title: 'Right now, and writing it correctly',
-    blurb: 'What is happening as you speak, what is there, and where the accent goes.',
-    lessons: ['es-progressive', 'es-hay', 'es-accents', 'es-v-everyday'] },
+    blurb: 'What is happening as you speak, what is there, and where the accent goes.' },
 ];
 
-const FR: LessonUnit[] = [
+const FR: UnitText[] = [
   { id: 'fr-u1', title: 'Name things',
-    blurb: 'Your first words, and why every one of them is le or la.',
-    lessons: ['fr-v-basics', 'fr-gender', 'fr-plural', 'fr-articles', 'fr-v-numbers'] },
+    blurb: 'Your first words, and why every one of them is le or la.' },
   { id: 'fr-u2', title: 'Say what things are',
-    blurb: 'être and avoir — the two verbs the whole language is built on.',
-    lessons: ['fr-v-family', 'fr-etre', 'fr-avoir', 'fr-v-adjectives'] },
+    blurb: 'être and avoir — the two verbs the whole language is built on.' },
   { id: 'fr-u3', title: 'Say what you do',
-    blurb: 'The -er verbs, which is most of them, and the two words that make a sentence negative.',
-    lessons: ['fr-v-verbs', 'fr-er-verbs', 'fr-negation', 'fr-v-routine'] },
+    blurb: 'The -er verbs, which is most of them, and the two words that make a sentence negative.' },
   { id: 'fr-u4', title: 'Describe it, and order some of it',
-    blurb: 'Adjectives that agree and sometimes move, and the du / de la that English has no word for.',
-    lessons: ['fr-v-food', 'fr-partitif', 'fr-adjectives', 'fr-adj-position', 'fr-v-colours'] },
+    blurb: 'Adjectives that agree and sometimes move, and the du / de la that English has no word for.' },
   { id: 'fr-u5', title: 'Ask, and get around',
-    blurb: 'Three ways to ask a question, and what you are going to do next.',
-    lessons: ['fr-v-places', 'fr-questions', 'fr-futur-proche', 'fr-v-transport'] },
+    blurb: 'Three ways to ask a question, and what you are going to do next.' },
   { id: 'fr-u6', title: 'Talk about yesterday',
-    blurb: 'The passé composé, the verbs that take être, and the past that sets a scene.',
-    lessons: ['fr-v-weekdays', 'fr-passe-compose', 'fr-passe-etre', 'fr-imparfait', 'fr-v-months'] },
+    blurb: 'The passé composé, the verbs that take être, and the past that sets a scene.' },
   { id: 'fr-u7', title: 'Yourself, and other people',
-    blurb: 'Reflexive verbs, pronouns before the verb, and the two little words y and en.',
-    lessons: ['fr-v-body', 'fr-reflexive', 'fr-object-pronouns', 'fr-y-en', 'fr-v-clothing'] },
+    blurb: 'Reflexive verbs, pronouns before the verb, and the two little words y and en.' },
   { id: 'fr-u8', title: 'Compare, and say what will happen',
-    blurb: 'Bigger, smaller, best — and the real future tense.',
-    lessons: ['fr-v-weather', 'fr-comparatives', 'fr-futur-simple', 'fr-v-seasons'] },
+    blurb: 'Bigger, smaller, best — and the real future tense.' },
   { id: 'fr-u9', title: 'Join sentences, and ask for things',
-    blurb: 'qui and que, telling someone to do something, and saying how long you have been at it.',
-    lessons: ['fr-v-house', 'fr-relative', 'fr-imperative', 'fr-depuis', 'fr-v-school'] },
+    blurb: 'qui and que, telling someone to do something, and saying how long you have been at it.' },
   { id: 'fr-u10', title: 'Wishes, doubts and directions',
-    blurb: 'The conditional, a first subjunctive, and which preposition each country takes.',
-    lessons: ['fr-v-animals', 'fr-conditionnel', 'fr-subjonctif', 'fr-prepositions-places', 'fr-v-tableware'] },
+    blurb: 'The conditional, a first subjunctive, and which preposition each country takes.' },
   { id: 'fr-u11', title: 'This one, mine, and writing it correctly',
-    blurb: 'Pointing at things, saying whose they are, and what each accent is actually for.',
-    lessons: ['fr-demonstratives', 'fr-possessives', 'fr-accents', 'fr-v-everyday'] },
+    blurb: 'Pointing at things, saying whose they are, and what each accent is actually for.' },
 ];
 
-const ZH: LessonUnit[] = [
+const ZH: UnitText[] = [
   { id: 'zh-u1', title: 'Build a sentence',
-    blurb: 'Subject, verb, object — and the measure word Chinese puts before every noun.',
-    lessons: ['zh-v-basics', 'zh-word-order', 'zh-measure-words', 'zh-v-numbers'] },
+    blurb: 'Subject, verb, object — and the measure word Chinese puts before every noun.' },
   { id: 'zh-u2', title: 'Say who, and whose',
-    blurb: '的, the one character that does more work than any other, and 是 and 有.',
-    lessons: ['zh-v-family', 'zh-de', 'zh-shi-you', 'zh-v-body'] },
+    blurb: '的, the one character that does more work than any other, and 是 and 有.' },
   { id: 'zh-u3', title: 'Say what happened',
-    blurb: 'Saying no with 不 and 没, and 了 — the particle everyone gets wrong.',
-    lessons: ['zh-v-verbs', 'zh-negation', 'zh-le', 'zh-v-routine'] },
+    blurb: 'Saying no with 不 and 没, and 了 — the particle everyone gets wrong.' },
   { id: 'zh-u4', title: 'Where you are, where you have been',
-    blurb: '在 for location, and 过 for the things you have done at least once.',
-    lessons: ['zh-v-places', 'zh-guo', 'zh-zai', 'zh-v-transport'] },
+    blurb: '在 for location, and 过 for the things you have done at least once.' },
   { id: 'zh-u5', title: 'Ask, and describe',
-    blurb: 'Four ways to ask a question, and why 很 turns up in front of every adjective.',
-    lessons: ['zh-v-adjectives', 'zh-questions', 'zh-adjectives', 'zh-v-colours'] },
+    blurb: 'Four ways to ask a question, and why 很 turns up in front of every adjective.' },
   { id: 'zh-u6', title: 'Do something to something',
-    blurb: '把 moves the object in front of the verb, and 被 makes it the one it happened to.',
-    lessons: ['zh-v-house', 'zh-ba', 'zh-bei', 'zh-v-clothing'] },
+    blurb: '把 moves the object in front of the verb, and 被 makes it the one it happened to.' },
   { id: 'zh-u7', title: 'Can, should, want',
-    blurb: 'The modal verbs, and saying how an action turned out.',
-    lessons: ['zh-v-food', 'zh-modals', 'zh-resultative', 'zh-v-weather'] },
+    blurb: 'The modal verbs, and saying how an action turned out.' },
   { id: 'zh-u8', title: 'How long, and how soon',
-    blurb: 'Duration, 就 against 才, and which direction the action is going.',
-    lessons: ['zh-v-school', 'zh-duration', 'zh-jiu-cai', 'zh-directional', 'zh-v-animals'] },
+    blurb: 'Duration, 就 against 才, and which direction the action is going.' },
   { id: 'zh-u9', title: 'What is going on right now',
-    blurb: '着 for a state that continues, wanting things, and putting time in the right place.',
-    lessons: ['zh-v-weekdays', 'zh-zhe', 'zh-yao-xiang', 'zh-time-words', 'zh-v-months'] },
+    blurb: '着 for a state that continues, wanting things, and putting time in the right place.' },
   { id: 'zh-u10', title: 'Join it up, and soften it',
-    blurb: 'Because and so, the particles that set the tone, and 都 and 也.',
-    lessons: ['zh-yinwei', 'zh-ne-ba', 'zh-dou-ye', 'zh-v-seasons', 'zh-v-tableware', 'zh-v-everyday'] },
+    blurb: 'Because and so, the particles that set the tone, and 都 and 也.' },
 ];
 
-const JA: LessonUnit[] = [
+const JA: UnitText[] = [
   { id: 'ja-u1', title: 'Build a sentence',
-    blurb: 'The verb goes last, and は and が are not the same thing.',
-    lessons: ['ja-v-basics', 'ja-word-order', 'ja-wa-ga', 'ja-v-numbers'] },
+    blurb: 'The verb goes last, and は and が are not the same thing.' },
   { id: 'ja-u2', title: 'Mark every part of it',
-    blurb: 'The particles that say which word is doing what, and です.',
-    lessons: ['ja-v-family', 'ja-particles', 'ja-desu', 'ja-v-body'] },
+    blurb: 'The particles that say which word is doing what, and です.' },
   { id: 'ja-u3', title: 'Describe it, and do it',
-    blurb: 'Two kinds of adjective, and the polite verb forms you will use most.',
-    lessons: ['ja-v-adjectives', 'ja-adjectives', 'ja-verbs', 'ja-v-colours'] },
+    blurb: 'Two kinds of adjective, and the polite verb forms you will use most.' },
   { id: 'ja-u4', title: 'Join actions together',
-    blurb: 'The て form, which half of Japanese grammar hangs off, and ある and いる.',
-    lessons: ['ja-v-verbs', 'ja-te-form', 'ja-aru-iru', 'ja-v-routine'] },
+    blurb: 'The て form, which half of Japanese grammar hangs off, and ある and いる.' },
   { id: 'ja-u5', title: 'Speak plainly, and say what you want',
-    blurb: 'The dictionary form, and たい for the things you would like to do.',
-    lessons: ['ja-v-food', 'ja-plain-form', 'ja-tai', 'ja-v-places'] },
+    blurb: 'The dictionary form, and たい for the things you would like to do.' },
   { id: 'ja-u6', title: 'Ask, and count',
-    blurb: 'Questions with か, and the counter words Japanese needs for every kind of thing.',
-    lessons: ['ja-v-transport', 'ja-questions', 'ja-counters', 'ja-v-house'] },
+    blurb: 'Questions with か, and the counter words Japanese needs for every kind of thing.' },
   { id: 'ja-u7', title: 'Can, and what if',
-    blurb: 'The potential form, and the four ways Japanese says "if".',
-    lessons: ['ja-v-clothing', 'ja-potential', 'ja-conditionals', 'ja-v-weather'] },
+    blurb: 'The potential form, and the four ways Japanese says "if".' },
   { id: 'ja-u8', title: 'Giving, receiving, and what moved',
-    blurb: 'Who did what for whom, verb pairs that come in twos, and describing with a clause.',
-    lessons: ['ja-v-school', 'ja-giving-receiving', 'ja-transitive-pairs', 'ja-relative-clauses', 'ja-v-animals'] },
+    blurb: 'Who did what for whom, verb pairs that come in twos, and describing with a clause.' },
   { id: 'ja-u9', title: 'Because, more than, and must',
-    blurb: 'から and ので, comparing two things, and saying you have to.',
-    lessons: ['ja-v-weekdays', 'ja-kara-node', 'ja-comparatives', 'ja-nakereba', 'ja-v-months'] },
+    blurb: 'から and ので, comparing two things, and saying you have to.' },
   { id: 'ja-u10', title: 'Time, politeness, and joining it up',
-    blurb: 'Counting hours and days, keigo, and stacking words in front of a noun.',
-    lessons: ['ja-counters-time', 'ja-keigo', 'ja-noun-modifiers', 'ja-v-seasons', 'ja-v-tableware', 'ja-v-everyday'] },
+    blurb: 'Counting hours and days, keigo, and stacking words in front of a noun.' },
 ];
 
-const UNITS: Partial<Record<LanguageCode, LessonUnit[]>> = { es: ES, fr: FR, zh: ZH, ja: JA };
+const TEXT: Partial<Record<LanguageCode, UnitText[]>> = { es: ES, fr: FR, zh: ZH, ja: JA };
 
+const joined = new Map<LanguageCode, LessonUnit[]>();
+
+/**
+ * The units, prose and ids joined.
+ *
+ * A unit whose id has no entry in `UNIT_LESSONS` is DROPPED rather than rendered with an
+ * empty lesson list — an empty unit is a row that opens onto nothing, and
+ * `tests/lessonUnits.test.ts` asserts the two sides name exactly the same units, so this is
+ * unreachable rather than a quiet fallback.
+ */
 export function unitsFor(lang: LanguageCode): LessonUnit[] {
-  return UNITS[lang] ?? [];
+  const cached = joined.get(lang);
+  if (cached) return cached;
+  const ids = UNIT_LESSONS[lang] ?? {};
+  const out = (TEXT[lang] ?? [])
+    .filter(u => ids[u.id]?.length)
+    .map(u => ({ ...u, lessons: ids[u.id] }));
+  joined.set(lang, out);
+  return out;
 }
 
 /**

@@ -17,6 +17,10 @@ import { describe, it, expect } from 'vitest';
 import { LESSON_LANGUAGES, grammarLessons, LESSON_COUNT, courseProgress } from '@/lib/lessons';
 import { lessonsFor } from '@/lib/data/lessons';
 import { unitsFor } from '@/lib/data/lessons/units';
+import { UNIT_LESSONS } from '@/lib/lessonUnitIds';
+import { countCompletedUnits } from '@/lib/achievements';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('every language with a tree has a unit path', () => {
   it('covers all four', () => {
@@ -136,5 +140,72 @@ describe('the lesson count table cannot drift from the lessons', () => {
     expect(courseProgress('es', mixed).done).toBe(2);
     expect(courseProgress('fr', mixed).done).toBe(2);
     expect(courseProgress('es', mixed).total).toBe(lessonsFor('es').length);
+  });
+});
+
+/**
+ * THE SPLIT BETWEEN PROSE AND IDS MUST NOT DRIFT.
+ *
+ * `lib/lessonUnitIds.ts` holds which lessons are in which unit; `units.ts` holds each unit's
+ * title. They are two files by WEIGHT — achievements need the ids at the app root and must not
+ * drag the titles there — but they describe one thing, and `unitsFor` DROPS a unit whose id has
+ * no lessons. That drop is the right runtime behaviour and the wrong thing to discover in
+ * production: a renamed unit id would silently remove a unit from the course.
+ */
+describe('the unit id map and the unit prose name the same units', () => {
+  it('matches in both directions, per language', () => {
+    for (const lang of LESSON_LANGUAGES) {
+      const fromIds = Object.keys(UNIT_LESSONS[lang] ?? {}).sort();
+      const fromText = unitsFor(lang).map(u => u.id).sort();
+      expect(fromText, `${lang}: a unit has a title but no lessons, or lessons but no title`)
+        .toEqual(fromIds);
+    }
+  });
+
+  it('keeps the ids in exactly one place', () => {
+    // The whole point of the split. If units.ts ever grew its own `lessons:` arrays again,
+    // the two copies would drift the first time one was edited alone.
+    const src = readFileSync(resolve(__dirname, '../lib/data/lessons/units.ts'), 'utf8');
+    expect(src).not.toMatch(/lessons:\s*\[\s*'/);
+  });
+});
+
+/**
+ * UNIT COMPLETION IS DERIVED, AND THE VACUOUS CASE IS THE ONE THAT BITES.
+ *
+ * `every()` on an empty array is TRUE, so a unit whose id lost its lesson list would count as
+ * finished for everybody — handing out every course badge at once, to a learner who has opened
+ * nothing. That is the failure mode worth a control, because it fires on data that looks fine.
+ */
+describe('counting finished units', () => {
+  const es = UNIT_LESSONS.es!;
+  const u1 = es['es-u1'];
+
+  it('counts a unit only when every one of its lessons is done', () => {
+    expect(countCompletedUnits(u1.slice(0, -1))).toBe(0);
+    expect(countCompletedUnits(u1)).toBe(1);
+  });
+
+  it('counts across languages, because the badge is not per language', () => {
+    const both = [...u1, ...UNIT_LESSONS.fr!['fr-u1']];
+    expect(countCompletedUnits(both)).toBe(2);
+  });
+
+  it('is zero for an empty done-list', () => {
+    expect(countCompletedUnits([])).toBe(0);
+  });
+
+  it('ignores ids that belong to no unit', () => {
+    expect(countCompletedUnits(['not-a-lesson', 'es-nope'])).toBe(0);
+  });
+
+  it('never counts a unit with no lessons — the vacuous-truth control', () => {
+    // every() on [] is true. Proven against the real function by passing a done-list that
+    // completes nothing: if an empty unit existed it would be counted here.
+    const sizes = Object.values(UNIT_LESSONS).flatMap(byUnit =>
+      Object.values(byUnit ?? {}).map(l => l.length));
+    expect(Math.min(...sizes), 'a unit with no lessons would be "finished" by everybody')
+      .toBeGreaterThan(0);
+    expect(countCompletedUnits(['nothing-at-all'])).toBe(0);
   });
 });

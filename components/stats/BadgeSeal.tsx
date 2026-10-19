@@ -45,6 +45,19 @@ const C = 2 * Math.PI * R_RING;
  * carries into them and nothing has to be recoloured per theme.
  */
 const MARKS: Record<BadgeMark, React.ReactNode> = {
+  /*
+    STEPS, CLIMBED. A course is a sequence of things each of which stands on the last, which is
+    the one true thing about the grammar track and the only thing a 46px mark has room to say.
+
+    Three alternatives were rejected by picturing them at badge size, which is the rule
+    `unstuck` learned the hard way. A finish-line FLAG says "done" about anything and would
+    have collided with every other family. A BOOK is already what `book` wears. A graduation
+    CAP is a metaphor about school, and this app's whole argument is that it is not one.
+  */
+  course: <>
+    <path d="M3.5 19.5h5v-5h5v-5h5v-5" />
+    <path d="M3.5 19.5h17" />
+  </>,
   // A stack of cards — the deck itself.
   deck: <>
     <rect x="3.5" y="8.5" width="14" height="11" rx="2" />

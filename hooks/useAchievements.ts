@@ -32,6 +32,12 @@ export function useAchievements(refreshKey?: unknown) {
 
     const srs = await storage.getSRSState();
 
+    // Finished lessons, for the course milestones. A failure here must not lose the OTHER
+    // milestones, so it degrades to "no units finished" rather than rejecting the refresh —
+    // the same posture as the book count below.
+    let lessonsDone: string[] = [];
+    try { lessonsDone = await storage.getLessonsDone(); } catch { /* units simply do not count */ }
+
     // A book counts as finished when its saved position is the last section of the last
     // non-empty chapter. Derived rather than flagged, for the same reason as everything else
     // here — a "finished" boolean would be a second record of what `position` already says.
@@ -47,7 +53,7 @@ export function useAchievements(refreshKey?: unknown) {
       }).length;
     } catch { /* no IndexedDB — books simply do not count */ }
 
-    const stats = computeStats({ decks, srs, booksFinished, leechThreshold: LEECH_THRESHOLD });
+    const stats = computeStats({ decks, srs, booksFinished, lessonsDone, leechThreshold: LEECH_THRESHOLD });
     const result = evaluate(stats);
     setEarned(result.earned);
     setNext(result.next);
