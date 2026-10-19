@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { cardStage, stageFill, stageLabel, STAGE_SEGMENTS } from '@/lib/cardStrength';
 import type { DeckWord, LanguageCode } from '@/lib/types';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
 import { useLanguage } from '@/lib/LanguageContext';
@@ -921,6 +922,43 @@ export default function VocabTab() {
                         pushed each deck row to ~526px at a 375px viewport, which is what made
                         the whole Vocab tab scroll sideways. */}
                     <div className="deck-row-actions flex gap-1.5 items-center flex-wrap justify-end">
+                      {/*
+                        ── HOW WELL THIS CARD IS HELD ─────────────────────────────
+                        Twenty rows of word, gloss and two buttons read as a spreadsheet of
+                        strings: a word held for a year and one saved ten minutes ago were the
+                        same row, because a card's state was drawn only when it was EXCEPTIONAL
+                        (pool / stuck / paused / snoozed each earn a chip, everything else
+                        earned nothing). This is the ordinary case made visible.
+
+                        Three segments rather than a number, because the question a learner
+                        scans this list for is "what is solid and what is not", which is a
+                        shape rather than a figure — and the same segmented rule the Learn
+                        tab's units use, so one visual idea serves both. Derived; see
+                        lib/cardStrength.ts, whose top rung IS `isMastered`'s threshold.
+                      */}
+                      {(() => {
+                        const stage = cardStage(w);
+                        const fill = stageFill(stage);
+                        return (
+                          <span
+                            aria-label={stageLabel(stage)}
+                            title={stageLabel(stage)}
+                            /* Shown at EVERY width. The first draft hid it under `sm:`, on the
+                               assumption a phone row had no space — measured at 375px, the
+                               actions wrap to their own line with room to spare, and this is
+                               the most informative thing in the row to have dropped. */
+                            className="flex gap-[3px] items-center shrink-0"
+                            style={{ marginRight: 2 }}
+                          >
+                            {Array.from({ length: STAGE_SEGMENTS }, (_, i) => (
+                              <span key={i} style={{
+                                width: 11, height: 3, borderRadius: 2,
+                                background: i < fill ? 'var(--jade)' : 'var(--line)',
+                              }} />
+                            ))}
+                          </span>
+                        );
+                      })()}
                       {(() => { const lbl = dueLabel(w, today); return lbl ? (
                         <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.04em', color: lbl === 'now' ? 'var(--accent)' : 'var(--ink-faint)', minWidth: 24, textAlign: 'right' }}>
                           {lbl}
@@ -972,12 +1010,26 @@ export default function VocabTab() {
                       >
                         Manage
                       </button>
+                      {/*
+                        ── REMOVE IS DESTRUCTIVE AND NO LONGER LOOKS LIKE MANAGE ──
+                        The two sat side by side in the identical ghost button, both going
+                        accent on hover, so the one that deletes a card and the one that opens
+                        a panel were indistinguishable until read. Forty of them on a screen is
+                        a misclick with a stopwatch on it.
+
+                        It keeps its border only on hover now, and hovers to `--wrong` rather
+                        than to the accent every other control uses — the colour this app
+                        already means "that was not right" by. The undo toast stays: this
+                        lowers the rate of the mistake, it does not excuse removing the
+                        recovery from it.
+                      */}
                       <button
                         onClick={() => handleRemove(w)}
+                        title="Remove this word from your deck"
                         className="cursor-pointer transition-all duration-150 whitespace-nowrap"
-                        style={btnGhost}
-                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--accent)'; (e.target as HTMLElement).style.color = 'var(--accent)'; }}
-                        onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'var(--line)'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
+                        style={{ ...btnGhost, borderColor: 'transparent' }}
+                        onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'var(--wrong)'; (e.target as HTMLElement).style.color = 'var(--wrong)'; }}
+                        onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'transparent'; (e.target as HTMLElement).style.color = 'var(--ink-faint)'; }}
                       >
                         Remove
                       </button>
