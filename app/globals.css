@@ -485,6 +485,33 @@
   }
 }
 
+/* ── AN OFF-SCREEN DECK ROW COSTS NOTHING TO LAY OUT ──────────────────────────
+   The deck list renders one row per word with no cap — 300 words measured 29,489px tall, and
+   a 542-word deck (a real figure from this project's own notes) is nearer 53,000px. Every one
+   of those rows was laid out, styled and painted on first render, which at 4x CPU blocked the
+   main thread for 163ms on arrival and 120ms on every later visit to the tab.
+
+   `content-visibility: auto` hands that decision to the browser: a row outside the viewport
+   is skipped entirely until it is scrolled near. No windowing code, no virtualization
+   dependency, and — the reason it is preferred to capping the list — NOTHING LEAVES THE DOM,
+   so find-in-page, Cmd+F and the undo toast's row all still work on a word you have not
+   scrolled to. This file's own rule against hiding part of an answer applies: a cap would
+   have made the deck list stop being the deck.
+
+   `contain-intrinsic-size: auto 98px` is the placeholder height for a row never yet rendered
+   — 98px is the measured mean at phone width, where the actions wrap to a second line — and
+   the `auto` keyword means the browser REMEMBERS each row's real height once it has been
+   rendered once, so the estimate only ever matters on the first scroll past a row. Without a
+   size the scrollbar would collapse to nothing and jump as rows materialise.
+
+   Not applied to `.deck-row` itself: that is a grid whose own `grid-template-columns` the
+   containment would have to resolve. The wrapper is a plain block, which is what this
+   property wants. */
+.deck-row-slot {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 98px;
+}
+
 /* ── THE PAGE IS A COLUMN, SO SWITCHING TAB CANNOT MOVE THE FURNITURE ──────────
    Every tab is kept alive and hidden with `display: none`, so only the active one has height
    — and measured across the six, `main` ran from 64px to 3,853px. Each switch therefore moved

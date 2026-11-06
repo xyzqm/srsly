@@ -171,7 +171,11 @@ export default function LearnTab({ onNavigateSrs, active = true, onActivity, str
             active={active}
             streakNote={streakNote}
           />
-        : <CoursePath units={units} byId={byId} done={done} doneLoaded={doneLoaded}
+        /* `key` resets which unit is expanded when the language changes. Without it the
+           picked id belongs to the previous course, matches no unit in the new one, and the
+           whole path renders collapsed — which is what the old `touched` flag also did, and
+           is a worse first impression of a tree than opening where you are. */
+        : <CoursePath key={language} units={units} byId={byId} done={done} doneLoaded={doneLoaded}
             next={next} onOpen={setOpenId} />}
     </div>
   );
@@ -219,17 +223,25 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
   /**
    * Which unit is expanded. The one you are on, once we know which that is.
    *
-   * `null` is "not chosen yet" and is NOT the same as "none open" — the mistake this repo
-   * names four times over. Until storage answers, `next` is null and every unit would collapse,
-   * so a returning learner would watch the course open itself a beat after it rendered shut.
-   * The effect runs once `doneLoaded` flips and the user's own clicks win from then on.
+   * ── DERIVED, NOT SET IN AN EFFECT, AND THAT IS A FIX RATHER THAN A TIDY-UP ──
+   * The three states are real and the old `useState` + `touched` pair had them right:
+   * "not chosen yet" is NOT "none open", the mistake this repo names four times over.
+   * What it got wrong is WHEN. An effect runs after the commit that paints, so the order
+   * was: storage answers → render with every unit shut → **paint** → effect → render again
+   * with one open. The docstring predicted the symptom exactly — "a returning learner would
+   * watch the course open itself a beat after it rendered shut" — and the implementation
+   * then did it. Measured at phone width, that second commit was a 0.23 layout shift, the
+   * largest single one in the app.
+   *
+   * Deriving it puts the open unit in the SAME commit as `doneLoaded`, so there is nothing
+   * to see. `undefined` carries "not chosen yet" and `null` carries "the learner collapsed
+   * them all", which is what `touched` was for — one value now holds both facts, so they
+   * cannot disagree.
    */
-  const [openUnit, setOpenUnit] = useState<string | null>(null);
-  const [touched, setTouched] = useState(false);
-  useEffect(() => {
-    if (!doneLoaded || touched) return;
-    setOpenUnit(next ? next.unit.id : units[0]?.id ?? null);
-  }, [doneLoaded, touched, next, units]);
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const openUnit = picked !== undefined
+    ? picked
+    : doneLoaded ? (next ? next.unit.id : units[0]?.id ?? null) : null;
 
   const totalDone = doneLoaded ? units.reduce((n, u) => n + unitProgress(u, done).done, 0) : 0;
   const total = units.reduce((n, u) => n + u.lessons.length, 0);
@@ -244,11 +256,50 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
         page does shoves the entire course down under the reader's cursor.
       */}
       <div
-        className="rounded-[14px] px-5 py-4 mb-7 flex items-center gap-4 flex-wrap"
-        style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)', minHeight: 92 }}
+        className="rounded-[14px] px-5 py-4 mb-7 flex flex-col items-start gap-4 sm:flex-row sm:items-center"
+        style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}
       >
         {!doneLoaded ? (
-          <div style={{ ...MONO, fontSize: 11, color: 'var(--ink-faint)' }}>finding your place…</div>
+          /*
+            ── THE PLACEHOLDER IS THE CARD'S SHAPE, NOT A NUMBER ──
+            This was one mono line sitting inside the `minHeight` reserve above. Measured at
+            three widths, that number is right to within 7px on a desktop and **65px SHORT on
+            a phone** (92 against 157) — because at narrow widths the button WRAPS below the
+            text, and a height calibrated on a wide window cannot see a change of shape. Same
+            mistake this repo already records for `calc(100vh - 212px)`.
+
+            So the placeholder renders the loaded card's STRUCTURE — three text rows and the
+            button's own box, inside the same flex-wrap wrapper — and therefore wraps exactly
+            as the real card does at every width, with no constant to keep in step.
+          */
+          <>
+            <div className="min-w-0 flex-1 w-full" aria-hidden>
+              {/* EACH ROW CARRIES THE REAL ROW'S TYPOGRAPHY AND A NON-BREAKING SPACE, rather
+                  than a pixel height. A bar of `height: 11` is a guess at what 9.5px mono
+                  comes out as, and it was 4px wrong across the three rows; a row set in the
+                  same font at the same size simply IS that tall, in every theme and at every
+                  font setting the learner can pick. Nothing here to keep in step. */}
+              <div className="shimmer" style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase',
+                marginBottom: 4, width: 150, borderRadius: 4, color: 'transparent' }}>&nbsp;</div>
+              <div className="shimmer" style={{ fontFamily: 'var(--f-display)', fontSize: 21,
+                lineHeight: 1.2, width: '72%', borderRadius: 5, color: 'transparent' }}>&nbsp;</div>
+              {/* The same 2.7em two-line box the real summary occupies. */}
+              <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.35, height: '2.7em' }}>
+                <div className="shimmer" style={{ height: '1.2em', width: '96%', borderRadius: 4 }} />
+                <div className="shimmer" style={{ height: '1.2em', width: '55%', borderRadius: 4, marginTop: '0.3em' }} />
+              </div>
+            </div>
+            {/* The real button's box, down to the padding and letter-spacing, so it occupies
+                the same footprint and wraps at the same width. Its label is transparent
+                rather than absent: the width of "Continue" is part of the footprint. */}
+            <div
+              className="shimmer shrink-0" aria-hidden
+              style={{ ...MONO, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
+                fontWeight: 600, padding: '12px 20px', borderRadius: 8, color: 'transparent' }}
+            >
+              Continue
+            </div>
+          </>
         ) : next && nextLesson ? (
           <>
             <div className="min-w-0 flex-1">
@@ -258,7 +309,16 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
               <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, color: 'var(--ink)', lineHeight: 1.2 }}>
                 {nextLesson.title}
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3 }}>{nextLesson.summary}</div>
+              {/* A FIXED TWO-LINE BOX, which is what makes this card one height.
+                  Summaries run to one line or two depending on the lesson, so without it the
+                  card changed height as you progressed through the course — and the loading
+                  placeholder could not match a height that was never the same twice. Clamped
+                  rather than merely reserved, so a long summary cannot grow it either. */}
+              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3,
+                lineHeight: 1.35, height: '2.7em', overflow: 'hidden',
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                {nextLesson.summary}
+              </div>
             </div>
             <button
               onClick={() => onOpen(next.lessonId)}
@@ -310,7 +370,7 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
             doneLoaded={doneLoaded}
             nextId={next?.lessonId}
             open={openUnit === u.id}
-            onToggle={() => { setTouched(true); setOpenUnit(openUnit === u.id ? null : u.id); }}
+            onToggle={() => setPicked(openUnit === u.id ? null : u.id)}
             onOpen={onOpen}
           />
         ))}

@@ -637,6 +637,31 @@ export default function VocabTab() {
     }
   }, [displayDeck, filter, today]);
 
+  /**
+   * Where each word sits in the UNFILTERED deck, which is the index every mutation takes.
+   *
+   * ── IT WAS A `findIndex` INSIDE THE ROW MAP, SO DRAWING THE LIST WAS O(n²) ──
+   * Every row resolved its own position with `deck.findIndex(d => d.id === w.id)`, so a
+   * 300-word deck did ~45,000 id comparisons to render once and a 542-word deck ~147,000 —
+   * on the main thread, in render, every time the list re-rendered. Measured at 4× CPU (about
+   * a mid-range phone), first paint of this tab blocked for 163ms across three long tasks and
+   * 120ms on every later visit, which is the stutter this tab was reported for.
+   *
+   * A Map is built once per deck instead. Keyed by `id` because `id` is the deck's identity —
+   * the same reason multiple readings of one character are separate cards.
+   */
+  const indexById = useMemo(() => {
+    // `id` is OPTIONAL — legacy words saved before ids existed have none — and `undefined` is
+    // a perfectly good Map key, so they are handled rather than excluded. FIRST occurrence
+    // wins, which is exactly what `findIndex` returned: several id-less words all resolve to
+    // the first of them, as they always did. That is a real latent bug for a deck holding two
+    // id-less words, and it is deliberately NOT fixed here — changing which row an edit lands
+    // on is not something a performance fix should do quietly.
+    const m = new Map<string | undefined, number>();
+    deck.forEach((w, i) => { if (!m.has(w.id)) m.set(w.id, i); });
+    return m;
+  }, [deck]);
+
   // The text box narrows further (plain text; power-user operators still parse).
   const visibleDeck = useMemo(() => {
     if (!query.trim()) {
@@ -882,11 +907,17 @@ export default function VocabTab() {
         {/* Cross-fade the whole list (rows + empty states) when the deck changes. */}
         <CrossFade id={language}>
         {visibleDeck.map((w) => {
-          const realIdx = deck.findIndex(d => d.id === w.id);
+          const realIdx = indexById.get(w.id) ?? -1;
           const snoozed  = !!w.snoozeUntil && w.snoozeUntil > today;
           const managing = managingId === w.id;
           return (
-            <div key={w.id}>
+            /*
+              `content-visibility: auto` lets the browser skip layout and paint for rows that
+              are off screen — see `.deck-row-slot` in globals.css. The deck list is the one
+              place in the app that renders an unbounded number of similar boxes, and it is
+              measured at 29,489px tall for 300 words.
+            */
+            <div key={w.id} className="deck-row-slot">
               {readingIdx === realIdx ? (
                 <div className="py-2">
                   <ReadingRow

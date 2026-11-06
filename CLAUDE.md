@@ -55,6 +55,10 @@ npm run seed:dev   # print a console snippet that seeds a deck lighting up the m
 npm run build:practice  # re-cut the lesson practice tiles with the real segmenters
 npm run start:verify    # serve .next-verify on :3100 — the ONLY way to exercise the
                         # service worker, which does not register outside production
+npm run perf:tabs       # what a tab switch costs ON A PHONE: spawns headless Chrome over CDP,
+                        # seeds a deck, clicks every tab twice and reports long tasks, blocking
+                        # time and layout shift. CPU_THROTTLE=4 is roughly a mid-range phone and
+                        # is the only way to see this from a Mac — see scripts/perf-tabs.mjs
 ```
 
 ### Google sign-in names THIS SITE, which took two attempts
@@ -1532,6 +1536,36 @@ in fives, which gives a grouping nobody chose. `lib/achievements.ts` already sta
 teaching judgement about where one capability ends, and nothing in the data knows where that is.
 The cost is 188 ids typed by hand — which is exactly why the test was written FIRST, and it
 caught two of them on its first run (`plural` and `articles` transposed in both es and fr).
+
+**⚠ AND THE CARD AT THE TOP CHANGED SIZE WHEN IT LOADED, WHICH IS MOST OF WHY THE TAB FELT
+CHOPPY.** Two separate post-paint moves, both measured at phone width with `npm run perf:tabs`:
+
+- **The Continue card's reserve was a number measured on a desktop.** It carried
+  `minHeight: 92` with a comment explaining exactly this risk — and 92 is right to within 7px
+  at 1200px wide and **65px short at 375px**, because at narrow widths the button WRAPS below
+  the text and a height taken from a wide window cannot see a change of shape. The same mistake
+  this file records for `calc(100vh - 212px)`. Fixed in two parts: the wrapper is an explicit
+  `flex-col … sm:flex-row` rather than `flex-wrap`, so its shape no longer depends on content
+  width; the summary sits in a fixed two-line clamped box, so the card is one height whatever
+  the lesson says — which also stops it resizing as you progress through the course. The
+  placeholder then renders the card's STRUCTURE, each row carrying the real row's font and size
+  with a non-breaking space rather than a pixel height, so it simply IS that tall in every theme
+  and at every font setting. **Measured after: 0px of growth at 375, 412 and 1200.**
+- **The open unit was set in an EFFECT, so it expanded after the paint.** `CoursePath`'s own
+  docstring predicted the symptom — "a returning learner would watch the course open itself a
+  beat after it rendered shut" — and the implementation then did it, because an effect runs
+  after the commit that paints. It is derived now, in the same commit as `doneLoaded`, with
+  `undefined` meaning "not chosen yet" and `null` meaning "the learner collapsed them all";
+  that is what the second `touched` boolean was for, and one value holding both facts cannot
+  disagree with itself. `key={language}` resets it, since a picked id from the previous course
+  matches no unit in the new one and left the whole path collapsed.
+
+A residual shift remains and is recorded rather than hidden: until storage answers, no unit can
+be open, so one still expands when `done` arrives. For a learner on localStorage that resolves
+before a paint; signed in it is a network round trip and visible. Closing it needs either a
+synchronous probe on the storage facade — a real interface change, with the `null` vs `[]` vs
+not-loaded discipline that implies — or giving up auto-expanding the current unit, which is a
+product decision. Neither was taken unasked.
 
 **STILL NEVER LOCKED.** No unit gates another, nothing is `disabled`, there is no 🔒, and every
 lesson opens on day one. A unit is a shape, not a gate. There is deliberately no mascot and no
@@ -3162,6 +3196,43 @@ the removal of the recovery.
 cards are complete, which is correct; it fills to 22/240 after one grade, measured. Recorded
 because "it looks like nothing is happening" is exactly the shape of a real bug in this
 codebase, and the discipline is to measure before fixing rather than after.
+
+##### AND DRAWING IT WAS QUADRATIC, WHICH IS WHAT "CHOPPY" TURNED OUT TO MEAN
+
+Reported as the app feeling choppy on a Pixel, and invisible on the machine it was written on
+until the CPU was throttled — `npm run perf:tabs` exists for that reason and the numbers below
+come from it, at 4x against a 542-word deck.
+
+**EVERY ROW RESOLVED ITS OWN POSITION WITH `deck.findIndex(d => d.id === w.id)`, INSIDE THE ROW
+MAP.** So drawing the list was O(n²) — about 20,000 id comparisons for a 201-row deck and
+147,000 for 542 words, on the main thread, in render, every time the list re-rendered. It is
+now one `Map` built per deck (`indexById`). FIRST occurrence wins, exactly as `findIndex`
+returned, because `id` is OPTIONAL on a legacy word and several id-less words have always all
+resolved to the first of them. That is a real latent bug for such a deck and is deliberately
+NOT fixed here: which row an edit lands on is not something a performance change should alter
+quietly.
+
+**AND `content-visibility: auto` ON EACH ROW (`.deck-row-slot`) LETS THE BROWSER SKIP THE REST.**
+The list has no cap — 201 rows measured 29,489px and 542 words 53,516px — and a cap is the wrong
+fix for the reason this file gives twice elsewhere: a filter on a list of answers is part of the
+answer, and a word you have not scrolled to must still be findable. Nothing leaves the DOM, so
+search still finds it (verified: a word at row 7 that had never been scrolled to). No windowing
+code and no virtualization dependency, which is the same judgement as the absent `openai` SDK.
+
+**`contain-intrinsic-size: auto 98px` IS THE OTHER HALF AND DROPPING IT IS WORSE THAN NOT DOING
+THIS AT ALL.** Without a size every undrawn row is 0px tall, so a 53,000px list collapses and the
+scrollbar lurches as rows materialise under the thumb. 98px is the measured mean at phone width,
+where the actions wrap to a second line; `auto` means the browser remembers each row's real
+height once drawn, so the estimate only matters on the first scroll past. Measured against a real
+row: 98 against 96.
+
+| 542 words, 4x CPU | before | after |
+|---|---|---|
+| first open | 648ms, **369ms blocking**, long tasks 131/251/52/135 | 347ms, 92ms, 127/65 |
+| revisit | 312ms, 144ms blocking, one 194ms long task | 147ms, **0ms**, none |
+
+`tests/listRenderCost.test.ts` pins both halves, mutation-checked — restoring the `findIndex`
+fails one assertion and deleting the intrinsic size fails another.
 
 #### A Settings heading has to out-rank the text it heads
 
