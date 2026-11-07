@@ -2962,7 +2962,7 @@ Every segmenter and lemmatizer is server-side and kuromoji cannot run in a brows
 | Flashcards, typed recall, conjugation, grading, the streak | Pasting new text, or a new EPUB chapter (`/api/segment-text`) |
 | Handwriting, for characters whose stroke files are cached | Passage audio — `/api/tts` is a paid call |
 | Tapping words in an open passage: the gloss already travels on the token | Typing a NEW word to add in ja/es/fr (`/api/{lang}-word-lookup`) |
-| Flashcard audio — `useSpeech` uses local system voices | Reaching the cloud, though writes queue and replay |
+| Flashcard audio — `lib/speech.ts` uses local system voices | Reaching the cloud, though writes queue and replay |
 | Stats, Year in Reading, the printable sheet, the lesson trees | |
 
 **AND THE SERVICE WORKER IS WHAT MADE THAT COLUMN REACHABLE**, which is why
@@ -4225,12 +4225,40 @@ where blanks do.
 
 | Hook | Responsibility |
 |---|---|
-| `useSRS` | Streak tracking, session scoring, emoji state |
-| `useVocabDeck` | CRUD for the user's deck; `reviews` field tracks mastery |
+| `useSRS` | Streak tracking, session scoring, per-language streak, rolling accuracy |
+| `useVocabDeck` | CRUD for the user's deck. It does NOT compute mastery — `isMastered` in `lib/achievements.ts` does |
 | `useDailyContent` | Fetch/cache AI passage; parse raw API tokens |
 | `useTheme` | Theme/font persistence and DOM sync |
-| `useWordPopup` | Click-to-lookup popup state on clickable Chinese words |
-| `useSpeech` | Web Speech API TTS for passage playback |
+| `useWordPopup` | Click-to-lookup popup state, in EVERY language — the gate is "reading OR meaning" |
+| `useMic` (`hooks/useMic.ts`) | Speech RECOGNITION — speech IN. Currently imported by nothing; `AddWordForm` carries its own non-equivalent copy |
+
+Speech OUT is deliberately absent from that table because it is not a hook: `lib/speech.ts`
+(`speak`, `speakSequence`, `speakWithBlank`, `voiceOptions`) is the TTS surface.
+
+**⚠ FOUR OF THE SIX ROWS ABOVE WERE WRONG, AND ONE NAMED THE OPPOSITE DIRECTION.** Found while
+evaluating whether to build speaking practice — by grepping for the hook this table named, which
+is the cheapest possible check and had never been run.
+
+- **`useSpeech` was "Web Speech API TTS for passage playback".** The file was a MICROPHONE hook
+  (`SpeechRecognition`), **nothing imported it**, and the TTS lives in `lib/speech.ts`. The
+  filename sat one character from that module's while doing the opposite job, which is how the
+  description survived: it describes `lib/speech.ts` accurately and was filed against the wrong
+  file. Renamed to `hooks/useMic.ts`, whose docstring now carries the whole story.
+- **`useSRS` claimed "emoji state".** That went when the header's mood indicator was removed.
+  The hook's own docstring records the removal at length; this table did not hear about it.
+- **`useVocabDeck` claimed "`reviews` field tracks mastery".** Wrong twice: the hook computes no
+  mastery at all, and mastery is STABILITY rather than review count — `isMastered` requires
+  `stability >= MASTERY_STABILITY_DAYS`. This file argues that exact point elsewhere ("`reviews
+  >= n` calls eight passes on a card you keep forgetting mastery") and then contradicted itself
+  in a table six rows long.
+- **`useWordPopup` claimed "Chinese words".** It reads `useLanguage()` and gates on reading OR
+  meaning *specifically* so Spanish and French tokens are not dead text — which is a rule this
+  file states in the token-format section.
+
+The pattern is worth more than the four fixes: **a table of one-line descriptions is the easiest
+thing in this document to leave behind**, because no code imports it, no test reads it, and every
+row is short enough to look harmless. The surrounding prose had been corrected repeatedly while
+the table went untouched for months.
 
 #### A leech is a card to fix, not to keep reviewing
 
