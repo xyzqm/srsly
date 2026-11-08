@@ -2499,7 +2499,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **348 kB** for `/` on Next 15.5.28, after shadowing; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **349 kB** for `/` on Next 15.5.28, after shadowing; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -4316,15 +4316,42 @@ nothing to practise. Shuffled once per mount, keyed on `deck.length` so a save e
 reshuffle a running session; not persisted, because a position is stored state on a drill whose
 whole claim is that it stores nothing.
 
-**⚠ PHASE 2 SPEAKS SINGLE WORDS, WHICH IS HALF OF WHAT SHADOWING IS FOR.** Shadowing is about
-rhythm and intonation ACROSS A PHRASE, and for Spanish and French the hard parts — liaison,
-nasal vowels, where the stress lands in a group — do not exist inside one word. Chinese is the
-exception that makes it worth shipping alone: a syllable carries a tone, and tones are what a
-beginner most needs to hear themselves get wrong. **`DeckWord.cn` is declared as "example
-sentence" and is written NOWHERE in this repository** — a dead field, read in two places and
-never filled — so the sentences cannot come from the deck. Phase 3 takes them from
-`lib/data/lesson-practice.json`, which already holds 306 authored sentences cut by the real
-segmenters.
+**TWO SOURCES, BECAUSE A WORD AND A PHRASE TEACH DIFFERENT THINGS** (`lib/shadowSentences.ts`).
+Words come from the deck and are what the learner is actually studying; in Chinese a single
+syllable carries a tone, which is the thing a beginner most needs to hear themselves get
+wrong. Sentences are the half a word cannot reach — shadowing is really about rhythm and
+intonation across a phrase, and for Spanish and French the hard parts (liaison, nasal vowels,
+where the stress lands in a group) do not exist inside one word. Neither dominates, so the
+learner picks. **`DeckWord.cn` is declared as "example sentence" and is written NOWHERE in
+this repository** — a dead field, read in two places and never filled — so the second source
+is `lib/data/lesson-practice.json`: 69 sentences for zh and ja, 87 for es and fr, already
+WRITTEN for this app and already validated against the real segmenters by
+`tests/lessons.test.ts`.
+
+**EVERY SENTENCE, NOT ONLY THE FINISHED LESSONS.** Filtering by `srsly-lessons-done` is the
+tempting version and is wrong twice: it couples a drill that stores nothing to curriculum
+state it is firewalled from, and it hands a new learner an empty screen — the dead end this
+drill already refuses by reading the whole deck rather than the due cards. You can imitate a
+sentence you have not been taught.
+
+**⚠ LAZY, BECAUSE `SrsTab` IS STATICALLY IMPORTED AND `LearnTab` IS NOT.** The 36 kB of lesson
+data currently rides in the Learn chunk; a plain import here would move it into the initial
+bundle for every learner, including the ones who never open Shadow — the exact failure the
+level tables document. `loadShadowSentences` uses `await import()` like `loadFrGrammar`.
+Verified against the built manifest rather than assumed: **none of the 7 initial chunks for
+`/` contains a lesson sentence.**
+
+**THE CHOICE IS SESSION-LOCAL, NOT A PREF.** The flashcard toggles persist and this one
+deliberately does not: a synced field is stored state, and the one thing this drill claims is
+that it stores nothing.
+
+**AND THE GUARDS HAD THE PROJECT'S OWN FAVOURITE BUG IN THEM, TWICE, BEFORE THEY WERE FIXED.**
+The first draft asked `!deckLoaded` and then `deck.length === 0` whatever the source. Sentences
+need no deck, so an empty deck would have reported nothing to practise with 87 sentences
+loaded; and a language switch resets the list to `null` while `source` stays put, so an
+UNLOADED list would have rendered as "this language has none" — not-yet shown as none. The
+empty word state now also offers *Shadow sentences instead* rather than describing the way
+out, because an empty deck is not an empty drill.
 
 **THE SECOND HALF OF A CHAIN IS NOT A USER GESTURE.** `playBoth` starts the take from the
 reference's `onEnd`, which is a timer, and mobile Safari may refuse `play()` there — arriving

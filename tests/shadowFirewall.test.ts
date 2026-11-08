@@ -30,6 +30,7 @@ const strip = (src: string) => src
 /** Built across two phases; a module absent today must not silently pass once it lands. */
 const MODULES = [
   'hooks/useRecorder.ts',
+  'lib/shadowSentences.ts',
   'components/practice/ShadowPractice.tsx',
   'components/practice/ShadowPlayer.tsx',
 ] as const;
