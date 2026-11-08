@@ -962,10 +962,16 @@ saying "Chinese" long after three other languages shipped.
 **The marks are geometry, not emoji** (`components/shared/Mark.tsx`). Emoji were used first and
 are the wrong tool for the same reason `BadgeSeal` gives: 📖 is a different drawing on every OS,
 it arrives in full colour into a palette assembled from six themes' worth of CSS variables, and
-it will not sit on the mono baseline the rest of the UI is set on. Four paths on `currentColor`
-inherit the theme like text. The stroke width scales inversely with the box because the viewBox
-scales and the stroke does not — a flat 1.5 is a hairline at 12px and a slab at 20px, and these
-render at both.
+it will not sit on the mono baseline the rest of the UI is set on. A few paths on
+`currentColor` inherit the theme like text. The stroke width scales inversely with the box
+because the viewBox scales and the stroke does not — a flat 1.5 is a hairline at 12px and a
+slab at 20px, and these render at both.
+
+**Six marks, and each one arrived when a second thing needed it.** That file's own rule is
+that a seventh belongs there when a seventh control needs one, not before — and `mic` is the
+rule firing with teeth: `AddWordForm` had been shipping a literal 🎤 for as long as it has had
+a microphone, directly against this paragraph, and it took spoken recall needing the same mark
+for anyone to look.
 
 Those texts are WRITTEN, not sourced — still true of the data, which is still tested even
 though nothing renders it — for the same reason as `proverbs-seed.json` and the
@@ -4208,12 +4214,37 @@ away from being given up, and had been since typed recall shipped. One `stopProp
 wrapper covers the field and both buttons; the control is that a button outside the wrapper
 still reaches `window` and still reveals.
 
-**`AddWordForm` STILL CARRIES ITS OWN MIC AND IS NOW A TRUE DUPLICATE.** The contracts used to
-differ, which is why the previous note said unifying them was a rewrite rather than a refactor;
-the rewrite has now happened on this side, so the two really are one function in two places.
-Collapsing it is deliberately NOT in this change — the call site feeds a dictionary lookup and
-needs its own answer to a denied microphone, which is a second design — but it is the next
-thing, and it is the "a second record of a fact drifts" rule standing open.
+**`AddWordForm`'s HAND-WRITTEN COPY IS GONE, AND COLLAPSING IT PAID FOR ITSELF THREE TIMES.**
+The two recognizers were genuinely different once — the hook appended and emitted interim text,
+this one took a single final result and replaced the field — which is why an earlier note said
+unifying them was a rewrite rather than a refactor. Spoken recall performed that rewrite and
+landed on the LIVE contract, so the copy had nothing left to justify it. `grep
+webkitSpeechRecognition` now returns one line in the repository.
+
+It was never only a duplicate. Two defects came out with it, neither of which anyone had
+pressed:
+
+- **It reported nothing when it failed.** `onend` and `onerror` both ran `setRecording(false)`
+  and stopped, so a declined permission made the button flicker and die — the dead-button bug
+  this file records three times, in a control that had carried it since it shipped. The five
+  sentences are now `micMessage` in `hooks/useMic.ts` rather than a second switch here, because
+  two copies of five branches is how they come to disagree about what `denied` means.
+- **It rendered a literal 🎤 EMOJI**, which `Mark.tsx` refuses in as many words, in shipped UI.
+  `mic` is the sixth mark, and the rule that file states — "a sixth belongs here when a sixth
+  control needs one, not before" — is exactly what two mic buttons satisfy.
+
+And a third, found by typechecking a mistake: the tooltip read **"Speak to fill hanzi"** in all
+four languages, so a Spanish learner was offered a Chinese term of art. It is
+`` `Speak the ${langConfig.name} word` `` now, the phrasing `typedLabels` already uses — not a
+new `LanguageConfig` field, which is what an invented `speakToFillHint` would have been.
+
+**`supported` IS MOUNT-GATED IN THE HOOK, WHICH IS A HYDRATION RULE.** `app/page.tsx` is a
+client component Next still PRERENDERS, so a `window` read during render is `false` on the
+server and `true` on the client's first pass and the trees disagree. `AddWordForm` was already
+doing this by hand with a comment saying so, and `ApiKeyPanel` states the same rule for
+`CSS.supports`; moving it into the hook is what stops the next caller rediscovering it. The
+control appears one commit after mount, which is the right way round — a button that is there
+and then vanishes is worse than one that arrives.
 
 #### The voice and the speed are the learner's, and they are stored apart
 
@@ -4312,7 +4343,7 @@ where blanks do.
 | `useDailyContent` | Fetch/cache AI passage; parse raw API tokens |
 | `useTheme` | Theme/font persistence and DOM sync |
 | `useWordPopup` | Click-to-lookup popup state, in EVERY language — the gate is "reading OR meaning" |
-| `useMic` (`hooks/useMic.ts`) | Speech RECOGNITION — speech IN. One shot, replaces, and reports WHY it failed; drives spoken recall in `TypedAnswer`. `AddWordForm` still has its own copy |
+| `useMic` (`hooks/useMic.ts`) | Speech RECOGNITION — speech IN. One shot, replaces, and reports WHY it failed. The ONLY recognizer in the repo: `TypedAnswer` (spoken recall) and `AddWordForm` both use it |
 
 Speech OUT is deliberately absent from that table because it is not a hook: `lib/speech.ts`
 (`speak`, `speakSequence`, `speakWithBlank`, `voiceOptions`) is the TTS surface.

@@ -88,6 +88,26 @@ const FROM_ERROR: Record<string, MicStatus['kind']> = {
   'no-speech': 'unheard',
 };
 
+/**
+ * The sentence each failure deserves — here rather than in a component, because BOTH mic
+ * callers need it and two copies of a five-branch switch is how they come to disagree about
+ * what a denied permission means. `idle`, `listening` and `unsupported` return null: the first
+ * two are not failures, and the third draws no control at all, so there is nothing to caption.
+ *
+ * Wording is kept neutral between the two call sites. Both sit directly beside a text field,
+ * so "Type it instead" is true whether the field wants an answer or a word to look up.
+ */
+export function micMessage(s: MicStatus): string | null {
+  switch (s.kind) {
+    case 'denied':    return 'Microphone blocked — allow it in your browser’s site settings.';
+    case 'no-device': return 'No microphone found. Type it instead.';
+    case 'offline':   return 'Speech needs a connection: the recording is transcribed off this device.';
+    case 'unheard':   return 'Didn’t catch that. Try again, or type it.';
+    case 'failed':    return 'The microphone stopped. Try again, or type it.';
+    default:          return null;
+  }
+}
+
 function recognizer(): SR | null {
   if (typeof window === 'undefined') return null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +130,17 @@ export function useMic(onResult: (text: string) => void) {
   const cbRef = useRef(onResult);
   useEffect(() => { cbRef.current = onResult; }, [onResult]);
 
-  const supported = recognizer() !== null;
+  /**
+   * MOUNT-GATED, NOT COMPUTED IN RENDER, and that is a hydration rule rather than caution.
+   * `app/page.tsx` is a client component that Next still PRERENDERS, where `window` does not
+   * exist — so a value read during render is `false` on the server and `true` on the client's
+   * first pass, and the trees disagree. `ApiKeyPanel` states the same rule for `CSS.supports`
+   * and `AddWordForm` was already doing this by hand. The cost is that the control appears one
+   * commit after mount, which is invisible and is the right way round: a button that is there
+   * and then vanishes is worse than one that arrives.
+   */
+  const [supported, setSupported] = useState(false);
+  useEffect(() => { setSupported(recognizer() !== null); }, []);
 
   // The browser keeps recording until it is told otherwise, and the caller unmounts on every
   // card. Without this the microphone stays live into the next word.

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { DeckWord } from '@/lib/types';
 import { toneNumToMark, checkPinyin } from '@/lib/pinyin';
 import { lookupWord } from '@/lib/data/dict';
@@ -9,6 +9,8 @@ import { isBoundForm, isStrictlyBound, suggestCompounds } from '@/lib/boundForms
 import { useLanguage } from '@/lib/LanguageContext';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import { useWordLookup, splitSenses } from '@/hooks/useWordLookup';
+import { useMic, micMessage } from '@/hooks/useMic';
+import Mark from '@/components/shared/Mark';
 
 interface Props {
   onAdd: (word: DeckWord) => void;
@@ -36,11 +38,23 @@ export default function AddWordForm({ onAdd, onCancel, findExisting }: Props) {
   const [offered, setOffered] = useState<string[]>([]);
   /** True when this character has no standalone meaning at all, so a bare card is unusable. */
   const [strictlyBound, setStrictlyBound] = useState(false);
-  const [recording, setRecording] = useState(false);
-  // Detected after mount to avoid SSR/hydration mismatch
-  const [hasSpeech, setHasSpeech] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognizerRef = useRef<any>(null);
+  /**
+   * The microphone, which used to be a second copy of `hooks/useMic.ts` written out by hand.
+   *
+   * The two were genuinely different once — the hook appended and emitted interim text while
+   * this one took a single final result and replaced the field — so unifying them was a
+   * rewrite rather than a refactor, and the LIVE contract here was the one worth keeping. The
+   * hook now IS that contract, so the copy had nothing left to justify it.
+   *
+   * It also never reported a failure. `onend` and `onerror` both did `setRecording(false)` and
+   * nothing else, so a declined permission made the button flicker and stop — the dead-button
+   * bug CLAUDE.md records three times, in a control nobody had pressed with the permission off.
+   * `micMessage` is the whole of the fix.
+   *
+   * The arrow is deliberate: `handleHanziChange` is a hoisted function declaration below, and
+   * wrapping it defers the read so the hook can be called up here with the rest of the state.
+   */
+  const mic = useMic(text => handleHanziChange(text));
 
   const trimmed = hanzi.trim();
   const lookup = useWordLookup(hanzi, language);
@@ -86,11 +100,6 @@ export default function AddWordForm({ onAdd, onCancel, findExisting }: Props) {
     : undefined;
 
   const canAdd = status === 'found' && definitions.length > 0 && !missingRequiredCompound && !duplicate;
-
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setHasSpeech(!!(( window as any).SpeechRecognition || (window as any).webkitSpeechRecognition));
-  }, []);
 
   // Polyphone: default to the most frequent reading when the WORD changes.
   //
@@ -199,36 +208,6 @@ export default function AddWordForm({ onAdd, onCancel, findExisting }: Props) {
     onAdd({ h, p, m });
   }
 
-  function toggleVoice() {
-    if (recording) {
-      recognizerRef.current?.stop();
-      setRecording(false);
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = new SR() as any;
-    r.lang = getLanguageConfig(language).bcp47;
-    r.continuous = false;
-    r.interimResults = false;
-    r.maxAlternatives = 1;
-
-    r.onresult = (e: { results: { [n: number]: { [n: number]: { transcript: string } } } }) => {
-      const text = e.results[0][0].transcript.trim();
-      if (text) handleHanziChange(text);
-    };
-    r.onend = () => setRecording(false);
-    r.onerror = () => setRecording(false);
-
-    recognizerRef.current = r;
-    r.start();
-    setRecording(true);
-  }
-
   const inputStyle = {
     fontFamily: 'var(--f-han)', fontSize: 16, background: 'var(--paper-2)', border: '1px solid var(--line)',
     borderRadius: 9, padding: '10px 13px', color: 'var(--ink)', width: '100%', transition: 'all .15s',
@@ -262,29 +241,43 @@ export default function AddWordForm({ onAdd, onCancel, findExisting }: Props) {
             onFocus={e => { e.target.style.borderColor = 'var(--accent)'; e.target.style.background = 'var(--card)'; }}
             onBlur={e => { e.target.style.borderColor = 'var(--line)'; e.target.style.background = 'var(--paper-2)'; }}
           />
-          {hasSpeech && (
-            <button
-              onClick={toggleVoice}
-              title={recording ? 'Stop recording' : 'Speak to fill hanzi'}
-              className="mt-1.5 w-full cursor-pointer transition-all duration-150"
-              style={{
-                fontFamily: 'var(--f-mono)', fontSize: 11,
-                background: recording ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'none',
-                border: `1px solid ${recording ? 'var(--accent)' : 'var(--line)'}`,
-                borderRadius: 7, padding: '5px 0',
-                color: recording ? 'var(--accent)' : 'var(--ink-faint)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}
-            >
-              {recording ? (
-                <>
-                  <span className="playing-pulse" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
-                  listening…
-                </>
-              ) : (
-                <>🎤 speak</>
+          {mic.supported && (
+            <>
+              <button
+                onClick={mic.toggle}
+                aria-pressed={mic.listening}
+                /* Was 'Speak to fill hanzi' — a Chinese term of art shown to Spanish and French
+                     learners, the hardcoded-空 mistake `uiStrings` exists to prevent. `langConfig.name`
+                     is what `typedLabels` already phrases this with. */
+                title={mic.listening ? 'Stop recording' : `Speak the ${langConfig.name} word`}
+                className="mt-1.5 w-full cursor-pointer transition-all duration-150"
+                style={{
+                  fontFamily: 'var(--f-mono)', fontSize: 11,
+                  background: mic.listening ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'none',
+                  border: `1px solid ${mic.listening ? 'var(--accent)' : 'var(--line)'}`,
+                  borderRadius: 7, padding: '5px 0',
+                  color: mic.listening ? 'var(--accent)' : 'var(--ink-faint)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                }}
+              >
+                {mic.listening ? (
+                  <>
+                    <span className="playing-pulse" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />
+                    listening…
+                  </>
+                ) : (
+                  /* Was a 🎤 EMOJI, which `Mark.tsx` refuses in as many words: somebody else's
+                     artwork, drawn differently per OS, arriving in colour into a themed palette. */
+                  <><Mark name="mic" size={11} inline /> speak</>
+                )}
+              </button>
+              {micMessage(mic.status) && (
+                /* It said NOTHING on failure before — the button simply stopped glowing. */
+                <div style={{ fontFamily: 'var(--f-mono)', fontSize: 9.5, color: 'var(--accent)', marginTop: 5, lineHeight: 1.5, textAlign: 'center' }}>
+                  {micMessage(mic.status)}
+                </div>
               )}
-            </button>
+            </>
           )}
         </div>
 

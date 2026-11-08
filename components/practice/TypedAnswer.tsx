@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LanguageCode } from '@/lib/types';
 import { gradeTyped, canSpeak, type TypedResult } from '@/lib/typedAnswer';
-import { useMic, type MicStatus } from '@/hooks/useMic';
+import { useMic, micMessage } from '@/hooks/useMic';
+import Mark from '@/components/shared/Mark';
 
 /**
  * The typed-answer field on a flashcard — which can also be ANSWERED ALOUD.
@@ -71,30 +72,6 @@ import { useMic, type MicStatus } from '@/hooks/useMic';
 
 const mono = { fontFamily: 'var(--f-mono)' } as const;
 
-/** One sentence per state. `idle` and `listening` are not failures and say nothing here. */
-function micLine(s: MicStatus): string | null {
-  switch (s.kind) {
-    case 'denied':    return 'Microphone blocked — allow it in your browser’s site settings to answer aloud.';
-    case 'no-device': return 'No microphone found. Type the answer instead.';
-    case 'offline':   return 'Speech needs a connection: the recording is transcribed off this device.';
-    case 'unheard':   return 'Didn’t catch that. Try again, or type it.';
-    case 'failed':    return 'The microphone stopped. Try again, or type it.';
-    default:          return null;
-  }
-}
-
-/** A drawn mic, not an emoji — geometry on `currentColor`, the rule `Mark.tsx` sets out. */
-function MicGlyph({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="9" y="2" width="6" height="11" rx="3" />
-      <path d="M5 10a7 7 0 0 0 14 0" />
-      <path d="M12 17v4" />
-    </svg>
-  );
-}
-
 interface Props {
   /** The answer to grade against: the word itself, in every language. */
   expected: string;
@@ -143,7 +120,7 @@ export default function TypedAnswer({ expected, reading = '', language, placehol
     onSubmit(gradeTyped(typed, expected, language, reading), typed);
   }, [expected, reading, language, onSubmit, value, mic]);
 
-  const status = micLine(mic.status);
+  const status = micMessage(mic.status);
 
   return (
     <div
@@ -188,7 +165,7 @@ export default function TypedAnswer({ expected, reading = '', language, placehol
               color: mic.listening ? 'var(--accent)' : 'var(--ink-soft)',
             }}
           >
-            <MicGlyph />
+            <Mark name="mic" size={13} />
             {mic.listening ? 'Listening' : 'Speak'}
           </button>
         )}

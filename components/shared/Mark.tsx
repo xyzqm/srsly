@@ -7,12 +7,17 @@
  * of CSS variables, and it cannot be made to sit on the mono baseline the rest of this UI is
  * set on. These are four paths on `currentColor`, so they inherit the theme like text.
  *
- * Deliberately NOT a general icon set. There are five here because five things need marking;
- * a sixth belongs here when a sixth control needs one, not before. `lock` is what that rule
- * looks like when it fires: the earned themes needed a seal, and a padlock emoji beside a
+ * Deliberately NOT a general icon set. There are six here because six things need marking;
+ * a seventh belongs here when a seventh control needs one, not before. `lock` is what that
+ * rule looks like when it fires: the earned themes needed a seal, and a padlock emoji beside a
  * geometric mark set would have been the exact mismatch the paragraph above describes.
+ *
+ * `mic` is the rule firing a second time, and it also collected a live violation. Spoken
+ * recall drew its own mic inline, and `AddWordForm` — which has had a microphone far longer —
+ * was rendering a literal 🎤 EMOJI, the thing the paragraph above refuses, in shipped UI.
+ * Two controls needing one mark is exactly when it earns a place here; one would not have.
  */
-export type MarkName = 'page' | 'book' | 'key' | 'spark' | 'lock';
+export type MarkName = 'page' | 'book' | 'key' | 'spark' | 'lock' | 'mic';
 
 interface Props {
   name: MarkName;
@@ -93,6 +98,19 @@ export default function Mark({ name, size = 16, inline = false }: Props) {
       <svg {...common}>
         <rect x="4" y="8.75" width="12" height="8.75" rx="1.5" />
         <path d="M7 8.75V6.5a3 3 0 0 1 6 0v2.25" />
+      </svg>
+    );
+  }
+
+  if (name === 'mic') {
+    // Capsule, pickup arc, stem — and NO base bar, for the reason `key` has one tooth. The
+    // little foot every mic drawing wants closes the gap under the arc into a smudge at the
+    // 11px this renders at beside the word field, and the silhouette reads as a mic without it.
+    return (
+      <svg {...common}>
+        <rect x="7.5" y="2" width="5" height="9" rx="2.5" />
+        <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0" />
+        <path d="M10 15v3" />
       </svg>
     );
   }
