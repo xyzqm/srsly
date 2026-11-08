@@ -395,6 +395,39 @@ async function speakBrowser(
 }
 
 /**
+ * Speak using the PLATFORM'S OWN VOICE, never `/api/tts`.
+ *
+ * ── WHY `speak()` COULD NOT BE REUSED ──
+ * `speak()` tries the API first and falls back to the browser only when that fails, which is
+ * right for a flashcard — the generated voice is better — and wrong for shadowing, where the
+ * learner replays one reference a dozen times while listening for a vowel. That is a paid
+ * round trip per press on a drill whose entire premise is that it costs nothing and reaches
+ * nothing. The 501 latch and `apiCache` soften it and do not remove it: the first play of
+ * every new item still goes out.
+ *
+ * ── ⚠ IT IS "NO REQUEST FROM THIS APP", NOT "NO PACKETS" ──
+ * The honest claim, because the UI repeats it to the learner. `speechSynthesis` hands the text
+ * to the OPERATING SYSTEM, and some platforms — Android most of all — back their voices with a
+ * network service we can neither see nor prevent. What IS guaranteed here is that srsly issues
+ * no request, spends nothing, and uploads none of the learner's audio. Claiming "offline"
+ * outright would be taking credit for somebody else's implementation detail, which is the same
+ * overclaim spoken recall refuses when it says it checks the word and not the accent.
+ *
+ * Returns whether it will speak at all. It deliberately does NOT invoke `onEnd` when there is
+ * no synthesis available: callers chain on it — shadowing arms the recorder there — and firing
+ * it would report a reference that never played, while a silent no-op would hang the chain.
+ * A boolean is the third answer, and the caller is expected to read it.
+ */
+export function speakLocal(text: string, onEnd?: () => void, rateScale = 1): boolean {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  stopAll();
+  // Read AFTER stopAll, which increments it: this utterance belongs to the new generation,
+  // so anything that interrupts it later still cancels it through the usual guard.
+  void speakBrowser(text, currentGen, onEnd, rateScale);
+  return true;
+}
+
+/**
  * Speak sentences one-by-one, advancing automatically.
  * Returns a stop function.
  */

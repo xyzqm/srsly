@@ -6,6 +6,7 @@ import { useLanguage } from '@/lib/LanguageContext';
 import Flashcards from './Flashcards';
 import WritingPractice from './WritingPractice';
 import ConjugationPractice from './ConjugationPractice';
+import ShadowPractice from './ShadowPractice';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import TabPanel from '@/components/TabPanel';
 
@@ -49,7 +50,7 @@ export default function SrsTab({ onScore, active = true }: Props) {
    * drawing canvas because of a choice made last Tuesday would put the optional half of the
    * tab in front of the scheduled one.
    */
-  const [mode, setMode] = useState<'cards' | 'write' | 'conjugate'>('cards');
+  const [mode, setMode] = useState<'cards' | 'write' | 'conjugate' | 'shadow'>('cards');
   const { deck, deckLoaded, gradeCard } = useVocabDeck(language);
 
   /**
@@ -89,14 +90,21 @@ export default function SrsTab({ onScore, active = true }: Props) {
    * guard, kept as a value rather than repeated inline so the toggle's highlight and the
    * panel that is shown can never disagree about which drill is up.
    */
-  const shown: 'cards' | 'write' | 'conjugate' =
+  const shown: 'cards' | 'write' | 'conjugate' | 'shadow' =
     (mode === 'write' && !canWrite) || (mode === 'conjugate' && !canConjugate) ? 'cards' : mode;
+  // `shadow` is deliberately absent from that correction and from the effect above: every
+  // language has a voice and the only thing that can be missing is a MICROPHONE, which is a
+  // property of the device rather than of the language. `ShadowPractice` reports that itself,
+  // the way `pushAvailability` does, rather than having the mode vanish from the row.
 
   /** Which drills this language actually has, in the order they are offered. */
   const modes = useMemo(() => {
-    const out: { id: 'cards' | 'write' | 'conjugate'; label: string }[] = [{ id: 'cards', label: 'Cards' }];
+    const out: { id: 'cards' | 'write' | 'conjugate' | 'shadow'; label: string }[] = [{ id: 'cards', label: 'Cards' }];
     if (canWrite) out.push({ id: 'write', label: 'Write' });
     if (canConjugate) out.push({ id: 'conjugate', label: 'Conjugate' });
+    // Last, and offered everywhere. It is the one drill in this row that writes NOTHING —
+    // no FSRS, no streak, no counters — so it sits at the end rather than between two that do.
+    out.push({ id: 'shadow', label: 'Shadow' });
     return out;
   }, [canWrite, canConjugate]);
 
@@ -206,6 +214,19 @@ export default function SrsTab({ onScore, active = true }: Props) {
           <WritingPractice key={`write-${language}`} deck={scopedDeck} deckLoaded={deckLoaded} />
         </TabPanel>
       )}
+
+      <TabPanel active={active && shown === 'shadow'}>
+        {/* Keyed by language like the others, and for the extra reason that the reference
+            voice is per-locale: a queue latched under Chinese would be read out by a Spanish
+            voice after a switch. It takes `active` because the panel is KEPT ALIVE, and a
+            live microphone must not follow the learner to another drill. */}
+        <ShadowPractice
+          key={`shadow-${language}`}
+          active={active && shown === 'shadow'}
+          deck={scopedDeck}
+          deckLoaded={deckLoaded}
+        />
+      </TabPanel>
 
       {canConjugate && (
         <TabPanel active={active && shown === 'conjugate'}>
