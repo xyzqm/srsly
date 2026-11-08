@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import hskVocab from '@data/hsk-vocab.json';
 import jlptVocab from '@data/jlpt-vocab.json';
-import { gradeTyped, expectedAnswer, answerReading, canType } from '@/lib/typedAnswer';
+import cedictData from '@dict/cedict.json';
+import jmdictData from '@dict/jmdict.json';
+import { gradeTyped, expectedAnswer, answerReading, canType, canSpeak, MIN_SPOKEN_CHARS }
+  from '@/lib/typedAnswer';
 
 /**
  * Typed recall, graded against the REAL dictionaries.
@@ -177,5 +180,118 @@ describe('the near-miss tier cannot fire without a reading', () => {
     for (const lang of ['zh', 'ja', 'es', 'fr'] as const) {
       expect(gradeTyped('', 'x', lang, 'y').verdict).toBe('wrong');
     }
+  });
+});
+
+/* ════════════════════ answering it out loud ════════════════════ */
+
+const cedict = cedictData as unknown as Record<string, { p: string; m: string }>;
+const jmdict = jmdictData as unknown as Record<string, { p: string; m: string }>;
+
+/**
+ * `canSpeak`, pinned against the REAL dictionaries.
+ *
+ * The gate's whole justification is a measurement — one spoken syllable of Mandarin or
+ * Japanese does not determine which word was said — so the tests have to be about the data
+ * rather than about the comparison. A fixture here would assert that 2 >= 2.
+ */
+describe('canSpeak: a spoken answer has to determine its own spelling', () => {
+  const HAN = /^[一-鿿]+$/;
+  const zhForm = (p: string) => (p || '').toLowerCase().replace(/[\s'·]/g, '');
+  const toHira = (s: string) => s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+
+  /** Headwords in the dictionary sharing each spoken form. */
+  function rivalsByForm(dict: Record<string, { p: string }>, key: (p: string) => string, hanOnly: boolean) {
+    const by = new Map<string, number>();
+    for (const [w, e] of Object.entries(dict)) {
+      if (hanOnly && !HAN.test(w)) continue;
+      const k = key(e.p); if (!k) continue;
+      by.set(k, (by.get(k) ?? 0) + 1);
+    }
+    return by;
+  }
+
+  it('blocks a one-character Chinese word and allows a two-character one', () => {
+    expect(canSpeak({ h: '是' }, 'zh')).toBe(false);   // 是 — nine rivals share shì
+    expect(canSpeak({ h: '朋友' }, 'zh')).toBe(true);
+  });
+
+  it('blocks a one-character Japanese word and allows a longer one', () => {
+    expect(canSpeak({ h: '木' }, 'ja')).toBe(false);
+    expect(canSpeak({ h: '食べる' }, 'ja')).toBe(true);
+  });
+
+  it('allows any length where the reading IS the spelling', () => {
+    // `hasReadings` is false for es/fr, so there is nothing for a short word to be confused
+    // with. Blocking `va` or `y` would delete real vocabulary to solve a problem they do not
+    // have, which is the point of reading the flag rather than the length alone.
+    expect(canSpeak({ h: 'va' }, 'es')).toBe(true);
+    expect(canSpeak({ h: 'y' }, 'es')).toBe(true);
+    expect(canSpeak({ h: 'où' }, 'fr')).toBe(true);
+    expect(canSpeak({ h: 'comer' }, 'es')).toBe(true);
+  });
+
+  it('never offers a card with no answer stored, in any language', () => {
+    // Delegates to canType: marking the learner wrong for a hole in OUR data is the failure
+    // mode this whole module is careful about, and speaking cannot be the exception.
+    for (const lang of ['zh', 'ja', 'es', 'fr'] as const) {
+      expect(canSpeak({ h: '' }, lang)).toBe(false);
+      expect(canSpeak({ h: '   ' }, lang)).toBe(false);
+    }
+  });
+
+  it('counts CODE POINTS, so one rare character is not mistaken for two', () => {
+    // U+20B9F is a single kanji outside the BMP: `.length` says 2, `[...s].length` says 1.
+    // Reading `.length` would admit it as a two-character word — the densest case there is.
+    const rare = '\u{20B9F}';
+    expect(rare.length).toBe(2);
+    expect([...rare].length).toBe(1);
+    expect(canSpeak({ h: rare }, 'ja')).toBe(false);
+  });
+
+  it('CHINESE: the threshold sits on the measured ambiguity cliff', () => {
+    const by = rivalsByForm(cedict, zhForm, true);
+    const share = (words: string[]) =>
+      words.filter(w => (by.get(zhForm(hsk[w].pinyin)) ?? 1) === 1).length / words.length;
+
+    const graded = Object.keys(hsk).filter(w => HAN.test(w));
+    const blocked = graded.filter(w => !canSpeak({ h: w }, 'zh'));
+    const allowed = graded.filter(w => canSpeak({ h: w }, 'zh'));
+
+    // The gate must be doing something, and in the right direction.
+    expect(blocked.length).toBeGreaterThan(300);
+    expect(allowed.length).toBeGreaterThan(3000);
+    // Measured 7.8% blocked vs 79.8% allowed. Asserted with room, as a CLIFF rather than as
+    // two decimal places that a dictionary rebuild would invalidate.
+    expect(share(blocked)).toBeLessThan(0.2);
+    expect(share(allowed)).toBeGreaterThan(0.65);
+
+    // THE CONTROL: relaxing the threshold to 1 would admit exactly the blocked set, whose
+    // spoken forms are ambiguous four times out of five. This is what the number buys.
+    expect(share(allowed)).toBeGreaterThan(share(blocked) * 3);
+  });
+
+  it('JAPANESE: the same threshold, and it is the same cliff', () => {
+    const by = rivalsByForm(jmdict, toHira, false);
+    const share = (words: string[]) =>
+      words.filter(w => (by.get(toHira(jlpt[w].reading)) ?? 1) === 1).length / words.length;
+
+    const graded = Object.keys(jlpt).filter(w => jlpt[w].reading);
+    const blocked = graded.filter(w => !canSpeak({ h: w }, 'ja'));
+    const allowed = graded.filter(w => canSpeak({ h: w }, 'ja'));
+
+    expect(blocked.length).toBeGreaterThan(300);
+    expect(allowed.length).toBeGreaterThan(3000);
+    // Japanese is ambiguous at EVERY length once spelling variants are counted, which is why
+    // the assertion here is the ORDERING rather than an absolute share: one character is still
+    // measurably worse than two, and that is what the threshold is reading.
+    expect(share(allowed)).toBeGreaterThan(share(blocked));
+  });
+
+  it('is one rule for both CJK languages, not two per-language numbers', () => {
+    // A per-language threshold is where this would drift into taste. The measurement put the
+    // cliff in the same place for both, so there is one constant and it is exported.
+    expect(MIN_SPOKEN_CHARS).toBe(2);
+    expect(canSpeak({ h: '人' }, 'zh')).toBe(canSpeak({ h: '人' }, 'ja'));
   });
 });

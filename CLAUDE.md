@@ -2493,7 +2493,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **344 kB** for `/` on Next 15.5.28, after the unit path, weekly XP, the reminder panel and the rebuilt empty library; it was 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **346 kB** for `/` on Next 15.5.28, after spoken recall; it was 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -2963,6 +2963,7 @@ Every segmenter and lemmatizer is server-side and kuromoji cannot run in a brows
 | Handwriting, for characters whose stroke files are cached | Passage audio — `/api/tts` is a paid call |
 | Tapping words in an open passage: the gloss already travels on the token | Typing a NEW word to add in ja/es/fr (`/api/{lang}-word-lookup`) |
 | Flashcard audio — `lib/speech.ts` uses local system voices | Reaching the cloud, though writes queue and replay |
+| | Answering a flashcard ALOUD — the browser's recognizer is a cloud service |
 | Stats, Year in Reading, the printable sheet, the lesson trees | |
 
 **AND THE SERVICE WORKER IS WHAT MADE THAT COLUMN REACHABLE**, which is why
@@ -4133,6 +4134,87 @@ same answer as `a`.
 **Audio is hidden until reveal**, as in reverse mode: the play button speaks the word, and the
 word is the answer.
 
+#### Spoken recall: the same question, answered out loud
+
+`hooks/useMic.ts`, `canSpeak` in `lib/typedAnswer.ts`, and a Speak button inside
+`components/practice/TypedAnswer.tsx`.
+
+**IT IS AN INPUT METHOD, NOT A FIFTH MODE.** Saying the word and typing it answer the identical
+question, so there is no new toggle, no new preference, no new card flow and no stored state —
+the mic sits in the typed field and fills it. A separate spoken mode would have duplicated the
+card, the queue, the grading and the reveal to change how one string arrives.
+
+**⚠ IT POPULATES, THEN THE LEARNER CONFIRMS. IT NEVER AUTO-GRADES, AND THAT WAS THE ONE
+NON-NEGOTIABLE.** Submitting runs `gradeTyped`, whose verdict sets the grade the next Enter
+takes — so auto-submitting on speech end would let a MISHEARD word write an FSRS lapse nobody
+chose and nobody can undo. That is `Flashcards`' stray-Enter incident with a microphone instead
+of a keyboard. The transcript is also editable once it lands, which is the better half of the
+same decision: fixing one character beats appealing a verdict.
+
+**`canSpeak` IS A MEASURED GATE, NOT A GUESS.** A recognizer returns TEXT and `gradeTyped`
+compares characters, so the question is whether the sound determines the spelling. Share of
+graded vocabulary whose spoken form is claimed by nothing else in the dictionary — Chinese
+pinyin WITH tones against all of CC-CEDICT, Japanese reading against all of JMdict counting
+only rivals whose gloss shares no content word (so 会う/合う counts and the variants 青/蒼/碧 do
+not):
+
+|       | 1 char | 2 char | 3 char | 4+ char |
+|---|---|---|---|---|
+| zh    | **7.8%** | 79.8% | 97.0% | 95.0% |
+| ja    | **44.9%** | 70.4% | 90.3% | 98.7% |
+
+The cliff is in the same place in both — a one-character Chinese word has a MEDIAN OF NINE
+rivals sharing its exact spoken form — so it is ONE rule rather than two, which is also what
+stops it drifting into per-language taste. It reads `hasReadings` rather than the language
+code, because that flag names the actual property: the reading is a SEPARATE FACT from the
+spelling, so sound → spelling is many-to-one. Where the reading IS the spelling there is
+nothing to confuse, and `va` and `y` are both askable.
+
+**IT GATES THE EXERCISE, NOT THE DECK.** Nothing here protects FSRS — the learner confirms
+every answer and the four grade buttons are on screen, so a mishearing is appealed by pressing
+Good exactly as a rejected synonym is. What a coin-flip card costs is the EXERCISE: a verdict
+carrying no information teaches the learner to stop reading verdicts.
+
+**`maxAlternatives` STAYS AT 1, AND THE ARGUMENT AGAINST IS GOOD.** Accepting the card if ANY
+candidate matched would absorb the residual homophone noise, and in Chinese the learner
+produces the SOUND while an IME picks the character — so crediting the sound is arguably what
+this should test. Declined because Chrome commonly returns one candidate whatever you ask for,
+so the same answer would grade differently on two machines and `gradeTyped` would stop being
+the pure, auditable function every other mode is graded by.
+
+**⚠ THE AUDIO LEAVES THE DEVICE, AND THE UI SAYS SO PERMANENTLY.** Chrome streams the recording
+to Google and Safari to Apple. This repository promises the opposite everywhere else — a web
+clip travels in the URL hash so the page never reaches a server, EPUB files never sync, the API
+key never goes in a URL — so the one feature that uploads the learner's VOICE cannot be the one
+that stays quiet. The same line also refuses the overclaim: **it checks the word, not the
+accent.** Nothing here scores pronunciation, and calling it pronunciation practice would take
+credit for something no part of this measures. A service worker cannot see any of it either —
+recognition is internal to the browser rather than a `fetch`, so `public/sw.js` has no opinion.
+
+**THE OLD HOOK REPORTED EVERY FAILURE AS AN EMPTY STRING**, which in a grader is expensive: an
+empty answer is a legitimate "I don't know" that grades Again, so a declined permission would
+have written real lapses. It called `onResult('')` from BOTH `onend` and `onerror`. `onResult`
+now fires from `onresult` and nowhere else, and `MicStatus` separates the five failures that
+need five different sentences — `unsupported` (Firefox has never shipped it), `denied` (the one
+the learner can fix, so it is the one that says how), `no-device`, `offline` (the recognizer's
+own network leg — this feature does not work offline) and `unheard`, which is an ANSWER rather
+than a fault. All six codes were driven through the real UI against a scripted recognizer; none
+wrote to the field and none graded a card.
+
+**⚠ AND IT FOUND A PRE-EXISTING BUG IN THE CHECK BUTTON.** `Flashcards` listens on `window` and
+exempts only INPUT/TEXTAREA/SELECT — a BUTTON is not covered. Measured with the guard removed:
+Space on Check reaches `window` and REVEALS the card, so the answer was one Tab and one Space
+away from being given up, and had been since typed recall shipped. One `stopPropagation` on the
+wrapper covers the field and both buttons; the control is that a button outside the wrapper
+still reaches `window` and still reveals.
+
+**`AddWordForm` STILL CARRIES ITS OWN MIC AND IS NOW A TRUE DUPLICATE.** The contracts used to
+differ, which is why the previous note said unifying them was a rewrite rather than a refactor;
+the rewrite has now happened on this side, so the two really are one function in two places.
+Collapsing it is deliberately NOT in this change — the call site feeds a dictionary lookup and
+needs its own answer to a denied microphone, which is a second design — but it is the next
+thing, and it is the "a second record of a fact drifts" rule standing open.
+
 #### The voice and the speed are the learner's, and they are stored apart
 
 `components/settings/SpeechSettings.tsx` adds a Speech section: which installed system voice
@@ -4230,7 +4312,7 @@ where blanks do.
 | `useDailyContent` | Fetch/cache AI passage; parse raw API tokens |
 | `useTheme` | Theme/font persistence and DOM sync |
 | `useWordPopup` | Click-to-lookup popup state, in EVERY language — the gate is "reading OR meaning" |
-| `useMic` (`hooks/useMic.ts`) | Speech RECOGNITION — speech IN. Currently imported by nothing; `AddWordForm` carries its own non-equivalent copy |
+| `useMic` (`hooks/useMic.ts`) | Speech RECOGNITION — speech IN. One shot, replaces, and reports WHY it failed; drives spoken recall in `TypedAnswer`. `AddWordForm` still has its own copy |
 
 Speech OUT is deliberately absent from that table because it is not a hook: `lib/speech.ts`
 (`speak`, `speakSequence`, `speakWithBlank`, `voiceOptions`) is the TTS surface.
@@ -4240,7 +4322,8 @@ evaluating whether to build speaking practice — by grepping for the hook this 
 is the cheapest possible check and had never been run.
 
 - **`useSpeech` was "Web Speech API TTS for passage playback".** The file was a MICROPHONE hook
-  (`SpeechRecognition`), **nothing imported it**, and the TTS lives in `lib/speech.ts`. The
+  (`SpeechRecognition`), **nothing imported it** (spoken recall does now), and the TTS lives
+  in `lib/speech.ts`. The
   filename sat one character from that module's while doing the opposite job, which is how the
   description survived: it describes `lib/speech.ts` accurately and was filed against the wrong
   file. Renamed to `hooks/useMic.ts`, whose docstring now carries the whole story.

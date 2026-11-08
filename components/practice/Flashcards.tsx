@@ -78,11 +78,17 @@ function sdm(m: string) {
 /**
  * What a typed card ASKS FOR, said plainly.
  *
- * Chinese and Japanese are asking for the PRONUNCIATION and must say so. Typing `taberu`
- * proves you know how 食べる is read; it does not ask you to produce 食べる, and a label
- * implying otherwise would take credit for testing something this exercise cannot test.
- * (The JLPT has no writing section either, so the reading is the skill the exam measures too.)
- * Spanish and French are asking for the word itself, because their reading IS their spelling.
+ * Every language asks for THE WORD: the meaning is on the front and the learner produces
+ * `comer`, `parler`, 朋友, 食べる. The label therefore differs only in naming each
+ * language's own near miss — the IME left switched off, or an accent dropped.
+ *
+ * ⚠ THIS PARAGRAPH USED TO DESCRIBE THE OPPOSITE AND WAS STALE FOR MONTHS. It said
+ * "Chinese and Japanese are asking for the PRONUNCIATION and must say so … it does not ask
+ * you to produce 食べる", which was true of the design `lib/typedAnswer.ts` replaced and is
+ * contradicted by the very `hint` strings three lines below it, which say "type it with your
+ * IME". A docstring that survives the change it describes is the drift CLAUDE.md opens by
+ * warning about, and it was found while building spoken recall ON TOP of this — which is the
+ * cost: the next person reads it and builds for a question the app stopped asking.
  */
 function typedLabels(lang: LanguageCode): { placeholder: string; hint: string } {
   const name = getLanguageConfig(lang).name;
@@ -143,11 +149,14 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
   /**
    * "Type answers" — recall by producing the word rather than by judging yourself.
    *
-   * It PINS the orientation, which is why it and Flip cannot both be on: Spanish and French
-   * have no reading to type so they must face meaning-first, while Chinese and Japanese cannot
-   * be typed at all without an IME handing over the characters, so they must face word-first
-   * and ask for the reading. `lib/typedAnswer.ts` carries the full argument, including why
-   * allowing the fourth combination would write real FSRS lapses for correct answers.
+   * It PINS the orientation meaning-first in EVERY language, which is why it and Flip cannot
+   * both be on: Flip exists to choose a direction, and typing has already chosen it. Leaving
+   * both live would let a learner select word-first AND typed, where the box asks for a
+   * meaning in English that no stored answer matches — real FSRS lapses for correct answers.
+   *
+   * (This too said the retired thing: that zh/ja "must face word-first and ask for the
+   * reading". `showReverse = typing ? true : reverse`, forty lines down, has faced all four
+   * meaning-first since `lib/typedAnswer.ts` was rewritten.)
    */
   const [typedOn, setTypedOn] = useState(false);
   useEffect(() => { setTypedOn(getTypedRecall()); }, []);

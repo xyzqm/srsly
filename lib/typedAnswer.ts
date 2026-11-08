@@ -1,5 +1,6 @@
 import type { DeckWord, LanguageCode } from './types';
 import { canonPinyin, stripTones } from './pinyin';
+import { getLanguageConfig } from './languageConfig';
 
 /**
  * Grading a TYPED answer, for all four languages.
@@ -74,6 +75,62 @@ export function answerReading(card: Pick<DeckWord, 'p'>): string {
  */
 export function canType(card: Pick<DeckWord, 'h'>): boolean {
   return expectedAnswer(card).trim().length > 0;
+}
+
+/* ───────────────────── answering it out loud ───────────────────── */
+
+/**
+ * The shortest word worth asking for ALOUD, in a language whose reading is a separate fact
+ * from its spelling. Measured below; it is not a round number chosen for looking like one.
+ */
+export const MIN_SPOKEN_CHARS = 2;
+
+/**
+ * Whether this card can be answered by SPEAKING it — and the number is measured.
+ *
+ * ── THE PROBLEM IS NOT PRONUNCIATION, IT IS HOMOPHONY ──
+ * A recognizer hands back TEXT, and `gradeTyped` compares characters. So the question is not
+ * whether the learner can say the word, it is whether the sound they make determines the
+ * spelling the grader wants. Said in isolation, with no sentence around it, one syllable of
+ * Mandarin or Japanese very often does not.
+ *
+ * ── MEASURED AGAINST THE REAL DICTIONARIES, BY LENGTH ──
+ * Share of graded vocabulary whose spoken form is claimed by NOTHING ELSE in the dictionary
+ * (Chinese: pinyin with tones, against all of CC-CEDICT. Japanese: reading with katakana
+ * folded, against all of JMdict, counting only rivals whose gloss shares no content word —
+ * so 会う/合う counts and the mere spelling variants 青/蒼/碧 do not):
+ *
+ *            1 char      2 char     3 char     4+ char
+ *   zh         7.8%       79.8%      97.0%       95.0%      (n = 707 / 4027 / 132 / 121)
+ *   ja        44.9%       70.4%      90.3%       98.7%      (n = 664 / 4672 / 1396 / 1104)
+ *
+ * The cliff is in the same place in both: a one-character Chinese word has a MEDIAN OF NINE
+ * rivals sharing its exact spoken form, and more than half of one-character Japanese words
+ * have at least one. At two characters both are workable. So the rule is one rule rather than
+ * two, which is also what stops it drifting into per-language taste.
+ *
+ * ── IT READS `hasReadings`, NOT THE LANGUAGE CODE ──
+ * The property that matters is precisely the one that flag names: the reading is a SEPARATE
+ * FACT from the spelling, so sound → spelling is many-to-one. Where the reading IS the
+ * spelling — Spanish, French — there is nothing to be ambiguous about and length is
+ * irrelevant, so `comer` and `va` are both askable.
+ *
+ * ── IT IS A GATE ON THE EXERCISE, NOT A GUARD ON THE DECK ──
+ * Nothing here protects FSRS; the learner confirms every answer and the four grade buttons are
+ * on screen, so a mishearing is appealed by pressing Good exactly as a rejected synonym is.
+ * What a coin-flip card costs is the EXERCISE: a verdict that carries no information teaches
+ * the learner to stop reading verdicts. That is the thing being prevented.
+ *
+ * Tone-blindness is the reason not to be more generous. Re-measured ignoring tone — which is
+ * what a recognizer that mishears one does — two-character Chinese falls from 79.8% to 37.8%
+ * unambiguous and one-character to 0.6%. The floor is already resting on the recognizer
+ * getting the tone right.
+ */
+export function canSpeak(card: Pick<DeckWord, 'h'>, lang: LanguageCode): boolean {
+  if (!canType(card)) return false;
+  if (!getLanguageConfig(lang).hasReadings) return true;
+  // Code points, not UTF-16 units: a length taken in units would count one character as two.
+  return [...expectedAnswer(card).trim()].length >= MIN_SPOKEN_CHARS;
 }
 
 /* ─────────────────────────── kana folding ─────────────────────────── */
