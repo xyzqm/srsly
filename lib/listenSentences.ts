@@ -1,10 +1,10 @@
 import type { LanguageCode } from './types';
 
 /**
- * The phrase-level material for shadowing, lifted from the Learn tab's practice sentences.
+ * The phrase-level material for Listen & repeat, lifted from the Learn tab's practice sentences.
  *
  * ── WHY THIS DATA AND NOT THE DECK ──
- * Shadowing is about rhythm and intonation ACROSS A PHRASE: for Spanish and French the hard
+ * Listening and repeating is about rhythm and intonation ACROSS A PHRASE: for Spanish and French the hard
  * parts — liaison, nasal vowels, where the stress lands in a group — do not exist inside one
  * word. The obvious source would be an example sentence on the card, and `DeckWord.cn` is even
  * declared as one. It is written NOWHERE in this repository: a dead field, read in two places
@@ -15,7 +15,7 @@ import type { LanguageCode } from './types';
  * ── LAZY, BECAUSE `SrsTab` IS NOT ──
  * `app/page.tsx` imports `LearnTab` with `next/dynamic` and `SrsTab` STATICALLY, so the 36 kB
  * of lesson data currently rides in the Learn chunk and a plain import here would move it into
- * the initial bundle for every learner — including the ones who never open Shadow. Same
+ * the initial bundle for every learner — including the ones who never open it. Same
  * discipline, and the same `await import()`, as `loadFrGrammar` and `loadLevelTable`.
  *
  * ── EVERY SENTENCE, NOT ONLY THE FINISHED LESSONS ──
@@ -29,7 +29,7 @@ import type { LanguageCode } from './types';
  * and it costs a string.
  */
 
-export interface ShadowSentence {
+export interface ListenSentence {
   /** What the reference voice says, and what is shown. */
   text: string;
   /** The English, so the learner is not imitating noise. */
@@ -40,13 +40,13 @@ export interface ShadowSentence {
 
 type PracticeFile = Record<string, Record<string, { text: string; gloss: string; tiles: string[] }[]>>;
 
-const cache = new Map<LanguageCode, ShadowSentence[]>();
+const cache = new Map<LanguageCode, ListenSentence[]>();
 
 /** Flatten one language's lessons into a flat list, in authored order. */
-function flatten(file: PracticeFile, lang: LanguageCode): ShadowSentence[] {
+function flatten(file: PracticeFile, lang: LanguageCode): ListenSentence[] {
   const byLesson = file[lang];
   if (!byLesson) return [];
-  const out: ShadowSentence[] = [];
+  const out: ListenSentence[] = [];
   for (const [lesson, rows] of Object.entries(byLesson)) {
     for (const r of rows) {
       // A row with no text could never be spoken, and an empty utterance would read as a
@@ -61,7 +61,7 @@ function flatten(file: PracticeFile, lang: LanguageCode): ShadowSentence[] {
  * Load this language's sentences. Resolves to `[]` for a language with none — which is a real
  * answer and not a failure, and is why the caller distinguishes it from `null` (not loaded).
  */
-export async function loadShadowSentences(lang: LanguageCode): Promise<ShadowSentence[]> {
+export async function loadListenSentences(lang: LanguageCode): Promise<ListenSentence[]> {
   const hit = cache.get(lang);
   if (hit) return hit;
   try {
@@ -77,9 +77,9 @@ export async function loadShadowSentences(lang: LanguageCode): Promise<ShadowSen
 }
 
 /** The already-loaded list, or null for "not asked yet". Pure, for tests and for a first frame. */
-export function cachedShadowSentences(lang: LanguageCode): ShadowSentence[] | null {
+export function cachedListenSentences(lang: LanguageCode): ListenSentence[] | null {
   return cache.get(lang) ?? null;
 }
 
-/** Exported for `tests/shadowSentences.test.ts`, which runs it over the real file. */
+/** Exported for `tests/listenSentences.test.ts`, which runs it over the real file. */
 export const __flattenForTest = flatten;

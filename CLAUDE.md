@@ -2499,7 +2499,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **349 kB** for `/` on Next 15.5.28, after shadowing; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **347 kB** for `/` on Next 15.5.28, after the recorder was removed from Listen & repeat; it was 349 kB with it; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -2969,7 +2969,7 @@ Every segmenter and lemmatizer is server-side and kuromoji cannot run in a brows
 | Handwriting, for characters whose stroke files are cached | Passage audio — `/api/tts` is a paid call |
 | Tapping words in an open passage: the gloss already travels on the token | Typing a NEW word to add in ja/es/fr (`/api/{lang}-word-lookup`) |
 | Flashcard audio — `lib/speech.ts` uses local system voices | Reaching the cloud, though writes queue and replay |
-| Shadowing — `speakLocal` plus a local recorder, no request either way | |
+| Listen \& repeat — `speakLocal` only, no request either way | |
 | | Answering a flashcard ALOUD — the browser's recognizer is a cloud service |
 | Stats, Year in Reading, the printable sheet, the lesson trees | |
 
@@ -4247,117 +4247,89 @@ doing this by hand with a comment saying so, and `ApiKeyPanel` states the same r
 control appears one commit after mount, which is the right way round — a button that is there
 and then vanishes is worse than one that arrives.
 
-#### Shadowing: hear it, say it, hear both — and nothing is scored
+#### Listen & repeat — and the recording that was built, shipped and then removed
 
-`hooks/useRecorder.ts`, `speakLocal` in `lib/speech.ts`, `components/practice/ShadowPractice.tsx`
-and `ShadowPlayer.tsx`, as a fourth mode in `SrsTab`, pinned by `tests/shadowFirewall.test.ts`.
+`speakLocal` in `lib/speech.ts`, `lib/listenSentences.ts`, `components/practice/ListenRepeat.tsx`,
+a fourth mode in `SrsTab`, pinned by `tests/listenFirewall.test.ts`.
 
-**IT IS THE OPPOSITE OF SPOKEN RECALL, DELIBERATELY.** That feature ships the learner's voice
-to Google or Apple to be transcribed, and says so on screen because this repository promises
-the opposite everywhere else. This one transcribes nothing, scores nothing and uploads
-nothing: `getUserMedia` and `MediaRecorder` are local APIs, so "stays on this device" is a
-fact about which functions exist rather than a policy somebody has to keep — which is exactly
-what the firewall test exists to hold still.
+**IT SHIPPED AS "SHADOWING" AND RECORDED YOUR VOICE. THAT IS GONE, AND THE OLD REASONING IS
+KEPT BECAUSE IT WAS NOT WRONG — IT WAS INCOMPLETE.** `hooks/useRecorder.ts` and
+`components/practice/ShadowPlayer.tsx` are deleted: a Record button, a Reference / Yours / Both
+transport, MIME negotiation across Chromium and Safari, a five-case `DOMException` map, object
+URL lifetime, `MediaStream` track release on three separate exit paths, and an iOS autoplay
+refusal that could only ever be apologised for. All of it worked.
 
-**NO SCORE, AND THAT IS THE DESIGN.** The obvious build runs the take through speech-to-text
-and marks the pronunciation. That would be a confident number this app cannot honestly
-produce: a recognizer reports whether its language model matched, not whether an accent is
-good, and `canSpeak` already measures how often it cannot tell two words apart. Spoken recall
-says on screen that it checks the word and not the accent; inventing a score here would take
-that sentence back. It writes no FSRS, no streak, no activity log and no counters — the fourth
-copy of the posture `lib/practiceSheet.ts`, `lib/writingState.ts` and `lib/pact.ts` each take.
+What it could not do is tell the learner WHAT differed. Hearing your own voice beside the model
+establishes that they are not the same; it does not say whether the gap is pitch, vowel length,
+stress or rhythm — and this app deliberately refuses to guess, which is why the drill never
+scored anything in the first place. So the recording bought a confrontation with no diagnosis,
+and it bought it at the price of every item on that list. **A feature that is correct, careful
+and does not answer the question is still the wrong feature**, which is the judgement that
+retired the Ollama generator and the header's mood indicator too.
 
-**⚠ `speak()` COULD NOT BE REUSED, BECAUSE IT IS NOT FREE.** It tries `/api/tts` FIRST and
-falls back to the browser only when that fails — right for a flashcard, wrong for a drill
-whose premise is pressing the reference a dozen times while listening for a vowel. `speakLocal`
-goes straight to the platform voice. *(This also means the offline table below is optimistic
-where it says flashcard audio uses local voices: that is true only when `OPENAI_API_KEY` is
-unset or the call fails.)* Measured in a browser: pressing Reference issues **zero network
-requests**, and the utterance comes out `朋友 | zh-CN | rate=0.82` — the per-language
-calibration intact.
+What remains is the half that was always doing the work: a native-rate model, on tap, as many
+times as you like, free. The learner repeats it aloud and judges by ear — which is what the old
+version's own copy already said was happening.
 
-**AND IT CLAIMS "NO REQUEST FROM THIS APP", NOT "NO PACKETS".** `speechSynthesis` hands text to
-the OPERATING SYSTEM, and some platforms — Android most of all — back their voices with a
-network service we can neither see nor prevent. What is guaranteed is that srsly issues no
-request, spends nothing, and uploads none of the learner's audio. Claiming "offline" outright
-would be taking credit for somebody else's implementation detail. `speakLocal` returns a
-BOOLEAN rather than firing `onEnd` when there is no synthesis, because the caller chains the
-recorder off that callback and a reference that never played must not report that it did.
+**THE REMOVAL MADE THE FIREWALL STRICTER, NOT LOOSER, AND THAT IS THE INTERESTING PART.**
+`tests/shadowFirewall.test.ts` had to ALLOW `getUserMedia` and `MediaRecorder` while forbidding
+everything that could move the result off the device, so "stays on this device" rested on the
+absence of a sender. `tests/listenFirewall.test.ts` now forbids the capture APIs themselves, so
+the claim is no longer about how the code is written but about which functions it can reach.
+It also asserts the three deleted files are ABSENT from the tree rather than merely unreferenced
+— `StarterPanel` and `lib/storage/firebase.ts` are both this file's own evidence that an unused
+file gets read as current — so bringing recording back is a deliberate edit to a test.
 
-**⚠ STOPPING THE RECORDER DOES NOT RELEASE THE MICROPHONE.** `MediaRecorder.stop()` ends the
-recording and leaves the `MediaStream` live — the browser's indicator stays lit and the OS mic
-stays claimed, visibly, after the learner thinks they have finished. Every TRACK needs
-`.stop()`. There are three paths out and all three were verified against a scripted device:
-stopping (tracks released), switching drill while live (released — `SrsTab` keeps panels alive,
-so there is no unmount to rely on and `active` has to do it), and unmount.
+**IT STILL SCORES NOTHING.** No FSRS, no streak, no activity log, no counters — the fourth copy
+of the posture `lib/practiceSheet.ts`, `lib/writingState.ts` and `lib/pact.ts` each take. A
+pronunciation drill that wrote to the schedule would be scoring an accent, which nothing
+available here can honestly do.
 
-**THE TAKE IS A BLOB AND AN OBJECT URL, AND IT IS REVOKED.** No IndexedDB, no localStorage, no
-column, no history, no "compare with last week" — partly because a recording of somebody's
-voice is the most personal thing this app could hold and the only safe amount is none, partly
-because `lib/epubStore.ts` already shows what megabytes per item does to a 5 MB origin.
-Verified: one blob created, NOT revoked while in use, revoked on Next.
+**THE WHOLE DECK, NOT THE DUE CARDS.** Due-ness is a scheduling idea and nothing here schedules,
+so filtering by it would borrow a meaning this drill does not have — and it would empty the
+screen exactly when somebody has caught up, which is the worst moment to say there is nothing to
+practise. Shuffled once per mount, keyed on `deck.length` so a save elsewhere cannot reshuffle a
+running session; not persisted, because a position is stored state on a drill whose whole claim
+is that it stores nothing.
 
-**MIME NEGOTIATION IS MANDATORY.** `new MediaRecorder(stream, { mimeType })` THROWS on a type
-the platform will not produce, and they disagree — Chromium writes WebM/Opus, Safari MP4/AAC.
-The list is tried through `isTypeSupported` and ends at `''`, the platform default, which
-cannot throw. Measured in Chrome: `audio/webm;codecs=opus`.
-
-**FIVE FAILURES, FIVE SENTENCES, for the reason `micMessage` gives.** `getUserMedia` rejects
-with a `DOMException` whose `name` is the useful part, and the cases need different answers: a
-declined prompt is fixable in site settings, a mic held by another app is fixable by quitting
-it, no device is fixable by neither. Verified against a REAL rejection rather than a stub — the
-browser pane blocks capture, which returns `NotAllowedError`, and the drill said *"Microphone
-blocked — allow it in your browser's site settings."*
-
-**THE WHOLE DECK, NOT THE DUE CARDS.** Due-ness is a scheduling idea and nothing here
-schedules, so filtering by it would borrow a meaning this drill does not have — and it would
-empty the screen exactly when somebody has caught up, which is the worst moment to say there is
-nothing to practise. Shuffled once per mount, keyed on `deck.length` so a save elsewhere cannot
-reshuffle a running session; not persisted, because a position is stored state on a drill whose
-whole claim is that it stores nothing.
-
-**TWO SOURCES, BECAUSE A WORD AND A PHRASE TEACH DIFFERENT THINGS** (`lib/shadowSentences.ts`).
-Words come from the deck and are what the learner is actually studying; in Chinese a single
-syllable carries a tone, which is the thing a beginner most needs to hear themselves get
-wrong. Sentences are the half a word cannot reach — shadowing is really about rhythm and
-intonation across a phrase, and for Spanish and French the hard parts (liaison, nasal vowels,
-where the stress lands in a group) do not exist inside one word. Neither dominates, so the
-learner picks. **`DeckWord.cn` is declared as "example sentence" and is written NOWHERE in
-this repository** — a dead field, read in two places and never filled — so the second source
-is `lib/data/lesson-practice.json`: 69 sentences for zh and ja, 87 for es and fr, already
-WRITTEN for this app and already validated against the real segmenters by
-`tests/lessons.test.ts`.
+**TWO SOURCES, BECAUSE A WORD AND A PHRASE TEACH DIFFERENT THINGS** (`lib/listenSentences.ts`).
+Words come from the deck and are what the learner is studying; in Chinese a single syllable
+carries a tone, which is the thing a beginner most needs to hear. Sentences are the half a word
+cannot reach — rhythm and intonation across a phrase, and for Spanish and French the hard parts
+(liaison, nasal vowels, where the stress lands in a group) do not exist inside one word. Neither
+dominates, so the learner picks. **`DeckWord.cn` is declared as "example sentence" and is written
+NOWHERE in this repository** — a dead field, read in two places and never filled — so the second
+source is `lib/data/lesson-practice.json`: 69 sentences for zh and ja, 87 for es and fr, already
+written for this app and already validated against the real segmenters by `tests/lessons.test.ts`.
 
 **EVERY SENTENCE, NOT ONLY THE FINISHED LESSONS.** Filtering by `srsly-lessons-done` is the
-tempting version and is wrong twice: it couples a drill that stores nothing to curriculum
-state it is firewalled from, and it hands a new learner an empty screen — the dead end this
-drill already refuses by reading the whole deck rather than the due cards. You can imitate a
-sentence you have not been taught.
+tempting version and is wrong twice: it couples a drill that stores nothing to curriculum state
+it is firewalled from, and it hands a new learner an empty screen — the dead end this drill
+already refuses by reading the whole deck rather than the due cards. You can imitate a sentence
+you have not been taught.
 
 **⚠ LAZY, BECAUSE `SrsTab` IS STATICALLY IMPORTED AND `LearnTab` IS NOT.** The 36 kB of lesson
-data currently rides in the Learn chunk; a plain import here would move it into the initial
-bundle for every learner, including the ones who never open Shadow — the exact failure the
-level tables document. `loadShadowSentences` uses `await import()` like `loadFrGrammar`.
-Verified against the built manifest rather than assumed: **none of the 7 initial chunks for
-`/` contains a lesson sentence.**
+data rides in the Learn chunk; a plain import here would move it into the initial bundle for
+every learner, including the ones who never open this drill — the exact failure the level tables
+document. `loadListenSentences` uses `await import()` like `loadFrGrammar`, verified against the
+built manifest rather than assumed.
 
-**THE CHOICE IS SESSION-LOCAL, NOT A PREF.** The flashcard toggles persist and this one
-deliberately does not: a synced field is stored state, and the one thing this drill claims is
-that it stores nothing.
+**THE CHOICE IS SESSION-LOCAL, NOT A PREF**, for the same reason: a synced field is stored state.
 
-**AND THE GUARDS HAD THE PROJECT'S OWN FAVOURITE BUG IN THEM, TWICE, BEFORE THEY WERE FIXED.**
-The first draft asked `!deckLoaded` and then `deck.length === 0` whatever the source. Sentences
-need no deck, so an empty deck would have reported nothing to practise with 87 sentences
-loaded; and a language switch resets the list to `null` while `source` stays put, so an
-UNLOADED list would have rendered as "this language has none" — not-yet shown as none. The
-empty word state now also offers *Shadow sentences instead* rather than describing the way
-out, because an empty deck is not an empty drill.
+**THE GUARDS HAD THIS PROJECT'S FAVOURITE BUG IN THEM, TWICE, BEFORE THEY WERE FIXED.** The first
+draft asked `!deckLoaded` and then `deck.length === 0` whatever the source. Sentences need no
+deck, so an empty deck would have reported nothing to practise with 87 sentences loaded; and a
+language switch resets the list to `null` while `source` stays put, so an UNLOADED list would
+have rendered as "this language has none" — not-yet shown as none. The empty word state also
+offers *Listen to sentences instead* rather than describing the way out, because an empty deck
+is not an empty drill.
 
-**THE SECOND HALF OF A CHAIN IS NOT A USER GESTURE.** `playBoth` starts the take from the
-reference's `onEnd`, which is a timer, and mobile Safari may refuse `play()` there — arriving
-as a rejected promise with nothing on screen, which is the dead-button bug again. It is caught
-and rendered as an explicit "tap Yours" line. One generation counter guards the gap, because
-advancing mid-gap must not have the take start over the top of the next word.
+**ONE PLAY BUTTON, AND TAPPING IT WHILE IT SPEAKS STOPS IT.** A separate Stop is a second
+control for the state you are already looking at. The generation counter survives the recorder's
+removal and is still load-bearing: `speakLocal`'s `onEnd` fires on a timer the component does not
+own, so an utterance finishing after the learner has advanced would clear the NEXT item's state.
+`active` is threaded in because `SrsTab` keeps the panel MOUNTED — there is no unmount to rely
+on, and a sentence would otherwise keep speaking over the flashcards.
 
 #### The voice and the speed are the learner's, and they are stored apart
 

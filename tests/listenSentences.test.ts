@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import practice from '@data/lesson-practice.json';
-import { __flattenForTest as flatten, type ShadowSentence } from '@/lib/shadowSentences';
+import { __flattenForTest as flatten, type ListenSentence } from '@/lib/listenSentences';
 import { LESSON_LANGUAGES } from '@/lib/lessons';
 
 /**
- * The shadowing corpus, checked against the REAL file rather than a fixture.
+ * The Listen & repeat corpus, checked against the REAL file rather than a fixture.
  *
  * The claims here are about the DATA — that every language the drill offers sentences for
  * actually has some, that none of them is empty or untrimmed, that a gloss is present so the
@@ -15,7 +15,7 @@ import { LESSON_LANGUAGES } from '@/lib/lessons';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const file = practice as any;
 
-describe('shadowing sentences come from the lesson corpus', () => {
+describe('listen & repeat sentences come from the lesson corpus', () => {
   it.each(LESSON_LANGUAGES)('%s has phrase-level material', lang => {
     const rows = flatten(file, lang);
     // 69 for zh/ja and 87 for es/fr at the time of writing. Asserted as a FLOOR, because the
@@ -24,7 +24,7 @@ describe('shadowing sentences come from the lesson corpus', () => {
   });
 
   it.each(LESSON_LANGUAGES)('%s: every row is speakable and glossed', lang => {
-    for (const r of flatten(file, lang) as ShadowSentence[]) {
+    for (const r of flatten(file, lang) as ListenSentence[]) {
       // An empty utterance would read as a broken Reference button rather than missing data.
       expect(r.text.length).toBeGreaterThan(0);
       expect(r.text).toBe(r.text.trim());

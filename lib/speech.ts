@@ -399,8 +399,8 @@ async function speakBrowser(
  *
  * ── WHY `speak()` COULD NOT BE REUSED ──
  * `speak()` tries the API first and falls back to the browser only when that fails, which is
- * right for a flashcard — the generated voice is better — and wrong for shadowing, where the
- * learner replays one reference a dozen times while listening for a vowel. That is a paid
+ * right for a flashcard — the generated voice is better — and wrong for Listen & repeat, where
+ * the learner replays one model a dozen times while listening for a vowel. That is a paid
  * round trip per press on a drill whose entire premise is that it costs nothing and reaches
  * nothing. The 501 latch and `apiCache` soften it and do not remove it: the first play of
  * every new item still goes out.
@@ -414,9 +414,13 @@ async function speakBrowser(
  * overclaim spoken recall refuses when it says it checks the word and not the accent.
  *
  * Returns whether it will speak at all. It deliberately does NOT invoke `onEnd` when there is
- * no synthesis available: callers chain on it — shadowing arms the recorder there — and firing
- * it would report a reference that never played, while a silent no-op would hang the chain.
- * A boolean is the third answer, and the caller is expected to read it.
+ * no synthesis available: callers chain on it — `ListenRepeat` clears its Playing state there —
+ * and firing it would report a model that never played, while a silent no-op would leave the
+ * button lit for ever. A boolean is the third answer, and the caller is expected to read it.
+ *
+ * (That sentence used to say "shadowing arms the recorder there", which was true when written
+ * and false the day the recording was removed — the drift this project's own instructions warn
+ * about, found by grepping for the old feature's name rather than by anything failing.)
  */
 export function speakLocal(text: string, onEnd?: () => void, rateScale = 1): boolean {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
