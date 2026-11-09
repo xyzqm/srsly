@@ -387,20 +387,37 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
         )}
       </div>
 
-      <div className="flex items-baseline justify-between mb-1">
-        <div style={{ ...MONO, fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
+      {/* ── A HEADING SET LIKE ONE, FLUSH LEFT ──
+          This was a 10px faint mono eyebrow over a 54-word faint paragraph: the element whose
+          whole job is to be findable while scrolling was the least prominent thing in its own
+          section, which is the defect `tests/settingsHierarchy.test.ts` already pins for the
+          Settings headings. Display serif at 21px over a 2px rule gives the list a top edge
+          and the count something to sit against.
+
+          The paragraph collapses to one metadata line. Its content was three facts — how many
+          units, that they are ordered, that nothing is locked — and only the last is
+          non-obvious once the numbered list is directly below it. */}
+      <div
+        className="flex items-baseline justify-between gap-3"
+        style={{ paddingBottom: 9, borderBottom: '2px solid var(--ink)' }}
+      >
+        <h2 style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600,
+          letterSpacing: '-.015em', color: 'var(--ink)', margin: 0, lineHeight: 1.1 }}>
           The course
-        </div>
-        <div style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)' }}>
+        </h2>
+        <div style={{ ...MONO, fontSize: 12, color: 'var(--ink-soft)', flexShrink: 0,
+          fontVariantNumeric: 'tabular-nums' }}>
           {doneLoaded ? `${totalDone} / ${total}` : `${total} lessons`}
         </div>
       </div>
-      <p style={{ fontSize: 13, color: 'var(--ink-faint)', lineHeight: 1.6, margin: '0 0 18px', maxWidth: 560 }}>
-        {units.length} units, in order — each one teaches a handful of words and the grammar that
-        uses them. Nothing is locked; open any of it whenever you like.
+      <p style={{ ...MONO, fontSize: 10, letterSpacing: '.07em', textTransform: 'uppercase',
+        color: 'var(--ink-faint)', margin: '9px 0 14px' }}>
+        {units.length} units · nothing is locked
       </p>
 
-      <div className="flex flex-col gap-2">
+      {/* NO `gap`. Closed units are rows separated by a hairline, so a gap would break the
+          rule into dashes; the open unit supplies its own margin so it floats clear of them. */}
+      <div className="flex flex-col">
         {units.map((u, i) => (
           <UnitBlock
             key={u.id}
@@ -441,35 +458,74 @@ function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, on
   const { done: d, total } = unitProgress(unit, done);
   const complete = doneLoaded && d === total;
 
+  /**
+   * ── ONE ELEVATED CARD, AND EVERYTHING ELSE IS A ROW ──
+   *
+   * Every unit used to be drawn identically: `1px solid var(--line)`, radius 12, in a stack
+   * with `gap-2`. Eleven boxes of equal weight, which is a form rather than a syllabus — the
+   * eye has nothing to land on and the list cannot say where you are. Removing the borders
+   * alone would have given eleven identical BORDERLESS rows, which is the same defect with
+   * less ink, so the fix is hierarchy rather than subtraction:
+   *
+   *   open      the only card on screen — `--card` fill, a real shadow, an accent edge
+   *   complete  a dimmed row that has dropped its blurb
+   *   neither   a plain row with a hairline under it
+   *
+   * `--card`, `--paper-2` and `--line-soft` all already exist in every one of the ten themes,
+   * so none of this needs a new token and none of it can look wrong in a theme nobody checked.
+   *
+   * ── A FINISHED UNIT LOSES ITS BLURB, WHICH IS WHERE THE HEIGHT GOES ──
+   * A blurb sells a unit you have not opened. Once it is read the row is a receipt, and
+   * printing two lines of pitch under a ticked unit is the thing that made the tab 3,853px in
+   * the first place.
+   *
+   * ── THE BORDER IS A SEPARATOR, NOT A BOX ──
+   * `borderBottom` on every row but the last, so the hairlines read as one ruled list rather
+   * than eleven outlines. The open card suppresses its own, because it is not in the list.
+   *
+   * ── THE TAP TARGET DID NOT SHRINK, AND THAT WAS THE RISK ──
+   * Losing the box makes a row look less pressable, so the row keeps its full width and its
+   * padding, and gains a `--paper-2` hover. The hover is on a CLASS rather than inline
+   * handlers: the lesson rows below use `onMouseEnter`/`onMouseLeave` writing `style.background`
+   * directly, which cannot express `:focus-visible` and so leaves keyboard users with nothing.
+   */
   return (
-    <div className="rounded-[12px] overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-      <button
-        onClick={onToggle}
-        aria-expanded={open}
-        className="w-full text-left cursor-pointer transition-all duration-150 flex items-center gap-3.5"
-        style={{ background: 'none', border: 'none', padding: '13px 15px', color: 'var(--ink)' }}
-      >
-        <span
-          aria-hidden
-          className="shrink-0 flex items-center justify-center rounded-full"
-          style={{
-            ...MONO, fontSize: 11, letterSpacing: 0, width: 27, height: 27,
-            border: `1px solid ${complete ? 'var(--jade)' : 'var(--line)'}`,
-            background: complete ? 'var(--jade)' : 'none',
-            color: complete ? '#fff' : 'var(--ink-faint)',
-          }}
+    <div
+      className={open ? 'rounded-[13px] overflow-hidden' : ''}
+      style={open
+        ? {
+            background: 'var(--card)',
+            borderLeft: '3px solid var(--accent)',
+            boxShadow: '0 1px 2px rgba(0,0,0,.05), 0 6px 18px -10px rgba(0,0,0,.22)',
+            margin: '9px 0',
+          }
+        : { borderBottom: '1px solid var(--line-soft)' }}
+    >
+      {/* ── THE OPEN CARD STACKS; A CLOSED ROW DOES NOT ──
+          Both states were one `flex items-center` row with the number in a left gutter, and
+          on the open card that centred "UNIT 2" against a title that wraps to three lines at
+          phone width — a label floating in the middle of an empty column. Caught by rendering
+          it at 390px rather than by reading it.
+
+          Open, the eyebrow belongs ABOVE the title and the title gets the full width. Closed,
+          the left gutter is right: it aligns eleven numbers into a column you can run an eye
+          down, which is most of what makes the list scannable. Two layouts, because they are
+          doing two different jobs. */}
+      {open ? (
+        <button
+          onClick={onToggle}
+          aria-expanded={open}
+          className="w-full text-left cursor-pointer transition-all duration-150 flex flex-col"
+          style={{ background: 'none', border: 'none', padding: '14px 15px 10px', color: 'var(--ink)' }}
         >
-          {complete ? '✓' : n}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span style={{ fontSize: 15, display: 'block', fontWeight: 500 }}>{unit.title}</span>
-          <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 1, lineHeight: 1.45 }}>
-            {unit.blurb}
-          </span>
-        </span>
-        {/* The ticks carry the number, so they are hidden from a screen reader and the count
-            beside them is what is announced. */}
-        <span className="shrink-0 flex items-center gap-2.5">
+          <span className="w-full flex items-center gap-2.5 mb-1.5">
+            <span style={{ ...MONO, fontSize: 9.5, letterSpacing: '.11em', textTransform: 'uppercase',
+              color: complete ? 'var(--jade)' : 'var(--accent)', flexShrink: 0 }}>
+              Unit {n}
+            </span>
+            <span className="flex-1" />
+            {/* The ticks carry the number, so they are hidden from a screen reader and the
+              count beside them is what is announced. */}
           {doneLoaded && (
             <span aria-hidden className="hidden sm:flex gap-[3px]">
               {unit.lessons.map((id, i) => (
@@ -478,16 +534,69 @@ function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, on
               ))}
             </span>
           )}
-          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right' }}>
+          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
             {doneLoaded ? `${d}/${total}` : `${total}`}
           </span>
           <span aria-hidden style={{ ...MONO, fontSize: 9, color: 'var(--ink-faint)',
             transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
-        </span>
-      </button>
+          </span>
+          <span style={{ fontSize: 17, display: 'block', fontWeight: 600, letterSpacing: '-.015em',
+            lineHeight: 1.22, color: 'var(--ink)' }}>{unit.title}</span>
+          {!complete && (
+            <span style={{ fontSize: 12.5, color: 'var(--ink-soft)', display: 'block', marginTop: 4, lineHeight: 1.45 }}>
+              {unit.blurb}
+            </span>
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={onToggle}
+          aria-expanded={open}
+          className="unit-row w-full text-left cursor-pointer transition-all duration-150 flex items-center gap-3.5"
+          style={{ background: 'none', border: 'none', padding: '12px 6px', color: 'var(--ink)' }}
+        >
+          <span
+            aria-hidden
+            className="shrink-0 flex items-center justify-center"
+            style={{ ...MONO, fontSize: 11, width: 18,
+              color: complete ? 'var(--jade)' : 'var(--ink-faint)',
+              fontVariantNumeric: 'tabular-nums' }}
+          >
+            {complete ? '✓' : n}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span style={{ fontSize: 14.5, display: 'block', fontWeight: complete ? 400 : 500,
+              letterSpacing: '-.005em', lineHeight: 1.25,
+              color: complete ? 'var(--ink-soft)' : 'var(--ink)' }}>{unit.title}</span>
+            {/* Hidden once the unit is finished — see the note above. */}
+            {!complete && (
+              <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 2, lineHeight: 1.45 }}>
+                {unit.blurb}
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 flex items-center gap-2.5">
+            {/* The ticks carry the number, so they are hidden from a screen reader and the
+              count beside them is what is announced. */}
+          {doneLoaded && (
+            <span aria-hidden className="hidden sm:flex gap-[3px]">
+              {unit.lessons.map((id, i) => (
+                <span key={i} style={{ width: 13, height: 3, borderRadius: 2,
+                  background: done.has(id) ? 'var(--jade)' : 'var(--line)' }} />
+              ))}
+            </span>
+          )}
+          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+            {doneLoaded ? `${d}/${total}` : `${total}`}
+          </span>
+          <span aria-hidden style={{ ...MONO, fontSize: 9, color: 'var(--ink-faint)',
+            transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
+          </span>
+        </button>
+      )}
 
       {open && (
-        <div className="flex flex-col" style={{ borderTop: '1px solid var(--line)' }}>
+        <div className="flex flex-col" style={{ borderTop: '1px solid var(--line-soft)', paddingBottom: 4 }}>
           {unit.lessons.map(id => {
             const l = byId.get(id);
             if (!l) return null;   // a test makes this unreachable; rendering nothing beats throwing

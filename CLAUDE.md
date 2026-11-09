@@ -3228,6 +3228,106 @@ inside the root layout. So one broken tab takes the navigation with it. Scoping 
 each `TabPanel` would keep the rest of the app usable and is deliberately NOT done here, so that
 the boundary and the font fix are not confused with one another.
 
+### The generic look, and the two moves that removed it
+
+`components/learn/LearnTab.tsx`, `components/practice/SrsTab.tsx`,
+`components/practice/Flashcards.tsx`, and `.unit-row` in `app/globals.css`.
+
+**REPORTED AS "the entire UI looks kind of boring and it looks rlly ai".** Measured rather
+than argued with: **158** uses of `1px solid var(--line)` across **50 files**, **177** mono
+uppercase labels, **11 identical outlined cards** stacked on Learn, and **three levels of
+border nesting** on Review — an outlined tab panel holding an outlined flashcard holding an
+inset rule. That is the house style of a model's default output, and it was ours.
+
+**THE DIAGNOSIS IS NOT "THE BORDERS ARE GREY", AND GETTING THAT WRONG WOULD HAVE WASTED THE
+WORK.** The defect is that **every unit was drawn identically**, so eleven rows of equal
+weight gave the eye nothing to land on and the list could not say where you were. Deleting
+the borders alone produces eleven identical BORDERLESS rows: the same defect with less ink.
+The fix is hierarchy.
+
+**ONE ELEVATED CARD, AND EVERYTHING ELSE IS A ROW.** Three states, from data the component
+already had:
+
+| | treatment |
+|---|---|
+| open (the unit you are on) | the only card — `--card` fill, real shadow, 3px accent edge, 17px title, its own margin |
+| complete | a dimmed row at `--ink-soft` **with its blurb removed** |
+| neither | a plain row, hairline under it, number in a left gutter |
+
+**A FINISHED UNIT LOSING ITS BLURB IS WHERE THE HEIGHT GOES.** A blurb sells a unit you have
+not opened; once read, the row is a receipt. Measured at 390px: the Spanish tree went
+**4,448px → 3,656px**, an 18% cut, with nothing removed that anybody needs.
+
+**THE BORDER BECAME A SEPARATOR RATHER THAN A BOX** — `borderBottom: 1px solid var(--line-soft)`
+on each closed row instead of a full outline around each — so eleven outlines read as one
+ruled list. The container lost its `gap-2`, because a gap would break that rule into dashes;
+the open card supplies its own margin so it floats clear.
+
+**⚠ AND THE OPEN CARD NEEDED A DIFFERENT LAYOUT, WHICH ONLY A RENDER SHOWED.** Both states
+started as one `flex items-center` row with the number in a left gutter. On the open card that
+vertically centres "UNIT 2" against a title wrapping to three lines at phone width — a label
+floating in the middle of an empty column. Open, the eyebrow belongs ABOVE the title and the
+title takes the full width; closed, the left gutter is right, because it aligns eleven numbers
+into a column an eye can run down. Two layouts, two jobs. **Invisible in the source and obvious
+in a screenshot**, which is this file's most repeated lesson arriving again.
+
+**`.unit-row` IS A CLASS, AND THAT IS AN ACCESSIBILITY FIX RATHER THAN TIDINESS.** Losing the
+box makes a row look less pressable — the one real risk in this change — so the row keeps its
+full width and padding and gains a `--paper-2` hover. It is a class because the lesson rows
+inside the open unit use inline `onMouseEnter`/`onMouseLeave` writing `style.background`
+directly, and **an inline handler cannot express `:focus-visible`**, so a keyboard user tabbing
+the course had no indication of where they were. The class carries both, plus a
+`@media (hover: none)` opt-out so a phone does not leave a row stuck in its hover state after a
+tap.
+
+**NO NEW TOKENS.** `--card`, `--paper-2`, `--line-soft` and `--accent-soft` already exist in all
+ten themes, so nothing here can look wrong in a theme nobody checked. Verified in `midnight` as
+well as `paper`: the card fill separates, the accent edge reads, the hairlines are visible.
+
+#### Review: flush-left metadata around one centred word
+
+**THE SEGMENTED CONTROL REPLACED THREE OUTLINED PILLS.** Three equal outlines read as three
+separate buttons and you have to find the coloured one to know which is live; a recessed
+`--paper-2` track with the active segment lifted in `--card` reads as one choice with three
+positions. **The lift is a shadow, not a border, deliberately** — a border on the active segment
+only would make it 2px wider than its neighbours and shuffle the row on every switch.
+
+**THE FLASHCARD'S OWN BORDER IS GONE**, along with the inset top rule that belonged to it. That
+rule was a ruling across the inside of a bordered card; with the border removed it reads as a
+stray line the audio button sits on top of. The gradient fill and the shadow already separate
+the card from the paper, which is what the border was doing a third time.
+
+**"Show answer" IS THE FILLED ACCENT BUTTON NOW.** It was a grey ghost — quieter than the two
+toggles above it — on the one control the learner is there to press.
+
+**THE TOGGLES AND STATE CHIPS WERE `justify-end`**, which at phone width puts two wide labels in
+the middle of the screen and reads as a centred settings panel floating over the card. They are
+metadata about the session, so they line up flush-left with the session's heading.
+
+**THE WORD STAYS CENTRED AND STAYS SERIF.** It is the one genuinely good piece of design in
+these two tabs, and "flush-left everything" must not reach it: a single focal object belongs in
+the middle. Mono uppercase also survives for metadata — counts, kinds, chips — because that is
+srsly's voice and reads as editorial apparatus. What changed is that it stopped being used for
+HEADINGS.
+
+**⚠ AND THE HEADING SAID "Vocabulary review · FSRS".** Shipped UI, 11px tracked-out mono, the
+first thing on the screen. This tab stopped being called "SRS" because a term of art is
+"precise to someone who already knows what spaced repetition is, and meaningless to everyone
+else", and the chips below it went from `S=20.0d · D=5.2` to `holds 12 days` for exactly the
+same reason — **this line survived both passes**. It is `Vocabulary`, set as a heading in
+display serif at 21px. The scheduler is not the learner's business.
+
+**NOTHING WAS LOCKED, AND THE BRIEF ASKED FOR IT.** The request was for completed *or locked*
+units to look distinct. Nothing in srsly is ever locked — no unit gates another, nothing is
+`disabled`, and the tab says so in its first sentence — so the three states are done, current
+and not-started. Recorded because this file already warns that if a lesson ever becomes a
+prerequisite, the reversal must be made knowingly rather than by adding a prop, and a visual
+brief is exactly how it would arrive by accident.
+
+**THE OTHER 48 FILES ARE UNTOUCHED.** The same two moves — a hairline between instead of a box
+around, and flush-left serif headings instead of faint mono eyebrows — port outward one tab at
+a time. Doing all 158 at once is how a redesign becomes unreviewable.
+
 ### Theming
 
 Ten themes and seven fonts are toggled by setting `data-theme` and `data-font` attributes on

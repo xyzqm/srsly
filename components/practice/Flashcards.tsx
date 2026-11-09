@@ -516,10 +516,21 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       {/* Header */}
       <div className="flex justify-between items-end mb-6 gap-4">
         <div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--ink-faint)' }}>
-            Vocabulary review · FSRS
-          </div>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)' }}>
+          {/* ── IT SAID "Vocabulary review · FSRS", AND THAT WAS THE RENAME MISSED ONCE ──
+              This tab stopped being called "SRS" because a term of art is "precise to someone
+              who already knows what spaced repetition is, and meaningless to everyone else",
+              and the card chips below went from `S=20.0d · D=5.2` to `holds 12 days` for the
+              same reason. This line survived both passes, in 11px tracked-out mono, as the
+              first thing on the screen. The scheduler is not the learner's business; the word
+              in front of them is.
+
+              It is also the heading, so it is now SET like one — flush-left display serif at
+              21px, not a faint mono eyebrow. The count beside it stays mono, because a count
+              is apparatus. */}
+          <h2 style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600, letterSpacing: '-.015em', color: 'var(--ink)', margin: 0, lineHeight: 1.1 }}>
+            Vocabulary
+          </h2>
+          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>
             {priorDone + results.length + 1} of {priorDone + results.length + readyCards.length + futureCards.length}
             {dueCount > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
@@ -534,7 +545,11 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       {/* Study-mode toggles. Flip is DISABLED while typing, because typing pins the card's
           orientation per language — see lib/typedAnswer.ts for why the fourth combination
           (reverse + typed, in Chinese) writes FSRS lapses for answers that were correct. */}
-      <div className="flex justify-end items-center mb-3 gap-4">
+      {/* FLUSH LEFT, with the heading and the counts. These were `justify-end`, which at
+          phone width puts two wide labels in the middle of the screen and reads as a
+          centred settings panel floating above the card. They are metadata about the
+          session, so they line up with the session's own heading. */}
+      <div className="flex justify-start items-center mb-3 gap-5 flex-wrap">
         <button
           onClick={toggleTyped}
           role="switch"
@@ -570,7 +585,7 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
         </button>
       </div>
 
-      <div className="flex justify-end mb-2 gap-2">
+      <div className="flex justify-start mb-2 gap-2 flex-wrap">
         {cardIsLearning ? (
           <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'color-mix(in srgb, var(--gold) 15%, var(--paper))', color: 'var(--gold)', border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)', borderRadius: 4, padding: '2px 6px' }}>
             {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
@@ -624,9 +639,14 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       {/* Card face */}
       <div
         className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[240px] sm:min-h-[330px] px-5 py-10 sm:px-10 sm:py-14"
-        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', border: '1px solid var(--line)', boxShadow: '0 10px 30px rgba(34,32,28,.06)', cursor: 'default' }}
+        /* NO BORDER. This card sits inside a bordered panel inside a bordered tab — three
+            nested boxes to present one word. The gradient fill and the shadow already separate
+            it from the paper, which is what a border was being asked to do a third time. */
+        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', boxShadow: '0 1px 2px rgba(34,32,28,.05), 0 10px 30px rgba(34,32,28,.07)', cursor: 'default' }}
       >
-        <div className="absolute left-6 right-6 top-3.5 h-px" style={{ background: 'var(--line-soft)' }} />
+        {/* The inset top rule is GONE with the border it belonged to. It was a ruling across
+            the inside of a bordered card; with the border removed it reads as a stray line
+            that the audio button sits on top of. Seen by rendering it, not by reading it. */}
         <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
           {showReverse ? "What's the word?" : 'What does this mean?'}
         </div>
@@ -738,7 +758,9 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
             <button
               onClick={() => setRevealed(true)}
               className="cursor-pointer transition-all duration-150"
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', background: 'none', border: '1px solid var(--line)', color: 'var(--ink-soft)', borderRadius: 8, padding: '11px 22px' }}
+              /* THE PRIMARY ACTION, STYLED AS ONE. It was a grey ghost button — quieter than
+                 the two toggles above it — on the one control the learner is here to press. */
+              style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 600, background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 9, padding: '12px 26px', boxShadow: '0 2px 0 var(--accent-deep)' }}
             >
               Show answer
             </button>

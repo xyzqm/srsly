@@ -145,20 +145,36 @@ export default function SrsTab({ onScore, active = true }: Props) {
           neither the streak nor the daily budget, so switching here changes what you practise
           and never what you owe. */}
       {modes.length > 1 && (
-        <div className="flex gap-1.5 mb-4">
+        /* ── A SEGMENTED CONTROL, NOT THREE OUTLINED BUTTONS ──
+           Three equally-outlined pills read as three separate buttons, and the learner has to
+           find the coloured one to know which is active. A recessed track with the active
+           segment LIFTED out of it reads as one choice with three positions, which is what it
+           is. The track is `--paper-2` and the active segment is `--card` — both already exist
+           in all ten themes, so no theme needs a new token.
+
+           The lift is a shadow rather than a border, deliberately: a border on the active
+           segment only would make it 2px wider than its neighbours and shuffle the row every
+           time you switched. Same box, different depth. */
+        <div
+          className="inline-flex gap-0.5 mb-4 p-[3px]"
+          style={{ background: 'var(--paper-2)', borderRadius: 10 }}
+        >
           {modes.map(({ id, label }) => {
             const on = shown === id;
             return (
               <button
                 key={id}
                 onClick={() => setMode(id)}
-                className="cursor-pointer"
+                aria-pressed={on}
+                className="cursor-pointer transition-all duration-150"
                 style={{
-                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em',
-                  textTransform: 'uppercase', padding: '6px 12px', borderRadius: 7,
-                  border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`,
-                  background: on ? 'var(--accent-soft)' : 'var(--card)',
-                  color: on ? 'var(--accent)' : 'var(--ink-soft)',
+                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.07em',
+                  textTransform: 'uppercase', padding: '6px 13px', borderRadius: 7,
+                  border: 'none',
+                  fontWeight: on ? 500 : 400,
+                  background: on ? 'var(--card)' : 'transparent',
+                  color: on ? 'var(--ink)' : 'var(--ink-faint)',
+                  boxShadow: on ? '0 1px 2px rgba(0,0,0,.09)' : 'none',
                 }}
               >
                 {label}

@@ -286,6 +286,25 @@
 }
 .playing-pulse { animation: pulse-ring 1s infinite; }
 
+/* ── A COURSE UNIT THAT IS NOT OPEN IS A ROW, AND A ROW STILL HAS TO LOOK PRESSABLE ──
+   `components/learn/LearnTab.tsx` drops the `1px solid var(--line)` box from every closed
+   unit, so eleven outlines become one ruled list. The box was also the only thing saying
+   "this is a control", which is the one real risk in that change — so the row keeps its full
+   width and padding and gains a tinted hover.
+
+   It is a CLASS rather than the inline `onMouseEnter`/`onMouseLeave` pair the lesson rows
+   inside the open unit still use. Those write `style.background` directly, which cannot
+   express `:focus-visible` — so a keyboard user tabbing the course got no indication at all
+   of where they were. `--paper-2` and `--accent-soft` exist in all ten themes. */
+.unit-row { border-radius: 8px; }
+.unit-row:hover { background: var(--paper-2); }
+.unit-row:focus-visible {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (hover: none) { .unit-row:hover { background: none; } }
+
 /* Entrance for a panel that has just mounted.
  *
  * It used to run .45s from opacity 0. Every tab is mounted fresh on each switch, so that
