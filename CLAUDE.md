@@ -3021,6 +3021,103 @@ development, so verifying it needs a real `next start` — and `next dev` is fre
 **3100** with `SRSLY_STUB_AI=1`. Building into `.next` while a dev server runs is the corruption
 `next.config.ts` documents at length; `NEXT_DIST_DIR` is the escape hatch it exists for.
 
+### ⚠ THE FONT STYLESHEET WAS 98% CHINESE, AND IT BLOCKED EVERY FIRST PAINT
+
+`lib/hanFont.ts`, the two `<link>`s in `app/layout.tsx`, the pre-paint injector in that file's
+inline script, and `tests/hanFont.test.ts`.
+
+**REPORTED AS "sometimes when I load in it doesn't load so I have to reload and then it loads
+in".** Nothing was failing. A cold first load was taking **12.9 seconds** on a weak connection
+and a reload was reading a warm cache, so the reload looked like a fix. Measured on a throttled
+phone profile (412x915, 400 kbps, 400 ms RTT) against production: text in `main` at 12,885 ms
+cold, **664 ms** on the next load and **~290 ms** on every one after that.
+
+**ONE RENDER-BLOCKING STYLESHEET NAMED THIRTEEN FAMILIES.** Measured on the wire, gzipped, with
+a Pixel user agent — because a Han webfont is declared as hundreds of `unicode-range` subsets
+and the CSS must name every one:
+
+| | gzipped |
+|---|---|
+| the eleven Latin families together | **3.4 kB** |
+| `Noto Serif SC` + `Noto Sans SC` | **185.6 kB** |
+| what every learner actually downloaded | 188.8 kB |
+
+So **98% of a blocking stylesheet was Chinese font declarations**, fetched in full by a learner
+studying only Spanish, who has no use for a byte of it. 185 kB of a 547 kB critical path.
+
+**IT IS THIS FILE'S OWN RULE, BROKEN WHERE NOBODY THOUGHT TO LOOK.** *"Nothing that renders on
+every screen may import a language's data."* That rule is why the level tables, the
+dictionaries, the grammar tables and the lesson prose are all lazy — and it was written about
+JavaScript, so a `<link>` in the document head was never once checked against it. **A webfont
+for a script you cannot read is a language's data.** Every measurement in this file about
+first-load JS (`~290 kB`, `347 kB`, the `~890 kB` counterfactual) was counting the wrong
+resource: the single biggest thing on the critical path was never JS.
+
+**TWO DEFENCES, AND EITHER ALONE LEAVES A HOLE.**
+
+- **The document carries the Latin families only**, so the blocking cost is 3.4 kB for
+  everybody and the Han CSS is never on the critical path.
+- **The Han half is injected only where a Han glyph can appear** — from the pre-paint script for
+  the common case, from `ensureHanFont` on a language change — so an es/fr learner never
+  requests it at all. Measured: Spanish 0 requests, Chinese 1, es+zh with Spanish active 1
+  (switching inside a multi-language account must not cost a mid-session round trip).
+
+Defence 1 alone still downloads 185 kB for a Spanish learner, merely later. Defence 2 alone
+still blocks every Chinese first paint on 185 kB.
+
+**⚠ AND THE FIRST VERSION OF DEFENCE 2 PUT THE WHOLE COST BACK FOR THE LEARNERS IT IS FOR.**
+A `<link rel=stylesheet>` blocks rendering wherever it is added, including from a script — so
+injecting it removed the cost for Spanish and French and kept **every byte** of it for Chinese
+and Japanese, which is most of a Han learner's first paint and precisely the audience the
+stylesheet exists to serve. The saving was real for two languages and exactly zero for the
+other two. Found by measuring the request rather than by reading the code, which would have
+looked correct indefinitely.
+
+It is injected `media='print'` with `onload` flipping it to `all`: not applied to the screen, so
+the browser drops it off the critical path, then applied once it has arrived. Measured after:
+a Chinese learner paints at **128 ms** against a Spanish learner's 120 ms — indistinguishable.
+
+**`display=swap` IS WHAT MAKES IT SAFE, AND THE FALLBACK IS GOOD.** Han text paints immediately
+in the device's own CJK font — PingFang on iOS, Noto on Android, both excellent — and swaps when
+the stylesheet lands. Verified rather than assumed: with 朋友你好 on the page, `media` reads
+`all`, the sheet is attached, the computed stack is `"Noto Serif SC", serif`, and of the 606
+declared faces exactly **2 move to `loaded`** — the two subsets those characters need, which only
+download if the browser applied the stylesheet. *(`document.fonts.check` reports `false`
+throughout and is not evidence either way: it is unreliable against `unicode-range`-split
+families. The two loaded faces are the proof. An earlier probe claimed all 606 were loaded
+because the test was `/loaded/`, which also matches `"unloaded"` — a filter that could only
+return the answer it was looking for.)*
+
+**`ensureHanFont` TAKES THE LANGUAGE CONFIG RATHER THAN NOTHING, AND THAT IS THE WHOLE GUARD.**
+Its three callers sit on the language-change path in `app/page.tsx`, which fires for Spanish and
+French too, so a no-argument version would have fetched 185 kB the moment a learner switched to
+Spanish — the cost the module exists to avoid, reintroduced by the code managing it. The test is
+`scriptIsUnspaced`, already documented as meaning exactly the Han-using set, so a fifth language
+is covered for free and there is no `language === 'zh' || language === 'ja'` to grow a third arm.
+
+**THE TEST PINS THE SPLIT AGAINST `globals.css`, NOT AGAINST A LIST.** Splitting one stylesheet
+into two can fail in exactly one way — losing a family — and the symptom is a theme quietly
+rendering in a fallback, invisible until somebody picks that theme. So `tests/hanFont.test.ts`
+reads the font names the themes actually ask for and requires each to be served by one of the
+two hrefs; a third hardcoded list would just be another copy to keep in step. Mutation-checked:
+dropping `Lora` from the document fails it by name.
+
+**⚠ AND A HYPOTHESIS THAT SOUNDED BETTER WAS MEASURED AND WAS WRONG.** The first theory was the
+service worker: `documentFirst` races the network against `SHELL_TIMEOUT_MS` (2500 ms) and serves
+the cached shell when the network loses, so a stale shell from a previous deploy would reference
+chunk URLs that no longer exist → `ChunkLoadError` → blank page → reload fixes it. It fits the
+report perfectly and it is false. Old chunks still return **200** on the production alias
+(Vercel keeps superseded assets), and content-hashing means unchanged code keeps its hash —
+`255-b1e2483a7e02feee.js` was byte-identical across two deploys. A stale shell boots fine. One
+`curl` loop settled what three rounds of reasoning had got wrong, which is this file's most
+repeated lesson arriving again.
+
+**THERE IS STILL NO ERROR BOUNDARY** — no `app/error.tsx` and no `app/global-error.tsx` — so any
+throw during render is a white page in production, where Next ships no overlay. That is NOT what
+this bug was, and it is a real gap found while looking for it: it would make exactly this report
+indistinguishable from the slow load that caused it. Deliberately not added in the same change
+as the fix, so the two are not confused.
+
 ### Theming
 
 Ten themes and seven fonts are toggled by setting `data-theme` and `data-font` attributes on

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
+import { HAN_FONT_HREF } from '@/lib/hanFont';
 
 export const metadata: Metadata = {
   title: 'srsly?',
@@ -53,6 +54,13 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
+/**
+ * The languages whose text can contain a Han character, derived from the config rather than
+ * listed, for the reason `lib/hanFont.ts` gives: `scriptIsUnspaced` already means exactly this
+ * set, and a hardcoded pair would not cover a fifth language.
+ */
+const HAN_LANGS = SUPPORTED_LANGUAGES.filter(c => c.scriptIsUnspaced).map(c => c.code);
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh" className="h-full" suppressHydrationWarning>
@@ -64,9 +72,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             This is the app router, and this IS the document — the link lives in the single
             root layout, which is exactly what the rule is asking for. There is nowhere
             "better" to move it to, so the warning has no fix. */}
+        {/*
+          ⚠ THE HAN FAMILIES ARE NOT IN HERE, AND THAT IS WORTH 185 kB OF THE FIRST PAINT.
+
+          This was one stylesheet naming THIRTEEN families. Measured gzipped with a Pixel user
+          agent: the eleven Latin families are 3.4 kB together and `Noto Serif SC` +
+          `Noto Sans SC` are 185.6 kB, because a Han webfont is declared as hundreds of
+          `unicode-range` subsets and the CSS must name every one. A stylesheet blocks
+          rendering, so every learner — including one studying only Spanish — waited on 185 kB
+          of Chinese font declarations before any text appeared.
+
+          On a throttled phone (400 kbps, 400 ms RTT) that put text on screen at 12.9 s cold,
+          against 0.29 s once cached. That is the whole of the "sometimes it doesn't load so I
+          reload and then it loads" report: nothing was broken, the first load took thirteen
+          seconds and the reload was reading a warm cache.
+
+          The Han half is injected by the script below, and only for a learner who studies a
+          language that can show a Han character. See `lib/hanFont.ts` for the measurements and
+          for why `display=swap` over the device's own CJK font makes it safe.
+        */}
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Lora:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&family=Playfair+Display:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Lora:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&family=Playfair+Display:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap"
           rel="stylesheet"
         />
       </head>
@@ -98,7 +125,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             from it the way a hand-kept ternary would. */}
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var p=JSON.parse(localStorage.getItem('srsly-prefs')||'{}');if(p.theme)document.body.setAttribute('data-theme',p.theme);if(p.font)document.body.setAttribute('data-font',p.font);document.body.setAttribute('data-texture',p.texture||'grain');document.body.setAttribute('data-blank',p.blankStyle||'dotted');document.body.setAttribute('data-tones',p.toneColors===true?'on':'off');var L=${JSON.stringify(
           Object.fromEntries(SUPPORTED_LANGUAGES.map(c => [c.code, c.htmlLang])),
-        )};if(p.language&&L[p.language])document.documentElement.setAttribute('lang',L[p.language]);}catch(e){}})();` }} />
+        )};if(p.language&&L[p.language])document.documentElement.setAttribute('lang',L[p.language]);var U=${JSON.stringify(HAN_LANGS)};var S=(p.languages||[]).concat(p.language?[p.language]:[]);for(var i=0;i<S.length;i++){if(U.indexOf(S[i])>=0){var h=document.createElement('link');h.rel='stylesheet';h.href=${JSON.stringify(HAN_FONT_HREF)};h.setAttribute('data-srsly-han-font','1');h.media='print';h.onload=function(){h.media='all';};document.head.appendChild(h);break;}}}catch(e){}})();` }} />
         {children}
       </body>
     </html>

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react
 import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
+import { ensureHanFont } from '@/lib/hanFont';
 import { languageFromTag } from '@/lib/languageMismatch';
 import { sharePrefixPresent } from '@/lib/shareLink';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
@@ -497,6 +498,7 @@ function AppShell() {
     setLanguage(lang);
     const cfg = getLanguageConfig(lang);
     document.documentElement.setAttribute('lang', cfg.htmlLang);
+    ensureHanFont(cfg);
     setSpeechLang(cfg.bcp47);
     setAddingLanguage(false);
   }, []);
@@ -508,6 +510,7 @@ function AppShell() {
     if (!hasLessons(lang)) setTab(t => (t === 'learn' ? 'read' : t));
     const cfg = getLanguageConfig(lang);
     document.documentElement.setAttribute('lang', cfg.htmlLang);
+    ensureHanFont(cfg);
     setSpeechLang(cfg.bcp47);
     const prefs = await storage.getPrefs();
     await storage.savePrefs({ ...prefs, language: lang });
@@ -632,6 +635,7 @@ function AppShell() {
                   setLanguage(active);
                   const cfg = getLanguageConfig(active);
                   document.documentElement.setAttribute('lang', cfg.htmlLang);
+    ensureHanFont(cfg);
                   setSpeechLang(cfg.bcp47);
                 }
               }}
