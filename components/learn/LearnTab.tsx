@@ -1,10 +1,11 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useBeforePaint } from '@/hooks/useBeforePaint';
 import { useLanguage } from '@/lib/LanguageContext';
 import { storage } from '@/lib/storage';
 import { logLesson } from '@/lib/activityLog';
 import { useVocabDeck } from '@/hooks/useVocabDeck';
-import { type Lesson } from '@/lib/lessons';
+import { type Lesson, loadDone } from '@/lib/lessons';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import LessonPractice from './LessonPractice';
 import WordPopup from '@/components/read/WordPopup';
@@ -77,6 +78,46 @@ export default function LearnTab({ onNavigateSrs, active = true, onActivity, str
       .catch(() => {})
       .finally(() => { if (live) setDoneLoaded(true); });
     return () => { live = false; };
+  }, []);
+
+  /**
+   * ── SEEDED FROM THE LOCAL COPY BEFORE THE FIRST PAINT, WHICH IS WHAT STOPS THE JUMP ──
+   *
+   * `openUnit` is `null` until `doneLoaded`, so the path first rendered with every unit SHUT
+   * and then expanded one of them when storage answered. Measured at phone width with a real
+   * deck: the units below the one that opened moved **252px down**, and two of them left the
+   * viewport entirely. CLAUDE.md recorded this as a known residual and said closing it needed
+   * "either a synchronous probe on the storage facade — a real interface change — or giving up
+   * auto-expanding the current unit, which is a product decision", and that neither had been
+   * taken unasked.
+   *
+   * Neither is needed. **`loadDone()` already IS that synchronous probe**: it is a plain
+   * `localStorage` read in `lib/lessons.ts`, and `SupabaseStorage.getLessonsDone` writes its
+   * cloud answer back through `this.local.saveLessonsDone`, so a signed-in learner's cache sits
+   * under the same key. The asynchronous read above is still the authority and still runs; this
+   * only moves the COMMON answer early enough to be in the first frame.
+   *
+   * It is a LAYOUT effect, which is the whole point — it commits before the browser paints, so
+   * the correct unit is already open in the first frame the learner sees rather than one frame
+   * later. As a passive effect this would paint shut and then expand, which is the bug.
+   *
+   * ── IT IS NOT READ IN A `useState` INITIALISER, AND THAT IS THE HYDRATION RULE ──
+   * The effect above says why: this page is prerendered, `localStorage` does not exist there,
+   * and a value read during render differs between the server tree and the client's first pass.
+   * A layout effect runs only on the client and only after hydration has committed, so it gets
+   * the pre-paint guarantee without the mismatch.
+   *
+   * ── AN EMPTY CACHE IS SEEDED TOO, DELIBERATELY ──
+   * A brand-new learner genuinely has nothing finished, so `[]` is the right answer and opens
+   * unit 1 — in the first frame, with no shift. The case this cannot fix is a signed-in learner
+   * on a device whose cache is cold: they briefly see unit 1 before the cloud moves them to
+   * their real place. That is one shift, which is exactly what they get today, so nobody is
+   * worse off and everybody with a warm cache is better off.
+   */
+  useBeforePaint(() => {
+    const cached = loadDone();
+    setDone(cached);
+    setDoneLoaded(true);
   }, []);
 
   // Opening a lesson while a different language is selected would show French lessons under

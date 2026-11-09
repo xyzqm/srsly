@@ -1,9 +1,10 @@
 'use client';
-import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { TabId, LanguageCode } from '@/lib/types';
 import { LanguageProvider } from '@/lib/LanguageContext';
 import { getLanguageConfig, SUPPORTED_LANGUAGES } from '@/lib/languageConfig';
 import { ensureHanFont } from '@/lib/hanFont';
+import { useBeforePaint } from '@/hooks/useBeforePaint';
 import { languageFromTag } from '@/lib/languageMismatch';
 import { sharePrefixPresent } from '@/lib/shareLink';
 import { addLanguage, resolveLanguages } from '@/lib/onboarding';
@@ -24,7 +25,7 @@ import { hasLessons } from '@/lib/lessons';
  * loudly when it runs during a server render. Picked once at module scope rather than per
  * render, so it is a constant and not a conditional hook.
  */
-const useBeforePaint = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 
 /**
  * The Learn tab carries its whole lesson tree, and is the one tab most learners never open —

@@ -1566,12 +1566,42 @@ CHOPPY.** Two separate post-paint moves, both measured at phone width with `npm 
   disagree with itself. `key={language}` resets it, since a picked id from the previous course
   matches no unit in the new one and left the whole path collapsed.
 
-A residual shift remains and is recorded rather than hidden: until storage answers, no unit can
-be open, so one still expands when `done` arrives. For a learner on localStorage that resolves
-before a paint; signed in it is a network round trip and visible. Closing it needs either a
-synchronous probe on the storage facade — a real interface change, with the `null` vs `[]` vs
-not-loaded discipline that implies — or giving up auto-expanding the current unit, which is a
-product decision. Neither was taken unasked.
+**THAT RESIDUAL SHIFT IS NOW CLOSED, AND THE PROBE IT NEEDED ALREADY EXISTED.** This paragraph
+used to say that until storage answered no unit could be open, so one still expanded when `done`
+arrived — and that closing it needed "either a synchronous probe on the storage facade, a real
+interface change, or giving up auto-expanding the current unit, which is a product decision",
+with neither taken unasked. Measured at phone width with a real deck, the cost was **units below
+the one that opened moving 252px down, two of them leaving the viewport**.
+
+Neither option was needed. **`loadDone()` in `lib/lessons.ts` already IS that synchronous
+probe** — a plain `localStorage` read — and `SupabaseStorage.getLessonsDone` writes its cloud
+answer back through `this.local.saveLessonsDone`, so a signed-in learner's cache sits under the
+same key. `LearnTab` seeds `done` from it in a LAYOUT effect, which commits before the browser
+paints, so the right unit is open in the first frame; the asynchronous read is still the
+authority and still runs. It is not a `useState` initialiser, for the hydration reason the
+effect beside it already gives. Measured after: the unit shifts are gone entirely.
+
+The one case it cannot fix is a signed-in learner whose device cache is cold — they see unit 1
+briefly before the cloud moves them. That is one shift, which is exactly what they get today, so
+nobody is worse off. `hooks/useBeforePaint.ts` is the one copy of the layout-effect guard, moved
+out of `app/page.tsx` when this needed it.
+
+**⚠ AND THE CLS FIGURE THAT PROMPTED THIS WAS A MEASUREMENT ARTEFACT.** `npm run perf:tabs`
+reported ~0.105 on Review and Learn, and it clicks with `b.click()` — a SCRIPTED click, which
+the browser does not treat as user input. A real tap marks shifts within 500ms `hadRecentInput`
+and excludes them from CLS, because a user who just tapped expects the page to change. Measured
+again driving real `Input.dispatchMouseEvent` events: **counted CLS is 0.0000 on every tab**,
+with the same shifts present and excluded. So the metric was never failing; the Learn movement
+was still worth removing because it is physically visible, and the Review "shift" turned out to
+be nothing at all.
+
+**THE FOOTER IS NOT A BUG, WHICH TOOK A MEASUREMENT TO ESTABLISH.** It dominated every shift
+listing (`y 0->815 h 0->100`), which reads as the footer collapsing and re-expanding. It does
+not: measured directly, its height is **100 at every instant**, and it moves only because the
+document is a different length on a different tab — Learn is 1833px and Review 915px — with each
+tab's scroll offset restored as designed. The `h 0->100` is the LayoutShift API reporting a
+first-ever layout, not a collapse. There is nothing to fix, and a "fix" here would have been
+work against correct behaviour.
 
 **STILL NEVER LOCKED.** No unit gates another, nothing is `disabled`, there is no 🔒, and every
 lesson opens on day one. A unit is a shape, not a gate. There is deliberately no mascot and no
@@ -3117,6 +3147,56 @@ throw during render is a white page in production, where Next ships no overlay. 
 this bug was, and it is a real gap found while looking for it: it would make exactly this report
 indistinguishable from the slow load that caused it. Deliberately not added in the same change
 as the fix, so the two are not confused.
+
+### The white screen has a boundary now
+
+`app/error.tsx` and `app/global-error.tsx`. Until these existed there was **no error boundary
+anywhere in the app**, so any throw during render was a blank page in production, where Next
+ships no overlay.
+
+**IT MATTERS MORE HERE THAN IN A TYPICAL APP.** `app/page.tsx` is ONE client component rendering
+every tab, and `TabPanel` keeps each of them mounted once visited — so a throw while rendering
+any tab unmounts the whole tree, not that tab. Found while diagnosing the font bug above, which
+turned out to be a slow first paint and not a throw at all; the gap is worth recording because
+it would make exactly that report indistinguishable from this one. Both look like a page that
+never arrived.
+
+**TWO BUTTONS, BECAUSE `reset()` CANNOT FIX THE COMMONEST PRODUCTION ERROR.** It re-renders the
+same tree from the same already-loaded modules, which is right for a transient throw and useless
+against a failed dynamic `import()` after a deploy — the module graph is still broken, so it
+throws again instantly. A full reload refetches the document and can recover. Offering one would
+strand half the cases; offering both unlabelled would be two buttons that look identical.
+
+**THE THIRD BUTTON IS DESTRUCTIVE AND IS THEREFORE EARNED.** A service worker outlives the
+deploy that shipped it, which is why `lib/serviceWorker.ts` exports `unregisterServiceWorker` as
+a deliberate kill switch rather than leaving DevTools as the only way out. It appears only after
+a reload has already been tried and failed — tracked in `sessionStorage`, so a learner returning
+next week meets the ordinary two buttons. It touches no learner data.
+
+**IT SHOWS THE DIGEST, NOT THE STACK.** `error.digest` is the hash Next puts in the server log
+for the same error, so it is the one string that makes a report actionable. The sentence above
+it does not guess a cause: this boundary cannot know one, and "check your connection" would be
+a confident wrong answer. *(A client-side throw has no digest at all — verified — so that line
+is simply absent most of the time, which is correct rather than a gap.)*
+
+**`global-error.tsx` STYLES ITSELF WITHOUT THE THEME VARIABLES, DELIBERATELY.** It replaces the
+document, so the pre-paint script that sets `data-theme` has not run and the custom properties
+may be undefined — and an undefined custom property resolves to nothing, which here would be
+invisible text on an invisible background: the white screen it exists to prevent, wearing a
+stylesheet. Its colours are literal `paper`-theme values. That is the second deliberate
+exception to "never use hardcoded colors", after `@media print`.
+
+**VERIFIED BY MAKING SOMETHING THROW IN A REAL PRODUCTION BUILD**, not by reading it: a
+temporary `throw` in `ListenRepeat`, `next build`, then driving the Listen tab over CDP — the
+heading, both buttons and the reassurance line all render, and the heavier option is absent on
+the first failure and present after a reload that did not help. *(The first attempt put the
+throw above the hooks and ESLint rejected the build for conditional hook calls, which is the
+probe being wrong rather than the app.)*
+
+**IT REPLACES THE WHOLE PAGE, INCLUDING THE TAB BAR**, because `app/error.tsx` wraps everything
+inside the root layout. So one broken tab takes the navigation with it. Scoping a boundary to
+each `TabPanel` would keep the rest of the app usable and is deliberately NOT done here, so that
+the boundary and the font fix are not confused with one another.
 
 ### Theming
 
