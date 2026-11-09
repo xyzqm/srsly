@@ -1521,10 +1521,40 @@ only a suggestion. Two separate failures, and only the first is about motivation
   asserts every tree OPENS ON A WORD SET.
 
 `lib/data/lessons/units.ts` holds the path: **11 units for French and Spanish, 10 for Chinese
-and Japanese**, each four to six lessons, each named for something you can DO rather than for
-what it covers. `components/learn/LearnTab.tsx` draws them collapsed, with the unit you are on
-opened and a Continue card naming the single next lesson above everything else. The tab is
-**1,468px** now.
+and Japanese**, each four to six lessons. `components/learn/LearnTab.tsx` draws them collapsed,
+with the unit you are on opened and a Continue card naming the single next lesson above
+everything else. The tab is **1,468px** now.
+
+**⚠ UNIT TITLES ARE CONCEPT-FIRST, AND THIS SENTENCE SAID THE OPPOSITE FOR MONTHS.** It read
+"each named for something you can DO rather than for what it covers", which was the rule and is
+now reversed: a title names the GRAMMAR AND FUNCTION — "Essential Verbs: ser vs. estar",
+"Aspect Particle 了 (le) & Completed Actions", "Te-Form (て形) & Verb Chaining".
+
+The old argument is written out in full in `units.ts`'s own docstring and was right about one
+reader: somebody already inside a unit, with the lesson rows visible beneath the heading, learns
+nothing from a heading that repeats a lesson title. It was the only reader considered. **The
+units are collapsed by default**, so the commoner reader is scanning ten or eleven shut rows for
+a specific topic — *where is the subjunctive, does this cover 把* — and a capability name is the
+one thing that cannot answer that. The names also COLLIDED: four trees opened with the identical
+"Name things / Say what things are / Say what you do", so three languages' syllabus looked like
+one course. The `blurb` is what made the reversal safe — it still carries the concrete
+capability in a line with room for a sentence.
+
+**⚠ AND SIX OF THE FIRST PROPOSED TITLES NAMED THINGS NO LESSON TEACHES.** Caught by checking
+each one against `UNIT_LESSONS` and the lesson titles rather than by reading them, and every one
+would have shipped a confidently wrong grammatical label — the thing `GrammarNote` refuses in as
+many words: **到, 应该 and 正在 appear in no Chinese lesson** (the units teach 在/过 and 会/能/可以);
+**は and が are unit 1, not unit 2** (unit 2 is を/に/で/へ); **no Japanese unit teaches the
+causative**; and **"Stress Accents" for French contradicts this file's own finding that French
+has no lexical stress**, which is the entire reason `fr-accents` asks which LETTER a mark
+describes rather than where a stress falls. A unit title is read by a beginner who cannot catch
+it being wrong.
+
+**Long titles were checked at phone width rather than assumed.** They are much longer than the
+capability names and wrap to two lines at 375px; measured across all four trees at 375 and 412,
+horizontal overflow is **0** and no unit-card layout shift is introduced. The one height reserve
+that could have been broken — the Continue card's placeholder, which is one line per row — is
+no longer reached at all, because `doneLoaded` now resolves before the first paint.
 
 **THE ARRAY ORDER IS STILL THE GRAMMAR ORDER, AND THE DATA FILES DID NOT MOVE.** The four lesson
 arrays are untouched — grammar first, then the word sets — so `grammarLessons`, `vocabLessons`
