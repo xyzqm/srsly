@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useBeforePaint } from '@/hooks/useBeforePaint';
 import { useLanguage } from '@/lib/LanguageContext';
 import { storage } from '@/lib/storage';
@@ -15,6 +15,7 @@ import { unitsFor, nextInCourse, unitProgress, type LessonUnit } from '@/lib/dat
 import { BEGINNER_THEMES } from '@/lib/data/beginner-themes';
 import { preloadDict, lookupReading } from '@/lib/data/lookup';
 import GlossText from '@/components/shared/GlossText';
+import { CahierPage, CahierDate, PenMark } from '@/components/shared/Cahier';
 
 /**
  * The lesson tree — a route in for someone who wants one.
@@ -195,10 +196,13 @@ export default function LearnTab({ onNavigateSrs, active = true, onActivity, str
   if (!all.length) return null;
 
   return (
-    <div
-      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
+    /* A page of the exercise book, ruled in this language's school paper — see
+       components/shared/Cahier.tsx. The course list AND an open lesson both sit on it. */
+    <CahierPage
+      className="rounded-tr-xl rounded-b-xl animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      <CahierDate />
       {open
         ? <LessonView
             lesson={open}
@@ -218,7 +222,7 @@ export default function LearnTab({ onNavigateSrs, active = true, onActivity, str
            is a worse first impression of a tree than opening where you are. */
         : <CoursePath key={language} units={units} byId={byId} done={done} doneLoaded={doneLoaded}
             next={next} onOpen={setOpenId} />}
-    </div>
+    </CahierPage>
   );
 }
 
@@ -290,96 +294,101 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
 
   return (
     <>
+      {/* ── THE PAGE'S TITLE, RULED OFF TWICE IN PEN ──
+          Flush left in the display face over a double underline, with the count pencilled at
+          the end of the line. It went from a 10px mono eyebrow to a serif heading over a 2px
+          rule last round; the double underline is the same heading in the notebook's own
+          hand, and it is what a pupil actually does to a title. */}
+      <div className="flex items-end justify-between gap-3 mt-2">
+        <h2 className="cahier-title">The course</h2>
+        <div className="cahier-hand" style={{ fontSize: 13, color: 'var(--ink-soft)', paddingBottom: 4, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          {doneLoaded ? `${totalDone} / ${total}` : `${total} lessons`}
+        </div>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--ink-soft)', margin: '8px 0 0', lineHeight: 1.4 }}>
+        {units.length} units · nothing is locked
+      </p>
+
       {/*
-        ── THE CONTINUE CARD ────────────────────────────────────────────────────
-        One control, naming one lesson, at the top. The reserved min-height is not decoration:
-        `next` is unknown until storage answers, and a card that appears a moment after the
-        page does shoves the entire course down under the reader's cursor.
+        ── THE CONTINUE NOTE ────────────────────────────────────────────────────
+        One control, naming one lesson — a sticky note on the page rather than a bordered
+        accent card. `--cahier-sticky` is the theme's own `--gold` laid over `--card`, so it is
+        a warm slip on the light papers and a dim one on the dark, and the text on it is the
+        theme's ink either way.
+
+        `.cahier-sheet` tilts the PAPER and leaves the content level, so the note looks stuck
+        on by hand and the lesson's name is still sharp.
+
+        EVERYTHING ON THE NOTE IS SET IN `--ink`, NOT `--ink-soft`. The note is a tinted
+        surface, and grey on a tint is where contrast goes to die: `tests/cahier.test.ts`
+        measured the soft ink on it at 4.39:1 on vellum, 4.43 on midnight and 4.50 on dusk —
+        three themes a hair under the line, none of which anybody would have opened to check.
+        Hierarchy on the note comes from size and weight instead.
       */}
       <div
-        className="rounded-[14px] px-5 py-4 mb-7 flex flex-col items-start gap-4 sm:flex-row sm:items-center"
-        style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}
+        className="cahier-sheet flex flex-col items-start gap-4 sm:flex-row sm:items-center"
+        style={{ '--sheet-bg': 'var(--cahier-sticky)', '--sheet-tilt': '.9deg', padding: '14px 16px 16px', margin: '20px 4px 24px 0' } as CSSProperties}
       >
         {!doneLoaded ? (
           /*
-            ── THE PLACEHOLDER IS THE CARD'S SHAPE, NOT A NUMBER ──
-            This was one mono line sitting inside the `minHeight` reserve above. Measured at
-            three widths, that number is right to within 7px on a desktop and **65px SHORT on
-            a phone** (92 against 157) — because at narrow widths the button WRAPS below the
-            text, and a height calibrated on a wide window cannot see a change of shape. Same
-            mistake this repo already records for `calc(100vh - 212px)`.
-
-            So the placeholder renders the loaded card's STRUCTURE — three text rows and the
-            button's own box, inside the same flex-wrap wrapper — and therefore wraps exactly
-            as the real card does at every width, with no constant to keep in step.
+            ── THE PLACEHOLDER IS THE NOTE'S SHAPE, NOT A NUMBER ──
+            Each row carries the REAL row's typography and a non-breaking space, so it is
+            exactly as tall as the loaded note in every theme, font and width — a pixel height
+            measured on a desktop was 65px short on a phone, where the button wraps below the
+            text. `LearnTab` now seeds `done` before the first paint, so this is seen only when
+            that cannot answer; the rows below must still be kept in step with the ones in the
+            loaded branch.
           */
           <>
             <div className="min-w-0 flex-1 w-full" aria-hidden>
-              {/* EACH ROW CARRIES THE REAL ROW'S TYPOGRAPHY AND A NON-BREAKING SPACE, rather
-                  than a pixel height. A bar of `height: 11` is a guess at what 9.5px mono
-                  comes out as, and it was 4px wrong across the three rows; a row set in the
-                  same font at the same size simply IS that tall, in every theme and at every
-                  font setting the learner can pick. Nothing here to keep in step. */}
-              <div className="shimmer" style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase',
-                marginBottom: 4, width: 150, borderRadius: 4, color: 'transparent' }}>&nbsp;</div>
-              <div className="shimmer" style={{ fontFamily: 'var(--f-display)', fontSize: 21,
+              <div className="shimmer" style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', lineHeight: 1.4,
+                marginBottom: 4, width: 120, borderRadius: 4, color: 'transparent' }}>&nbsp;</div>
+              <div className="shimmer" style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600,
                 lineHeight: 1.2, width: '72%', borderRadius: 5, color: 'transparent' }}>&nbsp;</div>
-              {/* The same 2.7em two-line box the real summary occupies. */}
-              <div style={{ marginTop: 3, fontSize: 12.5, lineHeight: 1.35, height: '2.7em' }}>
+              {/* The same 2.8em two-line box the real summary occupies. */}
+              <div style={{ marginTop: 4, fontSize: 13.5, lineHeight: 1.4, height: '2.8em' }}>
                 <div className="shimmer" style={{ height: '1.2em', width: '96%', borderRadius: 4 }} />
                 <div className="shimmer" style={{ height: '1.2em', width: '55%', borderRadius: 4, marginTop: '0.3em' }} />
               </div>
             </div>
-            {/* The real button's box, down to the padding and letter-spacing, so it occupies
-                the same footprint and wraps at the same width. Its label is transparent
-                rather than absent: the width of "Continue" is part of the footprint. */}
-            <div
-              className="shimmer shrink-0" aria-hidden
-              style={{ ...MONO, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
-                fontWeight: 600, padding: '12px 20px', borderRadius: 8, color: 'transparent' }}
-            >
+            {/* The real button's box (`.cahier-btn`), so it wraps at the same width. */}
+            <div className="shimmer shrink-0" aria-hidden
+              style={{ display: 'inline-flex', alignItems: 'center', minHeight: 48, padding: '0 26px', borderRadius: 6,
+                fontFamily: 'var(--f-ui)', fontSize: 15.5, fontWeight: 600, color: 'transparent' }}>
               Continue
             </div>
           </>
         ) : next && nextLesson ? (
           <>
             <div className="min-w-0 flex-1">
-              <div style={{ ...MONO, fontSize: 9.5, textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 4 }}>
-                {totalDone === 0 ? 'Start here' : 'Continue'} · Unit {next.index + 1}, {next.unit.title}
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', lineHeight: 1.4, color: 'var(--ink)', marginBottom: 4 }}>
+                {totalDone === 0 ? 'Start here' : 'Up next'} · Unit {next.index + 1}
               </div>
-              <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, color: 'var(--ink)', lineHeight: 1.2 }}>
+              <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.2 }}>
                 {nextLesson.title}
               </div>
-              {/* A FIXED TWO-LINE BOX, which is what makes this card one height.
-                  Summaries run to one line or two depending on the lesson, so without it the
-                  card changed height as you progressed through the course — and the loading
-                  placeholder could not match a height that was never the same twice. Clamped
-                  rather than merely reserved, so a long summary cannot grow it either. */}
-              <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 3,
-                lineHeight: 1.35, height: '2.7em', overflow: 'hidden',
+              {/* A FIXED TWO-LINE BOX, which is what makes this note one height whatever the
+                  lesson says. Clamped rather than merely reserved, so a long summary cannot
+                  grow it either. */}
+              <div style={{ fontSize: 13.5, color: 'var(--ink)', marginTop: 4,
+                lineHeight: 1.4, height: '2.8em', overflow: 'hidden',
                 display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                 {nextLesson.summary}
               </div>
             </div>
-            <button
-              onClick={() => onOpen(next.lessonId)}
-              className="cursor-pointer rounded-lg transition-all duration-150 shrink-0"
-              style={{ ...MONO, fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
-                fontWeight: 600, padding: '12px 20px', background: 'var(--accent)', border: 'none',
-                color: '#fff', boxShadow: '0 2px 0 var(--accent-deep)' }}
-            >
+            <button onClick={() => onOpen(next.lessonId)} className="cahier-btn shrink-0">
               {totalDone === 0 ? 'Begin' : 'Continue'}
             </button>
           </>
         ) : (
-          /* FINISHING THE COURSE IS A REAL STATE and gets a real sentence, not an empty card.
+          /* FINISHING THE COURSE IS A REAL STATE and gets a real sentence, not an empty note.
              It also must not read as the end of the app: the course was always the way in to
-             reading, and reading is the thing that does not run out. */
+             reading, never the destination. */
           <div className="min-w-0">
-            <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, color: 'var(--ink)' }}>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.2 }}>
               You have been through the whole course.
             </div>
-            <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
+            <div style={{ fontSize: 13.5, color: 'var(--ink)', marginTop: 4, lineHeight: 1.45 }}>
               Every unit is read. Re-open any of them whenever a rule stops being obvious —
               and keep reading, which is where the rest of the language is.
             </div>
@@ -387,36 +396,8 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
         )}
       </div>
 
-      {/* ── A HEADING SET LIKE ONE, FLUSH LEFT ──
-          This was a 10px faint mono eyebrow over a 54-word faint paragraph: the element whose
-          whole job is to be findable while scrolling was the least prominent thing in its own
-          section, which is the defect `tests/settingsHierarchy.test.ts` already pins for the
-          Settings headings. Display serif at 21px over a 2px rule gives the list a top edge
-          and the count something to sit against.
-
-          The paragraph collapses to one metadata line. Its content was three facts — how many
-          units, that they are ordered, that nothing is locked — and only the last is
-          non-obvious once the numbered list is directly below it. */}
-      <div
-        className="flex items-baseline justify-between gap-3"
-        style={{ paddingBottom: 9, borderBottom: '2px solid var(--ink)' }}
-      >
-        <h2 style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600,
-          letterSpacing: '-.015em', color: 'var(--ink)', margin: 0, lineHeight: 1.1 }}>
-          The course
-        </h2>
-        <div style={{ ...MONO, fontSize: 12, color: 'var(--ink-soft)', flexShrink: 0,
-          fontVariantNumeric: 'tabular-nums' }}>
-          {doneLoaded ? `${totalDone} / ${total}` : `${total} lessons`}
-        </div>
-      </div>
-      <p style={{ ...MONO, fontSize: 10, letterSpacing: '.07em', textTransform: 'uppercase',
-        color: 'var(--ink-faint)', margin: '9px 0 14px' }}>
-        {units.length} units · nothing is locked
-      </p>
-
-      {/* NO `gap`. Closed units are rows separated by a hairline, so a gap would break the
-          rule into dashes; the open unit supplies its own margin so it floats clear of them. */}
+      {/* NO `gap` and no rules between rows: the page's own ruling is the separator now, and a
+          second set of hairlines over a ruled sheet is two grids arguing. */}
       <div className="flex flex-col">
         {units.map((u, i) => (
           <UnitBlock
@@ -427,6 +408,7 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
             done={done}
             doneLoaded={doneLoaded}
             nextId={next?.lessonId}
+            current={next?.unit.id === u.id}
             open={openUnit === u.id}
             onToggle={() => setPicked(openUnit === u.id ? null : u.id)}
             onOpen={onOpen}
@@ -438,19 +420,41 @@ function CoursePath({ units, byId, done, doneLoaded, next, onOpen }: {
 }
 
 /**
- * One unit: a heading that is always visible, and its lessons when it is open.
+ * One unit: a line in the notebook's contents, and its lessons as a checklist when open.
  *
- * The progress rule is SEGMENTED — one tick per lesson — rather than a continuous bar, for the
- * reason `BadgeSeal` draws one arc per rung: "3 of 5" is legible without reading the caption,
- * where a 60%-filled bar is a proportion you have to translate back into a number of things.
+ * ── THE MARGIN CARRIES THE STATE, WHICH IS WHAT A MARGIN IS FOR ──
+ * Left of the rule sits the unit's number; a finished unit has a pen tick there instead, and
+ * the unit you are on has its number CIRCLED. So the three states are one glance down a single
+ * column, and the titles to the right of the rule are never interrupted by a badge.
+ *
+ *   finished   tick in the margin · title in `--ink-soft` · blurb dropped (a receipt, not a pitch)
+ *   current    circled number · title in the display face under a HIGHLIGHTER stroke
+ *   upcoming   number · bold title · blurb clamped to two lines
+ *
+ * ── `current` AND `open` ARE TWO DIFFERENT FACTS, AND THEY USED TO BE ONE ──
+ * Last round the OPEN unit was the elevated card, so opening unit 7 to look ahead moved the
+ * emphasis there and the list stopped saying where you were. `current` is the unit holding the
+ * next unfinished lesson and is where the highlighter and the circle go; `open` is only which
+ * checklist is showing. Nothing here is locked — every unit opens — so they diverge the moment
+ * a learner browses, which is exactly when "where am I" matters.
+ *
+ * ── A ROW IS A CLASS (`.cahier-row`), FOR THE KEYBOARD ──
+ * The lesson rows used inline `onMouseEnter`/`onMouseLeave` writing `style.background`, which
+ * cannot express `:focus-visible`: a keyboard user tabbing the course saw nothing move. Unit
+ * rows and lesson rows now share one class with hover, press and a focus ring.
+ *
+ * There is no left-edge accent stripe any more. It was added last round to mark the open unit
+ * and is one of the stock devices that made the page read as machine-made.
  */
-function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, onOpen }: {
+function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, current, open, onToggle, onOpen }: {
   unit: LessonUnit;
   n: number;
   byId: Map<string, Lesson>;
   done: Set<string>;
   doneLoaded: boolean;
   nextId?: string;
+  /** Holds the next unfinished lesson — where the learner IS, whichever unit is open. */
+  current: boolean;
   open: boolean;
   onToggle: () => void;
   onOpen: (id: string) => void;
@@ -458,145 +462,69 @@ function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, on
   const { done: d, total } = unitProgress(unit, done);
   const complete = doneLoaded && d === total;
 
-  /**
-   * ── ONE ELEVATED CARD, AND EVERYTHING ELSE IS A ROW ──
-   *
-   * Every unit used to be drawn identically: `1px solid var(--line)`, radius 12, in a stack
-   * with `gap-2`. Eleven boxes of equal weight, which is a form rather than a syllabus — the
-   * eye has nothing to land on and the list cannot say where you are. Removing the borders
-   * alone would have given eleven identical BORDERLESS rows, which is the same defect with
-   * less ink, so the fix is hierarchy rather than subtraction:
-   *
-   *   open      the only card on screen — `--card` fill, a real shadow, an accent edge
-   *   complete  a dimmed row that has dropped its blurb
-   *   neither   a plain row with a hairline under it
-   *
-   * `--card`, `--paper-2` and `--line-soft` all already exist in every one of the ten themes,
-   * so none of this needs a new token and none of it can look wrong in a theme nobody checked.
-   *
-   * ── A FINISHED UNIT LOSES ITS BLURB, WHICH IS WHERE THE HEIGHT GOES ──
-   * A blurb sells a unit you have not opened. Once it is read the row is a receipt, and
-   * printing two lines of pitch under a ticked unit is the thing that made the tab 3,853px in
-   * the first place.
-   *
-   * ── THE BORDER IS A SEPARATOR, NOT A BOX ──
-   * `borderBottom` on every row but the last, so the hairlines read as one ruled list rather
-   * than eleven outlines. The open card suppresses its own, because it is not in the list.
-   *
-   * ── THE TAP TARGET DID NOT SHRINK, AND THAT WAS THE RISK ──
-   * Losing the box makes a row look less pressable, so the row keeps its full width and its
-   * padding, and gains a `--paper-2` hover. The hover is on a CLASS rather than inline
-   * handlers: the lesson rows below use `onMouseEnter`/`onMouseLeave` writing `style.background`
-   * directly, which cannot express `:focus-visible` and so leaves keyboard users with nothing.
-   */
   return (
-    <div
-      className={open ? 'rounded-[13px] overflow-hidden' : ''}
-      style={open
-        ? {
-            background: 'var(--card)',
-            borderLeft: '3px solid var(--accent)',
-            boxShadow: '0 1px 2px rgba(0,0,0,.05), 0 6px 18px -10px rgba(0,0,0,.22)',
-            margin: '9px 0',
-          }
-        : { borderBottom: '1px solid var(--line-soft)' }}
-    >
-      {/* ── THE OPEN CARD STACKS; A CLOSED ROW DOES NOT ──
-          Both states were one `flex items-center` row with the number in a left gutter, and
-          on the open card that centred "UNIT 2" against a title that wraps to three lines at
-          phone width — a label floating in the middle of an empty column. Caught by rendering
-          it at 390px rather than by reading it.
-
-          Open, the eyebrow belongs ABOVE the title and the title gets the full width. Closed,
-          the left gutter is right: it aligns eleven numbers into a column you can run an eye
-          down, which is most of what makes the list scannable. Two layouts, because they are
-          doing two different jobs. */}
-      {open ? (
-        <button
-          onClick={onToggle}
-          aria-expanded={open}
-          className="w-full text-left cursor-pointer transition-all duration-150 flex flex-col"
-          style={{ background: 'none', border: 'none', padding: '14px 15px 10px', color: 'var(--ink)' }}
-        >
-          <span className="w-full flex items-center gap-2.5 mb-1.5">
-            <span style={{ ...MONO, fontSize: 9.5, letterSpacing: '.11em', textTransform: 'uppercase',
-              color: complete ? 'var(--jade)' : 'var(--accent)', flexShrink: 0 }}>
-              Unit {n}
+    <div>
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="cahier-row w-full flex items-start gap-3"
+        style={{ position: 'relative', minHeight: 48, padding: '10px 6px', marginLeft: -6, width: 'calc(100% + 6px)', '--gutter-shift': '6px' } as CSSProperties}
+      >
+        <span className="cahier-gutter" aria-hidden="true" style={{ top: 7, height: 30, alignItems: 'center' }}>
+          {complete ? (
+            <span style={{ color: 'var(--cahier-pen)', display: 'flex' }}><PenMark kind="tick" size={24} /></span>
+          ) : current ? (
+            <span style={{ position: 'relative', width: 29, height: 29, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cahier-pen)' }}>
+              <span style={{ position: 'absolute', inset: 0, display: 'flex' }}><PenMark kind="circle" size={29} strokeWidth={4} /></span>
+              <span style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', fontSize: 16, fontWeight: 600, color: 'var(--cahier-pen-strong)' }}>{n}</span>
             </span>
-            <span className="flex-1" />
-            {/* The ticks carry the number, so they are hidden from a screen reader and the
-              count beside them is what is announced. */}
-          {doneLoaded && (
-            <span aria-hidden className="hidden sm:flex gap-[3px]">
-              {unit.lessons.map((id, i) => (
-                <span key={i} style={{ width: 13, height: 3, borderRadius: 2,
-                  background: done.has(id) ? 'var(--jade)' : 'var(--line)' }} />
-              ))}
+          ) : (
+            <span style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', fontSize: 19, color: 'var(--ink-soft)', paddingRight: 3 }}>{n}</span>
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          {current ? (
+            <span style={{ display: 'block', fontFamily: 'var(--f-display)', fontSize: 19.5, fontWeight: 600, letterSpacing: '-.01em', lineHeight: 1.3, color: 'var(--ink)' }}>
+              <span className="cahier-hilite">{unit.title}</span>
+            </span>
+          ) : (
+            <span style={{ display: 'block', fontSize: 15.5, fontWeight: complete ? 500 : 600, lineHeight: 1.3, color: complete ? 'var(--ink-soft)' : 'var(--ink)' }}>
+              {unit.title}
             </span>
           )}
-          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-            {doneLoaded ? `${d}/${total}` : `${total}`}
-          </span>
-          <span aria-hidden style={{ ...MONO, fontSize: 9, color: 'var(--ink-faint)',
-            transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
-          </span>
-          <span style={{ fontSize: 17, display: 'block', fontWeight: 600, letterSpacing: '-.015em',
-            lineHeight: 1.22, color: 'var(--ink)' }}>{unit.title}</span>
+          {/* Dropped once the unit is finished: a blurb sells a unit you have not opened. */}
           {!complete && (
-            <span style={{ fontSize: 12.5, color: 'var(--ink-soft)', display: 'block', marginTop: 4, lineHeight: 1.45 }}>
+            <span style={current
+              ? { display: 'block', fontSize: 13.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.45 }
+              : { fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 2, lineHeight: 1.4, overflow: 'hidden',
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
               {unit.blurb}
             </span>
           )}
-        </button>
-      ) : (
-        <button
-          onClick={onToggle}
-          aria-expanded={open}
-          className="unit-row w-full text-left cursor-pointer transition-all duration-150 flex items-center gap-3.5"
-          style={{ background: 'none', border: 'none', padding: '12px 6px', color: 'var(--ink)' }}
-        >
-          <span
-            aria-hidden
-            className="shrink-0 flex items-center justify-center"
-            style={{ ...MONO, fontSize: 11, width: 18,
-              color: complete ? 'var(--jade)' : 'var(--ink-faint)',
-              fontVariantNumeric: 'tabular-nums' }}
-          >
-            {complete ? '✓' : n}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span style={{ fontSize: 14.5, display: 'block', fontWeight: complete ? 400 : 500,
-              letterSpacing: '-.005em', lineHeight: 1.25,
-              color: complete ? 'var(--ink-soft)' : 'var(--ink)' }}>{unit.title}</span>
-            {/* Hidden once the unit is finished — see the note above. */}
-            {!complete && (
-              <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'block', marginTop: 2, lineHeight: 1.45 }}>
-                {unit.blurb}
-              </span>
-            )}
-          </span>
-          <span className="shrink-0 flex items-center gap-2.5">
-            {/* The ticks carry the number, so they are hidden from a screen reader and the
-              count beside them is what is announced. */}
+        </span>
+        {/* The ticks carry the number, so they are hidden from a screen reader and the count
+            beside them is what is announced. */}
+        <span className="shrink-0 flex items-center gap-2" style={{ paddingTop: 3 }}>
           {doneLoaded && (
             <span aria-hidden className="hidden sm:flex gap-[3px]">
               {unit.lessons.map((id, i) => (
                 <span key={i} style={{ width: 13, height: 3, borderRadius: 2,
-                  background: done.has(id) ? 'var(--jade)' : 'var(--line)' }} />
+                  background: done.has(id) ? 'var(--cahier-pen)' : 'color-mix(in srgb, var(--ink) 16%, transparent)' }} />
               ))}
             </span>
           )}
-          <span style={{ ...MONO, fontSize: 10, color: 'var(--ink-faint)', minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ fontSize: 12.5, color: 'var(--ink-soft)', minWidth: 26, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
             {doneLoaded ? `${d}/${total}` : `${total}`}
           </span>
-          <span aria-hidden style={{ ...MONO, fontSize: 9, color: 'var(--ink-faint)',
+          <span aria-hidden style={{ fontSize: 13, color: 'var(--ink-soft)',
             transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>›</span>
-          </span>
-        </button>
-      )}
+        </span>
+      </button>
 
       {open && (
-        <div className="flex flex-col" style={{ borderTop: '1px solid var(--line-soft)', paddingBottom: 4 }}>
+        /* THE LESSONS, AS THE CHECKLIST A PUPIL KEEPS: a box per lesson, ticked in pen when
+           it is read. The box is the same `.cahier-box` the flashcard's toggles use. */
+        <div className="flex flex-col" style={{ paddingBottom: 6 }}>
           {unit.lessons.map(id => {
             const l = byId.get(id);
             if (!l) return null;   // a test makes this unreachable; rendering nothing beats throwing
@@ -606,28 +534,28 @@ function UnitBlock({ unit, n, byId, done, doneLoaded, nextId, open, onToggle, on
               <button
                 key={id}
                 onClick={() => onOpen(id)}
-                className="w-full text-left cursor-pointer transition-all duration-150 flex items-baseline gap-3"
-                style={{ background: isNext ? 'var(--accent-soft)' : 'none', border: 'none',
-                  padding: '10px 15px 10px 18px', color: 'var(--ink)' }}
-                onMouseEnter={e => { if (!isNext) e.currentTarget.style.background = 'var(--line)'; }}
-                onMouseLeave={e => { if (!isNext) e.currentTarget.style.background = 'none'; }}
+                className="cahier-row flex items-center gap-2.5"
+                style={{ minHeight: 46, padding: '5px 6px', marginLeft: -6, width: 'calc(100% + 6px)' }}
               >
-                <span aria-hidden style={{ ...MONO, fontSize: 10, letterSpacing: 0, flexShrink: 0,
-                  minWidth: 27, textAlign: 'center',
-                  color: isDone ? 'var(--jade)' : 'var(--ink-faint)', opacity: isDone ? 1 : .5 }}>
-                  {isDone ? '✓' : l.kind === 'vocab' ? '◇' : '·'}
-                </span>
+                <span className="cahier-box" aria-hidden="true">{isDone && <PenMark kind="tick" size={22} />}</span>
                 <span className="min-w-0 flex-1">
-                  <span style={{ fontSize: 14, display: 'block' }}>{l.title}</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--ink-faint)', display: 'block', marginTop: 1, lineHeight: 1.45 }}>
-                    {l.summary}
-                  </span>
+                  <span style={{ fontSize: 14.5, display: 'block', lineHeight: 1.3, fontWeight: isNext ? 700 : 400, color: isDone ? 'var(--ink-soft)' : 'var(--ink)' }}>{l.title}</span>
+                  {isNext ? (
+                    /* In the pen, in the margin hand — and in `--cahier-pen-strong`, not the
+                       pen itself: at this size it is text, and needs 4.5:1 on every paper. */
+                    <span className="cahier-hand" style={{ fontSize: 11.5, color: 'var(--cahier-pen-strong)', display: 'block', marginTop: 1 }}>
+                      ← you are here
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'var(--ink-soft)', display: 'block', marginTop: 1, lineHeight: 1.4 }}>
+                      {l.summary}
+                    </span>
+                  )}
                 </span>
                 {/* WHICH KIND, said in a word rather than inferred from a glyph. The two end
                     differently — a grammar lesson is read and ticked, a word set is finished by
                     adding its words — so the reader is told which one they are opening. */}
-                <span style={{ ...MONO, fontSize: 8.5, textTransform: 'uppercase', flexShrink: 0,
-                  color: 'var(--ink-faint)', opacity: .8 }}>
+                <span style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', fontSize: 12.5, flexShrink: 0, color: 'var(--ink-soft)' }}>
                   {l.kind === 'vocab' ? 'words' : 'grammar'}
                 </span>
               </button>

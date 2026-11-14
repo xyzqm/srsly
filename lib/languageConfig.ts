@@ -32,6 +32,23 @@ export interface LanguageConfig {
   htmlLang: string;      // value for <html lang> — "zh" | "ja" | "es"
   bcp47: string;         // TTS / speech-recognition locale — "zh-CN" | "ja-JP" | "es-ES"
   /**
+   * Which school paper this language's study pages are ruled as — the page a learner of that
+   * language actually writes on: 田字格 for Chinese, 原稿用紙 for Japanese, the Seyès ruling for
+   * French, squared paper for Spanish. Read by `CahierPage` (components/shared/Cahier.tsx),
+   * which sets it as `data-ruling`; the rulings themselves are masks in `app/globals.css`, so
+   * the LINES are drawn here and their COLOUR comes from the theme. A fifth language is a
+   * fifth value and a fifth mask, never an arm on `language === 'xx'`.
+   */
+  paperRuling: 'tianzige' | 'genko' | 'seyes' | 'grid';
+  /**
+   * The Google Fonts family for margin notes and the date line, in the handwriting model that
+   * language's schools teach. Absent for Chinese and Japanese ON PURPOSE: a Han handwriting
+   * face is declared as hundreds of unicode-range subsets, which is the 185 kB stylesheet
+   * `lib/hanFont.ts` exists to keep off the page — so those two fall back to the display
+   * italic rather than buy a second one. Loaded lazily by `lib/handFont.ts`.
+   */
+  handFont?: string;
+  /**
    * Every language tag a publisher might legitimately use for this language, lowercased:
    * ISO 639-1 plus the 639-2/T, 639-2/B and macrolanguage codes that turn up in real EPUBs.
    * Read by `declaredMismatch` in lib/languageMismatch.ts — a book declaring `zho` while you
@@ -193,6 +210,7 @@ export const ZH_CONFIG: LanguageConfig = {
   nativeName: '中文',
   htmlLang: 'zh',
   bcp47: 'zh-CN',
+  paperRuling: 'tianzige',
   langTags: ['zh', 'zho', 'chi', 'cmn'],
   levels: [
     { level: 1, label: 'HSK 1', badge: '1', tier: 'beginner',     desc: 'Absolute beginner · ~150 words · greetings, numbers, basic nouns' },
@@ -236,6 +254,7 @@ export const JA_CONFIG: LanguageConfig = {
   nativeName: '日本語',
   htmlLang: 'ja',
   bcp47: 'ja-JP',
+  paperRuling: 'genko',
   langTags: ['ja', 'jpn'],
   // Ordered easiest → hardest (N5 → N1) so the Settings picker reads top-to-bottom.
   levels: [
@@ -295,6 +314,8 @@ export const ES_CONFIG: LanguageConfig = {
   nativeName: 'Español',
   htmlLang: 'es',
   bcp47: 'es-ES',
+  paperRuling: 'grid',
+  handFont: 'Playwrite ES',
   langTags: ['es', 'spa'],
   levels: [
     { level: 1, label: 'A1', badge: 'A1', tier: 'beginner',     desc: 'Absolute beginner · ~500 words · greetings, numbers, everyday objects' },
@@ -396,6 +417,8 @@ export const FR_CONFIG: LanguageConfig = {
   nativeName: 'Français',
   htmlLang: 'fr',
   bcp47: 'fr-FR',
+  paperRuling: 'seyes',
+  handFont: 'Playwrite FR Moderne',
   langTags: ['fr', 'fra', 'fre'],
   levels: [
     { level: 1, label: 'A1', badge: 'A1', tier: 'beginner',     desc: 'Absolute beginner · ~500 words · greetings, numbers, everyday objects' },

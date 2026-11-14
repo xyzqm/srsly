@@ -13,6 +13,7 @@ import { getReverseCards, setReverseCards, getTypedRecall, setTypedRecall } from
 import { canType, expectedAnswer, answerReading, type TypedResult } from '@/lib/typedAnswer';
 import TypedAnswer from '@/components/practice/TypedAnswer';
 import DrillLoading from '@/components/practice/DrillLoading';
+import { PenMark, Tally, type PenMarkKind } from '@/components/shared/Cahier';
 import { speak, prefetchAudio } from '@/lib/speech';
 import { POLYPHONES } from '@/lib/polyphones';
 import AchievementToast from '@/components/stats/AchievementToast';
@@ -110,11 +111,21 @@ function verdictLine(r: TypedResult): string {
   return `Not this time — it is ${r.expected}.`;
 }
 
-const GRADES: { label: string; grade: FsrsGrade; color: string }[] = [
-  { label: 'Again', grade: 1, color: 'var(--accent)' },
-  { label: 'Hard',  grade: 2, color: 'var(--gold)' },
-  { label: 'Good',  grade: 3, color: 'var(--jade)' },
-  { label: 'Easy',  grade: 4, color: 'var(--ink-soft)' },
+/**
+ * `mark` is the grade as a teacher's pen would write it: ✗ △ ○ ◎, the scale Japanese schools
+ * mark work with, which happens to have exactly four steps in exactly this order. It is drawn
+ * by `PenMark` and always shown above the WORD, never in place of it — see that component for
+ * why the scale cannot stand alone.
+ *
+ * `color` is no longer what the button is drawn in (one pen, one colour: the marks differ by
+ * SHAPE, which also survives every theme and colour-blindness). It is still passed to
+ * `handleGrade`, which uses it for the result it records.
+ */
+const GRADES: { label: string; grade: FsrsGrade; color: string; mark: PenMarkKind }[] = [
+  { label: 'Again', grade: 1, color: 'var(--accent)',   mark: 'cross' },
+  { label: 'Hard',  grade: 2, color: 'var(--gold)',     mark: 'triangle' },
+  { label: 'Good',  grade: 3, color: 'var(--jade)',     mark: 'circle' },
+  { label: 'Easy',  grade: 4, color: 'var(--ink-soft)', mark: 'double' },
 ];
 
 export default function Flashcards({ deck, deckLoaded = true, active = true, onDone, onGrade, onScore }: Props) {
@@ -253,6 +264,24 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       if (!k.canAct) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      /**
+       * ⚠ A FOCUSED GRADE BUTTON OWNS ITS OWN ENTER AND SPACE.
+       *
+       * Below, Enter on a revealed card takes the SUGGESTED grade — and this listener is on
+       * `window` and calls `preventDefault`, which cancels the focused button's own click. So
+       * a learner who Tabbed to "Again" and pressed Enter was graded GOOD: the keypress went
+       * to the suggestion and the button they were standing on never fired. Measured with a
+       * real Tab and a real Enter — the card came back with no lapse recorded.
+       *
+       * It predates the redesign and was invisible while the grade buttons had no focus ring
+       * worth following. Giving them an obvious one (`.cahier-mark:focus-visible`) is what
+       * made it reachable: a ring that says "you are on Again" has to mean Enter is Again.
+       *
+       * Only the grade buttons are exempted, deliberately. A learner who clicks the "Type
+       * answers" box and then presses Space still gets the reveal, as before — letting every
+       * focused control keep its keys would turn that Space into un-ticking the box.
+       */
+      if ((e.key === ' ' || e.key === 'Enter') && el?.closest?.('[data-grade]')) return;
       /**
        * A MODIFIER MEANS THE KEY BELONGS TO THE BROWSER, NOT TO US.
        *
@@ -434,9 +463,8 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
   }
 
   const card          = readyCards[0];
-  // Includes work done before this mount, so switching language does not visibly rewind the bar.
+  // Includes work done before this mount, so switching language does not visibly rewind the tally.
   const doneToday     = priorDone + results.length;
-  const progress      = totalInitial > 0 ? Math.max(0, Math.min(100, (doneToday / (doneToday + readyCards.length)) * 100)) : 0;
   const dueCount      = deck.filter(w => isDueToday(w)).length;
   const cardIsLearning = isLearningCard(card);
 
@@ -513,32 +541,25 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex justify-between items-end mb-6 gap-4">
-        <div>
-          {/* ── IT SAID "Vocabulary review · FSRS", AND THAT WAS THE RENAME MISSED ONCE ──
-              This tab stopped being called "SRS" because a term of art is "precise to someone
-              who already knows what spaced repetition is, and meaningless to everyone else",
-              and the card chips below went from `S=20.0d · D=5.2` to `holds 12 days` for the
-              same reason. This line survived both passes, in 11px tracked-out mono, as the
-              first thing on the screen. The scheduler is not the learner's business; the word
-              in front of them is.
+      {/* Header — the page's title, underlined twice in pen the way a pupil rules off a
+          heading, with the session's count beneath it.
 
-              It is also the heading, so it is now SET like one — flush-left display serif at
-              21px, not a faint mono eyebrow. The count beside it stays mono, because a count
-              is apparatus. */}
-          <h2 style={{ fontFamily: 'var(--f-display)', fontSize: 21, fontWeight: 600, letterSpacing: '-.015em', color: 'var(--ink)', margin: 0, lineHeight: 1.1 }}>
-            Vocabulary
-          </h2>
-          <div style={{ fontFamily: 'var(--f-mono)', fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>
-            {priorDone + results.length + 1} of {priorDone + results.length + readyCards.length + futureCards.length}
-            {dueCount > 0 && (
-              <span style={{ marginLeft: 8, color: 'var(--accent)', fontWeight: 500 }}>· {dueCount} due today</span>
-            )}
-          </div>
-        </div>
-        <div style={{ height: 5, background: 'var(--line-soft)', borderRadius: 4, overflow: 'hidden', flex: 1, maxWidth: 240 }}>
-          <div style={{ height: '100%', background: 'var(--accent)', width: `${progress}%`, transition: 'width .4s cubic-bezier(.2,.7,.3,1)', borderRadius: 4 }} />
+          It said "Vocabulary review · FSRS" once: the term of art this tab was renamed to get
+          rid of, surviving in 11px mono as the first thing on the screen. The scheduler is not
+          the learner's business; the word in front of them is.
+
+          THE PROGRESS BAR IS A TALLY NOW, on a row of its own with a fixed height. Its own
+          row, because beside the count it would wrap once it grew past a few gates and push
+          the card down mid-session; fixed height, because it is empty on the first card and
+          must not arrive later. `Tally` explains what it does past forty. */}
+      <div className="flex flex-col items-start mt-2 mb-1" style={{ gap: 6 }}>
+        <h2 className="cahier-title">Vocabulary</h2>
+        <Tally n={doneToday} />
+        <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.3 }}>
+          {priorDone + results.length + 1} of {priorDone + results.length + readyCards.length + futureCards.length}
+          {dueCount > 0 && (
+            <span style={{ color: 'var(--ink)', fontWeight: 600 }}> · {dueCount} due today</span>
+          )}
         </div>
       </div>
 
@@ -549,45 +570,43 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
           phone width puts two wide labels in the middle of the screen and reads as a
           centred settings panel floating above the card. They are metadata about the
           session, so they line up with the session's own heading. */}
-      <div className="flex justify-start items-center mb-3 gap-5 flex-wrap">
+      <div className="flex justify-start items-center gap-2 flex-wrap" style={{ marginLeft: -8 }}>
+        {/* TICK BOXES, NOT SWITCHES. A sliding switch is a piece of phone settings; on a
+            worksheet an option you have chosen is a box with a tick in it. They are still
+            `role="switch"` buttons 44px tall — only the drawing changed. */}
         <button
           onClick={toggleTyped}
           role="switch"
           aria-checked={typedOn}
-          className="inline-flex items-center gap-2 cursor-pointer"
+          className="cahier-opt inline-flex items-center gap-2"
           title="Type answers — produce the word instead of judging yourself"
-          style={{ background: 'none', border: 'none', padding: 0 }}
+          style={{ minHeight: 44, padding: '0 8px', fontSize: 13.5, fontWeight: typedOn ? 600 : 400, color: typedOn ? 'var(--ink)' : 'var(--ink-soft)' }}
         >
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: typedOn ? 'var(--accent)' : 'var(--ink-faint)' }}>
-            Type answers
-          </span>
-          <span style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: typedOn ? 'var(--accent)' : 'var(--line)', transition: 'background .15s', flexShrink: 0 }}>
-            <span style={{ position: 'absolute', top: 2, left: typedOn ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
-          </span>
+          <span className="cahier-box" aria-hidden="true">{typedOn && <PenMark kind="tick" size={22} />}</span>
+          Type answers
         </button>
         <button
           onClick={toggleReverse}
           disabled={typedOn}
           role="switch"
           aria-checked={reverse}
-          className="inline-flex items-center gap-2"
+          className="cahier-opt inline-flex items-center gap-2"
           title={typedOn
             ? 'Typing sets the card direction for you — turn it off to flip cards yourself'
             : 'Flip cards — show the meaning first and recall the word'}
-          style={{ background: 'none', border: 'none', padding: 0, opacity: typedOn ? 0.4 : 1, cursor: typedOn ? 'not-allowed' : 'pointer' }}
+          style={{ minHeight: 44, padding: '0 8px', fontSize: 13.5, fontWeight: reverse ? 600 : 400, color: reverse ? 'var(--ink)' : 'var(--ink-soft)', opacity: typedOn ? 0.45 : 1, cursor: typedOn ? 'not-allowed' : 'pointer' }}
         >
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: reverse ? 'var(--accent)' : 'var(--ink-faint)' }}>
-            Flip cards
-          </span>
-          <span style={{ position: 'relative', width: 34, height: 19, borderRadius: 10, background: reverse ? 'var(--accent)' : 'var(--line)', transition: 'background .15s', flexShrink: 0 }}>
-            <span style={{ position: 'absolute', top: 2, left: reverse ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
-          </span>
+          <span className="cahier-box" aria-hidden="true">{reverse && <PenMark kind="tick" size={22} />}</span>
+          Flip cards
         </button>
       </div>
 
-      <div className="flex justify-start mb-2 gap-2 flex-wrap">
+      {/* Pencilled beside the card rather than set in grey chips: what the card's history is,
+          in the hand the date line is written in. `--ink-soft`, never `--ink-faint` — these are
+          read, and the faint token is under 3:1 on most of the ten papers. */}
+      <div className="cahier-hand flex justify-start items-baseline flex-wrap" style={{ gap: '2px 14px', fontSize: 12, color: 'var(--ink-soft)', minHeight: 20, marginBottom: 14 }}>
         {cardIsLearning ? (
-          <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'color-mix(in srgb, var(--gold) 15%, var(--paper))', color: 'var(--gold)', border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)', borderRadius: 4, padding: '2px 6px' }}>
+          <span>
             {card.stability !== undefined ? '↺ relearning' : '✦ learning'} · step {(card.learningStep ?? 0) + 1}/{LEARNING_STEP_COUNT}
           </span>
         ) : card.stability !== undefined ? (
@@ -609,12 +628,11 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
           */
           <span
             title="How long this card would hold without a review"
-            style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}
           >
             holds {fmtDays(card.stability)}
           </span>
         ) : null}
-        <span style={{ fontFamily: 'var(--f-mono)', fontSize: 10, letterSpacing: '.06em', background: 'var(--line-soft)', color: 'var(--ink-faint)', borderRadius: 4, padding: '2px 6px' }}>
+        <span>
           reviewed {card.reviews ?? 0}×
           {(card.lapses ?? 0) > 0 && ` · ${card.lapses} lapse${card.lapses === 1 ? '' : 's'}`}
           {/*
@@ -636,18 +654,16 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
         </span>
       </div>
 
-      {/* Card face */}
+      {/* Card face — a sheet taped onto the page. `.cahier-sheet` draws the paper as a
+          pseudo-element tilted a fraction of a degree BEHIND the content, so the card looks
+          hand-placed while the word itself stays dead level and sharp; `.cahier-tape` is the
+          strip holding it. The sheet is solid `--card`, which is what keeps the page's ruling
+          out from under the one thing here that has to be read in a glance. */}
       <div
-        className="relative flex flex-col items-center justify-center text-center rounded-[14px] min-h-[240px] sm:min-h-[330px] px-5 py-10 sm:px-10 sm:py-14"
-        /* NO BORDER. This card sits inside a bordered panel inside a bordered tab — three
-            nested boxes to present one word. The gradient fill and the shadow already separate
-            it from the paper, which is what a border was being asked to do a third time. */
-        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--paper)), var(--card))', boxShadow: '0 1px 2px rgba(34,32,28,.05), 0 10px 30px rgba(34,32,28,.07)', cursor: 'default' }}
+        className="cahier-sheet cahier-tape flex flex-col items-center justify-center text-center min-h-[240px] sm:min-h-[320px] px-5 py-10 sm:px-10 sm:py-14"
+        style={{ cursor: 'default' }}
       >
-        {/* The inset top rule is GONE with the border it belonged to. It was a ruling across
-            the inside of a bordered card; with the border removed it reads as a stray line
-            that the audio button sits on top of. Seen by rendering it, not by reading it. */}
-        <div className="absolute" style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-faint)', top: 18 }}>
+        <div className="absolute" style={{ fontFamily: 'var(--f-display)', fontStyle: 'italic', fontSize: 15, color: 'var(--ink-soft)', top: 18 }}>
           {showReverse ? "What's the word?" : 'What does this mean?'}
         </div>
         {/* Audio plays the word, so it hands over the answer on any card whose answer is
@@ -658,10 +674,11 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
           <button
             onClick={(e) => { e.stopPropagation(); void speak(speechText); }}
             title="Play audio (R)"
-            className="absolute cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-            style={{ top: 12, right: 14, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
+            className="cahier-opt absolute"
+            aria-label="Play audio"
+            style={{ top: 4, right: 4, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-soft)' }}
           >
-            <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a9 9 0 0 1 0 14" />
             </svg>
           </button>
@@ -696,7 +713,7 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
             {card.h}
           </div>
         )}
-        <div style={{ marginTop: 24, fontSize: 14, color: 'var(--ink-faint)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
+        <div style={{ marginTop: 22, fontSize: 15, color: 'var(--ink-soft)', fontStyle: 'italic', fontFamily: 'var(--f-display)' }}>
           {revealed
             ? (typedResult ? verdictLine(typedResult) : 'How well did you remember?')
             : typing ? typedHint
@@ -705,7 +722,9 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
         </div>
 
         {/* Back (revealed): the answer — the word + pinyin (reverse) or pinyin + meaning (normal) */}
-        <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 300 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
+        <div style={{ opacity: revealed ? 1 : 0, maxHeight: revealed ? 320 : 0, overflow: 'hidden', transition: '.4s', marginTop: revealed ? 18 : 0 }}>
+          {/* The line a pupil rules under the question before writing the answer. */}
+          <div aria-hidden="true" style={{ height: 1.5, width: 150, maxWidth: '70%', margin: '0 auto 16px', background: 'var(--ink-soft)', opacity: .55, transform: 'rotate(-.4deg)' }} />
           {showReverse ? (
             <>
               <div style={{ fontFamily: 'var(--f-han)', fontSize: 56, fontWeight: 'var(--han-weight)' as 'bold', lineHeight: 1, letterSpacing: '.02em' }}>{card.h}</div>
@@ -755,13 +774,11 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
               }}
             />
           ) : (
-            <button
-              onClick={() => setRevealed(true)}
-              className="cursor-pointer transition-all duration-150"
-              /* THE PRIMARY ACTION, STYLED AS ONE. It was a grey ghost button — quieter than
-                 the two toggles above it — on the one control the learner is here to press. */
-              style={{ fontFamily: 'var(--f-mono)', fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', fontWeight: 600, background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 9, padding: '12px 26px', boxShadow: '0 2px 0 var(--accent-deep)' }}
-            >
+            /* THE PRIMARY ACTION, STYLED AS ONE: a solid button in the theme's accent, with the
+               label in whichever of `--card` / `--paper` clears 4.5:1 on it. It was `#fff` on
+               `--accent`, which is 1.74:1 on the terminal theme — a white label on a pale green
+               button, shipped. `tests/cahier.test.ts` now computes that pairing in every theme. */
+            <button onClick={() => setRevealed(true)} className="cahier-btn">
               Show answer
             </button>
           )
@@ -771,7 +788,20 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
               answer can be marked wrong — but the four grade buttons are already on screen and
               pressing Good does exactly what an appeal button would. A second control for the
               same action is one more thing to explain and one more way to reach Good. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 22 }}>
+          {/* ── THE FOUR GRADES, AS A TEACHER'S PEN WOULD WRITE THEM ──
+              ✗ △ ○ ◎ over Again / Hard / Good / Easy, with the interval each one buys beneath.
+              The mark is the Cahier's; everything that makes it a CONTROL is ordinary:
+
+              - a real <button>, 96px tall and a quarter of the row wide, so the target is
+                larger than the bordered box it replaced, not smaller;
+              - the word in 14.5px bold `--ink` — the mark illustrates the label and never
+                stands in for it;
+              - hover and press tints, an 80ms press, and a solid focus ring (`.cahier-mark`),
+                so the 1-4 keys and a Tab both show where you are.
+
+              The grade the typed answer suggests is HIGHLIGHTED, the way you would mark the
+              one to pick — still only a suggestion, every button stays live. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, marginTop: 14 }}>
             {GRADES.map(g => {
               const days = fsrsNextInterval(card, g.grade, settings);
               const sub = fmtInterval(days);
@@ -779,19 +809,13 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
                 <button
                   key={g.label}
                   onClick={() => handleGrade(g.grade, g.label, g.color)}
-                  className="cursor-pointer transition-all duration-150 hover:-translate-y-0.5"
-                  style={{
-                    background: 'var(--card)',
-                    // The suggested grade is only ever a SUGGESTION: every button stays live, so
-                    // a learner who knows the machine misjudged them can still say so.
-                    border: typedResult && g.grade === suggested ? `1px solid ${g.color}` : '1px solid var(--line)',
-                    borderBottom: `2px solid ${g.color}`,
-                    boxShadow: typedResult && g.grade === suggested ? `0 0 0 2px color-mix(in srgb, ${g.color} 22%, transparent)` : 'none',
-                    borderRadius: 10, padding: '13px 8px', textAlign: 'center',
-                  }}
+                  className="cahier-mark"
+                  data-grade={g.grade}
+                  data-suggested={typedResult && g.grade === suggested ? 'true' : undefined}
                 >
-                  <div style={{ fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', fontWeight: 500, color: g.color }}>{g.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 3 }}>{sub}</div>
+                  <PenMark kind={g.mark} size={48} />
+                  <span style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.25 }}>{g.label}</span>
+                  <span style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.25 }}>{sub}</span>
                 </button>
               );
             })}
@@ -801,8 +825,8 @@ export default function Flashcards({ deck, deckLoaded = true, active = true, onD
       </div>
 
       {/* Footer */}
-      <div className="mt-6 pt-4" style={{ borderTop: '1px solid var(--line-soft)' }}>
-        <div style={{ fontFamily: 'var(--f-mono)', fontSize: 10.5, color: 'var(--ink-faint)', letterSpacing: '.05em', textAlign: 'center' }}>
+      <div className="mt-5">
+        <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', lineHeight: 1.4 }}>
           {totalInitial} card{totalInitial !== 1 ? 's' : ''} in today&apos;s session · {deck.length} total in deck
           {settings.desiredRetention !== DEFAULT_SRS_SETTINGS.desiredRetention && (
             <span style={{ marginLeft: 8 }}>· {Math.round(settings.desiredRetention * 100)}% retention target</span>

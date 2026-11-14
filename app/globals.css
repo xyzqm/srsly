@@ -286,24 +286,171 @@
 }
 .playing-pulse { animation: pulse-ring 1s infinite; }
 
-/* ── A COURSE UNIT THAT IS NOT OPEN IS A ROW, AND A ROW STILL HAS TO LOOK PRESSABLE ──
-   `components/learn/LearnTab.tsx` drops the `1px solid var(--line)` box from every closed
-   unit, so eleven outlines become one ruled list. The box was also the only thing saying
-   "this is a control", which is the one real risk in that change — so the row keeps its full
-   width and padding and gains a tinted hover.
+/* ============ CAHIER — the school exercise book ============
 
-   It is a CLASS rather than the inline `onMouseEnter`/`onMouseLeave` pair the lesson rows
-   inside the open unit still use. Those write `style.background` directly, which cannot
-   express `:focus-visible` — so a keyboard user tabbing the course got no indication at all
-   of where they were. `--paper-2` and `--accent-soft` exist in all ten themes. */
-.unit-row { border-radius: 8px; }
-.unit-row:hover { background: var(--paper-2); }
-.unit-row:focus-visible {
-  background: var(--accent-soft);
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+   Review and Learn are drawn as a page of a school notebook: ruled paper, a margin rule, a
+   title underlined twice, marks made in pen. `components/shared/Cahier.tsx` holds the pieces
+   and CLAUDE.md has the reasoning. Three rules decide everything in this block.
+
+   ── 1. THE LINES ARE DRAWN HERE; THEIR COLOUR COMES FROM THE THEME ──
+   Each ruling is an SVG used as a MASK over a flat fill, not as a background image. An SVG in
+   a `url()` cannot read a CSS variable, so a ruling painted as an image would carry its own
+   colour and be right in exactly one of ten themes. Masked, the shape is fixed and the ink is
+   `--cahier-rule` — a mix of the theme's own `--ink` — so the same four rulings are pale lines
+   on cream, on white and on midnight without a per-theme rule for any of them.
+
+   ── 2. EVERY ROLE MAPS TO A TOKEN THE THEMES ALREADY DEFINE ──
+     paper            --card          the panel's own surface, unchanged
+     ruling           --ink at 11%    (8% on the dark themes, where light-on-dark reads stronger)
+     margin rule      --accent at 55%
+     pen marks        --accent        ticks, circles, the double underline, the grade marks
+     pen as TEXT      --accent-deep   (dark: --accent) — small notes need 4.5:1, a drawn mark only 3:1
+     writing          --ink, and --ink-soft for anything secondary — never --ink-faint
+     highlighter      --gold at 38%
+     sticky note      --gold at 26% over --card (18% dark)
+     primary button   --accent-deep with --card text (dark: --accent with --paper text)
+   The custom accent a learner can earn sets `--accent`, so it drives the margin, the pen and
+   the buttons with no extra work.
+
+   ── 3. THE DERIVED TOKENS ARE DECLARED ON THE PAGE, NOT ON :root ──
+   A custom property that contains `var()` is resolved where it is DECLARED and inherited as
+   the result. `data-theme` sits on <body>, so a `--cahier-rule` declared on `:root` would mix
+   the default theme's ink for ever, whatever theme was chosen. Declared on `.cahier-page`,
+   inside <body>, it resolves against the theme in force.
+
+   `tests/cahier.test.ts` reads this block and the theme tokens and computes the contrast of
+   every pairing in all ten themes, so a new theme that makes the ruling loud or a button
+   unreadable fails there instead of on a phone. */
+.cahier-page {
+  --cahier-rule: color-mix(in srgb, var(--ink) 11%, transparent);
+  --cahier-pen: var(--accent);
+  --cahier-margin-ink: color-mix(in srgb, var(--accent) 55%, transparent);
+  --cahier-hilite: color-mix(in srgb, var(--gold) 38%, transparent);
+  --cahier-sticky: color-mix(in srgb, var(--gold) 26%, var(--card));
+  --cahier-tape: color-mix(in srgb, var(--gold) 45%, transparent);
+  --cahier-pen-strong: var(--accent-deep);
+  --cahier-btn-bg: var(--cahier-pen-strong);
+  --cahier-btn-fg: var(--card);
+  --cahier-margin: 34px;
+  --cahier-gap: 14px;
+  position: relative;
+  isolation: isolate;
+  padding: 18px 16px 22px calc(var(--cahier-margin) + var(--cahier-gap));
 }
-@media (hover: none) { .unit-row:hover { background: none; } }
+@media (min-width: 640px) {
+  .cahier-page { --cahier-margin: 56px; --cahier-gap: 22px; padding: 30px 36px 34px calc(var(--cahier-margin) + var(--cahier-gap)); }
+}
+/* The dark themes. Listed by name for the reason the grain blend above is: nothing in a
+   theme says "I am dark", and a mid-tone button label on a light accent is unreadable. */
+body[data-theme="dusk"] .cahier-page,
+body[data-theme="midnight"] .cahier-page,
+body[data-theme="terminal"] .cahier-page {
+  --cahier-rule: color-mix(in srgb, var(--ink) 8%, transparent);
+  --cahier-sticky: color-mix(in srgb, var(--gold) 18%, var(--card));
+  --cahier-pen-strong: var(--accent);
+  --cahier-btn-fg: var(--paper);
+}
+
+/* The ruling and the margin rule sit BEHIND the content: `isolation: isolate` on the page
+   makes z-index -1 mean "above the page's own background, below everything in it". */
+.cahier-page::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: inherit;
+  background: var(--cahier-rule);
+  -webkit-mask: var(--cahier-ruling) 0 0 / var(--cahier-ruling-size) repeat;
+  mask: var(--cahier-ruling) 0 0 / var(--cahier-ruling-size) repeat;
+}
+.cahier-page::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: var(--cahier-margin); width: 1.5px;
+  z-index: -1; pointer-events: none; background: var(--cahier-margin-ink);
+}
+/* One ruling per language — `paperRuling` on LanguageConfig. Minor lines are drawn at a lower
+   opacity INSIDE the mask, so one token still colours the whole sheet. */
+.cahier-page[data-ruling="grid"]     { --cahier-ruling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18'%3E%3Cpath d='M0 .5H18M.5 0V18' stroke='black'/%3E%3C/svg%3E"); --cahier-ruling-size: 18px 18px; }
+.cahier-page[data-ruling="seyes"]    { --cahier-ruling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M0 .5H32' stroke='black'/%3E%3Cpath d='M0 8.5H32M0 16.5H32M0 24.5H32' stroke='black' stroke-opacity='.42'/%3E%3Cpath d='M.5 0V32' stroke='black' stroke-opacity='.6'/%3E%3C/svg%3E"); --cahier-ruling-size: 32px 32px; }
+.cahier-page[data-ruling="tianzige"] { --cahier-ruling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cpath d='M0 .5H44M.5 0V44' stroke='black'/%3E%3Cpath d='M0 22.5H44M22.5 0V44' stroke='black' stroke-opacity='.5' stroke-dasharray='3 3'/%3E%3C/svg%3E"); --cahier-ruling-size: 44px 44px; }
+.cahier-page[data-ruling="genko"]    { --cahier-ruling: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='38'%3E%3Cpath d='M0 .5H30M0 30.5H30M.5 0V30.5' stroke='black'/%3E%3C/svg%3E"); --cahier-ruling-size: 30px 38px; }
+
+/* Margin notes. With a hand font the note is upright; without one it is the display italic. */
+.cahier-hand { font-family: var(--f-hand, var(--f-display)); font-style: var(--hand-style, italic); }
+
+.cahier-title {
+  display: inline-block; margin: 0; font-family: var(--f-display); font-size: 30px; line-height: 1.05;
+  font-weight: 600; letter-spacing: -.02em; color: var(--ink);
+  border-bottom: 4px double var(--cahier-pen); padding-bottom: 3px;
+}
+
+/* Whatever sits in the margin, to the left of the rule: a unit's number, a tick. */
+.cahier-gutter {
+  position: absolute; left: calc(var(--gutter-shift, 0px) - (var(--cahier-margin) + var(--cahier-gap)));
+  width: calc(var(--cahier-margin) - 5px); display: flex; justify-content: flex-end;
+}
+
+/* A sheet laid ON the page — the flashcard, the sticky note. The PAPER is tilted and the
+   content is not: rotated text is soft on a 1x screen, and this is read for an hour at a time. */
+.cahier-sheet { position: relative; isolation: isolate; }
+.cahier-sheet::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: var(--sheet-bg, var(--card)); transform: rotate(var(--sheet-tilt, -.6deg));
+  box-shadow: 0 0 0 1px var(--line-soft), 0 14px 24px -14px rgba(0,0,0,.34);
+}
+.cahier-tape::after {
+  content: ""; position: absolute; top: -11px; left: 50%; margin-left: -42px; width: 84px; height: 23px;
+  background: var(--cahier-tape); transform: rotate(2.5deg); pointer-events: none;
+}
+
+.cahier-hilite {
+  background: linear-gradient(transparent 36%, var(--cahier-hilite) 36%, var(--cahier-hilite) 92%, transparent 92%);
+  padding: 0 3px; margin: 0 -3px; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+
+/* ── CONTROLS. Paper is the surface; a control still has to look and feel like one. ──
+   Every one is a real <button> at least 44px tall, answers a press within 80ms, and shows
+   keyboard focus as a solid ring — the previous lesson rows changed `style.background` from
+   inline mouse handlers, which cannot express :focus-visible at all. */
+.cahier-btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 26px;
+  background: var(--cahier-btn-bg); color: var(--cahier-btn-fg); border: none; border-radius: 6px;
+  font-family: var(--f-ui); font-size: 15.5px; font-weight: 600; cursor: pointer;
+  transition: transform .08s ease, filter .12s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.cahier-btn:hover { filter: brightness(1.08); }
+.cahier-btn:active { transform: scale(.97); }
+
+.cahier-mark {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; min-height: 96px; padding: 6px 2px 8px;
+  background: none; border: none; border-radius: 10px; color: var(--ink); cursor: pointer;
+  font-family: var(--f-ui); transition: transform .08s ease, background-color .1s ease;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.cahier-mark svg { color: var(--cahier-pen); }
+.cahier-mark:hover { background: var(--accent-soft); }
+.cahier-mark:active { transform: scale(.93); background: var(--accent-soft); }
+.cahier-mark[data-suggested="true"] { background: var(--cahier-hilite); }
+
+.cahier-row, .cahier-opt {
+  background: none; border: none; border-radius: 6px; color: var(--ink); cursor: pointer; text-align: left;
+  font-family: var(--f-ui); transition: background-color .1s ease; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.cahier-row:hover, .cahier-opt:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.cahier-row:active, .cahier-opt:active { background: var(--accent-soft); }
+@media (hover: none) {
+  .cahier-row:hover, .cahier-opt:hover, .cahier-mark:hover { background: none; }
+  .cahier-mark[data-suggested="true"]:hover { background: var(--cahier-hilite); }
+}
+
+.cahier-btn:focus-visible, .cahier-mark:focus-visible, .cahier-row:focus-visible, .cahier-opt:focus-visible {
+  outline: 2.5px solid var(--ink); outline-offset: 2px;
+}
+.cahier-mark:focus-visible, .cahier-row:focus-visible, .cahier-opt:focus-visible { background: var(--accent-soft); }
+
+/* A drawn tick box — the toggles above the card and the lesson checklist. */
+.cahier-box {
+  position: relative; flex: none; width: 16px; height: 16px; box-sizing: border-box;
+  border: 1.5px solid var(--ink); border-radius: 2px;
+}
+.cahier-box svg { position: absolute; left: -2px; top: -8px; color: var(--cahier-pen); }
 
 /* Entrance for a panel that has just mounted.
  *

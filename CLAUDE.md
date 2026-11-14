@@ -2559,7 +2559,7 @@ The level tables are large — HSK 338 kB, JLPT 585 kB, CEFR 900 kB, French 900 
 - `ImportPanel` dynamically imports a language's tables when the level-import tab is opened.
 - `dict.ts` / `jadict.ts` / `esdict.ts` / `frdict.ts` each pull their level vocab inside `preload*()`, alongside the dictionary JSON fetch, rather than at module scope.
 
-Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **347 kB** for `/` on Next 15.5.28, after the recorder was removed from Listen & repeat; it was 349 kB with it; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
+Statically importing them put every language's vocabulary in the initial page bundle for every user. Keeping them lazy is what holds first-load JS around 300 kB rather than ~890 kB — if you add a language, follow the same pattern. (Measured **349 kB** for `/` on Next 15.5.28, after the Cahier redesign of Review and Learn; it was 347 kB after the recorder was removed from Listen & repeat and 349 kB with it; it was 346 kB after spoken recall and 344 kB after the unit path, weekly XP, the reminder panel and the rebuilt empty library, and 339 kB before those. The drawn header mark briefly took it to 341 and removing that mark returned it to 339 exactly, which is a small confirmation that the component left no residue. This line said 331 kB and was already stale by 8 kB when quoted, which was the third time; `npm run build` prints it. It was 287 kB before typed recall, the phonetic series, the manifest and the writing UI landed, and **316 kB** after the handwriting and conjugation work — a figure this file then carried unchanged through sharing, Year in Reading, pacts and own-reading citations, all of which are in this chunk. The service worker itself is **1 kB of it**, measured against a build of the previous commit rather than estimated. The figure drifts as the app grows, so treat the ~890 kB counterfactual as the number that matters, not the absolute — but re-measure it when you quote it, because the last two times it was quoted it was already stale.)
 
 ### Storage abstraction
 
@@ -3228,105 +3228,142 @@ inside the root layout. So one broken tab takes the navigation with it. Scoping 
 each `TabPanel` would keep the rest of the app usable and is deliberately NOT done here, so that
 the boundary and the font fix are not confused with one another.
 
-### The generic look, and the two moves that removed it
+### Cahier — Review and Learn are a page of a school exercise book
 
-`components/learn/LearnTab.tsx`, `components/practice/SrsTab.tsx`,
-`components/practice/Flashcards.tsx`, and `.unit-row` in `app/globals.css`.
+`components/shared/Cahier.tsx` (the page, the date line, the pen marks, the tally), the
+`CAHIER` block in `app/globals.css`, `paperRuling` / `handFont` on `LanguageConfig`,
+`lib/handFont.ts`, and `tests/cahier.test.ts`. Used by `components/practice/SrsTab.tsx`,
+`Flashcards.tsx` and `components/learn/LearnTab.tsx`.
 
-**REPORTED AS "the entire UI looks kind of boring and it looks rlly ai".** Measured rather
-than argued with: **158** uses of `1px solid var(--line)` across **50 files**, **177** mono
-uppercase labels, **11 identical outlined cards** stacked on Learn, and **three levels of
-border nesting** on Review — an outlined tab panel holding an outlined flashcard holding an
-inset rule. That is the house style of a model's default output, and it was ours.
+**REPORTED AS "boring and really AI-looking" TWICE, AND THE SECOND REPORT WAS THE USEFUL ONE.**
+The first answer was structural: measured at 158 uses of `1px solid var(--line)` across 50
+files and eleven identical outlined cards on Learn, it replaced the boxes with one elevated
+card and flush-left headings. That fixed the hierarchy and was reported, correctly, as *still
+bland, sterile and distinctly AI-generated*. Three reasons, none of them about layout:
 
-**THE DIAGNOSIS IS NOT "THE BORDERS ARE GREY", AND GETTING THAT WRONG WOULD HAVE WASTED THE
-WORK.** The defect is that **every unit was drawn identically**, so eleven rows of equal
-weight gave the eye nothing to land on and the list could not say where you were. Deleting
-the borders alone produces eleven identical BORDERLESS rows: the same defect with less ink.
-The fix is hierarchy.
+- **The palette was the tell.** Cream paper, a serif display face and a terracotta accent is
+  the single commonest look a model produces when asked for "tasteful", and it is this app's
+  default theme. Rearranging the page left it untouched.
+- **The fix added a tell of its own**: a 3px accent stripe down the left edge of a rounded
+  card, which is a stock device. It is gone.
+- **Nothing on screen could only have belonged to this app.** Soft tints and hairlines fit
+  any product. Three directions were mocked on a design canvas and the exercise book chosen.
 
-**ONE ELEVATED CARD, AND EVERYTHING ELSE IS A ROW.** Three states, from data the component
-already had:
+**A NOTEBOOK IS THE SUBJECT'S OWN OBJECT, AND ITS DEVICES CARRY INFORMATION.** It is what all
+four languages are learned in. A margin holds the unit numbers; a tick there means finished; a
+circled number means *this one*; a highlighter stroke means *here*; the grade is a teacher's
+mark. None of it is ornament, which is the difference between this and a skin.
 
-| | treatment |
+#### One ruling per language, on the config
+
+`paperRuling` on `LanguageConfig` — 田字格 for Chinese, 原稿用紙 for Japanese, the Seyès ruling
+for French, squared paper for Spanish — set by `CahierPage` as `data-ruling`. A fifth language
+is a fifth value and a fifth mask, never an arm on `language === 'xx'`.
+
+**THE RULINGS ARE MASKS, AND THAT IS WHAT LETS A THEME COLOUR THEM.** An SVG in a `url()`
+cannot read a CSS variable, so a ruling painted as a background image carries its own colour
+and is right in exactly one of ten themes. Each ruling is instead a mask over a flat fill of
+`--cahier-rule`: the shape is fixed in the stylesheet, the ink comes from the theme. Minor
+lines (the three faint ones between Seyès majors, the dashed cross of 田字格) are a lower
+opacity INSIDE the mask, so one token still colours the whole sheet.
+
+#### The theme drives every colour, and the mapping is a table
+
+| role | token |
 |---|---|
-| open (the unit you are on) | the only card — `--card` fill, real shadow, 3px accent edge, 17px title, its own margin |
-| complete | a dimmed row at `--ink-soft` **with its blurb removed** |
-| neither | a plain row, hairline under it, number in a left gutter |
+| paper | `--card` (the panel's own surface, unchanged) |
+| ruling | `--ink` at 11% — 8% on the dark themes |
+| margin rule | `--accent` at 55% |
+| pen marks | `--accent` |
+| pen-coloured TEXT, and the primary button | `--accent-deep` — `--accent` on the dark themes |
+| button label | `--card` — `--paper` on the dark themes |
+| writing | `--ink`; `--ink-soft` for secondary. Never `--ink-faint` |
+| highlighter | `--gold` at 38% |
+| sticky note | `--gold` at 26% over `--card` — 18% dark |
 
-**A FINISHED UNIT LOSING ITS BLURB IS WHERE THE HEIGHT GOES.** A blurb sells a unit you have
-not opened; once read, the row is a receipt. Measured at 390px: the Spanish tree went
-**4,448px → 3,656px**, an 18% cut, with nothing removed that anybody needs.
+The earned custom accent sets `--accent`, so it re-inks the margin, the pen and the buttons
+with nothing added.
 
-**THE BORDER BECAME A SEPARATOR RATHER THAN A BOX** — `borderBottom: 1px solid var(--line-soft)`
-on each closed row instead of a full outline around each — so eleven outlines read as one
-ruled list. The container lost its `gap-2`, because a gap would break that rule into dashes;
-the open card supplies its own margin so it floats clear.
+**⚠ THE DERIVED TOKENS ARE DECLARED ON `.cahier-page`, NOT ON `:root`, AND THAT IS NOT STYLE.**
+A custom property containing `var()` is resolved where it is DECLARED and inherited as the
+result. `data-theme` is on `<body>`, so `--cahier-rule` declared on `:root` would mix the
+default theme's ink for ever. Verified in a browser: on midnight the token computes to
+`color-mix(in srgb, #e6eaf2 8%, transparent)` — that theme's own ink.
 
-**⚠ AND THE OPEN CARD NEEDED A DIFFERENT LAYOUT, WHICH ONLY A RENDER SHOWED.** Both states
-started as one `flex items-center` row with the number in a left gutter. On the open card that
-vertically centres "UNIT 2" against a title wrapping to three lines at phone width — a label
-floating in the middle of an empty column. Open, the eyebrow belongs ABOVE the title and the
-title takes the full width; closed, the left gutter is right, because it aligns eleven numbers
-into a column an eye can run down. Two layouts, two jobs. **Invisible in the source and obvious
-in a screenshot**, which is this file's most repeated lesson arriving again.
+**`tests/cahier.test.ts` COMPUTES THE CONTRAST OF EVERY PAIRING IN ALL TEN THEMES**, parsing
+the percentages out of the stylesheet rather than repeating them. Nobody looks at ten themes;
+it found two things nobody had:
 
-**`.unit-row` IS A CLASS, AND THAT IS AN ACCESSIBILITY FIX RATHER THAN TIDINESS.** Losing the
-box makes a row look less pressable — the one real risk in this change — so the row keeps its
-full width and padding and gains a `--paper-2` hover. It is a class because the lesson rows
-inside the open unit use inline `onMouseEnter`/`onMouseLeave` writing `style.background`
-directly, and **an inline handler cannot express `:focus-visible`**, so a keyboard user tabbing
-the course had no indication of where they were. The class carries both, plus a
-`@media (hover: none)` opt-out so a phone does not leave a row stuck in its hover state after a
-tap.
+- **The primary buttons were `#fff` on `--accent`, shipped.** That is **1.74:1 on terminal,
+  2.83 on midnight and 3.08 on dusk** — a white label on a pale button. The mapping above
+  exists because of that number; every theme is now at least 4.5:1.
+- **Grey text on the sticky note failed by a hair**: `--ink-soft` on the note's tint is 4.39:1
+  on vellum, 4.43 on midnight and 4.50 on dusk. Everything on the note is set in `--ink`
+  instead, and a test reads the component to keep it so, with the failing case as its control.
 
-**NO NEW TOKENS.** `--card`, `--paper-2`, `--line-soft` and `--accent-soft` already exist in all
-ten themes, so nothing here can look wrong in a theme nobody checked. Verified in `midnight` as
-well as `paper`: the card fill separates, the accent edge reads, the hairlines are visible.
+It also derives the list of dark themes from each paper's luminance and requires the
+stylesheet's hand-kept list to match, so an eleventh theme cannot ship with a loud grid.
 
-#### Review: flush-left metadata around one centred word
+**THE RULING IS HELD TO A BAND, NOT A FLOOR**: between 1.12:1 and 1.4:1 against the paper —
+there, and never competing with titles that are read for an hour.
 
-**THE SEGMENTED CONTROL REPLACED THREE OUTLINED PILLS.** Three equal outlines read as three
-separate buttons and you have to find the coloured one to know which is live; a recessed
-`--paper-2` track with the active segment lifted in `--card` reads as one choice with three
-positions. **The lift is a shadow, not a border, deliberately** — a border on the active segment
-only would make it 2px wider than its neighbours and shuffle the row on every switch.
+#### What the page is made of
 
-**THE FLASHCARD'S OWN BORDER IS GONE**, along with the inset top rule that belonged to it. That
-rule was a ruling across the inside of a bordered card; with the border removed it reads as a
-stray line the audio button sits on top of. The gradient fill and the shadow already separate
-the card from the paper, which is what the border was doing a third time.
+- **`CahierDate`** writes the date in the study language, from the `bcp47` already on the
+  config. Mount-gated: this page is prerendered, and a date formatted during render is the
+  server's day in the server's zone.
+- **Margin notes use the hand that language's schools teach** — `handFont` is `Playwrite ES` /
+  `Playwrite FR Moderne` (2.8 kB of CSS each, measured), loaded by `lib/handFont.ts` off the
+  critical path the way `ensureHanFont` is. **Chinese and Japanese have none, deliberately**: a
+  Han hand face is hundreds of `unicode-range` subsets, the 185 kB stylesheet `lib/hanFont.ts`
+  exists to keep off the page. They fall back to the display italic, and a test forbids giving
+  a Han-script language a hand font.
+- **`.cahier-sheet` tilts the PAPER and leaves the content level.** The flashcard and the
+  sticky note look hand-placed, and the word is never rotated — rotated text is soft on a 1x
+  screen and this is read for long sessions.
+- **`Tally`** is the session's progress: four strokes and a fifth across. Past 40 it draws the
+  forty and writes `+N`, so marks plus number is always the true count; it sits on a row of
+  fixed height that exists at zero, because a tally that wrapped on the 41st card would push
+  the flashcard down under a thumb about to press a grade.
 
-**"Show answer" IS THE FILLED ACCENT BUTTON NOW.** It was a grey ghost — quieter than the two
-toggles above it — on the one control the learner is there to press.
+#### The grades are ✗ △ ○ ◎, and they are still ordinary buttons
 
-**THE TOGGLES AND STATE CHIPS WERE `justify-end`**, which at phone width puts two wide labels in
-the middle of the screen and reads as a centred settings panel floating over the card. They are
-metadata about the session, so they line up flush-left with the session's heading.
+That is the scale Japanese schools mark with, and it has exactly four steps in the order of
+Again / Hard / Good / Easy. It is always drawn above the WORD and the interval, never instead
+of them — Chinese schools mark with ✓ and ✗, so the scale cannot stand alone.
 
-**THE WORD STAYS CENTRED AND STAYS SERIF.** It is the one genuinely good piece of design in
-these two tabs, and "flush-left everything" must not reach it: a single focal object belongs in
-the middle. Mono uppercase also survives for metadata — counts, kinds, chips — because that is
-srsly's voice and reads as editorial apparatus. What changed is that it stopped being used for
-HEADINGS.
+**TEXTURE GOES ON SURFACES, NEVER ON CONTROLS.** Each grade is a real `<button>`, 72×97px on a
+390px phone (larger than the bordered box it replaced), with a hover tint, an 80ms press and a
+solid 2px focus ring. Driven with real Tab and Enter keys rather than assumed.
 
-**⚠ AND THE HEADING SAID "Vocabulary review · FSRS".** Shipped UI, 11px tracked-out mono, the
-first thing on the screen. This tab stopped being called "SRS" because a term of art is
-"precise to someone who already knows what spaced repetition is, and meaningless to everyone
-else", and the chips below it went from `S=20.0d · D=5.2` to `holds 12 days` for exactly the
-same reason — **this line survived both passes**. It is `Vocabulary`, set as a heading in
-display serif at 21px. The scheduler is not the learner's business.
+**⚠ AND THAT FOUND A BUG OLDER THAN THE REDESIGN: ENTER ON A FOCUSED "Again" GRADED GOOD.**
+`Flashcards` listens on `window`, and Enter on a revealed card takes the SUGGESTED grade and
+calls `preventDefault` — which cancels the focused button's own click. Measured both ways: with
+focus on Again, Enter left the card with no lapse and its stability gone from 12 to 36 days
+(Good); with the fix it records the lapse. It was unreachable in practice while the grade
+buttons had no focus ring worth following, and **giving them an obvious one is what made it
+matter** — a ring that says "you are on Again" has to mean Enter is Again. Only elements with
+`data-grade` are exempted, on purpose: a learner who clicks the "Type answers" box and then
+presses Space still gets the reveal.
 
-**NOTHING WAS LOCKED, AND THE BRIEF ASKED FOR IT.** The request was for completed *or locked*
-units to look distinct. Nothing in srsly is ever locked — no unit gates another, nothing is
-`disabled`, and the tab says so in its first sentence — so the three states are done, current
-and not-started. Recorded because this file already warns that if a lesson ever becomes a
-prerequisite, the reversal must be made knowingly rather than by adding a prop, and a visual
-brief is exactly how it would arrive by accident.
+#### Learn: `current` and `open` are two facts now
 
-**THE OTHER 48 FILES ARE UNTOUCHED.** The same two moves — a hairline between instead of a box
-around, and flush-left serif headings instead of faint mono eyebrows — port outward one tab at
-a time. Doing all 158 at once is how a redesign becomes unreviewable.
+Last round the OPEN unit was the emphasised one, so opening unit 7 to look ahead moved the
+emphasis and the list stopped saying where you were. `current` is the unit holding the next
+unfinished lesson — it gets the circled number and the highlighter — and `open` is only which
+checklist is showing. Nothing is locked, so they diverge the moment a learner browses.
+
+Lesson rows are `.cahier-row` buttons. They used inline `onMouseEnter`/`onMouseLeave` writing
+`style.background`, which cannot express `:focus-visible`, so a keyboard user tabbing the
+course saw nothing move.
+
+#### What this does not cover yet
+
+- **Only Review and Learn.** Home, Read, Vocab and Settings still use the earlier styling, as
+  do the header and tab bar, so the app changes register when you switch tab.
+- **Inside the two tabs**: an open lesson's own boxes and labels, the typed-answer field, and
+  the Write / Conjugate / Listen drills sit ON the ruled page but are drawn as before.
+- First-load JS for `/` is 349 kB with this in, from 348.
 
 ### Theming
 

@@ -9,6 +9,7 @@ import ConjugationPractice from './ConjugationPractice';
 import ListenRepeat from './ListenRepeat';
 import { getLanguageConfig } from '@/lib/languageConfig';
 import TabPanel from '@/components/TabPanel';
+import { CahierPage, CahierDate, PenMark } from '@/components/shared/Cahier';
 
 /**
  * The SRS tab — everything the scheduler drives.
@@ -125,10 +126,16 @@ export default function SrsTab({ onScore, active = true }: Props) {
   useEffect(() => { if (!active) stopAll(); }, [active]);
 
   return (
-    <div
-      className="rounded-tr-xl rounded-b-xl px-4 py-5 sm:px-9 sm:py-8 animate-rise"
+    /* THE PANEL IS A PAGE OF THE EXERCISE BOOK. Same shape and border as before — the corners
+       still join the tab bar — but ruled in this language's school paper, with the margin rule
+       down the left. The padding moved into `.cahier-page`, because the left padding IS the
+       margin and has to come from the variable the rule is positioned with. Every drill in
+       this tab sits on the same page; see components/shared/Cahier.tsx. */
+    <CahierPage
+      className="rounded-tr-xl rounded-b-xl animate-rise"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: '0 1px 0 rgba(0,0,0,.02)' }}
     >
+      <CahierDate />
       {/* THE GENERATED PASSAGE MOVED TO THE READ TAB, and this note is here because the
           reasoning for it having been here was sound and is worth not re-deriving. A generated
           passage is written around the words you owe today, so it carries blanks, grades them
@@ -145,20 +152,17 @@ export default function SrsTab({ onScore, active = true }: Props) {
           neither the streak nor the daily budget, so switching here changes what you practise
           and never what you owe. */}
       {modes.length > 1 && (
-        /* ── A SEGMENTED CONTROL, NOT THREE OUTLINED BUTTONS ──
-           Three equally-outlined pills read as three separate buttons, and the learner has to
-           find the coloured one to know which is active. A recessed track with the active
-           segment LIFTED out of it reads as one choice with three positions, which is what it
-           is. The track is `--paper-2` and the active segment is `--card` — both already exist
-           in all ten themes, so no theme needs a new token.
+        /* ── WHICH DRILL: THE ONE YOU ARE ON IS CIRCLED IN PEN ──
+           This was three outlined pills, then a segmented control on a recessed track. On a
+           notebook page a track is the wrong object — it is a piece of app chrome sitting on
+           paper — and the worksheet's own way of marking one option out of several is to
+           circle it. The ring is drawn OVER the label and takes no space of its own, so the
+           row cannot shuffle when the selection moves: the old reason for lifting the active
+           segment with a shadow rather than a border, kept.
 
-           The lift is a shadow rather than a border, deliberately: a border on the active
-           segment only would make it 2px wider than its neighbours and shuffle the row every
-           time you switched. Same box, different depth. */
-        <div
-          className="inline-flex gap-0.5 mb-4 p-[3px]"
-          style={{ background: 'var(--paper-2)', borderRadius: 10 }}
-        >
+           Each option is 44px tall whatever its label, and `.cahier-opt` gives it the hover,
+           press and focus ring a drawn mark could not. */
+        <div className="flex flex-wrap gap-1 mt-1 mb-1" style={{ marginLeft: -12 }}>
           {modes.map(({ id, label }) => {
             const on = shown === id;
             return (
@@ -166,17 +170,13 @@ export default function SrsTab({ onScore, active = true }: Props) {
                 key={id}
                 onClick={() => setMode(id)}
                 aria-pressed={on}
-                className="cursor-pointer transition-all duration-150"
+                className="cahier-opt"
                 style={{
-                  fontFamily: 'var(--f-mono)', fontSize: 11, letterSpacing: '.07em',
-                  textTransform: 'uppercase', padding: '6px 13px', borderRadius: 7,
-                  border: 'none',
-                  fontWeight: on ? 500 : 400,
-                  background: on ? 'var(--card)' : 'transparent',
-                  color: on ? 'var(--ink)' : 'var(--ink-faint)',
-                  boxShadow: on ? '0 1px 2px rgba(0,0,0,.09)' : 'none',
+                  position: 'relative', minHeight: 44, padding: '0 14px', fontSize: 15,
+                  fontWeight: on ? 600 : 500, color: on ? 'var(--ink)' : 'var(--ink-soft)',
                 }}
               >
+                {on && <PenMark kind="ring" />}
                 {label}
               </button>
             );
@@ -256,6 +256,6 @@ export default function SrsTab({ onScore, active = true }: Props) {
           />
         </TabPanel>
       )}
-    </div>
+    </CahierPage>
   );
 }
